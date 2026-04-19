@@ -59,7 +59,7 @@ export const ethereumBridgeMinterAbi = [
   },
   {
     type: 'function',
-    name: 'weti',
+    name: 'token',
     stateMutability: 'view',
     inputs: [],
     outputs: [{ name: '', type: 'address' }],
