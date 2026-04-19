@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BaseError, UserRejectedRequestError } from 'viem';
 import {
   useAccount,
@@ -77,15 +77,46 @@ export function SubscribeCard() {
   const insufficient = contractDeployed && total > 0n && balance < total;
   const isActive = expiry > BigInt(Math.floor(Date.now() / 1000));
 
-  const { writeContractAsync, data: hash, reset, isPending } = useWriteContract();
-  const receipt = useWaitForTransactionReceipt({ hash, query: { enabled: Boolean(hash) } });
+  // Split approve/subscribe state so the approve "Confirmed" badge can't leak
+  // into the subscribe button and mislead the user about their status.
+  const approveWrite = useWriteContract();
+  const subscribeWrite = useWriteContract();
+  const approveReceipt = useWaitForTransactionReceipt({
+    hash: approveWrite.data,
+    query: { enabled: Boolean(approveWrite.data) },
+  });
+  const subscribeReceipt = useWaitForTransactionReceipt({
+    hash: subscribeWrite.data,
+    query: { enabled: Boolean(subscribeWrite.data) },
+  });
+
+  // Refetch allowance immediately after approve confirms so `needsApproval`
+  // flips to false on the next render — the button label + handler then
+  // advance to "Subscribe" instead of misrepresenting progress.
+  useEffect(() => {
+    if (approveReceipt.isSuccess) {
+      allowanceCall.refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approveReceipt.isSuccess]);
+
+  // Refetch expiry + balance + allowance after subscribe confirms so the
+  // "Active until …" line reflects the new expiry rather than the stale pre-tx
+  // value (which shows `—` for first-time subscribers).
+  useEffect(() => {
+    if (subscribeReceipt.isSuccess) {
+      expiryCall.refetch();
+      balanceCall.refetch();
+      allowanceCall.refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subscribeReceipt.isSuccess]);
 
   async function onApprove() {
     if (!sub || !eti) return;
     setError(undefined);
-    reset();
     try {
-      await writeContractAsync({
+      await approveWrite.writeContractAsync({
         abi: abis.erc20Abi,
         address: eti,
         functionName: 'approve',
@@ -99,9 +130,8 @@ export function SubscribeCard() {
   async function onSubscribe() {
     if (!sub) return;
     setError(undefined);
-    reset();
     try {
-      await writeContractAsync({
+      await subscribeWrite.writeContractAsync({
         abi: abis.researchSubscriptionAbi,
         address: sub,
         functionName: 'subscribe',
@@ -126,9 +156,37 @@ export function SubscribeCard() {
     );
   }
 
-  const pending = Boolean(hash) && !receipt.isSuccess;
-  const confirmed = receipt.isSuccess;
-  const disabled = !isConnected || insufficient || isPending || receipt.isFetching;
+  const approvePending =
+    Boolean(approveWrite.data) && !approveReceipt.isSuccess && !approveReceipt.isError;
+  const subscribePending =
+    Boolean(subscribeWrite.data) && !subscribeReceipt.isSuccess && !subscribeReceipt.isError;
+  const busy =
+    approveWrite.isPending ||
+    subscribeWrite.isPending ||
+    approveReceipt.isFetching ||
+    subscribeReceipt.isFetching;
+
+  // After a successful subscribe, celebrate; otherwise advance through the
+  // two-step flow using the fresh allowance read from the receipt-triggered
+  // refetch.
+  const subscribeConfirmed = subscribeReceipt.isSuccess;
+  const disabled = !isConnected || insufficient || busy;
+
+  function buttonLabel(): string {
+    if (!isConnected) return 'Connect wallet';
+    if (insufficient) return 'Insufficient ETI';
+    if (subscribeConfirmed) return isActive ? 'Extend again' : 'Subscribed';
+    if (subscribePending) return 'Subscribing…';
+    if (approvePending) return 'Approving…';
+    if (needsApproval) return 'Approve ETI';
+    if (isActive) return 'Extend';
+    return 'Subscribe';
+  }
+
+  function onClick() {
+    if (needsApproval) void onApprove();
+    else void onSubscribe();
+  }
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm">
@@ -175,31 +233,22 @@ export function SubscribeCard() {
 
       <button
         type="button"
-        onClick={needsApproval ? onApprove : onSubscribe}
+        onClick={onClick}
         disabled={disabled}
         className="w-full rounded-lg bg-white py-2 text-sm font-medium text-black transition enabled:hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/40"
       >
-        {!isConnected
-          ? 'Connect wallet'
-          : insufficient
-            ? 'Insufficient ETI'
-            : pending
-              ? needsApproval
-                ? 'Approving…'
-                : 'Subscribing…'
-              : confirmed
-                ? 'Confirmed'
-                : needsApproval
-                  ? 'Approve ETI'
-                  : isActive
-                    ? 'Extend'
-                    : 'Subscribe'}
+        {buttonLabel()}
       </button>
 
       {error && (
         <p className="mt-2 rounded-md bg-rose-500/10 px-2 py-1 text-xs text-rose-200">{error}</p>
       )}
-      {confirmed && (
+      {approveReceipt.isSuccess && !subscribePending && !subscribeConfirmed && !needsApproval && (
+        <p className="mt-2 text-[11px] text-white/60">
+          Approved. Tap &ldquo;Subscribe&rdquo; to complete.
+        </p>
+      )}
+      {subscribeConfirmed && (
         <p className="mt-2 text-[11px] text-emerald-300/80">Active until {formatExpiry(expiry)}</p>
       )}
     </div>
