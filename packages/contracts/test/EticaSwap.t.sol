@@ -130,7 +130,7 @@ contract EticaSwapTest is Test {
     function test_router_removeLiquidity_burnsAndReturns() public {
         _approveRouterFor(ALICE);
         vm.prank(ALICE);
-        (, , uint256 liq) = router.addLiquidity(
+        (,, uint256 liq) = router.addLiquidity(
             address(eti),
             address(usdt),
             10_000 ether,
@@ -175,12 +175,7 @@ contract EticaSwapTest is Test {
 
         vm.prank(ALICE);
         router.addLiquidityEGAZ{value: 100 ether}(
-            address(eti),
-            100_000 ether,
-            0,
-            0,
-            ALICE,
-            block.timestamp + 1
+            address(eti), 100_000 ether, 0, 0, ALICE, block.timestamp + 1
         );
 
         address[] memory path = new address[](2);
@@ -236,14 +231,7 @@ contract EticaSwapTest is Test {
         // Trigger fee mint via another add/remove liquidity.
         vm.prank(ALICE);
         router.addLiquidity(
-            address(eti),
-            address(usdt),
-            1 ether,
-            1 ether,
-            0,
-            0,
-            ALICE,
-            block.timestamp + 1
+            address(eti), address(usdt), 1 ether, 1 ether, 0, 0, ALICE, block.timestamp + 1
         );
 
         assertGt(IEticaSwapPair(pair).balanceOf(address(0xCAFE)), 0);

@@ -16,7 +16,8 @@ contract EticaSwapPair is EticaSwapERC20 {
     using UQ112x112 for uint224;
 
     uint256 public constant MINIMUM_LIQUIDITY = 10 ** 3;
-    bytes4 private constant SELECTOR_TRANSFER = bytes4(keccak256(bytes("transfer(address,uint256)")));
+    bytes4 private constant SELECTOR_TRANSFER =
+        bytes4(keccak256(bytes("transfer(address,uint256)")));
 
     address public factory;
     address public token0;
@@ -74,7 +75,8 @@ contract EticaSwapPair is EticaSwapERC20 {
     }
 
     function _safeTransfer(address token, address to, uint256 value) private {
-        (bool ok, bytes memory data) = token.call(abi.encodeWithSelector(SELECTOR_TRANSFER, to, value));
+        (bool ok, bytes memory data) =
+            token.call(abi.encodeWithSelector(SELECTOR_TRANSFER, to, value));
         require(ok && (data.length == 0 || abi.decode(data, (bool))), "ESwap: TRANSFER_FAILED");
     }
 
@@ -86,8 +88,10 @@ contract EticaSwapPair is EticaSwapERC20 {
         unchecked {
             uint32 timeElapsed = blockTimestamp - blockTimestampLast;
             if (timeElapsed > 0 && _reserve0 != 0 && _reserve1 != 0) {
-                price0CumulativeLast += uint256(UQ112x112.encode(_reserve1).uqdiv(_reserve0)) * timeElapsed;
-                price1CumulativeLast += uint256(UQ112x112.encode(_reserve0).uqdiv(_reserve1)) * timeElapsed;
+                price0CumulativeLast += uint256(UQ112x112.encode(_reserve1).uqdiv(_reserve0))
+                * timeElapsed;
+                price1CumulativeLast += uint256(UQ112x112.encode(_reserve0).uqdiv(_reserve1))
+                * timeElapsed;
             }
         }
         reserve0 = uint112(balance0);
@@ -132,8 +136,7 @@ contract EticaSwapPair is EticaSwapERC20 {
             _mint(address(0), MINIMUM_LIQUIDITY);
         } else {
             liquidity = Math.min(
-                (amount0 * _totalSupply) / _reserve0,
-                (amount1 * _totalSupply) / _reserve1
+                (amount0 * _totalSupply) / _reserve0, (amount1 * _totalSupply) / _reserve1
             );
         }
         require(liquidity > 0, "ESwap: INSUFFICIENT_LIQUIDITY_MINTED");
@@ -193,15 +196,16 @@ contract EticaSwapPair is EticaSwapERC20 {
             balance0 = IERC20Minimal(_token0).balanceOf(address(this));
             balance1 = IERC20Minimal(_token1).balanceOf(address(this));
         }
-        uint256 amount0In = balance0 > _reserve0 - amount0Out ? balance0 - (_reserve0 - amount0Out) : 0;
-        uint256 amount1In = balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
+        uint256 amount0In =
+            balance0 > _reserve0 - amount0Out ? balance0 - (_reserve0 - amount0Out) : 0;
+        uint256 amount1In =
+            balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
         require(amount0In > 0 || amount1In > 0, "ESwap: INSUFFICIENT_INPUT_AMOUNT");
         {
             uint256 balance0Adjusted = balance0 * 1000 - amount0In * 3;
             uint256 balance1Adjusted = balance1 * 1000 - amount1In * 3;
             require(
-                balance0Adjusted * balance1Adjusted
-                    >= uint256(_reserve0) * _reserve1 * (1000 ** 2),
+                balance0Adjusted * balance1Adjusted >= uint256(_reserve0) * _reserve1 * (1000 ** 2),
                 "ESwap: K"
             );
         }

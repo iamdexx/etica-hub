@@ -81,11 +81,7 @@ contract EticaSwapRouter {
         uint256 amountBMin,
         address to,
         uint256 deadline
-    )
-        external
-        ensure(deadline)
-        returns (uint256 amountA, uint256 amountB, uint256 liquidity)
-    {
+    ) external ensure(deadline) returns (uint256 amountA, uint256 amountB, uint256 liquidity) {
         (amountA, amountB) =
             _addLiquidity(tokenA, tokenB, amountADesired, amountBDesired, amountAMin, amountBMin);
         address pair = EticaSwapLibrary.pairFor(factory, tokenA, tokenB);
@@ -108,19 +104,16 @@ contract EticaSwapRouter {
         returns (uint256 amountToken, uint256 amountEGAZ, uint256 liquidity)
     {
         (amountToken, amountEGAZ) = _addLiquidity(
-            token,
-            WEGAZ_TOKEN,
-            amountTokenDesired,
-            msg.value,
-            amountTokenMin,
-            amountEGAZMin
+            token, WEGAZ_TOKEN, amountTokenDesired, msg.value, amountTokenMin, amountEGAZMin
         );
         address pair = EticaSwapLibrary.pairFor(factory, token, WEGAZ_TOKEN);
         TransferHelper.safeTransferFrom(token, msg.sender, pair, amountToken);
         IWEGAZ(WEGAZ_TOKEN).deposit{value: amountEGAZ}();
         assert(IWEGAZ(WEGAZ_TOKEN).transfer(pair, amountEGAZ));
         liquidity = IEticaSwapPair(pair).mint(to);
-        if (msg.value > amountEGAZ) TransferHelper.safeTransferEGAZ(msg.sender, msg.value - amountEGAZ);
+        if (msg.value > amountEGAZ) {
+            TransferHelper.safeTransferEGAZ(msg.sender, msg.value - amountEGAZ);
+        }
     }
 
     // ------------------------------------------------------------------ REMOVE LIQUIDITY
@@ -133,11 +126,7 @@ contract EticaSwapRouter {
         uint256 amountBMin,
         address to,
         uint256 deadline
-    )
-        public
-        ensure(deadline)
-        returns (uint256 amountA, uint256 amountB)
-    {
+    ) public ensure(deadline) returns (uint256 amountA, uint256 amountB) {
         address pair = EticaSwapLibrary.pairFor(factory, tokenA, tokenB);
         IEticaSwapPair(pair).transferFrom(msg.sender, pair, liquidity);
         (uint256 amount0, uint256 amount1) = IEticaSwapPair(pair).burn(to);
@@ -154,19 +143,9 @@ contract EticaSwapRouter {
         uint256 amountEGAZMin,
         address to,
         uint256 deadline
-    )
-        public
-        ensure(deadline)
-        returns (uint256 amountToken, uint256 amountEGAZ)
-    {
+    ) public ensure(deadline) returns (uint256 amountToken, uint256 amountEGAZ) {
         (amountToken, amountEGAZ) = removeLiquidity(
-            token,
-            WEGAZ_TOKEN,
-            liquidity,
-            amountTokenMin,
-            amountEGAZMin,
-            address(this),
-            deadline
+            token, WEGAZ_TOKEN, liquidity, amountTokenMin, amountEGAZMin, address(this), deadline
         );
         TransferHelper.safeTransfer(token, to, amountToken);
         IWEGAZ(WEGAZ_TOKEN).withdraw(amountEGAZ);
@@ -184,9 +163,8 @@ contract EticaSwapRouter {
                 input == token0 ? (uint256(0), amountOut) : (amountOut, uint256(0));
             address to =
                 i < path.length - 2 ? EticaSwapLibrary.pairFor(factory, output, path[i + 2]) : _to;
-            IEticaSwapPair(EticaSwapLibrary.pairFor(factory, input, output)).swap(
-                amount0Out, amount1Out, to, new bytes(0)
-            );
+            IEticaSwapPair(EticaSwapLibrary.pairFor(factory, input, output))
+                .swap(amount0Out, amount1Out, to, new bytes(0));
         }
     }
 
@@ -196,11 +174,7 @@ contract EticaSwapRouter {
         address[] calldata path,
         address to,
         uint256 deadline
-    )
-        external
-        ensure(deadline)
-        returns (uint256[] memory amounts)
-    {
+    ) external ensure(deadline) returns (uint256[] memory amounts) {
         amounts = EticaSwapLibrary.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
         TransferHelper.safeTransferFrom(
@@ -215,11 +189,7 @@ contract EticaSwapRouter {
         address[] calldata path,
         address to,
         uint256 deadline
-    )
-        external
-        ensure(deadline)
-        returns (uint256[] memory amounts)
-    {
+    ) external ensure(deadline) returns (uint256[] memory amounts) {
         amounts = EticaSwapLibrary.getAmountsIn(factory, amountOut, path);
         require(amounts[0] <= amountInMax, "ESwap: EXCESSIVE_INPUT_AMOUNT");
         TransferHelper.safeTransferFrom(
@@ -233,18 +203,14 @@ contract EticaSwapRouter {
         address[] calldata path,
         address to,
         uint256 deadline
-    )
-        external
-        payable
-        ensure(deadline)
-        returns (uint256[] memory amounts)
-    {
+    ) external payable ensure(deadline) returns (uint256[] memory amounts) {
         require(path[0] == WEGAZ_TOKEN, "ESwap: INVALID_PATH");
         amounts = EticaSwapLibrary.getAmountsOut(factory, msg.value, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
         IWEGAZ(WEGAZ_TOKEN).deposit{value: amounts[0]}();
         assert(
-            IWEGAZ(WEGAZ_TOKEN).transfer(EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0])
+            IWEGAZ(WEGAZ_TOKEN)
+                .transfer(EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0])
         );
         _swap(amounts, path, to);
     }
@@ -255,11 +221,7 @@ contract EticaSwapRouter {
         address[] calldata path,
         address to,
         uint256 deadline
-    )
-        external
-        ensure(deadline)
-        returns (uint256[] memory amounts)
-    {
+    ) external ensure(deadline) returns (uint256[] memory amounts) {
         require(path[path.length - 1] == WEGAZ_TOKEN, "ESwap: INVALID_PATH");
         amounts = EticaSwapLibrary.getAmountsIn(factory, amountOut, path);
         require(amounts[0] <= amountInMax, "ESwap: EXCESSIVE_INPUT_AMOUNT");
@@ -277,11 +239,7 @@ contract EticaSwapRouter {
         address[] calldata path,
         address to,
         uint256 deadline
-    )
-        external
-        ensure(deadline)
-        returns (uint256[] memory amounts)
-    {
+    ) external ensure(deadline) returns (uint256[] memory amounts) {
         require(path[path.length - 1] == WEGAZ_TOKEN, "ESwap: INVALID_PATH");
         amounts = EticaSwapLibrary.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
@@ -298,21 +256,19 @@ contract EticaSwapRouter {
         address[] calldata path,
         address to,
         uint256 deadline
-    )
-        external
-        payable
-        ensure(deadline)
-        returns (uint256[] memory amounts)
-    {
+    ) external payable ensure(deadline) returns (uint256[] memory amounts) {
         require(path[0] == WEGAZ_TOKEN, "ESwap: INVALID_PATH");
         amounts = EticaSwapLibrary.getAmountsIn(factory, amountOut, path);
         require(amounts[0] <= msg.value, "ESwap: EXCESSIVE_INPUT_AMOUNT");
         IWEGAZ(WEGAZ_TOKEN).deposit{value: amounts[0]}();
         assert(
-            IWEGAZ(WEGAZ_TOKEN).transfer(EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0])
+            IWEGAZ(WEGAZ_TOKEN)
+                .transfer(EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0])
         );
         _swap(amounts, path, to);
-        if (msg.value > amounts[0]) TransferHelper.safeTransferEGAZ(msg.sender, msg.value - amounts[0]);
+        if (msg.value > amounts[0]) {
+            TransferHelper.safeTransferEGAZ(msg.sender, msg.value - amounts[0]);
+        }
     }
 
     // ------------------------------------------------------------------ VIEWS
