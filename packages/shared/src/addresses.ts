@@ -50,6 +50,8 @@ export const DEPLOYMENTS: Record<
     swapRouter: Address;
     /** Research Hub subscription contract (Phase 2). */
     researchSubscription: Address;
+    /** EticaBridgeVault — lock-side of the ETI ↔ wETI bridge (Phase 3). */
+    bridgeVault: Address;
   }
 > = {
   61803: {
@@ -57,12 +59,14 @@ export const DEPLOYMENTS: Record<
     swapFactory: '0x0000000000000000000000000000000000000000',
     swapRouter: '0x0000000000000000000000000000000000000000',
     researchSubscription: '0x0000000000000000000000000000000000000000',
+    bridgeVault: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     wegaz: '0x0000000000000000000000000000000000000000',
     swapFactory: '0x0000000000000000000000000000000000000000',
     swapRouter: '0x0000000000000000000000000000000000000000',
     researchSubscription: '0x0000000000000000000000000000000000000000',
+    bridgeVault: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -70,6 +74,35 @@ export const DEPLOYMENTS: Record<
     swapFactory: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
     swapRouter: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
     researchSubscription: '0x0000000000000000000000000000000000000000',
+    bridgeVault: '0x0000000000000000000000000000000000000000',
+  },
+};
+
+/**
+ * Ethereum-side deployments for the Phase 3 bridge. These live on a chain
+ * the rest of EticaHub does not otherwise talk to (Ethereum mainnet / Sepolia),
+ * so they are tracked separately from {@link DEPLOYMENTS}.
+ */
+export const BRIDGE_ETHEREUM_DEPLOYMENTS: Record<
+  number,
+  {
+    /** Wrapped ETI ERC20 on Ethereum. */
+    weti: Address;
+    /** EthereumBridgeMinter — mint side of the ETI ↔ wETI bridge. */
+    bridgeMinter: Address;
+    /** MultisigVerifier — attestation verifier (M-of-N validator signatures). */
+    bridgeVerifier: Address;
+  }
+> = {
+  1: {
+    weti: '0x0000000000000000000000000000000000000000',
+    bridgeMinter: '0x0000000000000000000000000000000000000000',
+    bridgeVerifier: '0x0000000000000000000000000000000000000000',
+  },
+  11155111: {
+    weti: '0x0000000000000000000000000000000000000000',
+    bridgeMinter: '0x0000000000000000000000000000000000000000',
+    bridgeVerifier: '0x0000000000000000000000000000000000000000',
   },
 };
 
