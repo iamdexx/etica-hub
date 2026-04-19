@@ -44,7 +44,26 @@ export const eticaCrucible = defineChain({
   testnet: true,
 });
 
-export const supportedChains = [eticaMainnet, eticaCrucible] as const;
+/**
+ * Local anvil fork of Etica Mainnet used for development and end-to-end
+ * testing. Chain ID is deliberately set to anvil's default (31337) so MetaMask
+ * and other wallets treat it as a separate network from mainnet.
+ *
+ * Start it with:
+ *   anvil --fork-url https://eticamainnet.eticascan.org \
+ *         --chain-id 31337 --host 0.0.0.0 --port 8545
+ */
+export const eticaLocalFork = defineChain({
+  id: 31337,
+  name: 'EticaHub Dev (forked mainnet)',
+  nativeCurrency: { name: 'EGAZ', symbol: 'EGAZ', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['http://127.0.0.1:8545'] },
+  },
+  testnet: true,
+});
+
+export const supportedChains = [eticaMainnet, eticaCrucible, eticaLocalFork] as const;
 
 export type SupportedChainId = (typeof supportedChains)[number]['id'];
 
