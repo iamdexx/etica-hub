@@ -144,6 +144,8 @@ export function SwapCard() {
   async function onApprove() {
     if (!ctx || !address) return;
     setSubmitError(undefined);
+    setPendingTxHash(undefined);
+    resetWrite();
     try {
       const hash = await writeContractAsync({
         abi: abis.erc20Abi,
@@ -160,6 +162,8 @@ export function SwapCard() {
   async function onSwap() {
     if (!ctx || !address || !path || amountIn === 0n) return;
     setSubmitError(undefined);
+    setPendingTxHash(undefined);
+    resetWrite();
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
 
     try {
