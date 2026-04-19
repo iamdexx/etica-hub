@@ -7,6 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title xETX staking vault
 /// @notice Stake ETX to earn a pro-rata share of ETI rewards funneled here by
@@ -17,6 +18,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///         start a new 7-day reward period.
 contract xETXVault is ERC20, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
+    using SafeCast for uint256;
 
     IERC20 public immutable stakingToken;
     IERC20 public immutable rewardToken;
@@ -120,9 +122,9 @@ contract xETXVault is ERC20, Ownable2Step, ReentrancyGuard {
         require(balanceOf(msg.sender) >= amount, "xETX: insufficient xETX");
         _burn(msg.sender, amount);
         uint256 existing = unstakeRequests[msg.sender].amount;
-        uint64 availableAt = uint64(block.timestamp + cooldownDuration);
+        uint64 availableAt = (block.timestamp + cooldownDuration).toUint64();
         unstakeRequests[msg.sender] =
-            UnstakeRequest({amount: uint128(existing + amount), availableAt: availableAt});
+            UnstakeRequest({amount: (existing + amount).toUint128(), availableAt: availableAt});
         emit UnstakeRequested(msg.sender, amount, availableAt);
     }
 
