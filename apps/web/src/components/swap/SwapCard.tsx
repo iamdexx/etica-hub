@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { formatUnits, parseUnits, type Address, type Hex } from 'viem';
+import {
+  BaseError,
+  UserRejectedRequestError,
+  formatUnits,
+  parseUnits,
+  type Address,
+  type Hex,
+} from 'viem';
 import {
   useAccount,
   useBalance,
@@ -127,6 +134,7 @@ export function SwapCard() {
   const { writeContractAsync, data: txHash, isPending: isTxPending, reset: resetWrite } =
     useWriteContract();
   const [pendingTxHash, setPendingTxHash] = useState<Hex | undefined>();
+  const [submitError, setSubmitError] = useState<string | undefined>();
   const activeHash = pendingTxHash ?? txHash;
   const receipt = useWaitForTransactionReceipt({
     hash: activeHash,
@@ -135,37 +143,47 @@ export function SwapCard() {
 
   async function onApprove() {
     if (!ctx || !address) return;
-    const hash = await writeContractAsync({
-      abi: abis.erc20Abi,
-      address: ctx.eti,
-      functionName: 'approve',
-      args: [ctx.router, MAX_UINT256],
-    });
-    setPendingTxHash(hash);
+    setSubmitError(undefined);
+    try {
+      const hash = await writeContractAsync({
+        abi: abis.erc20Abi,
+        address: ctx.eti,
+        functionName: 'approve',
+        args: [ctx.router, MAX_UINT256],
+      });
+      setPendingTxHash(hash);
+    } catch (err) {
+      setSubmitError(describeWriteError(err, 'Approval failed'));
+    }
   }
 
   async function onSwap() {
     if (!ctx || !address || !path || amountIn === 0n) return;
+    setSubmitError(undefined);
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
 
-    let hash: Hex;
-    if (fromIsNative) {
-      hash = await writeContractAsync({
-        abi: abis.routerAbi,
-        address: ctx.router,
-        functionName: 'swapExactEGAZForTokens',
-        args: [amountOutMin, path, address, deadline],
-        value: amountIn,
-      });
-    } else {
-      hash = await writeContractAsync({
-        abi: abis.routerAbi,
-        address: ctx.router,
-        functionName: 'swapExactTokensForEGAZ',
-        args: [amountIn, amountOutMin, path, address, deadline],
-      });
+    try {
+      let hash: Hex;
+      if (fromIsNative) {
+        hash = await writeContractAsync({
+          abi: abis.routerAbi,
+          address: ctx.router,
+          functionName: 'swapExactEGAZForTokens',
+          args: [amountOutMin, path, address, deadline],
+          value: amountIn,
+        });
+      } else {
+        hash = await writeContractAsync({
+          abi: abis.routerAbi,
+          address: ctx.router,
+          functionName: 'swapExactTokensForEGAZ',
+          args: [amountIn, amountOutMin, path, address, deadline],
+        });
+      }
+      setPendingTxHash(hash);
+    } catch (err) {
+      setSubmitError(describeWriteError(err, 'Swap failed'));
     }
-    setPendingTxHash(hash);
   }
 
   // Refetch balances / allowance / quote only AFTER the tx is mined.
@@ -191,6 +209,7 @@ export function SwapCard() {
     setDir((d) => ({ fromSymbol: d.toSymbol, toSymbol: d.fromSymbol }));
     setAmountInStr('');
     setPendingTxHash(undefined);
+    setSubmitError(undefined);
     resetWrite();
   }
 
@@ -264,6 +283,9 @@ export function SwapCard() {
       )}
       {activeHash && receipt.isError && (
         <p className="mt-3 text-center text-xs text-rose-400">Transaction reverted.</p>
+      )}
+      {submitError && (
+        <p className="mt-3 break-words text-center text-xs text-rose-400">{submitError}</p>
       )}
     </div>
   );
@@ -450,6 +472,16 @@ function truncate(s: string, maxDecimals: number): string {
   const [whole, frac = ''] = s.split('.');
   if (!frac) return whole;
   return `${whole}.${frac.slice(0, maxDecimals)}`;
+}
+
+function describeWriteError(err: unknown, fallback: string): string | undefined {
+  if (err instanceof BaseError) {
+    const rejected = err.walk((e) => e instanceof UserRejectedRequestError);
+    if (rejected) return undefined; // user cancelled in wallet — no surfaced error
+    return err.shortMessage || err.message || fallback;
+  }
+  if (err instanceof Error) return err.message || fallback;
+  return fallback;
 }
 
 function sanitizeNumber(v: string): string {
