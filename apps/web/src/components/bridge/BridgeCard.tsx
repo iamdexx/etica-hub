@@ -48,7 +48,25 @@ import {
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const MAX_UINT256 = (1n << 256n) - 1n;
 
+/**
+ * Destination chain lookup. Deliberately explicit rather than "always
+ * mainnet" so a user on Etica Crucible testnet can bridge to Sepolia,
+ * and a user on Sepolia can bridge back to Crucible — not to Ethereum
+ * mainnet or Etica mainnet. Local anvil fork (31337) also routes to
+ * Sepolia since there's no paired local Ethereum devnet in this repo.
+ */
+const ETICA_TO_ETH_DST: Record<number, number> = {
+  61803: 1,
+  61888: 11155111,
+  31337: 11155111,
+};
+const ETH_TO_ETICA_DST: Record<number, number> = {
+  1: 61803,
+  11155111: 61888,
+};
+
 type BridgeDirection = 'etica-to-eth' | 'eth-to-etica';
+type TxType = 'approve' | 'lock';
 
 type BridgeCtx = {
   direction: BridgeDirection;
@@ -68,11 +86,13 @@ function useBridgeCtx(direction: BridgeDirection): BridgeCtx | null {
       if (!isSupportedChainId(chainId)) return null;
       const d = DEPLOYMENTS[chainId];
       if (d.bridgeVault === ZERO) return null;
-      const ethAddrs = BRIDGE_ETHEREUM_DEPLOYMENTS[1];
+      const dstChainId = ETICA_TO_ETH_DST[chainId];
+      const ethAddrs = dstChainId ? BRIDGE_ETHEREUM_DEPLOYMENTS[dstChainId] : undefined;
+      if (!ethAddrs) return null;
       return {
         direction,
         srcChainId: chainId,
-        dstChainId: 1,
+        dstChainId,
         srcTokenLabel: 'ETI',
         dstTokenLabel: 'wETI',
         srcToken: EXTERNAL_ADDRESSES[chainId].eti,
@@ -80,19 +100,22 @@ function useBridgeCtx(direction: BridgeDirection): BridgeCtx | null {
         dstContract: ethAddrs.bridgeMinter,
       };
     }
-    // eth-to-etica: connected wallet should be on Ethereum (1 or 11155111)
-    if (chainId !== 1 && chainId !== 11155111) return null;
+    // eth-to-etica: connected wallet should be on Ethereum (mainnet or Sepolia).
+    const dstChainId = ETH_TO_ETICA_DST[chainId];
+    if (!dstChainId) return null;
     const ethAddrs = BRIDGE_ETHEREUM_DEPLOYMENTS[chainId];
     if (!ethAddrs || ethAddrs.bridgeMinter === ZERO) return null;
+    const dstDeployment = isSupportedChainId(dstChainId) ? DEPLOYMENTS[dstChainId] : undefined;
+    if (!dstDeployment) return null;
     return {
       direction,
       srcChainId: chainId,
-      dstChainId: 61803,
+      dstChainId,
       srcTokenLabel: 'wETI',
       dstTokenLabel: 'ETI',
       srcToken: ethAddrs.weti,
       srcContract: ethAddrs.bridgeMinter,
-      dstContract: DEPLOYMENTS[61803].bridgeVault,
+      dstContract: dstDeployment.bridgeVault,
     };
   }, [chainId, direction]);
 }
@@ -147,6 +170,7 @@ export function BridgeCard() {
     reset: resetWrite,
   } = useWriteContract();
   const [pendingTxHash, setPendingTxHash] = useState<Hex | undefined>();
+  const [lastTxType, setLastTxType] = useState<TxType | undefined>();
   const [submitError, setSubmitError] = useState<string | undefined>();
   const activeHash = pendingTxHash ?? txHash;
   const receipt = useWaitForTransactionReceipt({
@@ -158,6 +182,7 @@ export function BridgeCard() {
     if (!ctx || !address || amount === 0n) return;
     setSubmitError(undefined);
     setPendingTxHash(undefined);
+    setLastTxType(undefined);
     resetWrite();
     try {
       const hash = await writeContractAsync({
@@ -166,6 +191,7 @@ export function BridgeCard() {
         functionName: 'approve',
         args: [ctx.srcContract, MAX_UINT256],
       });
+      setLastTxType('approve');
       setPendingTxHash(hash);
     } catch (err) {
       setSubmitError(describeWriteError(err, 'Approval failed'));
@@ -176,6 +202,7 @@ export function BridgeCard() {
     if (!ctx || !address || amount === 0n || !validRecipient) return;
     setSubmitError(undefined);
     setPendingTxHash(undefined);
+    setLastTxType(undefined);
     resetWrite();
     try {
       let hash: Hex;
@@ -194,6 +221,7 @@ export function BridgeCard() {
           args: [amount, recipient as Address],
         });
       }
+      setLastTxType('lock');
       setPendingTxHash(hash);
     } catch (err) {
       setSubmitError(
@@ -308,10 +336,17 @@ export function BridgeCard() {
         onLock={onLock}
       />
 
-      {activeHash && receipt.isSuccess && (
+      {activeHash && receipt.isSuccess && lastTxType === 'approve' && (
         <p className="mt-3 break-all text-center text-xs text-emerald-400">
-          Locked · tx {activeHash.slice(0, 10)}…{activeHash.slice(-8)}. Validators
-          are now signing; switch to the destination chain to claim.
+          Approved · tx {activeHash.slice(0, 10)}…{activeHash.slice(-8)}. Now
+          submit the {ctx?.direction === 'etica-to-eth' ? 'lock' : 'burn'}.
+        </p>
+      )}
+      {activeHash && receipt.isSuccess && lastTxType === 'lock' && (
+        <p className="mt-3 break-all text-center text-xs text-emerald-400">
+          {ctx?.direction === 'etica-to-eth' ? 'Locked' : 'Burned'} · tx{' '}
+          {activeHash.slice(0, 10)}…{activeHash.slice(-8)}. Validators are
+          now signing; switch to the destination chain to claim.
         </p>
       )}
       {activeHash && receipt.isError && (

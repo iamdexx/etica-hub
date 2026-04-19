@@ -97,7 +97,7 @@ export function ClaimCard() {
   const destContract = useMemo<Address | null>(() => {
     if (!record) return null;
     const dst = Number(record.payload.dstChainId);
-    if (dst === 61803 || dst === 31337) {
+    if (dst === 61803 || dst === 61888 || dst === 31337) {
       if (!isSupportedChainId(dst)) return null;
       const v = DEPLOYMENTS[dst].bridgeVault;
       return v === '0x0000000000000000000000000000000000000000' ? null : v;
