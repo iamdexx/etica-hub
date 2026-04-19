@@ -78,7 +78,8 @@ export function TipWidget({ recipient, title }: { recipient: Address; title: str
   }
 
   const confirmed = receipt.isSuccess;
-  const pending = Boolean(hash) && !receipt.isSuccess;
+  const pending = Boolean(hash) && !receipt.isSuccess && !receipt.isError;
+  const reverted = receipt.isError;
 
   // Refetch balance after tip confirms so the displayed balance and the
   // `insufficient` guard reflect the post-transfer state (prevents a stale
@@ -149,9 +150,11 @@ export function TipWidget({ recipient, title }: { recipient: Address; title: str
                 ? 'Enter an amount'
                 : pending
                   ? 'Sending…'
-                  : confirmed
-                    ? 'Sent ·  tap to tip again'
-                    : 'Send tip'}
+                  : reverted
+                    ? 'Reverted · try again'
+                    : confirmed
+                      ? 'Sent ·  tap to tip again'
+                      : 'Send tip'}
       </button>
 
       {error && (
