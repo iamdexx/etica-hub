@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BaseError, UserRejectedRequestError, parseUnits, type Address } from 'viem';
 import {
   useAccount,
@@ -79,6 +79,16 @@ export function TipWidget({ recipient, title }: { recipient: Address; title: str
 
   const confirmed = receipt.isSuccess;
   const pending = Boolean(hash) && !receipt.isSuccess;
+
+  // Refetch balance after tip confirms so the displayed balance and the
+  // `insufficient` guard reflect the post-transfer state (prevents a stale
+  // balance from letting users submit a follow-up tip that would revert).
+  useEffect(() => {
+    if (confirmed) {
+      balance.refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmed]);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm">
