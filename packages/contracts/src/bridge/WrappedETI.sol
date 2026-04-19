@@ -27,8 +27,14 @@ contract WrappedETI is ERC20, Ownable {
         _mint(to, amount);
     }
 
+    /// @notice Burn `amount` wETI from `from`. Callable only by the minter,
+    /// and always spends ERC20 allowance — this ensures even a future
+    /// (rotated) minter cannot burn arbitrary holder balances without their
+    /// explicit approval. Users approve the minter before calling
+    /// `EthereumBridgeMinter.burn`.
     function burnFrom(address from, uint256 amount) external {
         if (msg.sender != minter) revert NotMinter();
+        _spendAllowance(from, msg.sender, amount);
         _burn(from, amount);
     }
 }

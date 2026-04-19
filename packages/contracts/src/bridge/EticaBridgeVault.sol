@@ -10,9 +10,14 @@ import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/Safe
 import {IAttestationVerifier} from "./interfaces/IAttestationVerifier.sol";
 
 /// @title EticaBridgeVault
-/// @notice Custody of ETI on the Etica chain. Users `deposit` to lock ETI
-/// and receive wETI on Ethereum; users receive ETI via `withdraw` against
-/// an attestation of a burn on Ethereum.
+/// @notice Custody of ETI on the Etica chain.
+///
+/// Fee model: fees are charged on the **destination** chain only. The vault
+/// locks the full deposit amount on the source side and splits the
+/// withdrawal amount (net to recipient + fee to treasury) on the
+/// destination side. This preserves the invariant
+/// `vault.balanceOf(ETI) == wETI.totalSupply` across both directions of
+/// bridge flow.
 contract EticaBridgeVault is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -24,20 +29,19 @@ contract EticaBridgeVault is Ownable, Pausable, ReentrancyGuard {
     error ChainMismatch(uint256 expected, uint256 got);
 
     event Deposited(
-        bytes32 indexed nonce,
-        address indexed sender,
-        uint256 amountLocked,
-        uint256 fee,
-        address recipient
+        bytes32 indexed nonce, address indexed sender, uint256 amount, address recipient
     );
     event Withdrawn(
-        bytes32 indexed nonce, address indexed recipient, uint256 amount, bytes32 srcTxHash
+        bytes32 indexed nonce,
+        address indexed recipient,
+        uint256 netAmount,
+        uint256 fee,
+        bytes32 srcTxHash
     );
     event VerifierChanged(address indexed oldVerifier, address indexed newVerifier);
     event FeeChanged(uint16 oldFeeBps, uint16 newFeeBps);
     event TreasuryChanged(address indexed oldTreasury, address indexed newTreasury);
     event DailyLimitChanged(uint256 oldLimit, uint256 newLimit);
-    event FeeSkimmed(address indexed to, uint256 amount);
 
     uint16 public constant MAX_FEE_BPS = 100; // 1%
     uint256 public constant BPS_DENOM = 10_000;
@@ -50,7 +54,6 @@ contract EticaBridgeVault is Ownable, Pausable, ReentrancyGuard {
     address public treasury;
     uint16 public feeBps;
     uint256 public dailyLimit;
-    uint256 public accruedFees;
 
     uint256 public depositCounter;
     mapping(bytes32 => bool) public processed;
@@ -116,14 +119,6 @@ contract EticaBridgeVault is Ownable, Pausable, ReentrancyGuard {
         _unpause();
     }
 
-    function skim() external nonReentrant {
-        uint256 amt = accruedFees;
-        if (amt == 0) return;
-        accruedFees = 0;
-        token.safeTransfer(treasury, amt);
-        emit FeeSkimmed(treasury, amt);
-    }
-
     // --- views ----------------------------------------------------------
 
     function buildDigest(
@@ -148,14 +143,11 @@ contract EticaBridgeVault is Ownable, Pausable, ReentrancyGuard {
 
     // --- deposit (outbound to Ethereum) ---------------------------------
 
-    /// @notice Lock `amount` ETI; emits a Deposit event for validators to
-    /// attest to on the Ethereum side. The gross `amount` is locked (i.e.
-    /// the vault always holds strictly at least the sum of outstanding
-    /// wETI supply); fee accrues from that locked balance and is paid to
-    /// the treasury via `skim()`.
-    /// @param amount     amount of ETI to lock
-    /// @param recipient  Ethereum address that will mint the corresponding
-    ///                   wETI (amount - fee)
+    /// @notice Lock `amount` ETI for bridging to Ethereum. No fee is taken
+    /// here — the Ethereum-side minter splits mint amount into (net, fee)
+    /// when it mints `amount` wETI. Locking the gross amount preserves the
+    /// invariant that `vault.balanceOf(ETI) == wETI.totalSupply` over the
+    /// full round trip.
     function deposit(uint256 amount, address recipient)
         external
         nonReentrant
@@ -166,19 +158,22 @@ contract EticaBridgeVault is Ownable, Pausable, ReentrancyGuard {
         if (recipient == address(0)) revert ZeroAddress();
 
         token.safeTransferFrom(msg.sender, address(this), amount);
-        uint256 fee = (amount * feeBps) / BPS_DENOM;
-        accruedFees += fee;
 
         unchecked {
             depositCounter++;
         }
         nonce = keccak256(abi.encode(block.chainid, address(this), depositCounter));
-        emit Deposited(nonce, msg.sender, amount, fee, recipient);
+        emit Deposited(nonce, msg.sender, amount, recipient);
     }
 
     // --- withdraw (inbound from Ethereum) -------------------------------
 
     /// @notice Unlock ETI against an attestation of an Ethereum-side burn.
+    /// The vault splits `amount` into `(amount - fee)` to `recipient` and
+    /// `fee` to `treasury`, both drawn from the locked balance. wETI supply
+    /// drops by exactly `amount` on the burn side, so
+    /// `vault.balanceOf(ETI)` also drops by exactly `amount` here,
+    /// preserving the invariant.
     function withdraw(
         uint256 srcChainId,
         bytes32 srcTxHash,
@@ -200,8 +195,11 @@ contract EticaBridgeVault is Ownable, Pausable, ReentrancyGuard {
         _accountDaily(amount);
         processed[nonce] = true;
 
-        token.safeTransfer(recipient, amount);
-        emit Withdrawn(nonce, recipient, amount, srcTxHash);
+        uint256 fee = (amount * feeBps) / BPS_DENOM;
+        uint256 net = amount - fee;
+        token.safeTransfer(recipient, net);
+        if (fee > 0) token.safeTransfer(treasury, fee);
+        emit Withdrawn(nonce, recipient, net, fee, srcTxHash);
     }
 
     function _accountDaily(uint256 amount) private {

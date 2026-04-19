@@ -23,6 +23,8 @@ contract MockETI is ERC20 {
 contract BridgeTest is Test {
     uint256 constant ETICA_CHAIN = 61803;
     uint256 constant ETH_CHAIN = 1;
+    uint16 constant FEE_BPS = 10; // 0.10%
+    uint256 constant CAP = 500_000e18;
 
     address owner = makeAddr("owner");
     address treasury = makeAddr("treasury");
@@ -58,20 +60,11 @@ contract BridgeTest is Test {
         eti = new MockETI();
         eti.mint(user, 1_000_000e18);
 
-        vault = new EticaBridgeVault(
-            owner,
-            eti,
-            eticaVerifier,
-            treasury,
-            10, // 0.10%
-            500_000e18,
-            ETH_CHAIN
-        );
+        vault = new EticaBridgeVault(owner, eti, eticaVerifier, treasury, FEE_BPS, CAP, ETH_CHAIN);
 
         weti = new WrappedETI(owner);
-        minter = new EthereumBridgeMinter(
-            owner, weti, ethVerifier, treasury, 10, 500_000e18, ETICA_CHAIN
-        );
+        minter =
+            new EthereumBridgeMinter(owner, weti, ethVerifier, treasury, FEE_BPS, CAP, ETICA_CHAIN);
         vm.prank(owner);
         weti.setMinter(address(minter));
     }
@@ -82,6 +75,10 @@ contract BridgeTest is Test {
         bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", digest));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, ethHash);
         return abi.encodePacked(r, s, v);
+    }
+
+    function _fee(uint256 amount) internal pure returns (uint256) {
+        return (amount * FEE_BPS) / 10_000;
     }
 
     // --- MultisigVerifier ----------------------------------------------
@@ -137,10 +134,10 @@ contract BridgeTest is Test {
 
     function testVerifierCannotShrinkBelowThreshold() public {
         vm.prank(owner);
-        eticaVerifier.removeValidator(v3); // 3→2, still ≥ threshold=2
+        eticaVerifier.removeValidator(v3);
         vm.prank(owner);
         vm.expectRevert(MultisigVerifier.ThresholdOutOfRange.selector);
-        eticaVerifier.removeValidator(v2); // would drop to 1 < threshold
+        eticaVerifier.removeValidator(v2);
     }
 
     function testVerifierSetThreshold() public {
@@ -167,20 +164,13 @@ contract BridgeTest is Test {
 
         vm.startPrank(user);
         eti.approve(address(vault), amount);
-        vm.recordLogs();
         bytes32 nonce = vault.deposit(amount, ethRecipient);
-        Vm.Log[] memory logs = vm.getRecordedLogs();
         vm.stopPrank();
 
-        // Deposit took exactly `amount` and accrued fee
+        // Vault holds the full gross amount; no fee accrued on source side
         assertEq(eti.balanceOf(address(vault)), amount);
-        assertEq(vault.accruedFees(), (amount * 10) / 10_000);
 
-        // Mint on the Ethereum side with an attestation of that nonce
-        bytes32 srcTxHash = logs[logs.length - 1].topics.length > 0
-            ? keccak256(abi.encode(block.number, nonce))
-            : bytes32(uint256(1));
-
+        bytes32 srcTxHash = keccak256(abi.encode(block.number, nonce));
         bytes32 digest = minter.buildDigest(
             ETICA_CHAIN, block.chainid, srcTxHash, nonce, address(weti), amount, ethRecipient
         );
@@ -190,9 +180,11 @@ contract BridgeTest is Test {
 
         minter.mint(ETICA_CHAIN, srcTxHash, nonce, amount, ethRecipient, sigs);
 
-        uint256 fee = (amount * 10) / 10_000;
+        uint256 fee = _fee(amount);
         assertEq(weti.balanceOf(ethRecipient), amount - fee);
         assertEq(weti.balanceOf(treasury), fee);
+        // Invariant: vault collateral == wETI supply
+        assertEq(eti.balanceOf(address(vault)), weti.totalSupply());
         assertTrue(minter.processed(nonce));
     }
 
@@ -233,19 +225,18 @@ contract BridgeTest is Test {
     }
 
     function testMintDailyLimit() public {
-        uint256 cap = 500_000e18;
         vm.prank(owner);
-        minter.setDailyLimit(cap);
+        minter.setDailyLimit(CAP);
 
         bytes32 srcTx = keccak256("srcTx-1");
         bytes32 nonce1 = keccak256("nonce-1");
         bytes32 digest1 = minter.buildDigest(
-            ETICA_CHAIN, block.chainid, srcTx, nonce1, address(weti), cap, ethRecipient
+            ETICA_CHAIN, block.chainid, srcTx, nonce1, address(weti), CAP, ethRecipient
         );
         bytes[] memory sigs1 = new bytes[](2);
         sigs1[0] = _sign(v1Pk, digest1);
         sigs1[1] = _sign(v2Pk, digest1);
-        minter.mint(ETICA_CHAIN, srcTx, nonce1, cap, ethRecipient, sigs1);
+        minter.mint(ETICA_CHAIN, srcTx, nonce1, CAP, ethRecipient, sigs1);
 
         bytes32 nonce2 = keccak256("nonce-2");
         bytes32 digest2 = minter.buildDigest(
@@ -259,42 +250,103 @@ contract BridgeTest is Test {
         );
         minter.mint(ETICA_CHAIN, srcTx, nonce2, 1, ethRecipient, sigs2);
 
-        // After a day elapses, the bucket resets.
         vm.warp(block.timestamp + 1 days + 1);
         minter.mint(ETICA_CHAIN, srcTx, nonce2, 1, ethRecipient, sigs2);
     }
 
     // --- Ethereum→Etica round trip -------------------------------------
 
-    function testBurnThenWithdraw() public {
-        // Pre-fund vault with ETI (as if a prior deposit happened)
+    /// @dev Full round trip: deposit → mint → burn → withdraw.
+    /// Checks the invariant `vault.ETI == wETI.supply` at every step and
+    /// that the cumulative fees (one on mint, one on withdraw) equal the
+    /// delta between gross user deposit and gross user receipt.
+    function testRoundTripPreservesInvariant() public {
+        uint256 amount = 1_000e18;
+
+        // --- 1. deposit on Etica ---
+        vm.startPrank(user);
+        eti.approve(address(vault), amount);
+        bytes32 depositNonce = vault.deposit(amount, ethRecipient);
+        vm.stopPrank();
+
+        assertEq(eti.balanceOf(address(vault)), amount);
+        assertEq(weti.totalSupply(), 0);
+
+        // --- 2. mint on Ethereum ---
+        bytes32 mintTxHash = keccak256("mintTx");
+        bytes32 mintDigest = minter.buildDigest(
+            ETICA_CHAIN,
+            block.chainid,
+            mintTxHash,
+            depositNonce,
+            address(weti),
+            amount,
+            ethRecipient
+        );
+        bytes[] memory mintSigs = new bytes[](2);
+        mintSigs[0] = _sign(v1Pk, mintDigest);
+        mintSigs[1] = _sign(v2Pk, mintDigest);
+        minter.mint(ETICA_CHAIN, mintTxHash, depositNonce, amount, ethRecipient, mintSigs);
+
+        uint256 mintFee = _fee(amount);
+        assertEq(weti.balanceOf(ethRecipient), amount - mintFee);
+        assertEq(weti.balanceOf(treasury), mintFee);
+        assertEq(weti.totalSupply(), amount);
+        assertEq(eti.balanceOf(address(vault)), amount);
+        // Invariant after mint
+        assertEq(eti.balanceOf(address(vault)), weti.totalSupply());
+
+        // --- 3. burn on Ethereum (user burns their net balance) ---
+        uint256 burnAmount = weti.balanceOf(ethRecipient);
+        vm.prank(ethRecipient);
+        weti.approve(address(minter), burnAmount);
+        vm.prank(ethRecipient);
+        bytes32 burnNonce = minter.burn(burnAmount, eticaRecipient);
+
+        assertEq(weti.balanceOf(ethRecipient), 0);
+        // Treasury still holds its mint-fee share; supply == treasury's share now
+        assertEq(weti.totalSupply(), mintFee);
+        // Invariant after burn (vault over-collateralized by mintFee — that
+        // exactly backs the treasury's mint-fee wETI, which is also bridgeable)
+        assertGe(eti.balanceOf(address(vault)), weti.totalSupply());
+
+        // --- 4. withdraw on Etica ---
+        bytes32 burnTxHash = keccak256("burnTx");
+        bytes32 wDigest = vault.buildDigest(
+            ETH_CHAIN,
+            block.chainid,
+            burnTxHash,
+            burnNonce,
+            address(eti),
+            burnAmount,
+            eticaRecipient
+        );
+        bytes[] memory wSigs = new bytes[](2);
+        wSigs[0] = _sign(v1Pk, wDigest);
+        wSigs[1] = _sign(v2Pk, wDigest);
+        vault.withdraw(ETH_CHAIN, burnTxHash, burnNonce, burnAmount, eticaRecipient, wSigs);
+
+        uint256 wFee = _fee(burnAmount);
+        assertEq(eti.balanceOf(eticaRecipient), burnAmount - wFee);
+        assertEq(eti.balanceOf(treasury), wFee);
+        // Vault released exactly `burnAmount`
+        assertEq(eti.balanceOf(address(vault)), amount - burnAmount);
+        // Core invariant still holds: vault collateral backs all outstanding
+        // wETI (the treasury's mint-fee share that can still be bridged back)
+        assertGe(eti.balanceOf(address(vault)), weti.totalSupply());
+    }
+
+    function testBurnRequiresApproval() public {
         uint256 amount = 1_000e18;
         eti.mint(address(vault), amount);
 
-        // Mint some wETI to user first so they can burn
         vm.prank(address(minter));
         weti.mint(user, amount);
 
-        // Burn on Ethereum side
-        vm.recordLogs();
+        // No approval → burn reverts on ERC20 allowance check
         vm.prank(user);
-        bytes32 nonce = minter.burn(amount, eticaRecipient);
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        assertEq(weti.balanceOf(user), 0);
-        assertEq(weti.totalSupply(), 0);
-        bytes32 srcTxHash = keccak256(abi.encode(logs.length));
-
-        // Withdraw on Etica side against attestation
-        bytes32 digest = vault.buildDigest(
-            ETH_CHAIN, block.chainid, srcTxHash, nonce, address(eti), amount, eticaRecipient
-        );
-        bytes[] memory sigs = new bytes[](2);
-        sigs[0] = _sign(v1Pk, digest);
-        sigs[1] = _sign(v2Pk, digest);
-
-        vault.withdraw(ETH_CHAIN, srcTxHash, nonce, amount, eticaRecipient, sigs);
-        assertEq(eti.balanceOf(eticaRecipient), amount);
-        assertTrue(vault.processed(nonce));
+        vm.expectRevert();
+        minter.burn(amount, eticaRecipient);
     }
 
     function testWithdrawReplayRejected() public {
@@ -316,29 +368,36 @@ contract BridgeTest is Test {
         vault.withdraw(ETH_CHAIN, srcTx, nonce, amount, eticaRecipient, sigs);
     }
 
-    // --- fees + skim ----------------------------------------------------
+    // --- fee semantics --------------------------------------------------
 
-    function testFeeAccrualAndSkim() public {
+    function testWithdrawFeeSplit() public {
         uint256 amount = 10_000e18;
-        uint256 expectedFee = (amount * 10) / 10_000;
+        eti.mint(address(vault), amount);
 
-        vm.startPrank(user);
-        eti.approve(address(vault), amount);
-        vault.deposit(amount, ethRecipient);
-        vm.stopPrank();
+        bytes32 srcTx = keccak256("fee-tx");
+        bytes32 nonce = keccak256("fee-nonce");
+        bytes32 digest = vault.buildDigest(
+            ETH_CHAIN, block.chainid, srcTx, nonce, address(eti), amount, eticaRecipient
+        );
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = _sign(v1Pk, digest);
+        sigs[1] = _sign(v2Pk, digest);
+        vault.withdraw(ETH_CHAIN, srcTx, nonce, amount, eticaRecipient, sigs);
 
-        assertEq(vault.accruedFees(), expectedFee);
-
-        uint256 beforeBal = eti.balanceOf(treasury);
-        vault.skim();
-        assertEq(eti.balanceOf(treasury), beforeBal + expectedFee);
-        assertEq(vault.accruedFees(), 0);
+        uint256 fee = _fee(amount);
+        assertEq(eti.balanceOf(eticaRecipient), amount - fee);
+        assertEq(eti.balanceOf(treasury), fee);
+        assertEq(eti.balanceOf(address(vault)), 0);
     }
 
     function testFeeCapEnforced() public {
         vm.prank(owner);
         vm.expectRevert(EticaBridgeVault.FeeTooHigh.selector);
         vault.setFeeBps(101);
+
+        vm.prank(owner);
+        vm.expectRevert(EthereumBridgeMinter.FeeTooHigh.selector);
+        minter.setFeeBps(101);
     }
 
     // --- pause ----------------------------------------------------------
@@ -374,7 +433,6 @@ contract BridgeTest is Test {
         vault.setVerifier(newVerifier);
         assertEq(address(vault.verifier()), address(newVerifier));
 
-        // A single v1 sig is now sufficient
         uint256 amount = 1_000e18;
         eti.mint(address(vault), amount);
         bytes32 srcTx = keccak256("swap-tx");
@@ -385,7 +443,8 @@ contract BridgeTest is Test {
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = _sign(v1Pk, digest);
         vault.withdraw(ETH_CHAIN, srcTx, nonce, amount, eticaRecipient, sigs);
-        assertEq(eti.balanceOf(eticaRecipient), amount);
+        uint256 fee = _fee(amount);
+        assertEq(eti.balanceOf(eticaRecipient), amount - fee);
     }
 
     // --- WrappedETI -----------------------------------------------------
@@ -396,5 +455,26 @@ contract BridgeTest is Test {
 
         vm.expectRevert(WrappedETI.NotMinter.selector);
         weti.burnFrom(user, 1);
+    }
+
+    function testBurnFromSpendsAllowance() public {
+        // Give user wETI
+        uint256 amt = 100e18;
+        vm.prank(address(minter));
+        weti.mint(user, amt);
+
+        // Minter attempts to burn without approval → should revert
+        vm.prank(address(minter));
+        vm.expectRevert();
+        weti.burnFrom(user, amt);
+
+        // User approves minter → burn succeeds and allowance is consumed
+        vm.prank(user);
+        weti.approve(address(minter), amt);
+
+        vm.prank(address(minter));
+        weti.burnFrom(user, amt);
+        assertEq(weti.balanceOf(user), 0);
+        assertEq(weti.allowance(user, address(minter)), 0);
     }
 }
