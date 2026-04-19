@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatUnits, parseUnits, type Address, type Hex } from 'viem';
 import {
   useAccount,
@@ -142,7 +142,6 @@ export function SwapCard() {
       args: [ctx.router, MAX_UINT256],
     });
     setPendingTxHash(hash);
-    await waitAndRefresh();
   }
 
   async function onSwap() {
@@ -167,18 +166,26 @@ export function SwapCard() {
       });
     }
     setPendingTxHash(hash);
-    await waitAndRefresh();
   }
 
-  async function waitAndRefresh() {
-    // Balances auto-refresh via react-query + new block notifications,
-    // but we nudge them once after confirmation to be immediate.
-    try {
-      await Promise.all([nativeBal.refetch(), eti.refetch(), allowance.refetch(), quote.refetch()]);
-    } catch {
-      // ignore — refetch is best-effort
-    }
-  }
+  // Refetch balances / allowance / quote only AFTER the tx is mined.
+  // Running this on submit would read pre-tx state and (for approvals)
+  // leave the UI showing both "Confirmed" and the Approve button at the
+  // same time until react-query's passive refetch fires.
+  useEffect(() => {
+    if (!receipt.isSuccess) return;
+    void Promise.all([
+      nativeBal.refetch(),
+      eti.refetch(),
+      allowance.refetch(),
+      quote.refetch(),
+    ]).catch(() => {
+      // best-effort; react-query will reconcile on the next block anyway
+    });
+    // We only want this side effect once per confirmed tx. The refetch
+    // fns are stable identities from the hooks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receipt.isSuccess, activeHash]);
 
   function onFlip() {
     setDir((d) => ({ fromSymbol: d.toSymbol, toSymbol: d.fromSymbol }));
