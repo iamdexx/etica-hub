@@ -1,0 +1,35 @@
+{
+  "name": "@etica-hub/web",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint --dir src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@etica-hub/shared": "workspace:*",
+    "@tanstack/react-query": "^5.59.20",
+    "clsx": "^2.1.1",
+    "next": "14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.4",
+    "viem": "^2.21.44",
+    "wagmi": "^2.12.25",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.15",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3"
+  }
+}

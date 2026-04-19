@@ -1,0 +1,23 @@
+{
+  "name": "etica-hub",
+  "version": "0.0.1",
+  "private": true,
+  "description": "EticaHub — a unified dapp for the Etica mainnet: on-chain DEX, Ethereum bridge, and DeSci research hub.",
+  "packageManager": "pnpm@9.15.1",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter ./packages/** --filter ./apps/** run build",
+    "dev:web": "pnpm --filter @etica-hub/web dev",
+    "dev:indexer": "pnpm --filter @etica-hub/indexer dev",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "contracts:build": "pnpm --filter @etica-hub/contracts build",
+    "contracts:test": "pnpm --filter @etica-hub/contracts test"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3"
+  }
+}
