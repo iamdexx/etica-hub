@@ -42,6 +42,28 @@ ETH_SEPOLIA_RPC=https://sepolia.drpc.org
 
 ## 1. Phase 1 — EticaSwap V2
 
+### 1.0 🟢 Preferred path — deploy via the EticaHub webapp
+
+For operators who would rather not hand their private key to a CLI, the app
+ships a browser-based deployer at `/deploy/swap`. It embeds the same compiled
+bytecode as `DeploySwap.s.sol` but signs every transaction via your connected
+wallet (MetaMask, hardware wallet through MetaMask, WalletConnect). The private
+key never leaves the wallet.
+
+1. Open the live site (or a preview URL) at `/deploy/swap`.
+2. Connect MetaMask and switch to Etica Mainnet (61803). The page offers a
+   one-click "Switch network" that will also add the chain if needed.
+3. Confirm the treasury / `feeToSetter` address (defaults to
+   `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`).
+4. Click **Deploy** on each of the three cards in order: WEGAZ → Factory →
+   Router. Each click prompts a single MetaMask signature.
+5. Once all three go to "Deployed", copy the summary block at the bottom of
+   the page and paste it wherever the addresses need to be recorded (the
+   next step wires them into `packages/shared/src/addresses.ts`).
+
+If you prefer a terminal flow — or need unattended / scripted deploys —
+continue to §1.1 / §1.2 below. The end state is identical.
+
 ### 1.1 🟡 Crucible testnet deploy
 
 ```bash
