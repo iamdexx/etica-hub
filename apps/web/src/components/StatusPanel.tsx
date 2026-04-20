@@ -234,7 +234,7 @@ export async function StatusPanel() {
           </Section>
 
           <p className="text-xs text-white/40">
-            Snapshot taken {new Date(snap.timestampMs).toISOString()}. Revalidated every 30s.
+            Snapshot taken {new Date(snap.timestampMs).toISOString()}. Refreshed on every page load.
           </p>
         </>
       )}

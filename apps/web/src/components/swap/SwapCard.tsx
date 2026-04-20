@@ -598,9 +598,12 @@ function sanitizeNumber(raw: string): string {
   return rest.length > 0 ? `${a}.${rest.join('')}` : a;
 }
 
-function describeWriteError(err: unknown, fallback: string): string {
-  if (err instanceof UserRejectedRequestError) return 'Rejected in wallet.';
-  if (err instanceof BaseError) return err.shortMessage ?? err.message;
+function describeWriteError(err: unknown, fallback: string): string | undefined {
+  // viem wraps wallet rejections in TransactionExecutionError; walk the chain.
+  if (err instanceof BaseError) {
+    if (err.walk((e) => e instanceof UserRejectedRequestError)) return undefined;
+    return err.shortMessage ?? err.message;
+  }
   if (err instanceof Error) return err.message;
   return fallback;
 }
