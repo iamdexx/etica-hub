@@ -24,54 +24,64 @@ interface IEticaSwapRouterLike {
 }
 
 /// @title ProposalTokenFactory
-/// @notice Creator-gated launchpad: only the wallet that authored a proposal
-///         on the Etica core contract may launch a funding token for that
-///         proposal, and only once. The factory deploys a fixed-supply
-///         ERC-20 per proposal, splits the supply into a public LP allocation
-///         (50%), a liquid author allocation (25%), and a linearly-vesting
-///         author allocation (25%, 90 days), and seeds an initial X/ETX pool
-///         with ETX provided by the author.
+/// @notice Creator-gated research-token launchpad. Only the wallet that
+///         authored a proposal on the Etica core contract may launch a
+///         funding token for that proposal, and only once. Every launched
+///         token opens BOTH a `token/ETX` pool and a `token/ETI` pool in
+///         the same transaction — this makes ETI an accretive sink
+///         alongside ETX (dual-hub requirement) rather than a dilutive
+///         alternative narrative.
 ///
-/// @dev    Because the swap factory enforces the hub-and-spoke invariant
-///         (every pair must include ETX), launched tokens automatically
-///         pair against ETX and become tradable via multi-hop routing.
+/// @dev    Supply split (BPS): 25% LP into token/ETX, 25% LP into
+///         token/ETI, 25% liquid to author, 25% linearly vested to author
+///         over 90 days. The author must, prior to calling
+///         {launchProposalToken}, grant two allowances on this contract:
+///         - ETX: `launchFeeEtx + lpEtxAmount`
+///         - ETI: `launchFeeEti + lpEtiAmount`
 ///
-///         The author must, prior to calling {launchProposalToken}, grant an
-///         allowance on ETX to this contract of at least
-///         `launchFeeEtx + lpEtxAmount`. The factory pulls both in one tx:
-///         the fee goes to `treasury`, the LP amount is paired with
-///         `LP_SUPPLY_BPS` of the new token and sent through the router.
+///         Because the swap factory enforces the hub-and-spoke invariant
+///         for everyone else (pairs must include ETX), this launchpad is
+///         expected to be added to the factory's trustedCreators
+///         whitelist post-deploy so its token/ETI pool is permitted.
 contract ProposalTokenFactory is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS_DENOMINATOR = 10_000;
-    uint256 public constant LP_SUPPLY_BPS = 5_000;
+    uint256 public constant LP_ETX_SUPPLY_BPS = 2_500;
+    uint256 public constant LP_ETI_SUPPLY_BPS = 2_500;
     uint256 public constant VEST_SUPPLY_BPS = 2_500;
     uint256 public constant LIQUID_SUPPLY_BPS = 2_500;
     uint64 public constant VEST_DURATION = 90 days;
 
     IEticaCore public immutable eticaCore;
     IERC20 public immutable etx;
+    IERC20 public immutable eti;
     IEticaSwapRouterLike public immutable router;
 
     address public treasury;
-    uint256 public minLpEtxAmount;
     uint256 public launchFeeEtx;
+    uint256 public launchFeeEti;
+    uint256 public minLpEtxAmount;
+    uint256 public minLpEtiAmount;
 
     mapping(bytes32 => address) public proposalToToken;
     mapping(bytes32 => address) public proposalToVesting;
 
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
-    event LaunchFeeUpdated(uint256 oldFee, uint256 newFee);
+    event LaunchFeeEtxUpdated(uint256 oldFee, uint256 newFee);
+    event LaunchFeeEtiUpdated(uint256 oldFee, uint256 newFee);
     event MinLpEtxUpdated(uint256 oldMin, uint256 newMin);
+    event MinLpEtiUpdated(uint256 oldMin, uint256 newMin);
     event ProposalTokenLaunched(
         bytes32 indexed proposalHash,
         address indexed proposer,
         address indexed token,
         address vesting,
         uint256 totalSupply,
-        uint256 lpTokenAmount,
-        uint256 lpEtxAmount
+        uint256 lpTokenEtx,
+        uint256 usedEtx,
+        uint256 lpTokenEti,
+        uint256 usedEti
     );
 
     error ZeroAddress();
@@ -79,6 +89,7 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
     error ProposalUnknown(bytes32 proposalHash);
     error AlreadyLaunched(bytes32 proposalHash);
     error LpEtxTooLow(uint256 provided, uint256 minimum);
+    error LpEtiTooLow(uint256 provided, uint256 minimum);
     error SupplyTooLow(uint256 totalSupply);
 
     struct LaunchParams {
@@ -87,28 +98,38 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
         string symbol;
         uint256 totalSupply;
         uint256 lpEtxAmount;
+        uint256 lpEtiAmount;
         uint256 deadline;
     }
 
-    constructor(
-        IEticaCore eticaCore_,
-        IERC20 etx_,
-        IEticaSwapRouterLike router_,
-        address treasury_,
-        uint256 launchFeeEtx_,
-        uint256 minLpEtxAmount_,
-        address owner_
-    ) Ownable(owner_) {
+    struct ConstructorArgs {
+        IEticaCore eticaCore;
+        IERC20 etx;
+        IERC20 eti;
+        IEticaSwapRouterLike router;
+        address treasury;
+        uint256 launchFeeEtx;
+        uint256 launchFeeEti;
+        uint256 minLpEtxAmount;
+        uint256 minLpEtiAmount;
+        address owner;
+    }
+
+    constructor(ConstructorArgs memory a) Ownable(a.owner) {
         if (
-            address(eticaCore_) == address(0) || address(etx_) == address(0)
-                || address(router_) == address(0) || treasury_ == address(0) || owner_ == address(0)
+            address(a.eticaCore) == address(0) || address(a.etx) == address(0)
+                || address(a.eti) == address(0) || address(a.router) == address(0)
+                || a.treasury == address(0) || a.owner == address(0)
         ) revert ZeroAddress();
-        eticaCore = eticaCore_;
-        etx = etx_;
-        router = router_;
-        treasury = treasury_;
-        launchFeeEtx = launchFeeEtx_;
-        minLpEtxAmount = minLpEtxAmount_;
+        eticaCore = a.eticaCore;
+        etx = a.etx;
+        eti = a.eti;
+        router = a.router;
+        treasury = a.treasury;
+        launchFeeEtx = a.launchFeeEtx;
+        launchFeeEti = a.launchFeeEti;
+        minLpEtxAmount = a.minLpEtxAmount;
+        minLpEtiAmount = a.minLpEtiAmount;
     }
 
     // --------------------------------------------------------------- admin
@@ -120,8 +141,13 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
     }
 
     function setLaunchFeeEtx(uint256 newFee) external onlyOwner {
-        emit LaunchFeeUpdated(launchFeeEtx, newFee);
+        emit LaunchFeeEtxUpdated(launchFeeEtx, newFee);
         launchFeeEtx = newFee;
+    }
+
+    function setLaunchFeeEti(uint256 newFee) external onlyOwner {
+        emit LaunchFeeEtiUpdated(launchFeeEti, newFee);
+        launchFeeEti = newFee;
     }
 
     function setMinLpEtxAmount(uint256 newMin) external onlyOwner {
@@ -129,12 +155,18 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
         minLpEtxAmount = newMin;
     }
 
+    function setMinLpEtiAmount(uint256 newMin) external onlyOwner {
+        emit MinLpEtiUpdated(minLpEtiAmount, newMin);
+        minLpEtiAmount = newMin;
+    }
+
     // --------------------------------------------------------------- launch
 
     /// @notice Launch a new token for a proposal. Caller MUST be the proposer
     ///         recorded in the Etica core contract for `proposalHash`. Prior
-    ///         to calling, caller must approve this factory for
-    ///         `launchFeeEtx + lpEtxAmount` on the ETX contract.
+    ///         to calling, caller must approve this factory:
+    ///         - ETX: `launchFeeEtx + lpEtxAmount`
+    ///         - ETI: `launchFeeEti + lpEtiAmount`
     function launchProposalToken(LaunchParams calldata p)
         external
         nonReentrant
@@ -143,31 +175,46 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
         _checkAuthorship(p.proposalHash);
         _checkParams(p);
 
-        // pull launch fee + LP ETX from caller in one go
+        // Pull launch fees (ETX + ETI) straight to treasury in one go.
         etx.safeTransferFrom(msg.sender, treasury, launchFeeEtx);
-        etx.safeTransferFrom(msg.sender, address(this), p.lpEtxAmount);
+        eti.safeTransferFrom(msg.sender, treasury, launchFeeEti);
 
-        // deploy token, factory owns full supply initially
+        // Pull LP side capital into the factory (seeded into pools below).
+        etx.safeTransferFrom(msg.sender, address(this), p.lpEtxAmount);
+        eti.safeTransferFrom(msg.sender, address(this), p.lpEtiAmount);
+
+        // Deploy token, factory owns full supply initially.
         token = address(
             new ProposalToken(
                 p.name, p.symbol, p.totalSupply, p.proposalHash, msg.sender, address(this)
             )
         );
 
-        // split supply + distribute (vesting deploy + liquid transfer)
-        uint256 lpSupply = (p.totalSupply * LP_SUPPLY_BPS) / BPS_DENOMINATOR;
-        vesting = _distributeAuthor(token, msg.sender, p.totalSupply, lpSupply);
+        // Split supply + distribute (vesting deploy + liquid transfer).
+        uint256 lpEtxSupply = (p.totalSupply * LP_ETX_SUPPLY_BPS) / BPS_DENOMINATOR;
+        uint256 lpEtiSupply = (p.totalSupply * LP_ETI_SUPPLY_BPS) / BPS_DENOMINATOR;
+        vesting = _distributeAuthor(token, msg.sender, p.totalSupply, lpEtxSupply + lpEtiSupply);
 
-        // seed LP through router, LP tokens go to author
-        (uint256 usedToken, uint256 usedEtx) =
-            _seedLiquidity(token, msg.sender, lpSupply, p.lpEtxAmount, p.deadline);
+        // Seed both pools through the router; LP tokens go to author.
+        (uint256 usedTokenEtx, uint256 usedEtx) =
+            _seedPool(token, msg.sender, address(etx), lpEtxSupply, p.lpEtxAmount, p.deadline);
+        (uint256 usedTokenEti, uint256 usedEti) =
+            _seedPool(token, msg.sender, address(eti), lpEtiSupply, p.lpEtiAmount, p.deadline);
 
-        // bookkeeping
+        // Bookkeeping.
         proposalToToken[p.proposalHash] = token;
         proposalToVesting[p.proposalHash] = vesting;
 
         emit ProposalTokenLaunched(
-            p.proposalHash, msg.sender, token, vesting, p.totalSupply, usedToken, usedEtx
+            p.proposalHash,
+            msg.sender,
+            token,
+            vesting,
+            p.totalSupply,
+            usedTokenEtx,
+            usedEtx,
+            usedTokenEti,
+            usedEti
         );
     }
 
@@ -183,16 +230,19 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
     function _checkParams(LaunchParams calldata p) internal view {
         if (p.totalSupply < BPS_DENOMINATOR) revert SupplyTooLow(p.totalSupply);
         if (p.lpEtxAmount < minLpEtxAmount) revert LpEtxTooLow(p.lpEtxAmount, minLpEtxAmount);
+        if (p.lpEtiAmount < minLpEtiAmount) revert LpEtiTooLow(p.lpEtiAmount, minLpEtiAmount);
     }
 
     /// @dev Deploys vesting contract, transfers vested allocation in, and
     ///      sends the liquid author allocation straight to the proposer.
-    function _distributeAuthor(address token, address author, uint256 totalSupply, uint256 lpSupply)
-        internal
-        returns (address vesting)
-    {
+    function _distributeAuthor(
+        address token,
+        address author,
+        uint256 totalSupply,
+        uint256 totalLpSupply
+    ) internal returns (address vesting) {
         uint256 vestSupply = (totalSupply * VEST_SUPPLY_BPS) / BPS_DENOMINATOR;
-        uint256 liquidSupply = totalSupply - lpSupply - vestSupply;
+        uint256 liquidSupply = totalSupply - totalLpSupply - vestSupply;
 
         vesting = address(
             new ProposalTokenVesting(
@@ -205,28 +255,30 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev Approves router, seeds the {token}/ETX pool, refunds any dust,
+    /// @dev Approves router, seeds a {token}/{hub} pool, refunds any dust,
     ///      and resets router allowances to zero.
-    function _seedLiquidity(
+    function _seedPool(
         address token,
         address author,
-        uint256 lpSupply,
-        uint256 lpEtxAmount,
+        address hub,
+        uint256 lpTokenSupply,
+        uint256 lpHubAmount,
         uint256 deadline
-    ) internal returns (uint256 usedToken, uint256 usedEtx) {
-        IERC20(token).forceApprove(address(router), lpSupply);
-        etx.forceApprove(address(router), lpEtxAmount);
+    ) internal returns (uint256 usedToken, uint256 usedHub) {
+        IERC20(token).forceApprove(address(router), lpTokenSupply);
+        IERC20(hub).forceApprove(address(router), lpHubAmount);
 
-        (usedToken, usedEtx,) =
-            router.addLiquidity(token, address(etx), lpSupply, lpEtxAmount, 0, 0, author, deadline);
+        (usedToken, usedHub,) = router.addLiquidity(
+            token, hub, lpTokenSupply, lpHubAmount, 0, 0, author, deadline
+        );
 
-        if (usedToken < lpSupply) {
-            IERC20(token).safeTransfer(author, lpSupply - usedToken);
+        if (usedToken < lpTokenSupply) {
+            IERC20(token).safeTransfer(author, lpTokenSupply - usedToken);
         }
-        if (usedEtx < lpEtxAmount) {
-            etx.safeTransfer(author, lpEtxAmount - usedEtx);
+        if (usedHub < lpHubAmount) {
+            IERC20(hub).safeTransfer(author, lpHubAmount - usedHub);
         }
         IERC20(token).forceApprove(address(router), 0);
-        etx.forceApprove(address(router), 0);
+        IERC20(hub).forceApprove(address(router), 0);
     }
 }
