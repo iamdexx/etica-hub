@@ -25,38 +25,59 @@ import {
   isSupportedChainId,
 } from '@etica-hub/shared';
 
-type TokenSymbol = 'EGAZ' | 'ETI';
-
-type Direction = {
-  fromSymbol: TokenSymbol;
-  toSymbol: TokenSymbol;
-};
+type TokenSymbol = 'EGAZ' | 'ETI' | 'ETX';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const MAX_UINT256 = (1n << 256n) - 1n;
 const DEFAULT_SLIPPAGE_BPS = 50n; // 0.50%
 
-function useTokens() {
+type SwapCtx = {
+  chainId: number;
+  router: Address;
+  factory: Address;
+  wegaz: Address;
+  eti: Address;
+  etx: Address;
+};
+
+function useCtx(): SwapCtx | null {
   const chainId = useChainId();
   return useMemo(() => {
     if (!isSupportedChainId(chainId)) return null;
-    const deployed = DEPLOYMENTS[chainId];
-    const external = EXTERNAL_ADDRESSES[chainId];
-    if (deployed.swapRouter === ZERO) return null;
+    const d = DEPLOYMENTS[chainId];
+    const e = EXTERNAL_ADDRESSES[chainId];
+    if (d.swapRouter === ZERO || d.etx === ZERO || d.wegaz === ZERO) return null;
     return {
       chainId,
-      router: deployed.swapRouter,
-      factory: deployed.swapFactory,
-      wegaz: deployed.wegaz,
-      eti: external.eti,
+      router: d.swapRouter,
+      factory: d.swapFactory,
+      wegaz: d.wegaz,
+      eti: e.eti,
+      etx: d.etx,
     };
   }, [chainId]);
 }
 
+/**
+ * Hub-and-spoke routing: all swaps go through ETX. On-wire the ERC20
+ * address list is WEGAZ (never the native EGAZ literal), so the router
+ * knows where the native wrap/unwrap happens.
+ */
+function buildPath(ctx: SwapCtx, from: TokenSymbol, to: TokenSymbol): Address[] | null {
+  if (from === to) return null;
+  const addr = (s: TokenSymbol): Address =>
+    s === 'EGAZ' ? ctx.wegaz : s === 'ETI' ? ctx.eti : ctx.etx;
+  // If ETX is one of the endpoints, direct 2-token path.
+  if (from === 'ETX' || to === 'ETX') return [addr(from), addr(to)];
+  // Otherwise hub through ETX (e.g. EGAZ <-> ETI).
+  return [addr(from), ctx.etx, addr(to)];
+}
+
 export function SwapCard() {
   const { address, isConnected } = useAccount();
-  const ctx = useTokens();
-  const [dir, setDir] = useState<Direction>({ fromSymbol: 'EGAZ', toSymbol: 'ETI' });
+  const ctx = useCtx();
+  const [fromSymbol, setFromSymbol] = useState<TokenSymbol>('EGAZ');
+  const [toSymbol, setToSymbol] = useState<TokenSymbol>('ETX');
   const [amountInStr, setAmountInStr] = useState('');
 
   const amountIn = useMemo(() => {
@@ -68,36 +89,54 @@ export function SwapCard() {
     }
   }, [amountInStr]);
 
-  const fromIsNative = dir.fromSymbol === 'EGAZ';
-  const toIsNative = dir.toSymbol === 'EGAZ';
+  const fromIsNative = fromSymbol === 'EGAZ';
+  const toIsNative = toSymbol === 'EGAZ';
 
+  const inputTokenAddr = useMemo<Address | null>(() => {
+    if (!ctx) return null;
+    if (fromSymbol === 'EGAZ') return null; // native — no ERC20 approval
+    return fromSymbol === 'ETI' ? ctx.eti : ctx.etx;
+  }, [ctx, fromSymbol]);
+
+  // Balances
   const nativeBal = useBalance({
     address,
     query: { enabled: Boolean(address && ctx) },
   });
-
-  const eti = useReadContract({
+  const etiBal = useReadContract({
     abi: abis.erc20Abi,
     address: ctx?.eti,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
     query: { enabled: Boolean(address && ctx) },
   });
-
-  const allowance = useReadContract({
+  const etxBal = useReadContract({
     abi: abis.erc20Abi,
-    address: ctx?.eti,
-    functionName: 'allowance',
-    args: address && ctx ? [address, ctx.router] : undefined,
-    query: { enabled: Boolean(address && ctx) && !fromIsNative },
+    address: ctx?.etx,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address && ctx) },
   });
 
-  const path = useMemo<Address[] | null>(() => {
-    if (!ctx) return null;
-    if (fromIsNative) return [ctx.wegaz, ctx.eti];
-    if (toIsNative) return [ctx.eti, ctx.wegaz];
-    return null;
-  }, [ctx, fromIsNative, toIsNative]);
+  function balFor(symbol: TokenSymbol): bigint {
+    if (symbol === 'EGAZ') return nativeBal.data?.value ?? 0n;
+    if (symbol === 'ETI') return (etiBal.data as bigint | undefined) ?? 0n;
+    return (etxBal.data as bigint | undefined) ?? 0n;
+  }
+
+  // Allowance of input token -> router (only if non-native input)
+  const allowance = useReadContract({
+    abi: abis.erc20Abi,
+    address: inputTokenAddr ?? undefined,
+    functionName: 'allowance',
+    args: address && ctx && inputTokenAddr ? [address, ctx.router] : undefined,
+    query: { enabled: Boolean(address && ctx && inputTokenAddr) },
+  });
+
+  const path = useMemo<Address[] | null>(
+    () => (ctx ? buildPath(ctx, fromSymbol, toSymbol) : null),
+    [ctx, fromSymbol, toSymbol],
+  );
 
   const quote = useReadContract({
     abi: abis.routerAbi,
@@ -118,18 +157,13 @@ export function SwapCard() {
     return (amountOut * (10_000n - DEFAULT_SLIPPAGE_BPS)) / 10_000n;
   }, [amountOut]);
 
-  const fromBal = fromIsNative
-    ? (nativeBal.data?.value ?? 0n)
-    : ((eti.data as bigint | undefined) ?? 0n);
-  const toBal = toIsNative
-    ? (nativeBal.data?.value ?? 0n)
-    : ((eti.data as bigint | undefined) ?? 0n);
-
-  const needsApproval = !fromIsNative
-    && amountIn > 0n
-    && ((allowance.data as bigint | undefined) ?? 0n) < amountIn;
-
+  const fromBal = balFor(fromSymbol);
+  const toBal = balFor(toSymbol);
   const hasEnoughBalance = fromBal >= amountIn;
+  const needsApproval =
+    !fromIsNative &&
+    amountIn > 0n &&
+    ((allowance.data as bigint | undefined) ?? 0n) < amountIn;
 
   const { writeContractAsync, data: txHash, isPending: isTxPending, reset: resetWrite } =
     useWriteContract();
@@ -142,14 +176,14 @@ export function SwapCard() {
   });
 
   async function onApprove() {
-    if (!ctx || !address) return;
+    if (!ctx || !address || !inputTokenAddr) return;
     setSubmitError(undefined);
     setPendingTxHash(undefined);
     resetWrite();
     try {
       const hash = await writeContractAsync({
         abi: abis.erc20Abi,
-        address: ctx.eti,
+        address: inputTokenAddr,
         functionName: 'approve',
         args: [ctx.router, MAX_UINT256],
       });
@@ -176,11 +210,18 @@ export function SwapCard() {
           args: [amountOutMin, path, address, deadline],
           value: amountIn,
         });
-      } else {
+      } else if (toIsNative) {
         hash = await writeContractAsync({
           abi: abis.routerAbi,
           address: ctx.router,
           functionName: 'swapExactTokensForEGAZ',
+          args: [amountIn, amountOutMin, path, address, deadline],
+        });
+      } else {
+        hash = await writeContractAsync({
+          abi: abis.routerAbi,
+          address: ctx.router,
+          functionName: 'swapExactTokensForTokens',
           args: [amountIn, amountOutMin, path, address, deadline],
         });
       }
@@ -190,46 +231,66 @@ export function SwapCard() {
     }
   }
 
-  // Refetch balances / allowance / quote only AFTER the tx is mined.
-  // Running this on submit would read pre-tx state and (for approvals)
-  // leave the UI showing both "Confirmed" and the Approve button at the
-  // same time until react-query's passive refetch fires.
+  // Refresh reads after a confirmed tx.
   useEffect(() => {
     if (!receipt.isSuccess) return;
     void Promise.all([
       nativeBal.refetch(),
-      eti.refetch(),
+      etiBal.refetch(),
+      etxBal.refetch(),
       allowance.refetch(),
       quote.refetch(),
     ]).catch(() => {
-      // best-effort; react-query will reconcile on the next block anyway
+      // best-effort
     });
-    // We only want this side effect once per confirmed tx. The refetch
-    // fns are stable identities from the hooks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt.isSuccess, activeHash]);
 
   function onFlip() {
-    setDir((d) => ({ fromSymbol: d.toSymbol, toSymbol: d.fromSymbol }));
+    setFromSymbol(toSymbol);
+    setToSymbol(fromSymbol);
     setAmountInStr('');
     setPendingTxHash(undefined);
     setSubmitError(undefined);
     resetWrite();
   }
 
-  const priceImpactText = usePriceImpact(ctx, fromIsNative, amountIn, amountOut);
+  function onChangeFrom(next: TokenSymbol) {
+    if (next === toSymbol) {
+      // swap the pair so we never land on from == to
+      setToSymbol(fromSymbol);
+    }
+    setFromSymbol(next);
+    setAmountInStr('');
+    setPendingTxHash(undefined);
+    setSubmitError(undefined);
+    resetWrite();
+  }
+  function onChangeTo(next: TokenSymbol) {
+    if (next === fromSymbol) {
+      setFromSymbol(toSymbol);
+    }
+    setToSymbol(next);
+    setPendingTxHash(undefined);
+    setSubmitError(undefined);
+    resetWrite();
+  }
+
+  const priceImpactText = usePriceImpact(ctx, path, amountIn, amountOut);
+  const routeText = describePath(path, ctx);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-white/70">Swap</h2>
-        <span className="text-xs text-white/40">v2 · 0.30% fee</span>
+        <span className="text-xs text-white/40">v2 · 0.30% fee · ETX hub</span>
       </div>
 
       <div className="mt-4 space-y-2">
         <TokenInput
           label="From"
-          symbol={dir.fromSymbol}
+          symbol={fromSymbol}
+          onChangeSymbol={onChangeFrom}
           balance={fromBal}
           amount={amountInStr}
           editable
@@ -248,7 +309,8 @@ export function SwapCard() {
 
         <TokenInput
           label="To"
-          symbol={dir.toSymbol}
+          symbol={toSymbol}
+          onChangeSymbol={onChangeTo}
           balance={toBal}
           amount={amountOut === 0n ? '' : formatUnits(amountOut, 18)}
           editable={false}
@@ -256,13 +318,11 @@ export function SwapCard() {
       </div>
 
       <dl className="mt-3 space-y-1 text-xs text-white/50">
-        <Row k="Route">
-          {dir.fromSymbol} → {dir.toSymbol}
-        </Row>
+        <Row k="Route">{routeText}</Row>
         <Row k="Min received">
           {amountOutMin === 0n
             ? '—'
-            : `${truncate(formatUnits(amountOutMin, 18), 8)} ${dir.toSymbol}`}
+            : `${truncate(formatUnits(amountOutMin, 18), 8)} ${toSymbol}`}
         </Row>
         <Row k="Slippage">0.50%</Row>
         {priceImpactText && <Row k="Price impact">{priceImpactText}</Row>}
@@ -276,6 +336,7 @@ export function SwapCard() {
         hasEnoughBalance={hasEnoughBalance}
         needsApproval={needsApproval}
         isTxPending={isTxPending || receipt.isLoading}
+        approveSymbol={fromSymbol}
         onApprove={onApprove}
         onSwap={onSwap}
       />
@@ -295,9 +356,23 @@ export function SwapCard() {
   );
 }
 
+function describePath(path: Address[] | null, ctx: SwapCtx | null): string {
+  if (!path || !ctx) return '—';
+  const lookup = (a: Address): TokenSymbol => {
+    const low = a.toLowerCase();
+    if (low === ctx.wegaz.toLowerCase()) return 'EGAZ';
+    if (low === ctx.eti.toLowerCase()) return 'ETI';
+    return 'ETX';
+  };
+  return path.map(lookup).join(' → ');
+}
+
+const TOKEN_OPTIONS: TokenSymbol[] = ['EGAZ', 'ETI', 'ETX'];
+
 function TokenInput(props: {
   label: string;
   symbol: TokenSymbol;
+  onChangeSymbol?: (s: TokenSymbol) => void;
   balance: bigint;
   amount: string;
   editable: boolean;
@@ -315,9 +390,24 @@ function TokenInput(props: {
           className="w-full bg-transparent text-2xl outline-none placeholder:text-white/30 disabled:cursor-default"
           aria-label={`${props.label} amount`}
         />
-        <span className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-          {props.symbol}
-        </span>
+        {props.onChangeSymbol ? (
+          <select
+            value={props.symbol}
+            onChange={(e) => props.onChangeSymbol?.(e.target.value as TokenSymbol)}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm"
+            aria-label={`${props.label} token`}
+          >
+            {TOKEN_OPTIONS.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+            {props.symbol}
+          </span>
+        )}
       </div>
       <div className="mt-1 flex items-center justify-between text-xs text-white/40">
         <span>{props.label}</span>
@@ -346,12 +436,13 @@ function Row(props: { k: string; children: React.ReactNode }) {
 
 function SwapButton(props: {
   isConnected: boolean;
-  ctx: ReturnType<typeof useTokens>;
+  ctx: SwapCtx | null;
   amountIn: bigint;
   amountOut: bigint;
   hasEnoughBalance: boolean;
   needsApproval: boolean;
   isTxPending: boolean;
+  approveSymbol: TokenSymbol;
   onApprove: () => Promise<void>;
   onSwap: () => Promise<void>;
 }) {
@@ -402,7 +493,7 @@ function SwapButton(props: {
         disabled={props.isTxPending}
         className={`${base} ${active}`}
       >
-        {props.isTxPending ? 'Approving…' : 'Approve ETI'}
+        {props.isTxPending ? 'Approving…' : `Approve ${props.approveSymbol}`}
       </button>
     );
   }
@@ -418,80 +509,101 @@ function SwapButton(props: {
 }
 
 function usePriceImpact(
-  ctx: ReturnType<typeof useTokens>,
-  fromIsNative: boolean,
+  ctx: SwapCtx | null,
+  path: Address[] | null,
   amountIn: bigint,
   amountOut: bigint,
 ): string | null {
-  const reserves = useReadContracts({
+  // Read reserves on every consecutive pair of the path. For a 2-hop swap we
+  // multiply mid-prices to get end-to-end spot price, then compare to the
+  // realized execution price.
+  const pairQueries = useReadContracts({
     contracts:
-      ctx && amountIn > 0n
-        ? [
-            {
-              abi: abis.factoryAbi,
-              address: ctx.factory,
-              functionName: 'getPair',
-              args: [ctx.eti, ctx.wegaz],
-            },
-          ]
+      ctx && path && amountIn > 0n
+        ? path.slice(0, -1).map((_, i) => ({
+            abi: abis.factoryAbi,
+            address: ctx.factory,
+            functionName: 'getPair' as const,
+            args: [path[i], path[i + 1]] as const,
+          }))
         : [],
-    query: { enabled: Boolean(ctx && amountIn > 0n) },
-  });
-  const pair = reserves.data?.[0]?.result as Address | undefined;
-
-  const pairState = useReadContracts({
-    contracts:
-      pair && pair !== ZERO
-        ? [
-            { abi: abis.pairAbi, address: pair, functionName: 'getReserves' },
-            { abi: abis.pairAbi, address: pair, functionName: 'token0' },
-          ]
-        : [],
-    query: { enabled: Boolean(pair && pair !== ZERO) },
+    query: { enabled: Boolean(ctx && path && amountIn > 0n) },
   });
 
-  if (!ctx || amountIn === 0n || amountOut === 0n) return null;
-  const reservesData = pairState.data?.[0]?.result as
-    | readonly [bigint, bigint, number]
-    | undefined;
-  const token0 = pairState.data?.[1]?.result as Address | undefined;
-  if (!reservesData || !token0) return null;
+  const pairs = useMemo<Array<Address | null>>(() => {
+    if (!pairQueries.data) return [];
+    return pairQueries.data.map((r) => {
+      const a = r.result as Address | undefined;
+      return a && a !== ZERO ? a : null;
+    });
+  }, [pairQueries.data]);
 
-  const wegazIsToken0 = token0.toLowerCase() === ctx.wegaz.toLowerCase();
-  const egazReserve = wegazIsToken0 ? reservesData[0] : reservesData[1];
-  const etiReserve = wegazIsToken0 ? reservesData[1] : reservesData[0];
-  if (egazReserve === 0n || etiReserve === 0n) return null;
+  const reserveQueries = useReadContracts({
+    contracts: pairs.flatMap((p) =>
+      p
+        ? [
+            { abi: abis.pairAbi, address: p, functionName: 'getReserves' as const },
+            { abi: abis.pairAbi, address: p, functionName: 'token0' as const },
+          ]
+        : [],
+    ),
+    query: { enabled: pairs.length > 0 && pairs.every((p) => p !== null) },
+  });
 
-  // Mid price (no-fee) vs executed price; report as %.
-  const mid = fromIsNative ? (etiReserve * 10n ** 18n) / egazReserve : (egazReserve * 10n ** 18n) / etiReserve;
-  const exec = (amountOut * 10n ** 18n) / amountIn;
-  if (mid === 0n) return null;
-  // impact = (mid - exec) / mid
-  const impactBps = ((mid - exec) * 10_000n) / mid;
-  if (impactBps < 0n) return '≈ 0.00%';
-  return `${(Number(impactBps) / 100).toFixed(2)}%`;
+  return useMemo(() => {
+    if (!ctx || !path || amountIn === 0n || amountOut === 0n) return null;
+    if (pairs.length === 0 || pairs.some((p) => p === null)) return null;
+    const rows = reserveQueries.data;
+    if (!rows) return null;
+
+    // Compute spot output by walking each hop.
+    let spotAmount = amountIn;
+    for (let i = 0; i < pairs.length; i++) {
+      const reservesRow = rows[i * 2];
+      const token0Row = rows[i * 2 + 1];
+      if (!reservesRow || !token0Row) return null;
+      const reserves = reservesRow.result as
+        | readonly [bigint, bigint, number]
+        | undefined;
+      const token0 = token0Row.result as Address | undefined;
+      if (!reserves || !token0) return null;
+      const inputIsToken0 = token0.toLowerCase() === path[i].toLowerCase();
+      const [r0, r1] = reserves;
+      const rIn = inputIsToken0 ? r0 : r1;
+      const rOut = inputIsToken0 ? r1 : r0;
+      if (rIn === 0n || rOut === 0n) return null;
+      // spot price = rOut / rIn; spotOut = spotAmount * rOut / rIn
+      spotAmount = (spotAmount * rOut) / rIn;
+    }
+    if (spotAmount === 0n) return null;
+    const diff = spotAmount > amountOut ? spotAmount - amountOut : 0n;
+    // basis points: diff / spot * 10_000
+    const bps = Number((diff * 10_000n) / spotAmount);
+    if (bps < 1) return '< 0.01%';
+    return `${(bps / 100).toFixed(2)}%`;
+  }, [ctx, path, amountIn, amountOut, pairs, reserveQueries.data]);
 }
 
-function truncate(s: string, maxDecimals: number): string {
-  const [whole, frac = ''] = s.split('.');
-  if (!frac) return whole;
-  return `${whole}.${frac.slice(0, maxDecimals)}`;
+function truncate(s: string, maxFraction: number): string {
+  const [intPart, fracPart] = s.split('.');
+  if (!fracPart) return intPart;
+  const short = fracPart.slice(0, maxFraction).replace(/0+$/, '');
+  return short ? `${intPart}.${short}` : intPart;
+}
+
+function sanitizeNumber(raw: string): string {
+  // allow digits and one dot
+  const cleaned = raw.replace(/[^0-9.]/g, '');
+  const [a, ...rest] = cleaned.split('.');
+  return rest.length > 0 ? `${a}.${rest.join('')}` : a;
 }
 
 function describeWriteError(err: unknown, fallback: string): string | undefined {
+  // viem wraps wallet rejections in TransactionExecutionError; walk the chain.
   if (err instanceof BaseError) {
-    const rejected = err.walk((e) => e instanceof UserRejectedRequestError);
-    if (rejected) return undefined; // user cancelled in wallet — no surfaced error
-    return err.shortMessage || err.message || fallback;
+    if (err.walk((e) => e instanceof UserRejectedRequestError)) return undefined;
+    return err.shortMessage ?? err.message;
   }
-  if (err instanceof Error) return err.message || fallback;
+  if (err instanceof Error) return err.message;
   return fallback;
-}
-
-function sanitizeNumber(v: string): string {
-  // allow only digits and a single dot
-  const cleaned = v.replace(/[^\d.]/g, '');
-  const firstDot = cleaned.indexOf('.');
-  if (firstDot === -1) return cleaned;
-  return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
 }

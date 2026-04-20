@@ -1,8 +1,11 @@
+import { notFound } from 'next/navigation';
 import { AdminFactoryCard } from '@/components/admin/AdminFactoryCard';
+import { operatorUiEnabled } from '@/lib/operatorUi';
 
 export const metadata = { title: 'Admin · Factory · EticaHub' };
 
 export default function AdminFactoryPage() {
+  if (!operatorUiEnabled()) notFound();
   return (
     <div className="mx-auto max-w-3xl">
       <header className="mb-6 space-y-2">
