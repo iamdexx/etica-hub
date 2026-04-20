@@ -268,9 +268,8 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
         IERC20(token).forceApprove(address(router), lpTokenSupply);
         IERC20(hub).forceApprove(address(router), lpHubAmount);
 
-        (usedToken, usedHub,) = router.addLiquidity(
-            token, hub, lpTokenSupply, lpHubAmount, 0, 0, author, deadline
-        );
+        (usedToken, usedHub,) =
+            router.addLiquidity(token, hub, lpTokenSupply, lpHubAmount, 0, 0, author, deadline);
 
         if (usedToken < lpTokenSupply) {
             IERC20(token).safeTransfer(author, lpTokenSupply - usedToken);
