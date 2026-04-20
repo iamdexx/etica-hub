@@ -1,7 +1,7 @@
 'use client';
 
 import { useAccount, useConnect, useDisconnect, useChainId, useSwitchChain } from 'wagmi';
-import { eticaMainnet, eticaCrucible, eticaLocalFork } from '@etica-hub/shared/chains';
+import { eticaMainnet, eticaLocalFork } from '@etica-hub/shared/chains';
 import { shortAddress } from '@/lib/utils';
 
 const IS_DEV = process.env.NODE_ENV !== 'production';
@@ -27,10 +27,8 @@ export function ConnectButton() {
   }
 
   const onSupportedChain =
-    chainId === eticaMainnet.id
-    || chainId === eticaCrucible.id
-    || (IS_DEV && chainId === eticaLocalFork.id);
-  const switchTarget = IS_DEV ? eticaLocalFork : eticaCrucible;
+    chainId === eticaMainnet.id || (IS_DEV && chainId === eticaLocalFork.id);
+  const switchTarget = IS_DEV ? eticaLocalFork : eticaMainnet;
 
   return (
     <div className="flex items-center gap-2">

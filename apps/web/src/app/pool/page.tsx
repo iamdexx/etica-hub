@@ -8,7 +8,12 @@ export default function PoolPage() {
         Add and remove liquidity on EticaSwap V2 pairs. Earn 0.25% of every swap on your pool.
       </p>
       <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-10 text-center text-sm text-white/50">
-        Pool UI ships alongside the first testnet deploy.
+        <div>Add/remove-liquidity UI ships in a v2 release.</div>
+        <div className="mt-2 text-xs text-white/40">
+          The ETI/ETX and EGAZ/ETX pools are already live on mainnet — fees accrue to LP token
+          holders automatically. LP positions can be managed directly on-chain via the Router
+          until this UI lands.
+        </div>
       </div>
     </div>
   );
