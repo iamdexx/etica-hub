@@ -91,6 +91,23 @@ export const routerAbi = [
   },
   {
     type: 'function',
+    name: 'removeLiquidityEGAZ',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'token', type: 'address' },
+      { name: 'liquidity', type: 'uint256' },
+      { name: 'amountTokenMin', type: 'uint256' },
+      { name: 'amountEGAZMin', type: 'uint256' },
+      { name: 'to', type: 'address' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+    outputs: [
+      { name: 'amountToken', type: 'uint256' },
+      { name: 'amountEGAZ', type: 'uint256' },
+    ],
+  },
+  {
+    type: 'function',
     name: 'swapExactTokensForTokens',
     stateMutability: 'nonpayable',
     inputs: [
