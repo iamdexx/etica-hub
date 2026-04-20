@@ -1,0 +1,32 @@
+node_modules
+.DS_Store
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# builds
+dist
+build
+.next
+out
+coverage
+
+# foundry
+cache
+out
+broadcast
+!packages/contracts/out/abis/.gitkeep
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editors
+.vscode
+.idea
+
+# tmp
+*.tmp
+.tmp
