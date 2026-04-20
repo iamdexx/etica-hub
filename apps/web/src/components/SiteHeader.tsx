@@ -10,6 +10,7 @@ const NAV = [
   { href: '/pool', label: 'Pool' },
   { href: '/research', label: 'Research' },
   { href: '/bridge', label: 'Bridge' },
+  { href: '/whitepaper', label: 'Whitepaper' },
 ];
 
 export function SiteHeader() {
