@@ -285,16 +285,17 @@ Not v1. See §7 and §11. No date committed.
 
 ## Appendix A — Canonical addresses
 
-*To be filled in at launch and published here and in the repo's `addresses.ts`:*
+Etica mainnet (chain id `61803`). Also mirrored in `packages/shared/src/addresses.ts`.
 
 | Contract | Address |
 |---|---|
-| ETX | `<populate after /deploy/etx>` |
-| WEGAZ | `<populate after /deploy/swap>` |
-| EticaSwapFactory | `<populate after /deploy/swap>` |
-| EticaSwapRouter | `<populate after /deploy/swap>` |
-| ETI/ETX pool | `<derived from factory.getPair>` |
-| EGAZ/ETX pool | `<derived from factory.getPair>` |
+| ETX (`EticaHub`) | `0xA5a1Bc6307b0b87989b8456D4B35f88a68650044` |
+| WEGAZ (`Wrapped EGAZ`) | `0x232Fb2b87Cace92b2438054A7eB79b4081E3E11A` |
+| EticaSwapFactory | `0xFc8DE5A5087C8825aA54E2c57B3ffE0e23784bc3` |
+| EticaSwapRouter | `0xAEFbF3fB975657A4C71ea0Fb644B4Afe5F555723` |
+| ETI/ETX pool | *derived from `factory.getPair(ETI, ETX)` after seeding* |
+| EGAZ/ETX pool | *derived from `factory.getPair(WEGAZ, ETX)` after seeding* |
+| ETI (Etica protocol, external) | `0x34c61EA91bAcdA647269d4e310A86b875c09946f` |
 | Treasury wallet | `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D` |
 
 ---
