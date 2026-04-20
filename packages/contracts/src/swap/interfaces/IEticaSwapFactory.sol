@@ -5,10 +5,12 @@ pragma solidity ^0.8.0;
 /// @notice Uniswap V2–compatible factory deploying CREATE2 pair contracts.
 interface IEticaSwapFactory {
     event PairCreated(address indexed token0, address indexed token1, address pair, uint256);
+    event TrustedCreatorSet(address indexed creator, bool trusted);
 
     function etx() external view returns (address);
     function feeTo() external view returns (address);
     function feeToSetter() external view returns (address);
+    function trustedCreators(address creator) external view returns (bool);
 
     function getPair(address tokenA, address tokenB) external view returns (address pair);
     function allPairs(uint256) external view returns (address pair);
@@ -18,4 +20,5 @@ interface IEticaSwapFactory {
 
     function setFeeTo(address) external;
     function setFeeToSetter(address) external;
+    function setTrustedCreator(address creator, bool trusted) external;
 }

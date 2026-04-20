@@ -44,7 +44,7 @@ type StepConfig = {
   description: string;
   abi: Abi;
   bytecode: Hex;
-  args: (ctx: { treasury: Address; wegaz?: Address; factory?: Address }) =>
+  args: (ctx: { treasury: Address; etx?: Address; wegaz?: Address; factory?: Address }) =>
     | { ready: true; args: readonly unknown[] }
     | { ready: false; missing: string };
 };
@@ -63,10 +63,13 @@ const STEPS: StepConfig[] = [
     key: 'factory',
     label: '2. Deploy EticaSwapFactory',
     description:
-      'Uniswap V2 factory with your treasury as feeToSetter. Treasury keeps control of whether the 0.05% protocol fee is on.',
+      'Uniswap V2 factory with your treasury as feeToSetter and ETX locked in as the hub token. Every pair must include ETX — except contracts you whitelist via setTrustedCreator (the launchpad).',
     abi: factoryArtifact.abi,
     bytecode: factoryArtifact.bytecode,
-    args: ({ treasury }) => ({ ready: true, args: [treasury] }),
+    args: ({ treasury, etx }) => {
+      if (!etx) return { ready: false, missing: 'ETX address' };
+      return { ready: true, args: [treasury, etx] };
+    },
   },
   {
     key: 'router',
@@ -107,6 +110,12 @@ export function DeploySwapCard() {
     return isAddress(t) ? (t as Address) : null;
   }, [treasuryInput]);
 
+  const [etxInput, setEtxInput] = useState<string>('');
+  const etx = useMemo<Address | null>(() => {
+    const t = etxInput.trim();
+    return isAddress(t) ? (t as Address) : null;
+  }, [etxInput]);
+
   const [deployed, setDeployed] = useState<Record<StepKey, DeployState>>({
     wegaz: initial,
     factory: initial,
@@ -128,7 +137,12 @@ export function DeploySwapCard() {
 
   async function runStep(step: StepConfig) {
     if (!walletClient || !publicClient || !address || !treasury) return;
-    const argSpec = step.args({ treasury, wegaz: addresses.wegaz, factory: addresses.factory });
+    const argSpec = step.args({
+      treasury,
+      etx: etx ?? undefined,
+      wegaz: addresses.wegaz,
+      factory: addresses.factory,
+    });
     if (!argSpec.ready) {
       setDeployed((s) => ({
         ...s,
@@ -196,6 +210,10 @@ export function DeploySwapCard() {
             Treasury address below is the <span className="font-mono">feeToSetter</span>. Defaults to the project
             treasury; change it if you&apos;re deploying under a different owner.
           </li>
+          <li>
+            <span className="font-mono">ETX</span> must be deployed first (via <a href="/deploy/etx" className="underline">/deploy/etx</a>)
+            and its address pasted below — the factory locks ETX in as the hub token at deploy.
+          </li>
         </ol>
       </section>
 
@@ -255,12 +273,35 @@ export function DeploySwapCard() {
         )}
       </section>
 
+      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+        <h2 className="mb-3 text-lg font-semibold">ETX token address</h2>
+        <p className="mb-3 text-xs text-white/60">
+          Paste the address of the deployed ETX ERC-20. The factory will lock this as the hub
+          token — every pair must include ETX (except contracts whitelisted later via
+          <span className="font-mono"> setTrustedCreator</span>, e.g. the launchpad).
+        </p>
+        <input
+          type="text"
+          value={etxInput}
+          onChange={(e) => setEtxInput(e.target.value)}
+          spellCheck={false}
+          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+          placeholder="0x…"
+        />
+        {etxInput.trim().length > 0 && !etx && (
+          <div className="mt-2 text-xs text-red-400">
+            Not a valid address.
+          </div>
+        )}
+      </section>
+
       <section className="space-y-4">
         {STEPS.map((step) => {
           const state = deployed[step.key];
           const canRun = isConnected && onMainnet && Boolean(treasury) && Boolean(walletClient);
           const argSpec = step.args({
             treasury: treasury ?? DEFAULT_TREASURY,
+            etx: etx ?? undefined,
             wegaz: addresses.wegaz,
             factory: addresses.factory,
           });

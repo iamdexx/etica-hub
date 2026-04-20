@@ -9,6 +9,11 @@ import {IEticaSwapFactory} from "./interfaces/IEticaSwapFactory.sol";
 ///         include ETX on one side: routes all liquidity through the ETX hub,
 ///         making ETX the reserve asset of the DEX. 0.05% protocol fee (1/6 of
 ///         the 0.30% swap fee) can be enabled by setting `feeTo`.
+/// @dev    The `trustedCreators` allow-list is the one and only exception to
+///         the ETX-only rule: addresses in the set may create pairs that do
+///         not include ETX. It exists so the proposal-token launchpad can
+///         open `token/ETI` pools alongside `token/ETX`. Everyone else stays
+///         forced onto the ETX hub.
 contract EticaSwapFactory is IEticaSwapFactory {
     address public immutable etx;
     address public feeTo;
@@ -16,6 +21,7 @@ contract EticaSwapFactory is IEticaSwapFactory {
 
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
+    mapping(address => bool) public trustedCreators;
 
     constructor(address _feeToSetter, address _etx) {
         require(_etx != address(0), "ESwap: ETX_ZERO_ADDRESS");
@@ -29,7 +35,10 @@ contract EticaSwapFactory is IEticaSwapFactory {
 
     function createPair(address tokenA, address tokenB) external returns (address pair) {
         require(tokenA != tokenB, "ESwap: IDENTICAL_ADDRESSES");
-        require(tokenA == etx || tokenB == etx, "ESwap: MUST_PAIR_WITH_ETX");
+        require(
+            tokenA == etx || tokenB == etx || trustedCreators[msg.sender],
+            "ESwap: MUST_PAIR_WITH_ETX"
+        );
         (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
         require(token0 != address(0), "ESwap: ZERO_ADDRESS");
         require(getPair[token0][token1] == address(0), "ESwap: PAIR_EXISTS");
@@ -52,6 +61,18 @@ contract EticaSwapFactory is IEticaSwapFactory {
     function setFeeToSetter(address _feeToSetter) external {
         require(msg.sender == feeToSetter, "ESwap: FORBIDDEN");
         feeToSetter = _feeToSetter;
+    }
+
+    /// @notice Grant or revoke a creator's permission to open non-ETX pairs.
+    /// @dev    Only the fee-to setter (i.e. governance / admin) can flip this.
+    ///         Intended use: whitelist the proposal-token launchpad so it can
+    ///         open `token/ETI` pools. Any address not in the set is still
+    ///         subject to the ETX-only rule.
+    function setTrustedCreator(address creator, bool trusted) external {
+        require(msg.sender == feeToSetter, "ESwap: FORBIDDEN");
+        require(creator != address(0), "ESwap: ZERO_ADDRESS");
+        trustedCreators[creator] = trusted;
+        emit TrustedCreatorSet(creator, trusted);
     }
 
     /// @notice Init code hash for pairs — useful for off-chain CREATE2 address prediction.

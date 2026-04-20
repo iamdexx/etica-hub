@@ -84,6 +84,46 @@ contract EticaSwapTest is Test {
         factory.createPair(address(eti), address(usdt));
     }
 
+    function test_factory_trustedCreator_canBypassHubRule() public {
+        // Any caller not in the trustedCreators set is forced onto the ETX
+        // hub; a trusted caller (e.g. the proposal-token launchpad) may open
+        // non-ETX pairs directly so it can seed `token/ETI` pools.
+        vm.prank(FEE_SETTER);
+        factory.setTrustedCreator(BOB, true);
+
+        vm.prank(BOB);
+        address pair = factory.createPair(address(eti), address(usdt));
+        assertTrue(pair != address(0));
+        assertEq(factory.getPair(address(eti), address(usdt)), pair);
+
+        vm.prank(ALICE);
+        vm.expectRevert(bytes("ESwap: MUST_PAIR_WITH_ETX"));
+        factory.createPair(address(usdt), address(eti));
+    }
+
+    function test_factory_setTrustedCreator_onlyFeeToSetter() public {
+        vm.prank(ALICE);
+        vm.expectRevert(bytes("ESwap: FORBIDDEN"));
+        factory.setTrustedCreator(BOB, true);
+    }
+
+    function test_factory_setTrustedCreator_rejectsZero() public {
+        vm.prank(FEE_SETTER);
+        vm.expectRevert(bytes("ESwap: ZERO_ADDRESS"));
+        factory.setTrustedCreator(address(0), true);
+    }
+
+    function test_factory_setTrustedCreator_canRevoke() public {
+        vm.startPrank(FEE_SETTER);
+        factory.setTrustedCreator(BOB, true);
+        factory.setTrustedCreator(BOB, false);
+        vm.stopPrank();
+
+        vm.prank(BOB);
+        vm.expectRevert(bytes("ESwap: MUST_PAIR_WITH_ETX"));
+        factory.createPair(address(eti), address(usdt));
+    }
+
     function test_factory_createPair_acceptsEitherSide() public {
         address p1 = factory.createPair(address(etx), address(eti));
         address p2 = factory.createPair(address(usdt), address(etx));
@@ -99,14 +139,7 @@ contract EticaSwapTest is Test {
 
         vm.prank(ALICE);
         (uint256 amountA, uint256 amountB, uint256 liq) = router.addLiquidity(
-            address(eti),
-            address(etx),
-            10_000 ether,
-            20_000 ether,
-            0,
-            0,
-            ALICE,
-            block.timestamp + 1
+            address(eti), address(etx), 10_000 ether, 20_000 ether, 0, 0, ALICE, block.timestamp + 1
         );
         assertEq(amountA, 10_000 ether);
         assertEq(amountB, 20_000 ether);
@@ -179,10 +212,24 @@ contract EticaSwapTest is Test {
 
         vm.startPrank(ALICE);
         router.addLiquidity(
-            address(eti), address(etx), 100_000 ether, 100_000 ether, 0, 0, ALICE, block.timestamp + 1
+            address(eti),
+            address(etx),
+            100_000 ether,
+            100_000 ether,
+            0,
+            0,
+            ALICE,
+            block.timestamp + 1
         );
         router.addLiquidity(
-            address(usdt), address(etx), 100_000 ether, 100_000 ether, 0, 0, ALICE, block.timestamp + 1
+            address(usdt),
+            address(etx),
+            100_000 ether,
+            100_000 ether,
+            0,
+            0,
+            ALICE,
+            block.timestamp + 1
         );
         vm.stopPrank();
 
@@ -209,14 +256,7 @@ contract EticaSwapTest is Test {
         _approveRouterFor(ALICE);
         vm.prank(ALICE);
         (,, uint256 liq) = router.addLiquidity(
-            address(eti),
-            address(etx),
-            10_000 ether,
-            10_000 ether,
-            0,
-            0,
-            ALICE,
-            block.timestamp + 1
+            address(eti), address(etx), 10_000 ether, 10_000 ether, 0, 0, ALICE, block.timestamp + 1
         );
 
         address pair = factory.getPair(address(eti), address(etx));
