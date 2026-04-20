@@ -11,6 +11,7 @@ const NAV = [
   { href: '/research', label: 'Research' },
   { href: '/bridge', label: 'Bridge' },
   { href: '/whitepaper', label: 'Whitepaper' },
+  { href: '/status', label: 'Status' },
 ];
 
 export function SiteHeader() {
@@ -21,8 +22,8 @@ export function SiteHeader() {
         <Link href="/" className="flex items-center gap-2">
           <span className="inline-block h-6 w-6 rounded-full bg-brand-accent" />
           <span className="text-lg font-semibold tracking-tight">EticaHub</span>
-          <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/60">
-            testnet
+          <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300">
+            live · mainnet
           </span>
         </Link>
 

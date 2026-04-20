@@ -1,8 +1,11 @@
+import { notFound } from 'next/navigation';
 import { DeploySwapCard } from '@/components/deploy/DeploySwapCard';
+import { operatorUiEnabled } from '@/lib/operatorUi';
 
 export const metadata = { title: 'Deploy EticaSwap · EticaHub' };
 
 export default function DeploySwapPage() {
+  if (!operatorUiEnabled()) notFound();
   return (
     <div className="mx-auto max-w-2xl">
       <header className="mb-6 space-y-2">

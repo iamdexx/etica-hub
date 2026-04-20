@@ -4,9 +4,9 @@ const MODULES = [
   {
     href: '/swap',
     title: 'EticaSwap',
-    subtitle: 'On-chain DEX',
+    subtitle: 'On-chain DEX · live',
     body:
-      'First Uniswap V2–style AMM on Etica mainnet. Swap ETI/EGAZ and any ERC20 deployed on Etica. 0.30% fee.',
+      'Swap EGAZ, ETI, and ETX on Etica Mainnet. First Uniswap V2-style AMM on chain 61803, with ETX as the shared hub. 0.30% LP fee.',
     cta: 'Open swap',
     accent: 'from-emerald-500/30 to-emerald-700/10',
   },
@@ -34,18 +34,38 @@ export default function Home() {
   return (
     <div className="space-y-14">
       <section className="space-y-4">
-        <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-wider text-white/70">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-accent" />
-          Building on Etica mainnet · chain 61803
+        <p className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs uppercase tracking-wider text-emerald-300">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
+          Live on Etica Mainnet · chain 61803
         </p>
         <h1 className="text-4xl font-semibold tracking-tight md:text-6xl">
-          The missing infrastructure for the <span className="text-brand-accent">Etica ecosystem.</span>
+          The on-chain home of the <span className="text-brand-accent">Etica ecosystem.</span>
         </h1>
         <p className="max-w-2xl text-lg text-white/70">
-          EticaHub brings three things Etica doesn&apos;t have yet: an on-chain AMM, a searchable
-          research hub for every proposal, and a bridge to Ethereum. One site, one wallet, one
-          place to support open-source medical research.
+          EticaHub is the first DEX on Etica Mainnet — swap EGAZ, ETI, and ETX through a shared
+          ETX hub — plus a searchable research hub for every proposal and a bridge to Ethereum.
+          One site, one wallet, one place to support open-source medical research.
         </p>
+        <div className="flex flex-wrap gap-3 pt-2">
+          <Link
+            href="/swap"
+            className="rounded-full bg-brand-accent px-5 py-2 text-sm font-medium text-brand-ink hover:opacity-90"
+          >
+            Open swap →
+          </Link>
+          <Link
+            href="/whitepaper"
+            className="rounded-full border border-white/15 bg-white/5 px-5 py-2 text-sm font-medium text-white/90 hover:border-white/30 hover:text-white"
+          >
+            Read whitepaper
+          </Link>
+          <Link
+            href="/status"
+            className="rounded-full border border-white/15 bg-white/5 px-5 py-2 text-sm font-medium text-white/80 hover:border-white/30 hover:text-white"
+          >
+            Live mainnet status
+          </Link>
+        </div>
       </section>
 
       <section className="grid gap-6 md:grid-cols-3">

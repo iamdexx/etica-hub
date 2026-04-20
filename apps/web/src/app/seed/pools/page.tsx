@@ -1,8 +1,11 @@
+import { notFound } from 'next/navigation';
 import { SeedPoolsCard } from '@/components/deploy/SeedPoolsCard';
+import { operatorUiEnabled } from '@/lib/operatorUi';
 
 export const metadata = { title: 'Seed pools · EticaHub' };
 
 export default function SeedPoolsPage() {
+  if (!operatorUiEnabled()) notFound();
   return (
     <div className="mx-auto max-w-2xl">
       <header className="mb-6 space-y-2">
