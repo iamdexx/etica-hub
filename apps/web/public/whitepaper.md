@@ -289,10 +289,10 @@ Etica mainnet (chain id `61803`). Also mirrored in `packages/shared/src/addresse
 
 | Contract | Address |
 |---|---|
-| ETX (`EticaHub`) | `0xA5a1Bc6307b0b87989b8456D4B35f88a68650044` |
-| WEGAZ (`Wrapped EGAZ`) | `0x232Fb2b87Cace92b2438054A7eB79b4081E3E11A` |
-| EticaSwapFactory | `0xFc8DE5A5087C8825aA54E2c57B3ffE0e23784bc3` |
-| EticaSwapRouter | `0xAEFbF3fB975657A4C71ea0Fb644B4Afe5F555723` |
+| ETX (`EticaHub`) | `0xa5A1Bc6307b0b87989B8456D4b35F88a68650044` |
+| WEGAZ (`Wrapped EGAZ`) | `0x232fb2B87CAce92B2438054A7eB79B4081E3E11a` |
+| EticaSwapFactory | `0xfc8dE5A5087c8825AA54E2C57B3FFe0e23784bc3` |
+| EticaSwapRouter | `0xaefbf3fB975657a4C71ea0Fb644B4afE5F555723` |
 | ETI/ETX pool | *derived from `factory.getPair(ETI, ETX)` after seeding* |
 | EGAZ/ETX pool | *derived from `factory.getPair(WEGAZ, ETX)` after seeding* |
 | ETI (Etica protocol, external) | `0x34c61EA91bAcdA647269d4e310A86b875c09946f` |
