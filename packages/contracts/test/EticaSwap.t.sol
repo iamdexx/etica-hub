@@ -124,6 +124,99 @@ contract EticaSwapTest is Test {
         factory.createPair(address(eti), address(usdt));
     }
 
+    // ---------- pair creation fee ----------
+
+    function test_factory_pairCreationFee_defaultIs10kETX() public view {
+        assertEq(factory.pairCreationFee(), 10_000 ether);
+    }
+
+    function test_factory_createPair_skipsFeeWhenFeeToUnset() public {
+        // Before the treasury is wired via setFeeTo, the fee is skipped so
+        // the factory can bootstrap. Alice pays nothing and keeps her ETX.
+        uint256 before = etx.balanceOf(ALICE);
+        vm.prank(ALICE);
+        factory.createPair(address(etx), address(eti));
+        assertEq(etx.balanceOf(ALICE), before, "alice charged despite feeTo unset");
+    }
+
+    function test_factory_createPair_chargesFeeWhenFeeToSet() public {
+        vm.prank(FEE_SETTER);
+        factory.setFeeTo(FEE_SETTER);
+
+        uint256 before = etx.balanceOf(ALICE);
+        uint256 treasuryBefore = etx.balanceOf(FEE_SETTER);
+
+        vm.startPrank(ALICE);
+        etx.approve(address(factory), type(uint256).max);
+        factory.createPair(address(etx), address(eti));
+        vm.stopPrank();
+
+        assertEq(etx.balanceOf(ALICE), before - 10_000 ether, "alice not charged");
+        assertEq(etx.balanceOf(FEE_SETTER), treasuryBefore + 10_000 ether, "treasury not paid");
+    }
+
+    function test_factory_createPair_revertsWithoutETXApproval() public {
+        vm.prank(FEE_SETTER);
+        factory.setFeeTo(FEE_SETTER);
+
+        vm.prank(ALICE);
+        vm.expectRevert(bytes("TH: TRANSFER_FROM_FAILED"));
+        factory.createPair(address(etx), address(eti));
+    }
+
+    function test_factory_createPair_trustedCreatorExemptFromFee() public {
+        vm.startPrank(FEE_SETTER);
+        factory.setFeeTo(FEE_SETTER);
+        factory.setTrustedCreator(BOB, true);
+        vm.stopPrank();
+
+        uint256 before = etx.balanceOf(BOB);
+        vm.prank(BOB);
+        factory.createPair(address(eti), address(usdt));
+        assertEq(etx.balanceOf(BOB), before, "trusted creator should not be charged");
+    }
+
+    function test_factory_setPairCreationFee_onlyFeeToSetter() public {
+        vm.prank(ALICE);
+        vm.expectRevert(bytes("ESwap: FORBIDDEN"));
+        factory.setPairCreationFee(1 ether);
+    }
+
+    function test_factory_setPairCreationFee_zeroDisablesFee() public {
+        vm.startPrank(FEE_SETTER);
+        factory.setFeeTo(FEE_SETTER);
+        factory.setPairCreationFee(0);
+        vm.stopPrank();
+
+        // No approval needed when fee is zero.
+        uint256 before = etx.balanceOf(ALICE);
+        vm.prank(ALICE);
+        factory.createPair(address(etx), address(eti));
+        assertEq(etx.balanceOf(ALICE), before, "charged despite zero fee");
+    }
+
+    function test_router_addLiquidity_forwardsPairCreationFee() public {
+        vm.prank(FEE_SETTER);
+        factory.setFeeTo(FEE_SETTER);
+
+        // Alice approves the router for the LP amounts AND the 10k ETX fee.
+        // The router pulls the fee from Alice on first-time pair creation and
+        // forwards it to the factory in the same tx.
+        _approveRouterFor(ALICE);
+
+        uint256 aliceBefore = etx.balanceOf(ALICE);
+        uint256 treasuryBefore = etx.balanceOf(FEE_SETTER);
+
+        vm.prank(ALICE);
+        router.addLiquidity(
+            address(etx), address(eti), 1_000 ether, 1_000 ether, 0, 0, ALICE, block.timestamp + 1
+        );
+
+        // Alice paid 1,000 ETX LP + 10,000 ETX fee = 11,000 ETX net.
+        assertEq(etx.balanceOf(ALICE), aliceBefore - 11_000 ether, "alice LP+fee accounting");
+        assertEq(etx.balanceOf(FEE_SETTER), treasuryBefore + 10_000 ether, "treasury fee accrual");
+    }
+
     function test_factory_createPair_acceptsEitherSide() public {
         address p1 = factory.createPair(address(etx), address(eti));
         address p2 = factory.createPair(address(usdt), address(etx));
