@@ -10,7 +10,7 @@ import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20P
 contract ETXToken is ERC20Permit {
     uint256 public constant MAX_SUPPLY = 100_000_000 * 1e18;
 
-    constructor(address distributor) ERC20("EticaHub Token", "ETX") ERC20Permit("EticaHub Token") {
+    constructor(address distributor) ERC20("EticaHub", "ETX") ERC20Permit("EticaHub") {
         require(distributor != address(0), "ETX: zero distributor");
         _mint(distributor, MAX_SUPPLY);
     }
