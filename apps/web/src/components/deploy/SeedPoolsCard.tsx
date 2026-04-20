@@ -457,9 +457,10 @@ export function SeedPoolsCard() {
         {parsed.ok && (
           <div className="text-xs text-white/50">
             Combined ETX approval: <span className="font-mono">{etxForEti}</span> +{' '}
-            <span className="font-mono">{etxForEgaz}</span> ={' '}
+            <span className="font-mono">{etxForEgaz}</span> +{' '}
+            <span className="font-mono">20,000</span> (2 &times; 10k pair-creation fee) ={' '}
             <span className="font-mono">
-              {(Number(etxForEti) + Number(etxForEgaz)).toLocaleString()}
+              {(Number(etxForEti) + Number(etxForEgaz) + 20_000).toLocaleString()}
             </span>{' '}
             ETX
           </div>
