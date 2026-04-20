@@ -1,9 +1,21 @@
 node_modules
 .DS_Store
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
-!.env.example
+
+# secrets / keys — never commit
+secrets/
+.secrets/
+*.key
+*.pem
+*.keystore
+keystore/
+wallet.json
+mnemonic.txt
+privatekey.txt
 
 # builds
 dist
@@ -11,6 +23,7 @@ build
 .next
 out
 coverage
+*.tsbuildinfo
 
 # foundry
 cache
