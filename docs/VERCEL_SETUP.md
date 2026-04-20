@@ -18,12 +18,13 @@ One-time setup to get a live preview URL on every PR. ~3 minutes of clicks.
    - If you don't see it listed, click **Adjust GitHub App Permissions** and
      grant Vercel access to the repo.
 3. On the **Configure Project** screen:
-   - **Framework Preset:** Next.js (auto-detected)
-   - **Root Directory:** click **Edit** → set to `apps/web`
-   - **Build Command:** leave default (`next build`)
-   - **Install Command:** `cd ../.. && pnpm install --frozen-lockfile`
-   - **Output Directory:** leave default (`.next`)
-   - **Node.js Version:** 20.x
+   - **Framework Preset:** Next.js (auto-detected).
+   - **Root Directory:** click **Edit** → set to `apps/web`. The committed
+     `apps/web/vercel.json` takes care of the monorepo install/build commands
+     automatically, so you don't need to override anything else here.
+   - Leave Build Command / Install Command / Output Directory at their
+     defaults (`vercel.json` drives them).
+   - **Node.js Version:** 20.x (if exposed).
 4. Click **Deploy**. First build takes ~2 minutes.
 5. Once deployed, go to **Project Settings → Git** and verify:
    - **Production Branch:** `main`
