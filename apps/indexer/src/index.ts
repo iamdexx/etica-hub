@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, http, type PublicClient } from 'viem';
 import {
   eticaCrucible,
   eticaLocalFork,
@@ -7,25 +7,21 @@ import {
   EXTERNAL_ADDRESSES,
   type SupportedChainId,
 } from '@etica-hub/shared';
+import { runResearchIndexer } from './research';
 
 /**
- * Skeleton indexer.
+ * Indexer entry point.
  *
- * Phase 1 scope (EticaSwap):
- *   - listen for PairCreated on the factory
- *   - per pair, listen for Mint / Burn / Swap / Sync
- *   - persist to Postgres (added in follow-up PR)
+ * Selects a module via $INDEXER_MODULE:
+ *   - "status"   (default): print boot info + exit
+ *   - "research": Research Hub indexer (proposals + events)
  *
- * Phase 2 scope (Research Hub):
- *   - listen for proposal events on EXTERNAL_ADDRESSES.eticaCore
- *   - resolve IPFS hashes and cache rendered content
- *
- * For now this file just boots a viem client and prints the tip block on
- * whichever chain was picked via $CHAIN_ID. It's wired into the monorepo so
- * the PR ships a runnable scaffold.
+ * Phase 1 scope (EticaSwap pair events) ships in a follow-up PR once we
+ * decide on the store (SQLite / Postgres).
  */
 
-const CHAIN_ID = Number(process.env.CHAIN_ID ?? '61888') as SupportedChainId;
+const CHAIN_ID = Number(process.env.CHAIN_ID ?? '61803') as SupportedChainId;
+const MODULE = (process.env.INDEXER_MODULE ?? 'status') as 'status' | 'research';
 
 function getChain(id: SupportedChainId) {
   if (id === eticaMainnet.id) return eticaMainnet;
@@ -38,8 +34,7 @@ function getRpcUrl(id: SupportedChainId): string | undefined {
   if (id === eticaMainnet.id) return process.env.ETICA_MAINNET_RPC_URL;
   if (id === eticaCrucible.id) return process.env.ETICA_CRUCIBLE_RPC_URL;
   // Local anvil fork: env override wins, otherwise fall through to chain default.
-  if (id === eticaLocalFork.id)
-    return process.env.ETICA_LOCAL_RPC_URL ?? 'http://127.0.0.1:8545';
+  if (id === eticaLocalFork.id) return process.env.ETICA_LOCAL_RPC_URL ?? 'http://127.0.0.1:8545';
   return undefined;
 }
 
@@ -50,33 +45,33 @@ async function main(): Promise<void> {
   const client = createPublicClient({
     chain,
     transport: rpcUrl ? http(rpcUrl) : http(),
-  });
+  }) as PublicClient;
 
-  const [blockNumber, chainId] = await Promise.all([
-    client.getBlockNumber(),
-    client.getChainId(),
-  ]);
+  const [blockNumber, chainId] = await Promise.all([client.getBlockNumber(), client.getChainId()]);
 
   const external = EXTERNAL_ADDRESSES[chain.id as SupportedChainId];
 
   console.log(
-    JSON.stringify(
-      {
-        status: 'ok',
-        module: 'indexer',
-        chain: chain.name,
-        chainId,
-        tipBlock: blockNumber.toString(),
-        watching: {
-          eticaCore: external.eticaCore,
-          etiToken: external.eti,
-        },
-        note: 'indexer skeleton — event listeners ship with Phase 1 / Phase 2 implementation.',
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'indexer.boot',
+      module: MODULE,
+      chain: chain.name,
+      chainId,
+      tipBlock: blockNumber.toString(),
+      watching: {
+        eticaCore: external.eticaCore,
+        etiToken: external.eti,
       },
-      null,
-      2,
-    ),
+    }),
   );
+
+  if (MODULE === 'research') {
+    await runResearchIndexer({ client, chain, chainId: chain.id, previewCount: 5 });
+    // Keep the process alive for watchers; otherwise viem stops polling.
+    await new Promise<void>(() => {});
+    return;
+  }
 }
 
 main().catch((err) => {
