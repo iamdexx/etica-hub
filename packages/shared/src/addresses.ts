@@ -42,6 +42,8 @@ export const EXTERNAL_ADDRESSES: Record<
 export const DEPLOYMENTS: Record<
   SupportedChainId,
   {
+    /** ETX governance/rewards token (EticaHub's own ERC20). */
+    etx: Address;
     /** Wrapped EGAZ (WEGAZ) — the WETH analog on Etica. */
     wegaz: Address;
     /** EticaSwap V2 factory. */
@@ -53,12 +55,14 @@ export const DEPLOYMENTS: Record<
   }
 > = {
   61803: {
-    wegaz: '0x0000000000000000000000000000000000000000',
-    swapFactory: '0x0000000000000000000000000000000000000000',
-    swapRouter: '0x0000000000000000000000000000000000000000',
+    etx: '0xA5a1Bc6307b0b87989b8456D4B35f88a68650044',
+    wegaz: '0x232Fb2b87Cace92b2438054A7eB79b4081E3E11A',
+    swapFactory: '0xFc8DE5A5087C8825aA54E2c57B3ffE0e23784bc3',
+    swapRouter: '0xAEFbF3fB975657A4C71ea0Fb644B4Afe5F555723',
     researchSubscription: '0x0000000000000000000000000000000000000000',
   },
   61888: {
+    etx: '0x0000000000000000000000000000000000000000',
     wegaz: '0x0000000000000000000000000000000000000000',
     swapFactory: '0x0000000000000000000000000000000000000000',
     swapRouter: '0x0000000000000000000000000000000000000000',
@@ -66,6 +70,7 @@ export const DEPLOYMENTS: Record<
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
+    etx: '0x0000000000000000000000000000000000000000',
     wegaz: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
     swapFactory: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
     swapRouter: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
