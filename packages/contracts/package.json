@@ -1,0 +1,15 @@
+{
+  "name": "@etica-hub/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vv",
+    "clean": "forge clean",
+    "fmt": "forge fmt",
+    "deploy:crucible": "forge script script/DeploySwap.s.sol --rpc-url etica_crucible --broadcast --legacy",
+    "deploy:mainnet": "forge script script/DeploySwap.s.sol --rpc-url etica_mainnet --broadcast --legacy",
+    "typecheck": "echo 'no-op for contracts'",
+    "lint": "forge fmt --check"
+  }
+}
