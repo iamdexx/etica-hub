@@ -24,6 +24,11 @@ export const EXTERNAL_ADDRESSES: Record<
     eticaCore: '0x558593Bc92E6F242a604c615d93902fc98efcA82',
     eti: '0x558593Bc92E6F242a604c615d93902fc98efcA82',
   },
+  31337: {
+    // Local anvil fork inherits mainnet state, so ETI lives at the mainnet address.
+    eticaCore: '0x34c61EA91bAcdA647269d4e310A86b875c09946f',
+    eti: '0x34c61EA91bAcdA647269d4e310A86b875c09946f',
+  },
 };
 
 /**
@@ -43,17 +48,28 @@ export const DEPLOYMENTS: Record<
     swapFactory: Address;
     /** EticaSwap V2 router. */
     swapRouter: Address;
+    /** Research Hub subscription contract (Phase 2). */
+    researchSubscription: Address;
   }
 > = {
   61803: {
     wegaz: '0x0000000000000000000000000000000000000000',
     swapFactory: '0x0000000000000000000000000000000000000000',
     swapRouter: '0x0000000000000000000000000000000000000000',
+    researchSubscription: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     wegaz: '0x0000000000000000000000000000000000000000',
     swapFactory: '0x0000000000000000000000000000000000000000',
     swapRouter: '0x0000000000000000000000000000000000000000',
+    researchSubscription: '0x0000000000000000000000000000000000000000',
+  },
+  31337: {
+    // Written by `DeploySwap.s.sol` against the local anvil fork.
+    wegaz: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+    swapFactory: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
+    swapRouter: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
+    researchSubscription: '0x0000000000000000000000000000000000000000',
   },
 };
 
