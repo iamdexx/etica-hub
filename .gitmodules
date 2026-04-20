@@ -7,3 +7,9 @@
 [submodule "packages/contracts/lib/openzeppelin-contracts"]
 	path = packages/contracts/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "packages/contracts/lib/permit2"]
+	path = packages/contracts/lib/permit2
+	url = https://github.com/Uniswap/permit2
+[submodule "packages/contracts/lib/solmate"]
+	path = packages/contracts/lib/solmate
+	url = https://github.com/transmissions11/solmate

@@ -20,6 +20,7 @@ fs_permissions = [
 remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
   "forge-std/=lib/forge-std/src/",
+  "permit2/=lib/permit2/",
 ]
 
 [rpc_endpoints]
