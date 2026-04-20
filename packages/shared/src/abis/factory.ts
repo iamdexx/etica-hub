@@ -48,6 +48,58 @@ export const factoryAbi = [
     outputs: [{ name: 'pair', type: 'address' }],
   },
   {
+    type: 'function',
+    name: 'etx',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'pairCreationFee',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'trustedCreators',
+    stateMutability: 'view',
+    inputs: [{ name: 'creator', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'setFeeTo',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: '_feeTo', type: 'address' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'setFeeToSetter',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: '_feeToSetter', type: 'address' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'setTrustedCreator',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'creator', type: 'address' },
+      { name: 'trusted', type: 'bool' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'setPairCreationFee',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'fee', type: 'uint256' }],
+    outputs: [],
+  },
+  {
     type: 'event',
     name: 'PairCreated',
     inputs: [
