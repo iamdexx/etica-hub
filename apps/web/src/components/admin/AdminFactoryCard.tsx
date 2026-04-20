@@ -67,6 +67,38 @@ function TxLink({ hash }: { hash: Hex | undefined }) {
   );
 }
 
+function StateBadge({ state }: { state: TxState }) {
+  if (state.status === 'idle') return null;
+  if (state.status === 'error' && state.error) {
+    return (
+      <div className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">
+        {state.error}
+        {state.txHash && (
+          <>
+            {' · '}
+            <TxLink hash={state.txHash} />
+          </>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3 text-xs text-white/60">
+      {state.status === 'signing' && 'Confirm in wallet…'}
+      {state.status === 'pending' && (
+        <>
+          Pending: <TxLink hash={state.txHash} />
+        </>
+      )}
+      {state.status === 'confirmed' && (
+        <span className="text-emerald-400">
+          Confirmed: <TxLink hash={state.txHash} />
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function AdminFactoryCard() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -274,38 +306,6 @@ export function AdminFactoryCard() {
 
   const injectedConnector = connectors.find((c) => c.id === 'injected') ?? connectors[0];
 
-  function StateBadge({ state }: { state: TxState }) {
-    if (state.status === 'idle') return null;
-    if (state.status === 'error' && state.error) {
-      return (
-        <div className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">
-          {state.error}
-          {state.txHash && (
-            <>
-              {' · '}
-              <TxLink hash={state.txHash} />
-            </>
-          )}
-        </div>
-      );
-    }
-    return (
-      <div className="mt-3 text-xs text-white/60">
-        {state.status === 'signing' && 'Confirm in wallet…'}
-        {state.status === 'pending' && (
-          <>
-            Pending: <TxLink hash={state.txHash} />
-          </>
-        )}
-        {state.status === 'confirmed' && (
-          <span className="text-emerald-400">
-            Confirmed: <TxLink hash={state.txHash} />
-          </span>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {/* Wallet */}
@@ -369,7 +369,9 @@ export function AdminFactoryCard() {
           </dd>
           <dt className="text-white/50">feeTo()</dt>
           <dd>
-            {feeTo && feeTo !== '0x0000000000000000000000000000000000000000' ? (
+            {feeTo === null ? (
+              <span className="font-mono text-white/40">—</span>
+            ) : feeTo !== '0x0000000000000000000000000000000000000000' ? (
               <ShortAddr value={feeTo} />
             ) : (
               <span className="font-mono text-amber-300">
