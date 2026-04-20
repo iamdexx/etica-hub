@@ -135,9 +135,46 @@ export function PoolAddCard() {
     return aIs0 ? { rA: r0, rB: r1 } : { rA: r1, rB: r0 };
   }, [pairExists, pairReads.data, tokenA]);
 
+  // B-token decimals + symbol (custom ERC20 support). Hoisted above the
+  // auto-quote effect so the effect can parse / format amountB at the correct
+  // precision for non-18-decimal tokens.
+  const bMeta = useReadContracts({
+    allowFailure: true,
+    contracts:
+      tokenB && !bIsNative
+        ? [
+            {
+              abi: abis.erc20Abi,
+              address: tokenB,
+              functionName: 'decimals',
+            } as const,
+            {
+              abi: abis.erc20Abi,
+              address: tokenB,
+              functionName: 'symbol',
+            } as const,
+          ]
+        : [],
+    query: { enabled: Boolean(tokenB && !bIsNative) },
+  });
+  const bDecimals = useMemo<number>(() => {
+    if (bIsNative) return 18;
+    const d = bMeta.data?.[0];
+    if (!d || d.status !== 'success') return 18;
+    return Number(d.result as number);
+  }, [bIsNative, bMeta.data]);
+  const bSymbolLabel = useMemo<string>(() => {
+    if (bSymbol !== 'CUSTOM') return bSymbol;
+    const s = bMeta.data?.[1];
+    if (!s || s.status !== 'success') return 'custom';
+    return s.result as string;
+  }, [bSymbol, bMeta.data]);
+
   // Auto-quote: when the pair exists and user edits one side, derive the other
   // at the current pool ratio. When the pair does NOT exist the user sets the
-  // initial price freely.
+  // initial price freely. Reserves are stored at each token's native decimals,
+  // so we must parse / format amountB at bDecimals (not a hardcoded 18) for
+  // custom ERC20s that aren't 18-decimal.
   useEffect(() => {
     if (!reserves || reserves.rA === 0n || reserves.rB === 0n) return;
     if (lastEdited === 'A') {
@@ -148,7 +185,7 @@ export function PoolAddCard() {
       try {
         const a = parseUnits(amountAStr, 18);
         const b = (a * reserves.rB) / reserves.rA;
-        setAmountBStr(formatUnits(b, 18));
+        setAmountBStr(formatUnits(b, bDecimals));
       } catch {
         /* ignore parse errors */
       }
@@ -158,7 +195,7 @@ export function PoolAddCard() {
         return;
       }
       try {
-        const b = parseUnits(amountBStr, 18);
+        const b = parseUnits(amountBStr, bDecimals);
         const a = (b * reserves.rA) / reserves.rB;
         setAmountAStr(formatUnits(a, 18));
       } catch {
@@ -166,7 +203,7 @@ export function PoolAddCard() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastEdited, amountAStr, amountBStr, reserves?.rA, reserves?.rB]);
+  }, [lastEdited, amountAStr, amountBStr, reserves?.rA, reserves?.rB, bDecimals]);
 
   const amountA = useMemo(() => {
     if (!amountAStr) return 0n;
@@ -176,14 +213,6 @@ export function PoolAddCard() {
       return 0n;
     }
   }, [amountAStr]);
-  const amountB = useMemo(() => {
-    if (!amountBStr) return 0n;
-    try {
-      return parseUnits(amountBStr, 18);
-    } catch {
-      return 0n;
-    }
-  }, [amountBStr]);
 
   // Balances + allowances. We need ETX approval for both the liquidity
   // amount AND (if pair doesn't yet exist) the 10k ETX pair-creation fee.
@@ -219,39 +248,6 @@ export function PoolAddCard() {
     args: address && ctx && tokenB ? [address, ctx.router] : undefined,
     query: { enabled: Boolean(address && ctx && tokenB && !bIsNative) },
   });
-  // B-token decimals + symbol (custom ERC20 support)
-  const bMeta = useReadContracts({
-    allowFailure: true,
-    contracts:
-      tokenB && !bIsNative
-        ? [
-            {
-              abi: abis.erc20Abi,
-              address: tokenB,
-              functionName: 'decimals',
-            } as const,
-            {
-              abi: abis.erc20Abi,
-              address: tokenB,
-              functionName: 'symbol',
-            } as const,
-          ]
-        : [],
-    query: { enabled: Boolean(tokenB && !bIsNative) },
-  });
-  const bDecimals = useMemo<number>(() => {
-    if (bIsNative) return 18;
-    const d = bMeta.data?.[0];
-    if (!d || d.status !== 'success') return 18;
-    return Number(d.result as number);
-  }, [bIsNative, bMeta.data]);
-  const bSymbolLabel = useMemo<string>(() => {
-    if (bSymbol !== 'CUSTOM') return bSymbol;
-    const s = bMeta.data?.[1];
-    if (!s || s.status !== 'success') return 'custom';
-    return s.result as string;
-  }, [bSymbol, bMeta.data]);
-
   // Re-parse amountB at the correct decimals if custom token is non-18.
   const amountBAdjusted = useMemo(() => {
     if (!amountBStr) return 0n;
@@ -399,14 +395,17 @@ export function PoolAddCard() {
 
   const isWorking = isTxPending || receipt.isLoading;
 
+  // NOTE: deliberately do not include etxNeedsApproval / bNeedsApproval in
+  // `disabled` here — when approval is required, the primary action runs the
+  // approval write (see `primaryAction` below), so the button must stay
+  // clickable to let the user approve. Only balances / amounts / tx-in-flight
+  // gate the button.
   const disabled =
     !ctx ||
     !isConnected ||
     !tokenB ||
     amountA === 0n ||
     amountBAdjusted === 0n ||
-    etxNeedsApproval ||
-    bNeedsApproval ||
     !hasEnoughEtx ||
     !hasEnoughB ||
     isWorking;
