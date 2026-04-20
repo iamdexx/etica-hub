@@ -1,66 +1,66 @@
 # EticaHub
 
-> One unified dapp for the [Etica mainnet](https://www.eticaprotocol.org/): on-chain DEX, Ethereum bridge, and DeSci research hub.
+A single site combining three dapps for the Etica ecosystem:
 
-EticaHub fills the three biggest infrastructure gaps on Etica (chain ID `61803`, native gas `EGAZ`):
+| Phase | Module | Status |
+|---|---|---|
+| 1 | **EticaSwap V2** — Uniswap V2 fork, first on-chain DEX for ETI / EGAZ / ERC-20 | Code complete, tested end-to-end on local mainnet fork |
+| 2a | **ETX reward token + MasterChef + xETXVault + FeeRouter + vesting** | Code complete, held from deploy |
+| 2b | **Research Hub** — proposal reader, IPFS renderer, ETI tipping, subscription contract | Code complete |
+| 3 | **Bridge** — ETI ↔ wETI on Ethereum, 2-of-3 multisig relayer | Code + tests complete, awaiting audit |
 
-1. **EticaSwap** — the first on-chain AMM on Etica. Uniswap V2-style pairs for ETI/EGAZ and any ERC20 deployed on Etica. (Phase 1)
-2. **Etica Research Hub** — proposal indexer + IPFS renderer + tip-in-ETI widget + optional subscription tier for NGOs and researchers. (Phase 2)
-3. **EticaBridge** — lock-and-mint bridge between Etica mainnet and Ethereum, unlocking wETI / wEGAZ for external liquidity. (Phase 3)
+**Nothing is deployed to any chain yet.** See [`docs/DEPLOYMENT_RUNBOOK.md`](./docs/DEPLOYMENT_RUNBOOK.md)
+for the promotion path.
 
-All three modules live in a single monorepo and ship under one frontend shell.
-
-## Networks
-
-| Network | Chain ID | RPC | Explorer |
-|---|---|---|---|
-| Etica Mainnet | 61803 | https://eticamainnet.eticascan.org | https://eticascan.org |
-| Crucible Testnet | 61888 | http://173.212.202.226:8545 | — |
-
-- **ETI (mainnet)** contract: `0x34c61EA91bAcdA647269d4e310A86b875c09946f`
-- **ETI (Crucible)** contract: `0x558593Bc92E6F242a604c615d93902fc98efcA82`
-
-Contracts deploy to Crucible first, then mainnet after review (and for the bridge, an audit).
-
-## Monorepo layout
+## Repo layout
 
 ```
-etica-hub/
-├── apps/
-│   ├── web/              # Next.js 14 frontend (swap, pools, research hub, bridge)
-│   └── indexer/          # Node/TS indexer (pairs, swaps, research proposals, bridge msgs)
-└── packages/
-    ├── contracts/        # Foundry project — all Solidity contracts + tests
-    └── shared/           # chain configs, ABIs, shared types
+apps/
+  web/         Next.js 14 + wagmi + viem frontend
+  indexer/     Node/TS — Etica core event watcher + IPFS proposal fetcher
+  relayer/     Node/TS — bridge coordinator + per-validator signer
+packages/
+  contracts/   Solidity + Foundry
+  shared/      TS — chain configs, ABIs, deployment addresses
+docs/
+  BRIDGE_AUDIT_SCOPE.md    What to hand a bridge auditor
+  DEPLOYMENT_RUNBOOK.md    Step-by-step promotion from fork → testnet → mainnet
+  FAQ.md                   Short answers to common questions
 ```
 
-## Dev setup
+## Quick start
 
 ```bash
-# install deps
+git clone https://github.com/iamdexx/etica-hub && cd etica-hub
 pnpm install
-
-# contracts
-pnpm contracts:build
-pnpm contracts:test
-
-# web
-pnpm dev:web         # http://localhost:3000
-
-# indexer
-pnpm dev:indexer
+pnpm --filter @etica-hub/contracts test    # 41 passing
+pnpm --filter @etica-hub/relayer test      # 11 passing
+pnpm --filter @etica-hub/web typecheck     # clean
+pnpm --filter @etica-hub/web build         # clean
 ```
 
-Requires Node >=20, pnpm 9+, and [Foundry](https://book.getfoundry.sh/getting-started/installation).
+To run the frontend against a local anvil fork of Etica mainnet, see
+`apps/web/README.md` (fork config + seed script).
 
-## Status
+## Chains
 
-| Module | Phase | Status |
-|---|---|---|
-| EticaSwap | 1 | in development |
-| Research Hub | 2 | planned |
-| Bridge | 3 | planned |
+| Chain | ID | RPC | Purpose |
+|---|---|---|---|
+| Etica mainnet | 61803 | https://eticamainnet.eticascan.org | production target |
+| Etica Crucible testnet | 61888 | http://173.212.202.226:8545 | optional testnet (no public faucet — see [FAQ](./docs/FAQ.md)) |
+| Local anvil fork | 31337 | http://127.0.0.1:8545 | default dev target |
+| Ethereum mainnet | 1 | any | bridge destination |
+| Ethereum Sepolia | 11155111 | any | bridge testnet destination |
 
-## License
+## Security
 
-GPL-3.0 — consistent with Etica protocol itself and with Uniswap V2 core.
+- Treasury address: `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D` (repo owner, pre-DAO).
+- Bridge audit scoping doc: [`docs/BRIDGE_AUDIT_SCOPE.md`](./docs/BRIDGE_AUDIT_SCOPE.md).
+- `.gitignore` blocks `*.key`, `*.pem`, `*.keystore`, `secrets/`, `.secrets/`,
+  and all `.env.*` except `.env.example`. Never commit a key.
+
+## Initialized by Devin
+
+This repo was bootstrapped via Devin (https://devin.ai) for the repo owner
+(@iamdexx). Ongoing development is human-reviewed; all PRs require passing CI
+(Foundry tests + pnpm typecheck/build + Devin Review).
