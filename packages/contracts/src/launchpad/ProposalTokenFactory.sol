@@ -11,6 +11,7 @@ import {ProposalTokenVesting} from "./ProposalTokenVesting.sol";
 import {IEticaCore} from "./IEticaCore.sol";
 
 interface IEticaSwapRouterLike {
+    function factory() external view returns (address);
     function addLiquidity(
         address tokenA,
         address tokenB,
@@ -21,6 +22,11 @@ interface IEticaSwapRouterLike {
         address to,
         uint256 deadline
     ) external returns (uint256 amountA, uint256 amountB, uint256 liquidity);
+}
+
+interface IEticaSwapFactoryLike {
+    function getPair(address tokenA, address tokenB) external view returns (address);
+    function createPair(address tokenA, address tokenB) external returns (address);
 }
 
 /// @title ProposalTokenFactory
@@ -265,6 +271,16 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
         uint256 lpHubAmount,
         uint256 deadline
     ) internal returns (uint256 usedToken, uint256 usedHub) {
+        // Pre-create the pair ourselves so msg.sender (the factory's
+        // createPair caller) is this launchpad — which is in the swap
+        // factory's trustedCreators set. Without this, router-initiated
+        // pair creation would come from the router and fail the non-ETX
+        // hub check for `token/ETI`.
+        IEticaSwapFactoryLike swapFactory = IEticaSwapFactoryLike(router.factory());
+        if (swapFactory.getPair(token, hub) == address(0)) {
+            swapFactory.createPair(token, hub);
+        }
+
         IERC20(token).forceApprove(address(router), lpTokenSupply);
         IERC20(hub).forceApprove(address(router), lpHubAmount);
 

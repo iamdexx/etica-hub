@@ -59,8 +59,11 @@ contract ProposalTokenFactoryTest is Test {
         eti = new MockETI(AUTHOR, AUTHOR_ETI_BAL);
 
         // Real swap factory + router so we can observe the two pools
-        // (token/ETX + token/ETI) opened by the launchpad end-to-end.
-        swapFactory = new EticaSwapFactory(FEE_SETTER);
+        // (token/ETX + token/ETI) opened by the launchpad end-to-end. The
+        // factory enforces ETX-only pairing for everyone except addresses in
+        // `trustedCreators`, so the launchpad must be whitelisted after
+        // deploy for its token/ETI pool to be allowed.
+        swapFactory = new EticaSwapFactory(FEE_SETTER, address(etx));
         wegaz = new WEGAZ();
         router = new EticaSwapRouter(address(swapFactory), address(wegaz));
 
@@ -68,6 +71,9 @@ contract ProposalTokenFactoryTest is Test {
         core.register(PROPOSAL_HASH, AUTHOR);
 
         launchpad = new ProposalTokenFactory(_constructorArgs(TREASURY, OWNER));
+
+        vm.prank(FEE_SETTER);
+        swapFactory.setTrustedCreator(address(launchpad), true);
 
         assertGe(etx.balanceOf(AUTHOR), AUTHOR_ETX_BAL, "author ETX balance too low");
         assertGe(eti.balanceOf(AUTHOR), AUTHOR_ETI_BAL, "author ETI balance too low");

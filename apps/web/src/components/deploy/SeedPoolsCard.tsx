@@ -131,7 +131,7 @@ const STEPS: StepDisplay[] = [
     key: 'approveEtx',
     label: '2. Approve ETX to router',
     description:
-      'One-time allowance covering ETX spent on BOTH pools (ETI side + EGAZ side).',
+      'One-time allowance covering ETX spent on BOTH pools (ETI side + EGAZ side) plus a 20,000 ETX buffer the router forwards to the factory as the pair-creation fee (10k ETX per new pair, waived while feeTo is unset).',
   },
   {
     key: 'seedEti',
@@ -200,7 +200,14 @@ export function SeedPoolsCard() {
     }
   }, [etiAmount, etxForEti, egazAmount, etxForEgaz]);
 
-  const etxApprovalTotal = parsed.ok ? parsed.etxForEti + parsed.etxForEgaz : 0n;
+  // Each brand-new pair costs 10k ETX in createPair fees, forwarded by the
+  // router. We seed TWO pools, so budget 20k ETX on top of the LP amounts.
+  // Harmless if the treasury (feeTo) isn't wired yet — the factory just
+  // skips the fee and the unused allowance stays with the user.
+  const PAIR_CREATION_FEE_BUFFER = parseEther('20000');
+  const etxApprovalTotal = parsed.ok
+    ? parsed.etxForEti + parsed.etxForEgaz + PAIR_CREATION_FEE_BUFFER
+    : 0n;
 
   const [steps, setSteps] = useState<Record<StepKey, StepState>>({
     approveEti: initial,
@@ -450,9 +457,10 @@ export function SeedPoolsCard() {
         {parsed.ok && (
           <div className="text-xs text-white/50">
             Combined ETX approval: <span className="font-mono">{etxForEti}</span> +{' '}
-            <span className="font-mono">{etxForEgaz}</span> ={' '}
+            <span className="font-mono">{etxForEgaz}</span> +{' '}
+            <span className="font-mono">20,000</span> (2 &times; 10k pair-creation fee) ={' '}
             <span className="font-mono">
-              {(Number(etxForEti) + Number(etxForEgaz)).toLocaleString()}
+              {(Number(etxForEti) + Number(etxForEgaz) + 20_000).toLocaleString()}
             </span>{' '}
             ETX
           </div>
