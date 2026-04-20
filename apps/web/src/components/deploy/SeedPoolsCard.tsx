@@ -163,12 +163,15 @@ export function SeedPoolsCard() {
   const [etiInput, setEtiInput] = useState<string>(DEFAULT_ETI);
 
   // Amounts in whole-token units (human-friendly). Defaults match the locked
-  // Scenario 1 plan: $1K FDV, $25/pool, 100M ETX supply, ~$0.037 ETI,
-  // ~$0.0038 EGAZ (NonKYC reference prices).
-  const [etiAmount, setEtiAmount] = useState<string>('672');
-  const [etxForEti, setEtxForEti] = useState<string>('2500000');
-  const [egazAmount, setEgazAmount] = useState<string>('6578');
-  const [etxForEgaz, setEtxForEgaz] = useState<string>('2500000');
+  // "equalize both pools at $2.89/side" plan: $1K FDV, 100M ETX supply, ETX
+  // price $0.00001, 77.75 ETI @ $0.0372, 761 EGAZ @ $0.0038 (NonKYC
+  // reference prices). Each pool: ~289,230 ETX matched against the hub
+  // token's USD value on the other side. Override any field before seeding
+  // if your on-chain balances differ.
+  const [etiAmount, setEtiAmount] = useState<string>('77.75');
+  const [etxForEti, setEtxForEti] = useState<string>('289230');
+  const [egazAmount, setEgazAmount] = useState<string>('761');
+  const [etxForEgaz, setEtxForEgaz] = useState<string>('289230');
 
   const router = useMemo<Address | null>(
     () => (isAddress(routerInput.trim()) ? (routerInput.trim() as Address) : null),
@@ -422,8 +425,9 @@ export function SeedPoolsCard() {
         <h2 className="text-lg font-semibold">Pool amounts</h2>
         <p className="text-xs text-white/60">
           Amounts are in whole tokens (18 decimals). Defaults below target a $1,000 FDV on 100M
-          ETX supply at ~$0.037 ETI / ~$0.0038 EGAZ, with $25 of value on each side of each
-          pool. Override if your wallet holdings differ.
+          ETX supply at ~$0.037 ETI / ~$0.0038 EGAZ, with ~$2.89 of value on each side of each
+          pool (77.75 ETI / 761 EGAZ / 289,230 ETX per pool). Override if your wallet holdings
+          differ.
         </p>
         <div className="grid gap-4 md:grid-cols-2">
           <AmountField label="ETI into ETI/ETX pool" value={etiAmount} onChange={setEtiAmount} />
