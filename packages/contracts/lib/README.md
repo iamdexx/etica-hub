@@ -14,3 +14,7 @@ Permit2 pins `solc = 0.8.17` with `via_ir = true`. Our contracts use `0.8.26` wi
 Because Permit2 is built under its own `foundry.toml` with identical flags to the upstream audited contract, the deployed bytecode is **identical to the audited Permit2** at `0x000000000022D473030F116dDEE9F6B43aC78BA3` on mainnet Ethereum and every other chain it's canonically deployed to.
 
 We do **not** currently deploy at the canonical address on Etica. Doing so would require first deploying the [Arachnid CREATE2 deployer proxy](https://github.com/Arachnid/deterministic-deployment-proxy) at `0x4e59b44847b379578588920cA78FbF26c0B4956C` on Etica, then running Permit2's deploy through it. Whatever address `CREATE` picks on first deploy is recorded in `docs/TRADING.md` Appendix B.
+
+## UniswapX Reactor
+
+UniswapX is not vendored here — it lives in a sibling package at [`packages/trading-contracts`](../../trading-contracts/README.md) because it pins `solc = 0.8.29` with different optimizer settings and has its own transitive dependency tree (`solmate`, `calibur`, `Tribunal`, `blocknumberish`, etc.). Keeping it isolated preserves audit-equivalence of the deployed Reactor bytecode and doesn't bloat the main V2 DEX build.

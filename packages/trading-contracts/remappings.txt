@@ -1,0 +1,7 @@
+uniswapx/=lib/uniswapx/
+permit2/=lib/uniswapx/lib/permit2/
+solmate/=lib/uniswapx/lib/solmate/
+forge-std/=lib/uniswapx/lib/forge-std/src/
+openzeppelin-contracts/utils=lib/uniswapx/lib/openzeppelin-contracts/contracts/utils
+openzeppelin-contracts/security=lib/uniswapx/lib/openzeppelin-contracts/contracts/security
+ds-test/=lib/uniswapx/lib/forge-std/lib/ds-test/src/

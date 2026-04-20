@@ -1,13 +1,13 @@
 # EticaHub Trading — Design Document
 
-Status: **draft, pre-implementation.** This doc describes the architecture for non-custodial trading features (limit orders, stop orders, DCA, grid bots, infinite grid bots) on EticaHub v2. It is the spec that subsequent PRs implement.
+Status: **in progress.** PRs A (this doc, #28) and B (Permit2 vendoring, #29) are merged. PR C (UniswapX Reactor + ETX-denominated fee controller) is the current PR. This doc is kept live as the canonical spec for the whole trading stack; individual sections are marked with their PR status where relevant.
 
 ## Goals
 
 1. **Non-custodial.** EticaHub never holds user funds or signing keys. At every moment between signing an order and the fill landing on-chain, tokens live in the user's own wallet and are protected by the user's own key.
 2. **No new auditable code on the critical path.** All on-chain components that touch funds are verbatim forks of contracts already audited by reputable firms (OpenZeppelin, Trail of Bits, ABDK). EticaHub's own code sits above them, stores signed orders, and renders UI — it never moves tokens.
 3. **Grid + infinite-grid feasibility without a custodial bot.** The user can start a grid with one wallet interaction; the grid can run for days or weeks without the user's browser being open. This requires pre-signed batch orders, a public order book, and an open keeper network — not a server holding keys.
-4. **Fee-free to start.** No treasury fee on fills in v1. We can add one later by routing orders through a thin fee-collector contract.
+4. **ETX-denominated protocol fee, disabled at launch.** Fee is pluggable via UniswapX's native `IProtocolFeeController` hook, denominated in ETX (since hub-and-spoke guarantees every trade has an ETX leg), capped at 1% on-chain, deployed at **0 BPS** so v1 runs fee-free. The reactor owner can flip the fee on at any time — same pattern as turning on the V2 pool-creation fee via `factory.setFeeTo`. No reactor fork required.
 5. **Minimal ops surface.** EticaHub runs exactly one piece of always-on infrastructure (the order book API) and one best-effort process (a reference keeper). If both go down, existing on-chain orders are still cancellable directly at the contract.
 
 ## Non-goals (v1)
@@ -63,39 +63,46 @@ Properties relevant to this design:
 
 We deploy Permit2 at its canonical salt so that any wallet UX built around the canonical address "just works".
 
-### EticaX Reactor
+### DutchOrderReactor (verbatim UniswapX)
 
-A verbatim fork of [UniswapX](https://github.com/Uniswap/UniswapX)'s `ExclusiveDutchOrderReactor`, minimally modified to:
-- Point at our EticaSwap V2 Router instead of a v3/v4 UniversalRouter.
-- Use WEGAZ as the wrapped-native token address (instead of WETH).
-- Call the order-book for settlement-fee accounting (optional; disabled in v1).
+We deploy Uniswap Labs' [`DutchOrderReactor`](https://github.com/Uniswap/UniswapX) **verbatim** — bytecode is byte-identical to the upstream audited artifact, so OpenZeppelin / ABDK / Trail of Bits audits carry over unchanged. The reactor is chain-agnostic: it does not know about our Router, and does not need to. The keeper chooses the execution path when they fill.
 
-An EticaX **order** is a signed EIP-712 struct containing:
-- `maker`: user address
-- `input`: (token, amount)
-- `output`: (token, min-amount)
-- `decayStartTime`, `decayEndTime`: price decays linearly between these to create a "Dutch auction" window the keeper can profitably fill inside
-- `decayStartAmount`, `decayEndAmount`: the output decays from the favorable end to the limit end across the window
-- `exclusiveFiller`: address(0) for "anyone can fill" or a keeper address for first-right-of-refusal
-- `exclusivityEndTime`: if set, only `exclusiveFiller` can fill before this time
-- `deadline`: past this, the order is invalid
-- `nonce`: Permit2 nonce, used to cancel
+This is simpler than what the earlier draft of this doc described (a modified fork with hardcoded WEGAZ / Router pointers) and has better audit-inheritance: no modification means no new attack surface.
 
-The Reactor is what the keeper calls. Its job is to:
-1. Verify the EIP-712 signature against the maker.
-2. Compute the current price along the decay curve (at block.timestamp).
-3. Pull `input` tokens from the user via Permit2.
-4. Perform the swap through EticaSwap Router and verify `output` ≥ decayed target.
-5. Transfer `output` to the maker.
-6. Emit a `Fill` event.
+An **order** is a signed EIP-712 `DutchOrder` struct (see [`DutchOrderLib.sol`](https://github.com/Uniswap/UniswapX/blob/main/src/lib/DutchOrderLib.sol)). Relevant fields:
+- `info.swapper`: user address
+- `info.deadline`: past this, the order is invalid
+- `info.nonce`: Permit2 nonce, used to cancel
+- `input`: (token, amount, maxAmount) with Dutch decay support
+- `outputs[]`: each (token, startAmount, endAmount, recipient) — output decays across the window
+- `decayStartTime`, `decayEndTime`: price decays linearly between these
+
+When a keeper fills, the reactor:
+1. Verifies the EIP-712 signature against the swapper via Permit2.
+2. Computes the decayed amounts at `block.timestamp`.
+3. Pulls input tokens from the swapper's wallet via Permit2.
+4. Optionally asks `EticaProtocolFeeController.getFeeOutputs(order)` to append fee outputs (disabled in v1).
+5. Invokes the keeper's `reactorCallback` (or direct `execute`) so the keeper can swap through **whatever** liquidity source they want (EticaSwap Router, on-chain aggregators, inventory, etc.) and deliver the outputs.
+6. Transfers outputs (and fee) to the recipient(s) and emits `Fill`.
 
 **Why Dutch decay, not a flat limit?** Flat limits on a thin AMM are sandwich-prone: a searcher sees your order, front-runs the pool to put it at your exact limit, then back-runs after the fill. Dutch decay means the fill is only profitable for the keeper when the orderbook price has moved in the user's favor enough to cover the searcher's gas + their target margin, making sandwich attacks uneconomical for typical orders. The decay curve is chosen by the UI, not the user directly, based on pool depth.
 
 For flat-limit-order UX (which users expect), we expose `decayStart == decayEnd == userLimit` and accept slightly worse fills. For grids we use wider decay curves.
 
+### EticaProtocolFeeController (our only original on-chain contract)
+
+A ~120 LoC contract at [`packages/trading-contracts/src/EticaProtocolFeeController.sol`](../packages/trading-contracts/src/EticaProtocolFeeController.sol) that implements UniswapX's native `IProtocolFeeController`. Behavior:
+
+- On every `getFeeOutputs(order)` call, checks whether the input or any output token is ETX; if so, returns a single `OutputToken{ token: ETX, amount: bps × legAmount / 10_000, recipient: treasury }`. If the order has no ETX leg (unreachable on EticaSwap since the factory enforces hub-and-spoke), returns an empty array.
+- Owner can call `setFeeBps`, `setTreasury`, `setOwner`. Fee is **hard-capped at 100 BPS (1%) in the constructor and setter** — not an invariant the UI enforces, the contract itself.
+- Deployed with `feeBps = 0` at launch. Owner flips it on later.
+- Stores no tokens; no upgradeability; no surprise calls.
+
+The reactor calls this controller inside `_injectFees`, so fee outputs are indistinguishable to the keeper from user outputs: the keeper must satisfy them atomically with the fill or the tx reverts.
+
 ### EticaSwap Router (existing)
 
-No changes. The Reactor routes swaps through the existing `UniswapV2Router02` fork we already have deployed (`0xaefbf3fb975657a4c71ea0fb644b4afe5f555723`), using the hub-and-spoke paths through ETX.
+Unchanged. Keepers swap through the existing `UniswapV2Router02` fork we already have deployed (`0xaefbf3fb975657a4c71ea0fb644b4afe5f555723`) using hub-and-spoke paths through ETX, but the reactor is agnostic to this choice — a keeper could use any liquidity source that lets them deliver the expected outputs.
 
 ## Off-chain components
 
@@ -187,21 +194,21 @@ Global view of all of a user's open orders + fill history. Cancellation button p
 
 ## Rollout plan
 
-| PR | Scope |
-|---|---|
-| A | This design doc |
-| B | Vendor Permit2 + UniswapX Reactor source, Forge tests, deploy script |
-| C | Deploy Permit2 + EticaXReactor to mainnet |
-| D | Order-book API + reference keeper skeleton |
-| E | Price indexer extension + `/trade/[token]` UI (limit + stop) |
-| F | DCA + bounded grid + infinite grid wizards |
-| G | Beta launch + docs |
+| PR | Scope | Status |
+|---|---|---|
+| A | This design doc | merged (#28) |
+| B | Vendor Permit2 as submodule + deploy wrapper | merged (#29) |
+| C | Vendor UniswapX Reactor + ETX-denominated `EticaProtocolFeeController` + deploy scripts + deploy to Etica mainnet | this PR |
+| D | Order-book API + reference keeper skeleton | pending |
+| E | Price indexer extension + `/trade/[token]` UI (limit + stop) | pending |
+| F | DCA + bounded grid + infinite grid wizards | pending |
+| G | Beta launch + docs | pending |
 
 Each PR is independently mergeable and functional — the site continues to work at every step.
 
 ## Open questions
 
-1. **Treasury fee on fills.** Not in v1. If we want one in v2, we fork the Reactor once more and route a basis-point share of input to treasury before the swap. Adds ~30 LoC.
+1. **Fee-on at what BPS and when.** Launch fee is 0 BPS. Plan: leave at 0 through public beta (PR G). Once fill volume is steady and keepers are sustainable, flip to 5–10 BPS via `EticaProtocolFeeController.setFeeBps`. Revisit after ~1 month of fill data.
 2. **"Legacy flat limit" without decay.** UniswapX removed pure-flat orders for sandwich reasons. Our UI will hide the decay from the user by default (show a "limit price" + a "patience" toggle that secretly sets decay width). Power users can opt into visible decay.
 3. **Chart rendering library.** `lightweight-charts` vs `recharts`. Leaning `lightweight-charts` for candles + good perf on mobile.
 4. **Order-book API language.** Node.js/TypeScript to share types + tooling with the rest of the monorepo, unless we hit perf issues.
@@ -216,11 +223,24 @@ Each PR is independently mergeable and functional — the site continues to work
 - [UniswapX OpenZeppelin audit](https://blog.openzeppelin.com/uniswap-x-audit)
 - [UniswapX ABDK audit](https://github.com/Uniswap/UniswapX/blob/main/audit/v1.0.0/ABDK.pdf)
 
-## Appendix B — Canonical addresses (post-deploy, to be filled in PR C)
+## Appendix B — Canonical addresses (post-deploy)
 
-| Contract | Address |
-|---|---|
-| Permit2 | _tbd_ |
-| EticaXReactor | _tbd_ |
-| EticaSwap Router (existing) | `0xaefbf3fb975657a4c71ea0fb644b4afe5f555723` |
-| ETX (existing) | `0xa5a1bc6307b0b87989b8456d4b35f88a68650044` |
+| Contract | Address | Source |
+|---|---|---|
+| Permit2 | _tbd_ (fill after `packages/contracts/script/deploy-permit2.sh` runs) | verbatim Uniswap Labs, commit `cc56ad0` |
+| DutchOrderReactor | _tbd_ (fill after `packages/trading-contracts/script/deploy-trading-stack.sh` runs) | verbatim Uniswap Labs UniswapX |
+| OrderQuoter | _tbd_ | verbatim Uniswap Labs UniswapX |
+| EticaProtocolFeeController | _tbd_ | `packages/trading-contracts/src/EticaProtocolFeeController.sol` (this repo) |
+| EticaSwap Router | `0xaefbf3fb975657a4c71ea0fb644b4afe5f555723` | existing |
+| Factory | `0xfc8de5a5087c8825aa54e2c57b3ffe0e23784bc3` | existing |
+| ETX | `0xa5a1bc6307b0b87989b8456d4b35f88a68650044` | existing |
+| WEGAZ | `0x232fb2b87cace92b2438054a7eb79b4081e3e11a` | existing |
+| Treasury | `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D` | existing |
+
+### Deploy sequence
+
+1. From `packages/contracts/`, run `script/deploy-permit2.sh` (deploys Permit2, outputs its address).
+2. Set `PERMIT2_ADDRESS` + `ETX_ADDRESS` + `TREASURY_ADDRESS` + `REACTOR_OWNER` env vars.
+3. From the repo root, run `packages/trading-contracts/script/deploy-trading-stack.sh` (deploys DutchOrderReactor, OrderQuoter, EticaProtocolFeeController; wires the fee controller onto the reactor with `feeBps = 0`).
+4. Record all four addresses above.
+5. Verify all four contracts on eticascan (Reactor + Quoter are verbatim UniswapX at solc 0.8.29, optimizer 1M; fee controller is at the same compiler flags; Permit2 is at solc 0.8.17 + via_ir).
