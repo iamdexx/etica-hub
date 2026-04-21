@@ -31,10 +31,10 @@ jobs:
     # needed if you later wire a signer key for a non-dry-run keeper — not
     # used here.
     env:
-      KEEPER_RPC_URL: ${{ vars.KEEPER_RPC_URL || 'https://rpc.eticascan.org' }}
+      KEEPER_RPC_URL: ${{ vars.KEEPER_RPC_URL || 'https://eticamainnet.eticascan.org' }}
       KEEPER_CHAIN_ID: ${{ vars.KEEPER_CHAIN_ID || '61803' }}
       KEEPER_REACTOR_ADDRESS: ${{ vars.KEEPER_REACTOR_ADDRESS || '0x85e02C7F1bDFfBC3a018a91da84C3095F01d5d22' }}
-      KEEPER_REGISTRY_ADDRESS: ${{ vars.KEEPER_REGISTRY_ADDRESS || '0x0000000000000000000000000000000000000000' }}
+      KEEPER_REGISTRY_ADDRESS: ${{ vars.KEEPER_REGISTRY_ADDRESS || '0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9' }}
       KEEPER_POLL_BATCH_SIZE: '100'
       KEEPER_DEADLINE_GRACE_SECONDS: '30'
       # Never submit — this workflow is log-only.
