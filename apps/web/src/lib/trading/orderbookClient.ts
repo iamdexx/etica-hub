@@ -14,7 +14,7 @@ import type { Address, Hex } from 'viem';
  * nonce state — those belong to the keeper and the user's wallet, not the UI.
  */
 
-export type StrategyType = 'limit' | 'stop';
+export type StrategyType = 'limit' | 'stop' | 'dca';
 export type TriggerDirection = 'lte' | 'gte';
 
 export interface StoredOrderView {
@@ -35,15 +35,21 @@ export interface StoredOrderView {
   encodedOrder: Hex;
   signature: Hex;
   status: 'open' | 'filled' | 'cancelled' | 'expired';
-  /** `limit` (default) or `stop`. Defaults to `limit` for older rows without the field. */
+  /** `limit` (default), `stop`, or `dca`. Defaults to `limit` for older rows without the field. */
   strategyType: StrategyType;
   /**
    * Stop-order trigger price, expressed as ETX-per-base with 18 decimals
-   * (stringified bigint). Null for limit orders.
+   * (stringified bigint). Null for limit / dca orders.
    */
   triggerPrice: string | null;
-  /** `lte` for stop-loss (price ≤ trigger), `gte` for buy-stop. Null for limit. */
+  /** `lte` for stop-loss (price ≤ trigger), `gte` for buy-stop. Null for limit / dca. */
   triggerDirection: TriggerDirection | null;
+  /** DCA batch id (client-generated UUID). Shared by every leg; null for limit / stop. */
+  dcaBatchId: string | null;
+  /** 0-based leg position within the DCA batch. Null for limit / stop. */
+  dcaIndex: number | null;
+  /** Total number of legs in the DCA batch. Null for limit / stop. */
+  dcaTotal: number | null;
   fillTxHash: Hex | null;
   fillBlockNumber: number | null;
   cancelTxHash: Hex | null;
@@ -101,6 +107,12 @@ export interface SubmitOrderInput {
   triggerPrice?: string;
   /** Required when `strategyType === "stop"`. */
   triggerDirection?: TriggerDirection;
+  /** Required when `strategyType === "dca"`. 8-64 hex/dash chars, shared across legs. */
+  dcaBatchId?: string;
+  /** Required when `strategyType === "dca"`. 0-based leg position. */
+  dcaIndex?: number;
+  /** Required when `strategyType === "dca"`. Total leg count. */
+  dcaTotal?: number;
 }
 
 export async function submitOrder(
@@ -119,6 +131,7 @@ export interface ListOrdersParams {
   status?: 'open' | 'filled' | 'cancelled' | 'expired';
   reactor?: Address;
   strategyType?: StrategyType;
+  dcaBatchId?: string;
   limit?: number;
 }
 
@@ -131,6 +144,7 @@ export async function listOrders(
   if (params.status) q.set('status', params.status);
   if (params.reactor) q.set('reactor', params.reactor);
   if (params.strategyType) q.set('strategyType', params.strategyType);
+  if (params.dcaBatchId) q.set('dcaBatchId', params.dcaBatchId);
   if (params.limit != null) q.set('limit', String(params.limit));
   const suffix = q.toString() ? `?${q.toString()}` : '';
   const out = await request<{ orders: StoredOrderView[] }>(baseUrl, `/orders${suffix}`);

@@ -4,13 +4,15 @@ import { useState } from 'react';
 import { SwapCard } from '../swap/SwapCard';
 import { LimitForm } from './LimitForm';
 import { StopForm } from './StopForm';
+import { DcaForm } from './DcaForm';
 
-type Tab = 'market' | 'limit' | 'stop';
+type Tab = 'market' | 'limit' | 'stop' | 'dca';
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'market', label: 'Market' },
   { key: 'limit', label: 'Limit' },
   { key: 'stop', label: 'Stop' },
+  { key: 'dca', label: 'DCA' },
 ];
 
 export interface TradeTabsProps {
@@ -40,6 +42,7 @@ export function TradeTabs({ baseSymbol }: TradeTabsProps) {
       {tab === 'market' && <SwapCard />}
       {tab === 'limit' && <LimitForm baseSymbol={baseSymbol} />}
       {tab === 'stop' && <StopForm baseSymbol={baseSymbol} />}
+      {tab === 'dca' && <DcaForm baseSymbol={baseSymbol} />}
     </div>
   );
 }

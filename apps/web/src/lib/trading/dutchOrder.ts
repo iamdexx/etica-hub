@@ -194,6 +194,115 @@ export function buildLimitOrder(p: BuildLimitOrderParams): DutchOrder {
   };
 }
 
+/** DCA batch plan — ties every leg back to one UI-level strategy row. */
+export interface DcaLeg {
+  /** 0-based leg position in the schedule. */
+  index: number;
+  /** Unix seconds when the keeper becomes eligible to fill this leg. */
+  decayStartSec: number;
+  /** Unix seconds at which the leg expires if un-filled. */
+  deadlineSec: number;
+  /** The underlying DutchOrder for this leg — pass to `encodeDutchOrder`. */
+  order: DutchOrder;
+}
+
+export interface BuildDcaLegsParams {
+  reactor: Address;
+  swapper: Address;
+  side: Side;
+  baseToken: Address;
+  quoteToken: Address;
+  /** Total base-token amount across ALL legs. Divided evenly; remainder lands on the last leg. */
+  totalBaseAmount: bigint;
+  /** Uniform limit price per leg (quote-per-base, 18 decimals). */
+  pricePerBase18: bigint;
+  baseDecimals: number;
+  quoteDecimals: number;
+  /** Number of legs. Must be >= 2. */
+  legs: number;
+  /** Seconds between the decayStart of consecutive legs. Must be >= 60. */
+  intervalSec: number;
+  /** Unix seconds for the first leg's decayStart (usually `floor(Date.now()/1000)`). */
+  firstLegStartSec: number;
+  /** Per-leg validity window (seconds between a leg's decayStart and its deadline). */
+  legValiditySec: number;
+  /** Nonce generator. Defaults to `randomPermit2Nonce`; injectable for deterministic tests. */
+  nonceGenerator?: () => bigint;
+}
+
+/**
+ * Build N flat limit orders laid out on a DCA schedule.
+ *
+ * Each leg is a plain limit order (same shape as `buildLimitOrder`) with its
+ * own staggered `decayStartTime`. The keeper's `decayStartTime <= now` gate
+ * is what releases each leg in sequence — no on-chain scheduling needed.
+ *
+ * The total base amount is split evenly across legs; any remainder from
+ * integer division is added to the last leg so the sum matches the input
+ * exactly (avoids a dust delta between the user-approved amount and the sum
+ * of per-leg inputs).
+ *
+ * Caller is responsible for generating ONE `dcaBatchId` and tagging every
+ * leg's POST payload with it + the leg's `index` and the total leg count —
+ * the orderbook stores that metadata so the dashboard can group legs into a
+ * single strategy row.
+ */
+export function buildDcaLegs(p: BuildDcaLegsParams): DcaLeg[] {
+  if (p.legs < 2) throw new Error('DCA requires at least 2 legs');
+  if (p.legs > 50) throw new Error('DCA capped at 50 legs per batch');
+  if (p.intervalSec < 60) throw new Error('intervalSec must be >= 60');
+  if (p.totalBaseAmount < BigInt(p.legs)) {
+    throw new Error('totalBaseAmount must be >= legs (each leg needs >= 1 wei)');
+  }
+  if (p.legValiditySec < 300) throw new Error('legValiditySec must be >= 300');
+
+  const perLeg = p.totalBaseAmount / BigInt(p.legs);
+  const remainder = p.totalBaseAmount - perLeg * BigInt(p.legs);
+  const gen = p.nonceGenerator ?? randomPermit2Nonce;
+
+  const out: DcaLeg[] = [];
+  for (let i = 0; i < p.legs; i++) {
+    const decayStart = p.firstLegStartSec + i * p.intervalSec;
+    const deadline = decayStart + p.legValiditySec;
+    const baseAmount = i === p.legs - 1 ? perLeg + remainder : perLeg;
+    out.push({
+      index: i,
+      decayStartSec: decayStart,
+      deadlineSec: deadline,
+      order: buildLimitOrder({
+        reactor: p.reactor,
+        swapper: p.swapper,
+        side: p.side,
+        baseToken: p.baseToken,
+        quoteToken: p.quoteToken,
+        baseAmount,
+        pricePerBase18: p.pricePerBase18,
+        baseDecimals: p.baseDecimals,
+        quoteDecimals: p.quoteDecimals,
+        deadlineSec: deadline,
+        nonce: gen(),
+        decayStartSec: decayStart,
+        decayEndSec: decayStart,
+      }),
+    });
+  }
+  return out;
+}
+
+/** Random 128-bit hex id shared by every leg of one DCA batch. Uses
+ * `crypto.randomUUID()` when available, falls back to `getRandomValues`. */
+export function randomDcaBatchId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  if (typeof globalThis.crypto?.getRandomValues !== 'function') {
+    throw new Error('crypto unavailable — need a secure RNG');
+  }
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** ABI-encode the DutchOrder struct so it can be dropped into the
  * `encodedOrder` field on `/orders` POST. Matches the layout the reactor
  * expects in `abi.decode(signedOrder.order, (DutchOrder))`. */

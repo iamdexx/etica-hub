@@ -33,14 +33,22 @@ export interface OrderbookOrder {
   signature: Hex;
   status: 'open' | 'filled' | 'cancelled' | 'expired';
   /**
-   * Strategy flavor. `limit` is a plain resting order. `stop` is an order
-   * gated on a trigger price (see `triggerPrice` + `triggerDirection`) — the
-   * keeper must skip these until a price oracle is wired up. Legacy rows
-   * without this field are treated as `limit`.
+   * Strategy flavor.
+   *   - `limit` : plain resting order. Fillable whenever `decayStartTime <= now`.
+   *   - `stop`  : gated on a trigger price (see `triggerPrice` + `triggerDirection`).
+   *               Keeper skips these until a price oracle is wired up.
+   *   - `dca`   : one leg of a DCA batch. Gated by `decayStartTime` like `limit`
+   *               (each leg carries its own staggered start time), so the keeper
+   *               treats `dca` and `limit` identically. `dcaBatchId`/`dcaIndex`/
+   *               `dcaTotal` are only used by the UI for grouping.
+   * Legacy rows without this field are treated as `limit`.
    */
-  strategyType?: 'limit' | 'stop';
+  strategyType?: 'limit' | 'stop' | 'dca';
   triggerPrice?: string | null;
   triggerDirection?: 'lte' | 'gte' | null;
+  dcaBatchId?: string | null;
+  dcaIndex?: number | null;
+  dcaTotal?: number | null;
   fillTxHash: Hex | null;
   fillBlockNumber: number | null;
   cancelTxHash: Hex | null;
@@ -53,7 +61,8 @@ export interface ListOrdersParams {
   swapper?: Address;
   inputToken?: Address;
   outputToken?: Address;
-  strategyType?: 'limit' | 'stop';
+  strategyType?: 'limit' | 'stop' | 'dca';
+  dcaBatchId?: string;
   minDeadline?: number;
   limit?: number;
   offset?: number;
@@ -83,6 +92,7 @@ export function createOrderbookClient(opts: OrderbookClientOptions): OrderbookCl
       if (params.inputToken) qs.set('inputToken', params.inputToken);
       if (params.outputToken) qs.set('outputToken', params.outputToken);
       if (params.strategyType) qs.set('strategyType', params.strategyType);
+      if (params.dcaBatchId) qs.set('dcaBatchId', params.dcaBatchId);
       if (typeof params.minDeadline === 'number') qs.set('minDeadline', String(params.minDeadline));
       if (typeof params.limit === 'number') qs.set('limit', String(params.limit));
       if (typeof params.offset === 'number') qs.set('offset', String(params.offset));

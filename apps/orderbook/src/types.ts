@@ -17,15 +17,20 @@ export type OrderStatus = 'open' | 'filled' | 'cancelled' | 'expired';
  * Strategy flavor for the off-chain order book.
  *
  * On-chain the reactor sees the same DutchOrder regardless of flavor — the
- * strategy only affects **when** a keeper attempts the fill:
+ * strategy only affects **when** a keeper attempts the fill and how the UI
+ * groups/displays rows:
  *   - `limit` : fill any time after `decayStartTime` while price is ≥ startAmount
  *   - `stop`  : wait for `triggerPrice` to be crossed in `triggerDirection`
  *               before attempting the fill (keeper-enforced, off-chain).
+ *   - `dca`   : one leg of a dollar-cost-average batch. Identical gating to
+ *               `limit` (decayStartTime acts as the "execute after" timestamp
+ *               per leg), but carries `dcaBatchId`/`dcaIndex`/`dcaTotal` so
+ *               the UI can group legs into a single strategy row.
  *
- * DCA / grid / infinite grid ride on top of `limit` by submitting multiple
- * orders in one wallet popup; they don't need a new strategy type.
+ * Grid / infinite grid ride on top of `limit` by submitting multiple orders
+ * in one wallet popup; they don't need a new strategy type.
  */
-export type StrategyType = 'limit' | 'stop';
+export type StrategyType = 'limit' | 'stop' | 'dca';
 
 /** Trigger direction for stop orders. `lte` = stop-loss, `gte` = buy-stop. */
 export type TriggerDirection = 'lte' | 'gte';
@@ -81,6 +86,17 @@ export interface StoredOrder {
   /** `lte` for stop-loss (price ≤ trigger), `gte` for buy-stop. Null for limit. */
   triggerDirection: TriggerDirection | null;
 
+  /**
+   * DCA batch grouping. Populated only for `strategyType === 'dca'`. The
+   * `dcaBatchId` is a client-generated UUID shared by every leg of one DCA
+   * plan; `dcaIndex` is the 0-based position in the schedule; `dcaTotal` is
+   * the total number of legs. Legacy rows / non-DCA orders have all three
+   * as null.
+   */
+  dcaBatchId: string | null;
+  dcaIndex: number | null;
+  dcaTotal: number | null;
+
   /** Populated after a keeper lands a fill tx. */
   fillTxHash: `0x${string}` | null;
   fillBlockNumber: number | null;
@@ -98,6 +114,8 @@ export interface OrderFilter {
   inputToken?: `0x${string}`;
   outputToken?: `0x${string}`;
   strategyType?: StrategyType;
+  /** Filter to a single DCA batch (used by UI grouping). */
+  dcaBatchId?: string;
   /** Only orders whose deadline is >= this unix timestamp. */
   minDeadline?: number;
   limit?: number;

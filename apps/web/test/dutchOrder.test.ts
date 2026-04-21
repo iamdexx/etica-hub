@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { decodeAbiParameters, parseAbiParameters, parseUnits, type Hex } from 'viem';
 import {
   baseFromQuote,
+  buildDcaLegs,
   buildLimitOrder,
   buildPermit2WitnessTypedData,
   encodeDutchOrder,
   orderBookHash,
   quoteFromBase,
+  randomDcaBatchId,
   randomPermit2Nonce,
 } from '../src/lib/trading/dutchOrder';
 
@@ -213,6 +215,101 @@ describe('encodeDutchOrder round-trip', () => {
     const h2 = orderBookHash(encoded);
     expect(h1).toBe(h2);
     expect(h1).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+});
+
+describe('randomDcaBatchId', () => {
+  it('returns a nonempty string', () => {
+    const id = randomDcaBatchId();
+    expect(typeof id).toBe('string');
+    expect(id.length).toBeGreaterThan(8);
+  });
+  it('is unique across a small sample', () => {
+    const s = new Set<string>();
+    for (let i = 0; i < 32; i++) s.add(randomDcaBatchId());
+    expect(s.size).toBe(32);
+  });
+});
+
+describe('buildDcaLegs', () => {
+  const baseParams = {
+    reactor: REACTOR,
+    swapper: SWAPPER,
+    side: 'buy' as const,
+    baseToken: BASE,
+    quoteToken: QUOTE,
+    pricePerBase18: parseUnits('1.5', 18),
+    baseDecimals: 18,
+    quoteDecimals: 18,
+    intervalSec: 60 * 60,
+    firstLegStartSec: NOW,
+    legValiditySec: 24 * 60 * 60,
+  };
+
+  it('produces N legs with staggered decayStartTime and unique nonces', () => {
+    let nonce = 100n;
+    const legs = buildDcaLegs({
+      ...baseParams,
+      totalBaseAmount: parseUnits('10', 18),
+      legs: 5,
+      nonceGenerator: () => nonce++,
+    });
+    expect(legs).toHaveLength(5);
+    for (let i = 0; i < 5; i++) {
+      expect(legs[i].index).toBe(i);
+      expect(legs[i].decayStartSec).toBe(NOW + i * 60 * 60);
+      expect(legs[i].order.info.nonce).toBe(BigInt(100 + i));
+      // Flat decay per leg — each leg is effectively a limit order at its start time.
+      expect(legs[i].order.decayStartTime).toBe(legs[i].order.decayEndTime);
+    }
+  });
+
+  it('splits totalBaseAmount evenly with remainder on the last leg', () => {
+    // 10 / 3 = 3 r 1 — first two legs get 3, last leg gets 4.
+    const legs = buildDcaLegs({
+      ...baseParams,
+      totalBaseAmount: 10n,
+      legs: 3,
+      nonceGenerator: () => 1n,
+    });
+    // side=buy → input is quote, output is base; base amount is the output.
+    expect(legs[0].order.outputs[0].startAmount).toBe(3n);
+    expect(legs[1].order.outputs[0].startAmount).toBe(3n);
+    expect(legs[2].order.outputs[0].startAmount).toBe(4n);
+    const sum =
+      legs[0].order.outputs[0].startAmount +
+      legs[1].order.outputs[0].startAmount +
+      legs[2].order.outputs[0].startAmount;
+    expect(sum).toBe(10n);
+  });
+
+  it('rejects legs < 2', () => {
+    expect(() =>
+      buildDcaLegs({ ...baseParams, totalBaseAmount: 100n, legs: 1 }),
+    ).toThrow(/at least 2/);
+  });
+
+  it('rejects legs > 50', () => {
+    expect(() =>
+      buildDcaLegs({ ...baseParams, totalBaseAmount: 100n, legs: 51 }),
+    ).toThrow(/50/);
+  });
+
+  it('rejects intervalSec < 60', () => {
+    expect(() =>
+      buildDcaLegs({
+        ...baseParams,
+        intervalSec: 30,
+        totalBaseAmount: 100n,
+        legs: 3,
+      }),
+    ).toThrow(/intervalSec/);
+  });
+
+  it('rejects totalBaseAmount < legs', () => {
+    expect(() =>
+      buildDcaLegs({ ...baseParams, totalBaseAmount: 2n, legs: 3 }),
+    ).toThrow(/legs/);
   });
 });
 

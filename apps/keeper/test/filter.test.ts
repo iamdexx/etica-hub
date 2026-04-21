@@ -112,4 +112,25 @@ describe('filterFillable', () => {
     const order = mkOrder({ strategyType: undefined });
     expect(filterFillable([order], BASE_ARGS)).toHaveLength(1);
   });
+
+  it('keeps DCA legs whose decayStartTime has elapsed (treated like limit)', () => {
+    const order = mkOrder({
+      strategyType: 'dca',
+      dcaBatchId: 'deadbeef-1234-5678-90ab-cdef01234567',
+      dcaIndex: 0,
+      dcaTotal: 5,
+    });
+    expect(filterFillable([order], BASE_ARGS)).toHaveLength(1);
+  });
+
+  it('drops DCA legs whose decayStartTime is still in the future', () => {
+    const order = mkOrder({
+      strategyType: 'dca',
+      decayStartTime: 1_500,
+      dcaBatchId: 'deadbeef-1234-5678-90ab-cdef01234567',
+      dcaIndex: 3,
+      dcaTotal: 5,
+    });
+    expect(filterFillable([order], BASE_ARGS)).toHaveLength(0);
+  });
 });
