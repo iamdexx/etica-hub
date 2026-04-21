@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { OnChainPriceChart } from './OnChainPriceChart';
 import { PriceChart } from './PriceChart';
 import { TradeTabs } from './TradeTabs';
 
@@ -46,12 +47,16 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
           </div>
           <p className="text-sm text-white/60">{DESCRIPTIONS[baseSymbol]}</p>
         </header>
-        <PriceChart
-          pairId={pairId}
-          baseSymbol={baseSymbol}
-          quoteSymbol="ETX"
-          apiBaseUrl={apiBaseUrl}
-        />
+        {apiBaseUrl ? (
+          <PriceChart
+            pairId={pairId}
+            baseSymbol={baseSymbol}
+            quoteSymbol="ETX"
+            apiBaseUrl={apiBaseUrl}
+          />
+        ) : (
+          <OnChainPriceChart baseSymbol={baseSymbol} quoteSymbol="ETX" />
+        )}
       </div>
       <aside className="space-y-3">
         <TradeTabs baseSymbol={baseSymbol} />
