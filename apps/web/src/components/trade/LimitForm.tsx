@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BaseError,
   UserRejectedRequestError,
@@ -126,6 +126,16 @@ export function LimitForm({ baseSymbol }: LimitFormProps) {
 
   const isApproving = Boolean(approveTxHash) && !approveReceipt.data && !approveReceipt.error;
 
+  // Once the approve tx mines, wagmi's cached allowance read is stale — force
+  // a refetch so `needsPermit2Approval` flips to false and the sign button
+  // unlocks without a page reload. Matches the pattern in SwapCard.
+  useEffect(() => {
+    if (approveReceipt.isSuccess) {
+      void allowance.refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approveReceipt.isSuccess]);
+
   async function onApprovePermit2() {
     if (!address || !tradingLive) return;
     setError(null);
@@ -203,6 +213,7 @@ export function LimitForm({ baseSymbol }: LimitFormProps) {
       setPriceStr('');
       resetWrite();
     } catch (err) {
+      setStatusLine(null);
       setError(formatError(err));
     } finally {
       setSubmitting(false);
