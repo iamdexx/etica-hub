@@ -23,3 +23,12 @@ const cast = (a: unknown): Artifact => {
 export const permit2Artifact = cast(artifacts.permit2);
 export const reactorArtifact = cast(artifacts.reactor);
 export const feeControllerArtifact = cast(artifacts.feeController);
+/**
+ * `orderRegistryArtifact` — EticaHub's OrderRegistry (ours, solc 0.8.29).
+ * Permissionless on-chain registry for signed UniswapX orders; replaces the
+ * off-chain orderbook API so keepers can discover orders via logs instead of
+ * a hosted HTTP service.
+ */
+export const orderRegistryArtifact = cast(
+  (artifacts as typeof artifacts & { orderRegistry: unknown }).orderRegistry,
+);

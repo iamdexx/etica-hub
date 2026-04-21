@@ -32,6 +32,10 @@ const sources = {
     repoRoot,
     'packages/trading-contracts/out/EticaProtocolFeeController.sol/EticaProtocolFeeController.json',
   ),
+  orderRegistry: resolve(
+    repoRoot,
+    'packages/trading-contracts/out/OrderRegistry.sol/OrderRegistry.json',
+  ),
 };
 
 const out = {};
