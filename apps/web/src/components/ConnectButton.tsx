@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from 'wagmi';
+import type { Connector } from 'wagmi';
 import { eticaMainnet, eticaLocalFork } from '@etica-hub/shared/chains';
 import { shortAddress } from '@/lib/utils';
 
@@ -10,10 +11,10 @@ const IS_DEV = process.env.NODE_ENV !== 'production';
 /**
  * Returns true on mobile browsers that do NOT inject an `ethereum` provider
  * (Brave mobile, Vanadium on GrapheneOS, mobile Safari/Chrome without an
- * extension). On those browsers the `injected` connector has nothing to
- * connect to, so the plain Connect Wallet button appears to do nothing when
- * tapped. We detect this case post-mount and show a deep-link button that
- * opens the current page inside MetaMask's in-app browser instead.
+ * extension). We surface a MetaMask deep-link button for those users — the
+ * injected connector can't reach anything on their browser, but iOS/Android
+ * universal-link the `metamask.app.link/dapp/...` URL to MetaMask's in-app
+ * browser which loads the page with `window.ethereum` injected.
  */
 function useIsMobileWithoutInjected(): boolean {
   const [state, setState] = useState(false);
@@ -30,15 +31,19 @@ function useIsMobileWithoutInjected(): boolean {
 
 /**
  * Builds a `metamask.app.link` universal link that opens the current URL
- * inside the MetaMask app's in-app browser. This works from any mobile
- * browser (Brave, Vanadium, Safari, Chrome) as long as the MetaMask app is
- * installed — iOS / Android handle the universal-link redirect themselves.
- * Format is MetaMask's documented deep-link spec: `dapp/<host><path>`.
+ * inside the MetaMask app's in-app browser. Format is MetaMask's documented
+ * deep-link spec: `dapp/<host><path>`.
  */
 function buildMetaMaskDeepLink(): string {
   if (typeof window === 'undefined') return 'https://metamask.app.link/';
   const { host, pathname, search } = window.location;
   return `https://metamask.app.link/dapp/${host}${pathname}${search}`;
+}
+
+function labelFor(connector: Connector): string {
+  if (connector.id === 'injected') return 'Browser extension (MetaMask, Rabby, Brave)';
+  if (connector.id === 'walletConnect') return 'WalletConnect (scan QR or mobile wallet)';
+  return connector.name;
 }
 
 export function ConnectButton() {
@@ -49,30 +54,72 @@ export function ConnectButton() {
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const showDeepLink = useIsMobileWithoutInjected();
 
-  if (!isConnected) {
-    const injected = connectors.find((c) => c.id === 'injected') ?? connectors[0];
-    // Mobile-without-extension users see a dedicated "Open in MetaMask" button,
-    // which is the only one that actually reaches a wallet in Brave mobile /
-    // Vanadium / GrapheneOS. We hide the regular Connect button for them to
-    // avoid the "nothing happens" UX — tapping it would just do nothing.
-    if (showDeepLink) {
-      return (
-        <a
-          href={buildMetaMaskDeepLink()}
-          className="rounded-full bg-brand-accent px-4 py-1.5 text-sm font-medium text-brand-ink hover:opacity-90"
-        >
-          Open in MetaMask
-        </a>
-      );
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close the menu when the user clicks outside of it.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
     }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [menuOpen]);
+
+  // Collapse the menu once a connection succeeds (wagmi flips isConnected).
+  useEffect(() => {
+    if (isConnected) setMenuOpen(false);
+  }, [isConnected]);
+
+  if (!isConnected) {
     return (
-      <button
-        onClick={() => injected && connect({ connector: injected })}
-        disabled={isPending}
-        className="rounded-full bg-brand-accent px-4 py-1.5 text-sm font-medium text-brand-ink hover:opacity-90 disabled:opacity-50"
-      >
-        {isPending ? 'Connecting…' : 'Connect Wallet'}
-      </button>
+      <div ref={menuRef} className="relative">
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          disabled={isPending}
+          className="rounded-full bg-brand-accent px-4 py-1.5 text-sm font-medium text-brand-ink hover:opacity-90 disabled:opacity-50"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+        >
+          {isPending ? 'Connecting…' : 'Connect Wallet'}
+        </button>
+        {menuOpen && (
+          <div
+            role="menu"
+            className="absolute right-0 mt-2 w-72 rounded-xl border border-white/10 bg-brand-ink/95 p-2 shadow-lg backdrop-blur"
+          >
+            {connectors.map((connector) => (
+              <button
+                key={connector.uid}
+                onClick={() => {
+                  connect({ connector });
+                  setMenuOpen(false);
+                }}
+                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-white/90 hover:bg-white/5"
+                role="menuitem"
+              >
+                {labelFor(connector)}
+              </button>
+            ))}
+            {showDeepLink && (
+              <a
+                href={buildMetaMaskDeepLink()}
+                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-white/90 hover:bg-white/5"
+                role="menuitem"
+              >
+                Open in MetaMask app
+              </a>
+            )}
+            <p className="mt-1 px-3 pb-1 pt-2 text-[11px] leading-snug text-white/40">
+              On Brave mobile, Vanadium, or any browser without a wallet
+              extension, use WalletConnect or &ldquo;Open in MetaMask&rdquo;.
+            </p>
+          </div>
+        )}
+      </div>
     );
   }
 
