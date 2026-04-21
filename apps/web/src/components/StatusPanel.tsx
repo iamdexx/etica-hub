@@ -9,6 +9,65 @@ import {
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 
+const reactorMiniAbi = [
+  {
+    type: 'function',
+    name: 'owner',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'feeController',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+] as const;
+
+const feeControllerMiniAbi = [
+  {
+    type: 'function',
+    name: 'owner',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'treasury',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'feeBps',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'FEE_CAP_BPS',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const;
+
+type ReactorState = {
+  reactor: Address;
+  reactorOwner: Address;
+  reactorFeeController: Address;
+  controller: Address | null;
+  controllerOwner: Address | null;
+  controllerTreasury: Address | null;
+  controllerFeeBps: bigint | null;
+  controllerFeeCapBps: bigint | null;
+};
+
 type Snapshot = {
   timestampMs: number;
   factoryFeeTo: Address;
@@ -20,6 +79,7 @@ type Snapshot = {
   treasuryIsTrustedCreator: boolean;
   eti_etx: { pair: Address; reserveEti: bigint; reserveEtx: bigint } | null;
   egaz_etx: { pair: Address; reserveEgaz: bigint; reserveEtx: bigint } | null;
+  reactor: ReactorState | null;
 };
 
 async function loadSnapshot(): Promise<Snapshot | { error: string }> {
@@ -118,9 +178,72 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
       };
     }
 
-    const [etiEtx, egazEtx] = await Promise.all([
+    async function loadReactor(): Promise<ReactorState | null> {
+      if (d.dutchReactor === ZERO) return null;
+      const [reactorOwner, reactorFeeController] = await Promise.all([
+        client.readContract({
+          abi: reactorMiniAbi,
+          address: d.dutchReactor,
+          functionName: 'owner',
+        }) as Promise<Address>,
+        client.readContract({
+          abi: reactorMiniAbi,
+          address: d.dutchReactor,
+          functionName: 'feeController',
+        }) as Promise<Address>,
+      ]);
+
+      const ctrl = d.etxFeeController !== ZERO ? d.etxFeeController : null;
+      if (!ctrl) {
+        return {
+          reactor: d.dutchReactor,
+          reactorOwner,
+          reactorFeeController,
+          controller: null,
+          controllerOwner: null,
+          controllerTreasury: null,
+          controllerFeeBps: null,
+          controllerFeeCapBps: null,
+        };
+      }
+      const [cOwner, cTreasury, cFeeBps, cCap] = await Promise.all([
+        client.readContract({
+          abi: feeControllerMiniAbi,
+          address: ctrl,
+          functionName: 'owner',
+        }) as Promise<Address>,
+        client.readContract({
+          abi: feeControllerMiniAbi,
+          address: ctrl,
+          functionName: 'treasury',
+        }) as Promise<Address>,
+        client.readContract({
+          abi: feeControllerMiniAbi,
+          address: ctrl,
+          functionName: 'feeBps',
+        }) as Promise<bigint>,
+        client.readContract({
+          abi: feeControllerMiniAbi,
+          address: ctrl,
+          functionName: 'FEE_CAP_BPS',
+        }) as Promise<bigint>,
+      ]);
+      return {
+        reactor: d.dutchReactor,
+        reactorOwner,
+        reactorFeeController,
+        controller: ctrl,
+        controllerOwner: cOwner,
+        controllerTreasury: cTreasury,
+        controllerFeeBps: cFeeBps,
+        controllerFeeCapBps: cCap,
+      };
+    }
+
+    const [etiEtx, egazEtx, reactor] = await Promise.all([
       loadPool(etiEtxPair, e.eti),
       loadPool(egazEtxPair, d.wegaz),
+      loadReactor(),
     ]);
 
     return {
@@ -142,6 +265,7 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
             reserveEtx: egazEtx.reserveB,
           }
         : null,
+      reactor,
     };
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Read failed' };
@@ -161,6 +285,9 @@ export async function StatusPanel() {
           ['WEGAZ', d.wegaz],
           ['Factory', d.swapFactory],
           ['Router', d.swapRouter],
+          ['Permit2', d.permit2],
+          ['DutchOrderReactor', d.dutchReactor],
+          ['EticaProtocolFeeController', d.etxFeeController],
           ['ETI (external)', e.eti],
           ['Treasury', TREASURY_ADDRESS],
         ]}
@@ -212,6 +339,56 @@ export async function StatusPanel() {
               </>
             ) : (
               <p className="text-sm text-rose-300">No pair deployed.</p>
+            )}
+          </Section>
+
+          <Section title="UniswapX reactor + fee controller">
+            {snap.reactor ? (
+              <>
+                <KV k="reactor" v={shortAddr(snap.reactor.reactor)} />
+                <KV k="reactor owner" v={shortAddr(snap.reactor.reactorOwner)} />
+                <KV
+                  k="reactor.feeController()"
+                  v={shortAddr(snap.reactor.reactorFeeController)}
+                />
+                <KV
+                  k="fee controller"
+                  v={
+                    snap.reactor.controller
+                      ? shortAddr(snap.reactor.controller)
+                      : '0x0 (not wired)'
+                  }
+                />
+                {snap.reactor.controller && (
+                  <>
+                    <KV
+                      k="controller.owner"
+                      v={shortAddr(snap.reactor.controllerOwner ?? ZERO)}
+                    />
+                    <KV
+                      k="controller.treasury"
+                      v={shortAddr(snap.reactor.controllerTreasury ?? ZERO)}
+                    />
+                    <KV
+                      k="controller.feeBps"
+                      v={
+                        snap.reactor.controllerFeeBps === 0n
+                          ? '0 bps (fees off)'
+                          : `${snap.reactor.controllerFeeBps?.toString() ?? '—'} bps`
+                      }
+                    />
+                    <KV
+                      k="FEE_CAP_BPS"
+                      v={`${snap.reactor.controllerFeeCapBps?.toString() ?? '—'} bps`}
+                    />
+                  </>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-amber-300">
+                Reactor not deployed yet. Run <span className="font-mono">/deploy/trading</span>{' '}
+                (operator only) to bring the non-custodial trading stack online.
+              </p>
             )}
           </Section>
 
