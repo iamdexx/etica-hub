@@ -13,12 +13,20 @@ import {
 import {
   useAccount,
   useChainId,
+  usePublicClient,
   useReadContract,
   useSignTypedData,
   useWaitForTransactionReceipt,
+  useWalletClient,
   useWriteContract,
 } from 'wagmi';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis, isSupportedChainId } from '@etica-hub/shared';
+import {
+  DEPLOYMENTS,
+  EXTERNAL_ADDRESSES,
+  abis,
+  isSupportedChainId,
+  type SupportedChainId,
+} from '@etica-hub/shared';
 import {
   buildLimitOrder,
   buildPermit2WitnessTypedData,
@@ -33,6 +41,12 @@ import {
   type StrategyType,
   type TriggerDirection,
 } from '@/lib/trading/orderbookClient';
+import {
+  buildLimitMeta,
+  buildStopMeta,
+  getRegistryAddress,
+  postOrderOnChain,
+} from '@/lib/trading/registryClient';
 
 type BaseSymbol = 'ETI' | 'EGAZ';
 
@@ -55,6 +69,9 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const orderbookUrl = resolveOrderbookUrl();
+  const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
+  const registryAddress = getRegistryAddress(chainId);
 
   // Stop orders default to `sell` because stop-loss is the overwhelmingly
   // common case; limit orders default to `buy` to match the prior form.
@@ -79,7 +96,7 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
       : (deployment?.wegaz ?? '0x0000000000000000000000000000000000000000');
 
   const tradingLive =
-    Boolean(orderbookUrl) &&
+    (Boolean(orderbookUrl) || registryAddress !== null) &&
     permit2 !== '0x0000000000000000000000000000000000000000' &&
     reactor !== '0x0000000000000000000000000000000000000000';
 
@@ -186,8 +203,12 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
       setError('Connect a wallet first.');
       return;
     }
-    if (!tradingLive || !orderbookUrl) {
+    if (!tradingLive) {
       setError('Order book + keeper are still deploying — orders can be signed once they are online.');
+      return;
+    }
+    if (registryAddress && (!walletClient || !publicClient)) {
+      setError('Wallet session still loading — try again in a moment.');
       return;
     }
     if (amount <= 0n) {
@@ -252,24 +273,50 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
         primaryType: typed.primaryType,
         message: typed.message,
       })) as Hex;
-      setStatusLine('Submitting to order book…');
-      const stored = await submitOrder(orderbookUrl, {
-        encodedOrder: encoded,
-        signature,
-        ...(isStop
-          ? {
-              strategyType: 'stop' as const,
-              triggerPrice: triggerPrice18.toString(),
-              triggerDirection,
-            }
-          : {}),
-      });
+      let orderHash: Hex;
+      if (registryAddress && walletClient && publicClient && supported) {
+        setStatusLine('Posting order on-chain…');
+        const meta = isStop
+          ? buildStopMeta({ triggerPrice: triggerPrice18, direction: triggerDirection })
+          : buildLimitMeta();
+        const { orderHash: hash, txHash } = await postOrderOnChain({
+          walletClient,
+          publicClient,
+          chainId: chainId as SupportedChainId,
+          account: address,
+          encodedOrder: encoded,
+          signature,
+          meta,
+        });
+        orderHash = hash;
+        setStatusLine(`Waiting for registry tx ${shortHash(txHash)}…`);
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+        if (receipt.status !== 'success') {
+          throw new Error('Registry tx reverted on-chain');
+        }
+      } else if (orderbookUrl) {
+        setStatusLine('Submitting to order book…');
+        const stored = await submitOrder(orderbookUrl, {
+          encodedOrder: encoded,
+          signature,
+          ...(isStop
+            ? {
+                strategyType: 'stop' as const,
+                triggerPrice: triggerPrice18.toString(),
+                triggerDirection,
+              }
+            : {}),
+        });
+        orderHash = stored.orderHash;
+      } else {
+        throw new Error('No registry or orderbook available');
+      }
       setStatusLine(
         isStop
-          ? `Stop ${shortHash(stored.orderHash)} armed. Keeper will fill when price ${
+          ? `Stop ${shortHash(orderHash)} armed. Keeper will fill when price ${
               triggerDirection === 'lte' ? '≤' : '≥'
             } ${triggerStr} ETX.`
-          : `Order ${shortHash(stored.orderHash)} submitted. Keepers will fill it when price is reached.`,
+          : `Order ${shortHash(orderHash)} submitted. Keepers will fill it when price is reached.`,
       );
       setAmountStr('');
       setPriceStr('');
