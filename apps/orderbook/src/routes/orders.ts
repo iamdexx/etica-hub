@@ -3,14 +3,54 @@ import { isAddress, keccak256, type Hex } from 'viem';
 import { z } from 'zod';
 import type { OrderRepository } from '../db/index.js';
 import { decodeDutchOrder, validateOrderStructure } from '../eip712.js';
-import type { OrderFilter, OrderStatus, StoredOrder } from '../types.js';
+import type {
+  OrderFilter,
+  OrderStatus,
+  StoredOrder,
+  StrategyType,
+  TriggerDirection,
+} from '../types.js';
 
 const HEX_RE = /^0x[0-9a-fA-F]+$/;
 
-const PostOrderBody = z.object({
-  encodedOrder: z.string().regex(HEX_RE, 'encodedOrder must be 0x-prefixed hex'),
-  signature: z.string().regex(HEX_RE, 'signature must be 0x-prefixed hex'),
-});
+const DECIMAL_RE = /^[0-9]+$/;
+
+const PostOrderBody = z
+  .object({
+    encodedOrder: z.string().regex(HEX_RE, 'encodedOrder must be 0x-prefixed hex'),
+    signature: z.string().regex(HEX_RE, 'signature must be 0x-prefixed hex'),
+    strategyType: z.enum(['limit', 'stop']).optional(),
+    triggerPrice: z
+      .string()
+      .regex(DECIMAL_RE, 'triggerPrice must be a stringified bigint (no 0x prefix)')
+      .optional(),
+    triggerDirection: z.enum(['lte', 'gte']).optional(),
+  })
+  .superRefine((body, ctx) => {
+    const isStop = body.strategyType === 'stop';
+    if (isStop) {
+      if (!body.triggerPrice) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['triggerPrice'],
+          message: 'stop orders require triggerPrice',
+        });
+      }
+      if (!body.triggerDirection) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['triggerDirection'],
+          message: 'stop orders require triggerDirection',
+        });
+      }
+    } else if (body.triggerPrice || body.triggerDirection) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['strategyType'],
+        message: 'triggerPrice/triggerDirection only valid on stop orders',
+      });
+    }
+  });
 
 const CancelOrderBody = z.object({
   cancelTxHash: z
@@ -52,6 +92,9 @@ function serializeOrder(o: StoredOrder) {
     encodedOrder: o.encodedOrder,
     signature: o.signature,
     status: o.status,
+    strategyType: o.strategyType,
+    triggerPrice: o.triggerPrice,
+    triggerDirection: o.triggerDirection,
     fillTxHash: o.fillTxHash,
     fillBlockNumber: o.fillBlockNumber,
     cancelTxHash: o.cancelTxHash,
@@ -78,6 +121,11 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
 
     const encodedOrder = parsed.data.encodedOrder as Hex;
     const signature = parsed.data.signature as Hex;
+    const strategyType: StrategyType = parsed.data.strategyType ?? 'limit';
+    const triggerPrice: string | null =
+      strategyType === 'stop' ? (parsed.data.triggerPrice as string) : null;
+    const triggerDirection: TriggerDirection | null =
+      strategyType === 'stop' ? (parsed.data.triggerDirection as TriggerDirection) : null;
 
     let decoded;
     try {
@@ -124,6 +172,9 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
       encodedOrder,
       signature,
       status: 'open',
+      strategyType,
+      triggerPrice,
+      triggerDirection,
       fillTxHash: null,
       fillBlockNumber: null,
       cancelTxHash: null,
@@ -152,6 +203,9 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
     }
     if (q.outputToken && isAddress(q.outputToken)) {
       filter.outputToken = q.outputToken as `0x${string}`;
+    }
+    if (q.strategyType && ['limit', 'stop'].includes(q.strategyType)) {
+      filter.strategyType = q.strategyType as StrategyType;
     }
     if (q.minDeadline) {
       const n = Number(q.minDeadline);

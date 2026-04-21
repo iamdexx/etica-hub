@@ -24,6 +24,8 @@ export interface FilterArgs {
 /**
  * Returns only orders this keeper should attempt to fill:
  *  - status === 'open'
+ *  - strategy is a plain limit (stop orders require a trigger-price check
+ *    against a live oracle, which isn't wired up yet — see PR F-series)
  *  - reactor address matches
  *  - deadline is comfortably in the future
  *  - decay window has started (decayStartTime <= now)
@@ -37,6 +39,8 @@ export function filterFillable(orders: OrderbookOrder[], args: FilterArgs): Orde
 
   return orders.filter((o) => {
     if (o.status !== 'open') return false;
+    // `strategyType` is optional on older rows; treat missing as `limit`.
+    if (o.strategyType && o.strategyType !== 'limit') return false;
     if (o.reactor.toLowerCase() !== reactor) return false;
     if (o.deadline <= cutoff) return false;
     if (o.decayStartTime > args.now) return false;
