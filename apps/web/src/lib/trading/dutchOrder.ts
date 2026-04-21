@@ -387,7 +387,10 @@ export function buildGridLegs(p: BuildGridLegsParams): GridLevel[] {
     if (price === p.referencePrice18) continue;
     const side: Side = price < p.referencePrice18 ? 'buy' : 'sell';
     out.push({
-      index: i,
+      // Contiguous 0-based index within emitted levels so the orderbook's
+      // `gridIndex < gridTotal` guard holds even when a candidate price is
+      // skipped for coinciding with the reference price.
+      index: out.length,
       side,
       pricePerBase18: price,
       decayStartSec: p.startSec,

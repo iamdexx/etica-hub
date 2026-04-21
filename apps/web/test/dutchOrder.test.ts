@@ -349,6 +349,22 @@ describe('buildGridLegs', () => {
     expect(prices).not.toContain(parseUnits('1.5', 18));
   });
 
+  it('emits contiguous 0-based indices even when a candidate level is skipped', () => {
+    const legs = buildGridLegs({
+      ...baseParams,
+      lowPrice18: parseUnits('1', 18),
+      highPrice18: parseUnits('2', 18),
+      referencePrice18: parseUnits('1.5', 18),
+      levels: 5,
+      nonceGenerator: () => 1n,
+    });
+    // The 3rd candidate (1.5) coincides with the reference and is dropped, so
+    // indices must be [0, 1, 2, 3] rather than [0, 1, 3, 4] — otherwise the
+    // orderbook's `gridIndex < gridTotal` guard would reject the top level.
+    expect(legs.map((l) => l.index)).toEqual([0, 1, 2, 3]);
+    for (let i = 0; i < legs.length; i++) expect(legs[i].index).toBeLessThan(legs.length);
+  });
+
   it('anchors the top level exactly at highPrice18 despite integer-division drift', () => {
     const legs = buildGridLegs({
       ...baseParams,
