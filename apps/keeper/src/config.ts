@@ -12,8 +12,18 @@ import 'dotenv/config';
 import { isAddress, isHex, type Address, type Hex } from 'viem';
 
 export interface KeeperConfig {
-  /** Base URL of the order-book API (e.g. http://localhost:3100). */
-  orderbookUrl: string;
+  /**
+   * Base URL of the order-book API (e.g. http://localhost:3100). Optional
+   * when `registryAddress` is set — the keeper reads directly from on-chain
+   * `OrderPosted` logs in that mode.
+   */
+  orderbookUrl: string | null;
+
+  /**
+   * OrderRegistry contract address. When set, the keeper ignores
+   * `orderbookUrl` and sources orders from on-chain events instead.
+   */
+  registryAddress: Address | null;
 
   /** Optional auth token sent as X-Keeper-Auth on mark-filled POSTs. */
   keeperAuthToken: string | null;
@@ -38,6 +48,14 @@ export interface KeeperConfig {
 
   /** Grace window before deadline where we stop bothering to simulate. */
   deadlineGraceSeconds: number;
+
+  /**
+   * When true, the keeper only logs "would attempt fill" lines and never
+   * submits transactions, even if `keeperPrivateKey` is set. Used by the
+   * GitHub Actions cron workflow so we can run the keeper publicly without
+   * funding a hot wallet.
+   */
+  dryRun: boolean;
 }
 
 function required(name: string): string {
@@ -69,13 +87,35 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     const reactor = required('KEEPER_REACTOR_ADDRESS');
     if (!isAddress(reactor)) throw new Error(`KEEPER_REACTOR_ADDRESS is not an address: ${reactor}`);
 
+    const registryRaw = optional('KEEPER_REGISTRY_ADDRESS');
+    if (registryRaw !== null && !isAddress(registryRaw)) {
+      throw new Error(`KEEPER_REGISTRY_ADDRESS is not an address: ${registryRaw}`);
+    }
+    const registryAddress =
+      registryRaw !== null && registryRaw !== '0x0000000000000000000000000000000000000000'
+        ? (registryRaw as Address)
+        : null;
+
+    const orderbookRaw = optional('ORDERBOOK_URL');
+    const orderbookUrl = orderbookRaw !== null ? orderbookRaw.replace(/\/+$/, '') : null;
+
+    if (!registryAddress && !orderbookUrl) {
+      throw new Error(
+        'either KEEPER_REGISTRY_ADDRESS or ORDERBOOK_URL must be set — keeper has no source of orders',
+      );
+    }
+
     const pk = optional('KEEPER_PRIVATE_KEY');
     if (pk !== null && !isHex(pk)) {
       throw new Error('KEEPER_PRIVATE_KEY must be 0x-prefixed hex');
     }
 
+    const dryRunRaw = optional('KEEPER_DRY_RUN');
+    const dryRun = dryRunRaw === null ? pk === null : /^(1|true|yes)$/i.test(dryRunRaw);
+
     return {
-      orderbookUrl: required('ORDERBOOK_URL').replace(/\/+$/, ''),
+      orderbookUrl,
+      registryAddress,
       keeperAuthToken: optional('KEEPER_AUTH_TOKEN'),
       rpcUrl: required('KEEPER_RPC_URL'),
       chainId: optionalInt('KEEPER_CHAIN_ID', 61803),
@@ -85,6 +125,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
       pollIntervalMs: Math.max(optionalInt('KEEPER_POLL_INTERVAL_MS', 5_000), 1),
       pollBatchSize: optionalInt('KEEPER_POLL_BATCH_SIZE', 50),
       deadlineGraceSeconds: optionalInt('KEEPER_DEADLINE_GRACE_SECONDS', 30),
+      dryRun,
     };
   } finally {
     process.env = snapshot;

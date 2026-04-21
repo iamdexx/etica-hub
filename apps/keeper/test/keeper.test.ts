@@ -6,6 +6,7 @@ import type { OrderbookClient, OrderbookOrder } from '../src/orderbook-client.js
 function cfg(overrides: Partial<KeeperConfig> = {}): KeeperConfig {
   return {
     orderbookUrl: 'http://api',
+    registryAddress: null,
     keeperAuthToken: null,
     rpcUrl: 'http://rpc',
     chainId: 61803,
@@ -14,6 +15,7 @@ function cfg(overrides: Partial<KeeperConfig> = {}): KeeperConfig {
     pollIntervalMs: 10,
     pollBatchSize: 50,
     deadlineGraceSeconds: 30,
+    dryRun: true,
     ...overrides,
   };
 }
