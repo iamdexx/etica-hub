@@ -61,7 +61,8 @@ export interface ListOrdersParams {
   swapper?: Address;
   inputToken?: Address;
   outputToken?: Address;
-  strategyType?: 'limit' | 'stop';
+  strategyType?: 'limit' | 'stop' | 'dca';
+  dcaBatchId?: string;
   minDeadline?: number;
   limit?: number;
   offset?: number;
@@ -91,6 +92,7 @@ export function createOrderbookClient(opts: OrderbookClientOptions): OrderbookCl
       if (params.inputToken) qs.set('inputToken', params.inputToken);
       if (params.outputToken) qs.set('outputToken', params.outputToken);
       if (params.strategyType) qs.set('strategyType', params.strategyType);
+      if (params.dcaBatchId) qs.set('dcaBatchId', params.dcaBatchId);
       if (typeof params.minDeadline === 'number') qs.set('minDeadline', String(params.minDeadline));
       if (typeof params.limit === 'number') qs.set('limit', String(params.limit));
       if (typeof params.offset === 'number') qs.set('offset', String(params.offset));
