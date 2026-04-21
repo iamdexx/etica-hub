@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatUnits, parseAbiItem, type Address, type PublicClient } from 'viem';
 import { useChainId, usePublicClient, useReadContract } from 'wagmi';
 import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
@@ -109,7 +109,10 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
   const [samples, setSamples] = useState<Sample[]>([]);
   // Separate from `samples`: the last block we've ingested via the history
   // backfill + live event log path. Used to paginate new pulls forward.
-  const [lastIngestedBlock, setLastIngestedBlock] = useState<bigint | null>(null);
+  // Kept in a ref — not state — so the backfill effect can read the latest
+  // value without being in its dependency array (which would re-run the
+  // whole backfill every time it advances).
+  const lastIngestedBlockRef = useRef<bigint | null>(null);
   const publicClient = usePublicClient();
 
   const cacheKey = useMemo(
@@ -123,19 +126,22 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
   // resolved pair address without unmounting the component. Clearing state
   // here prevents mixing prices from two different chains into one chart.
   // We seed from localStorage in the same pass so refreshes feel instant.
+  // Ref is updated synchronously alongside state so the backfill effect —
+  // which runs in the same post-render phase — reads the cached frontier
+  // instead of the stale `null` default.
   useEffect(() => {
     if (!cacheKey) {
       setSamples([]);
-      setLastIngestedBlock(null);
+      lastIngestedBlockRef.current = null;
       return;
     }
     const cached = readChartCache(cacheKey);
     if (cached) {
       setSamples(cached.samples);
-      setLastIngestedBlock(cached.lastBlock);
+      lastIngestedBlockRef.current = cached.lastBlock;
     } else {
       setSamples([]);
-      setLastIngestedBlock(null);
+      lastIngestedBlockRef.current = null;
     }
   }, [cacheKey]);
 
@@ -156,21 +162,26 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
         const headNumber = head.number;
         const headTs = Number(head.timestamp);
         if (headNumber === null || headNumber === undefined) return;
+        const priorFrontier = lastIngestedBlockRef.current;
         const fromBlock =
-          lastIngestedBlock !== null
-            ? lastIngestedBlock + 1n
+          priorFrontier !== null
+            ? priorFrontier + 1n
             : headNumber > HISTORY_BACKFILL_BLOCKS
               ? headNumber - HISTORY_BACKFILL_BLOCKS
               : 0n;
         if (fromBlock > headNumber) return;
         const logs = await fetchSyncLogsPaginated(publicClient, pair, fromBlock, headNumber);
-        if (cancelled || logs.length === 0) {
+        if (cancelled) return;
+        if (logs.length === 0) {
           // Still advance the frontier so we don't re-scan an empty range
-          // every mount.
-          if (!cancelled) {
-            setLastIngestedBlock(headNumber);
-            writeChartCache(cacheKey, { lastBlock: headNumber, samples });
-          }
+          // every mount. Use a functional setter to read the current samples
+          // (closure-captured `samples` would be stale here and would wipe
+          // cached history on write-through).
+          lastIngestedBlockRef.current = headNumber;
+          setSamples((prev) => {
+            writeChartCache(cacheKey, { lastBlock: headNumber, samples: prev });
+            return prev;
+          });
           return;
         }
         const newSamples: Sample[] = [];
@@ -197,7 +208,7 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
           writeChartCache(cacheKey, { lastBlock: headNumber, samples: capped });
           return capped;
         });
-        setLastIngestedBlock(headNumber);
+        lastIngestedBlockRef.current = headNumber;
       } catch (err) {
         // Swallow — the chart degrades gracefully to the live-poll path.
         if (process.env.NODE_ENV !== 'production') {
@@ -231,13 +242,13 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
       if (next.length > MAX_SAMPLES) next.splice(0, next.length - MAX_SAMPLES);
       if (cacheKey) {
         writeChartCache(cacheKey, {
-          lastBlock: lastIngestedBlock ?? 0n,
+          lastBlock: lastIngestedBlockRef.current ?? 0n,
           samples: next,
         });
       }
       return next;
     });
-  }, [reservesQuery.data, reservesQuery.dataUpdatedAt, baseIsToken0, cacheKey, lastIngestedBlock]);
+  }, [reservesQuery.data, reservesQuery.dataUpdatedAt, baseIsToken0, cacheKey]);
 
   const { pathD, areaD, minP, maxP, latest, first } = useMemo(
     () => buildSvg(samples.map((s) => s.price)),
