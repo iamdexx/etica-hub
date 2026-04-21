@@ -54,6 +54,7 @@ export function createKeeper(config: KeeperConfig, deps: KeeperDeps = {}): Keepe
   let running = false;
   let stopped = false;
   let waiter: { resolve: () => void } | null = null;
+  let waitTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function tick(): Promise<{ fetched: number; fillable: number }> {
     const orders = await client.listOrders({
@@ -99,13 +100,15 @@ export function createKeeper(config: KeeperConfig, deps: KeeperDeps = {}): Keepe
 
       await new Promise<void>((resolve) => {
         waiter = { resolve };
-        const t = setTimeout(() => {
+        waitTimer = setTimeout(() => {
+          waitTimer = null;
           waiter = null;
           resolve();
         }, config.pollIntervalMs);
         // Allow stop() to short-circuit the wait.
         if (stopped) {
-          clearTimeout(t);
+          if (waitTimer) clearTimeout(waitTimer);
+          waitTimer = null;
           waiter = null;
           resolve();
         }
@@ -118,6 +121,10 @@ export function createKeeper(config: KeeperConfig, deps: KeeperDeps = {}): Keepe
 
   function stop(): void {
     stopped = true;
+    if (waitTimer) {
+      clearTimeout(waitTimer);
+      waitTimer = null;
+    }
     if (waiter) {
       waiter.resolve();
       waiter = null;

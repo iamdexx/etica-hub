@@ -81,7 +81,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
       chainId: optionalInt('KEEPER_CHAIN_ID', 61803),
       reactor: reactor as Address,
       keeperPrivateKey: pk as Hex | null,
-      pollIntervalMs: optionalInt('KEEPER_POLL_INTERVAL_MS', 5_000),
+      // Clamp to >=1ms so a misconfigured 0 doesn't spin the event loop.
+      pollIntervalMs: Math.max(optionalInt('KEEPER_POLL_INTERVAL_MS', 5_000), 1),
       pollBatchSize: optionalInt('KEEPER_POLL_BATCH_SIZE', 50),
       deadlineGraceSeconds: optionalInt('KEEPER_DEADLINE_GRACE_SECONDS', 30),
     };
