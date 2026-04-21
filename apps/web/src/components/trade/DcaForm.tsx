@@ -161,7 +161,7 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
       return;
     }
     if (!tradingLive || !orderbookUrl) {
-      setError('Trading stack is pending deployment — DCA plans can be signed once the reactor is live.');
+      setError('Order book + keeper are still deploying — DCA plans can be signed once they are online.');
       return;
     }
     if (totalBaseAmount <= 0n) {
@@ -276,11 +276,12 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
       {!tradingLive ? (
         <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-xs">
           <div className="mb-1 uppercase tracking-wider text-amber-200/80">
-            Beta — reactor not yet deployed
+            Coming soon — order book + keeper deploying
           </div>
           <p className="text-amber-100/80">
-            Wallet signing is disabled until the UniswapX reactor is live on Etica mainnet.
-            You can wire up a plan below, but Sign will stay disabled.
+            The UniswapX reactor is live on Etica mainnet, but the order book and reference keeper
+            are not yet online. You can wire up a plan below, but Sign stays disabled until orders
+            can be routed to a keeper.
           </p>
         </div>
       ) : null}

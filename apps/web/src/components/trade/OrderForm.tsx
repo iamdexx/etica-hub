@@ -187,7 +187,7 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
       return;
     }
     if (!tradingLive || !orderbookUrl) {
-      setError('Trading stack is pending deployment — orders can be signed once the reactor is live.');
+      setError('Order book + keeper are still deploying — orders can be signed once they are online.');
       return;
     }
     if (amount <= 0n) {
@@ -300,12 +300,12 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
       {!tradingLive ? (
         <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-xs">
           <div className="mb-1 uppercase tracking-wider text-amber-200/80">
-            Beta — reactor not yet deployed
+            Coming soon — order book + keeper deploying
           </div>
           <p className="text-white/70">
-            You can compose {isStop ? 'a stop' : 'a limit'} order, but signing is disabled until the
-            UniswapX reactor is live on Etica mainnet. Once deployed, the form below will become
-            active with no UI changes.
+            The UniswapX reactor is live on Etica mainnet, but the order book and reference keeper
+            are not yet online. You can configure {isStop ? 'a stop' : 'a limit'} order below,
+            but Sign stays disabled until orders can be routed to a keeper. No UI changes once it goes live.
           </p>
         </div>
       ) : null}

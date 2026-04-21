@@ -209,7 +209,7 @@ export function GridForm({ baseSymbol }: GridFormProps) {
     }
     if (!tradingLive || !orderbookUrl) {
       setError(
-        'Trading stack is pending deployment — grids can be signed once the reactor is live.',
+        'Order book + keeper are still deploying — grids can be signed once they are online.',
       );
       return;
     }
@@ -318,11 +318,12 @@ export function GridForm({ baseSymbol }: GridFormProps) {
       {!tradingLive ? (
         <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-xs">
           <div className="mb-1 uppercase tracking-wider text-amber-200/80">
-            Beta — reactor not yet deployed
+            Coming soon — order book + keeper deploying
           </div>
           <p className="text-amber-100/80">
-            Wallet signing is disabled until the UniswapX reactor is live on Etica mainnet.
-            You can configure a grid below, but Sign will stay disabled.
+            The UniswapX reactor is live on Etica mainnet, but the order book and reference keeper
+            are not yet online. You can configure a grid below, but Sign stays disabled until orders
+            can be routed to a keeper.
           </p>
         </div>
       ) : null}
