@@ -99,8 +99,21 @@ export function LimitForm({ baseSymbol }: LimitFormProps) {
     },
   });
 
+  // Input-side amount the user must have approved to Permit2. For sells the
+  // input is the base token (`amount`); for buys the input is ETX, priced as
+  // `amount * pricePerBase / 1e18`. If we compared against `amount` for buys
+  // we'd let price > 1 bypass the approval gate — the reactor would then fail
+  // to pull enough ETX at fill time.
+  const inputAmountNeeded =
+    side === 'sell'
+      ? amount
+      : amount > 0n && pricePerBase18 > 0n
+        ? (amount * pricePerBase18) / 10n ** 18n
+        : 0n;
   const needsPermit2Approval =
-    tradingLive && amount > 0n && ((allowance.data as bigint | undefined) ?? 0n) < amount;
+    tradingLive &&
+    inputAmountNeeded > 0n &&
+    ((allowance.data as bigint | undefined) ?? 0n) < inputAmountNeeded;
 
   const { writeContractAsync, data: approveTxHash, reset: resetWrite } = useWriteContract();
   const approveReceipt = useWaitForTransactionReceipt({
