@@ -53,6 +53,12 @@ CREATE INDEX IF NOT EXISTS idx_orders_status_deadline ON orders (status, deadlin
 CREATE INDEX IF NOT EXISTS idx_orders_swapper         ON orders (swapper);
 CREATE INDEX IF NOT EXISTS idx_orders_input_token     ON orders (input_token);
 CREATE INDEX IF NOT EXISTS idx_orders_output_token    ON orders (output_token);
+`;
+
+// Indexes that reference columns added by `migrateSchema` must be created
+// *after* the migration runs — otherwise startup crashes on pre-existing DBs
+// whose base table pre-dates the column.
+const CREATE_MIGRATED_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_orders_strategy_type   ON orders (strategy_type);
 `;
 
@@ -137,6 +143,7 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
   db.pragma('journal_mode = WAL');
   db.exec(CREATE_TABLE_SQL);
   migrateSchema(db);
+  db.exec(CREATE_MIGRATED_INDEXES_SQL);
 
   const insertStmt = db.prepare(`
     INSERT INTO orders (

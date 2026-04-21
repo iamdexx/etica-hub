@@ -153,8 +153,16 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
   // After the invalidate tx confirms on-chain, record the cancel with the
   // orderbook so the keeper stops considering the order and the UI row
   // flips to `cancelled` on the next poll.
+  //
+  // `receipt.isSuccess` only means the RPC returned a receipt — the tx itself
+  // may have reverted, in which case the nonce is still valid and we must NOT
+  // mark the order cancelled in the orderbook.
   useEffect(() => {
     if (!receipt.isSuccess || !cancelTxHash || marking) return;
+    if (receipt.data?.status === 'reverted') {
+      setCancelError('Nonce invalidation tx reverted on-chain. Order is NOT cancelled.');
+      return;
+    }
     let aborted = false;
     setMarking(true);
     markCancelled(orderbookUrl, order.orderHash, cancelTxHash)
