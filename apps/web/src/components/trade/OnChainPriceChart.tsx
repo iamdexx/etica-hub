@@ -93,6 +93,16 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
 
   // 4) Derive a close-price and append to the rolling buffer on each poll.
   const [samples, setSamples] = useState<Sample[]>([]);
+
+  // Reset the buffer whenever the pair identity changes underneath us. The
+  // `key={baseSymbol}` in TradeView already remounts on route change, but a
+  // user could also switch the connected wallet's chain — which swaps the
+  // resolved pair address without unmounting the component. Clearing state
+  // here prevents mixing prices from two different chains into one chart.
+  useEffect(() => {
+    setSamples([]);
+  }, [chainId, pair]);
+
   useEffect(() => {
     const r = reservesQuery.data as readonly [bigint, bigint, number] | undefined;
     if (!r || baseIsToken0 === null) return;
