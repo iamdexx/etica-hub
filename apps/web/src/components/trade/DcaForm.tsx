@@ -445,7 +445,7 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
             className="w-full rounded-xl bg-brand-accent px-3 py-2 text-sm font-semibold text-brand-ink disabled:opacity-50"
           >
             {submitting
-              ? progress
+              ? progress && progress.signed < progress.total
                 ? `Signing ${progress.signed + 1} of ${progress.total}…`
                 : 'Submitting…'
               : `Sign ${legs || 0}-leg DCA plan`}
