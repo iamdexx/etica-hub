@@ -26,6 +26,11 @@ import { useRouter } from 'next/navigation';
 export function StatusAutoRefresh({ intervalMs = 30_000 }: { intervalMs?: number }) {
   const router = useRouter();
   const [lastRefreshMs, setLastRefreshMs] = useState<number | null>(null);
+  // Incremented once a second purely to force a re-render so the
+  // "last Xs ago" chip tick up visibly. Without this, the component only
+  // re-renders when `lastRefreshMs` changes (i.e. every `intervalMs`),
+  // so `formatRelative` would always compute ~0 and display "just now".
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     setLastRefreshMs(Date.now());
@@ -47,12 +52,14 @@ export function StatusAutoRefresh({ intervalMs = 30_000 }: { intervalMs?: number
     window.addEventListener('pageshow', onPageShow);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    const timer = window.setInterval(refresh, intervalMs);
+    const refreshTimer = window.setInterval(refresh, intervalMs);
+    const tickTimer = window.setInterval(() => setTick((t) => t + 1), 1_000);
 
     return () => {
       window.removeEventListener('pageshow', onPageShow);
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.clearInterval(timer);
+      window.clearInterval(refreshTimer);
+      window.clearInterval(tickTimer);
     };
   }, [router, intervalMs]);
 
