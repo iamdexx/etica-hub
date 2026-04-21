@@ -112,9 +112,11 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
   const planSellLevels = useMemo(() => plan?.filter((l) => l.side === 'sell') ?? [], [plan]);
 
   // Bottom / top of the active range — exposed in the preview so the user
-  // knows where they'll need to re-sign when price walks past it.
-  const bottomPrice = planBuyLevels[0]?.pricePerBase18 ?? 0n;
-  const topPrice = planSellLevels[planSellLevels.length - 1]?.pricePerBase18 ?? 0n;
+  // knows where they'll need to re-sign when price walks past it. Derived
+  // from the full plan (which is sorted ascending by price) so asymmetric
+  // grids — buys-only or sells-only — still report a real range.
+  const bottomPrice = plan?.[0]?.pricePerBase18 ?? 0n;
+  const topPrice = plan?.[plan.length - 1]?.pricePerBase18 ?? 0n;
 
   // Approvals: buy legs spend ETX, sell legs spend base.
   const totalEtxInput = useMemo(() => {
