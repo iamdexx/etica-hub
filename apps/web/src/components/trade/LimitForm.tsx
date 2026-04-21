@@ -312,7 +312,7 @@ export function LimitForm({ baseSymbol }: LimitFormProps) {
       <button
         type="button"
         onClick={onSign}
-        disabled={!isConnected || submitting || needsPermit2Approval || amount <= 0n || pricePerBase18 <= 0n}
+        disabled={!isConnected || !tradingLive || submitting || needsPermit2Approval || amount <= 0n || pricePerBase18 <= 0n}
         className="w-full rounded-xl bg-brand-accent px-3 py-2 text-sm font-medium text-brand-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? 'Signing…' : `Sign ${side === 'buy' ? 'buy' : 'sell'} limit order`}
