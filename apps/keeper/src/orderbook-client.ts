@@ -32,6 +32,15 @@ export interface OrderbookOrder {
   encodedOrder: Hex;
   signature: Hex;
   status: 'open' | 'filled' | 'cancelled' | 'expired';
+  /**
+   * Strategy flavor. `limit` is a plain resting order. `stop` is an order
+   * gated on a trigger price (see `triggerPrice` + `triggerDirection`) — the
+   * keeper must skip these until a price oracle is wired up. Legacy rows
+   * without this field are treated as `limit`.
+   */
+  strategyType?: 'limit' | 'stop';
+  triggerPrice?: string | null;
+  triggerDirection?: 'lte' | 'gte' | null;
   fillTxHash: Hex | null;
   fillBlockNumber: number | null;
   cancelTxHash: Hex | null;
@@ -44,6 +53,7 @@ export interface ListOrdersParams {
   swapper?: Address;
   inputToken?: Address;
   outputToken?: Address;
+  strategyType?: 'limit' | 'stop';
   minDeadline?: number;
   limit?: number;
   offset?: number;
@@ -72,6 +82,7 @@ export function createOrderbookClient(opts: OrderbookClientOptions): OrderbookCl
       if (params.swapper) qs.set('swapper', params.swapper);
       if (params.inputToken) qs.set('inputToken', params.inputToken);
       if (params.outputToken) qs.set('outputToken', params.outputToken);
+      if (params.strategyType) qs.set('strategyType', params.strategyType);
       if (typeof params.minDeadline === 'number') qs.set('minDeadline', String(params.minDeadline));
       if (typeof params.limit === 'number') qs.set('limit', String(params.limit));
       if (typeof params.offset === 'number') qs.set('offset', String(params.offset));

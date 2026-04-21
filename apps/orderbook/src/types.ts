@@ -13,6 +13,23 @@
 
 export type OrderStatus = 'open' | 'filled' | 'cancelled' | 'expired';
 
+/**
+ * Strategy flavor for the off-chain order book.
+ *
+ * On-chain the reactor sees the same DutchOrder regardless of flavor — the
+ * strategy only affects **when** a keeper attempts the fill:
+ *   - `limit` : fill any time after `decayStartTime` while price is ≥ startAmount
+ *   - `stop`  : wait for `triggerPrice` to be crossed in `triggerDirection`
+ *               before attempting the fill (keeper-enforced, off-chain).
+ *
+ * DCA / grid / infinite grid ride on top of `limit` by submitting multiple
+ * orders in one wallet popup; they don't need a new strategy type.
+ */
+export type StrategyType = 'limit' | 'stop';
+
+/** Trigger direction for stop orders. `lte` = stop-loss, `gte` = buy-stop. */
+export type TriggerDirection = 'lte' | 'gte';
+
 export interface StoredOrder {
   /** EIP-712 hash of the order (0x-prefixed hex, 32 bytes). */
   orderHash: `0x${string}`;
@@ -52,6 +69,18 @@ export interface StoredOrder {
 
   status: OrderStatus;
 
+  /** `limit` (default) or `stop`. Affects keeper fill gating only. */
+  strategyType: StrategyType;
+
+  /**
+   * Stop-order trigger price, expressed as ETX-per-base with 18 decimals
+   * (stringified bigint). Null for limit orders.
+   */
+  triggerPrice: string | null;
+
+  /** `lte` for stop-loss (price ≤ trigger), `gte` for buy-stop. Null for limit. */
+  triggerDirection: TriggerDirection | null;
+
   /** Populated after a keeper lands a fill tx. */
   fillTxHash: `0x${string}` | null;
   fillBlockNumber: number | null;
@@ -68,6 +97,7 @@ export interface OrderFilter {
   swapper?: `0x${string}`;
   inputToken?: `0x${string}`;
   outputToken?: `0x${string}`;
+  strategyType?: StrategyType;
   /** Only orders whose deadline is >= this unix timestamp. */
   minDeadline?: number;
   limit?: number;

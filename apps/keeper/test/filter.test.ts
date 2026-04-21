@@ -93,4 +93,23 @@ describe('filterFillable', () => {
   it('returns empty array when input is empty', () => {
     expect(filterFillable([], BASE_ARGS)).toEqual([]);
   });
+
+  it('drops stop orders (no price oracle wired up yet)', () => {
+    const order = mkOrder({
+      strategyType: 'stop',
+      triggerPrice: '1500000000000000000',
+      triggerDirection: 'lte',
+    });
+    expect(filterFillable([order], BASE_ARGS)).toHaveLength(0);
+  });
+
+  it('keeps orders with explicit strategyType=limit', () => {
+    const order = mkOrder({ strategyType: 'limit' });
+    expect(filterFillable([order], BASE_ARGS)).toHaveLength(1);
+  });
+
+  it('keeps legacy orders missing strategyType (treated as limit)', () => {
+    const order = mkOrder({ strategyType: undefined });
+    expect(filterFillable([order], BASE_ARGS)).toHaveLength(1);
+  });
 });

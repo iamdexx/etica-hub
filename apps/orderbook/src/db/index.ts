@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { OrderFilter, OrderStatus, StoredOrder } from '../types.js';
+import type { OrderFilter, OrderStatus, StoredOrder, StrategyType, TriggerDirection } from '../types.js';
 
 /**
  * Minimal SQLite-backed order store.
@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS orders (
   encoded_order        TEXT NOT NULL,
   signature            TEXT NOT NULL,
   status               TEXT NOT NULL DEFAULT 'open',
+  strategy_type        TEXT NOT NULL DEFAULT 'limit',
+  trigger_price        TEXT,
+  trigger_direction    TEXT,
   fill_tx_hash         TEXT,
   fill_block_number    INTEGER,
   cancel_tx_hash       TEXT,
@@ -50,7 +53,26 @@ CREATE INDEX IF NOT EXISTS idx_orders_status_deadline ON orders (status, deadlin
 CREATE INDEX IF NOT EXISTS idx_orders_swapper         ON orders (swapper);
 CREATE INDEX IF NOT EXISTS idx_orders_input_token     ON orders (input_token);
 CREATE INDEX IF NOT EXISTS idx_orders_output_token    ON orders (output_token);
+CREATE INDEX IF NOT EXISTS idx_orders_strategy_type   ON orders (strategy_type);
 `;
+
+/**
+ * Add columns that landed in later migrations to pre-existing SQLite files.
+ * Each `ALTER TABLE ... ADD COLUMN` is wrapped in a try so repeat runs on
+ * already-migrated schemas are no-ops (SQLite throws on duplicate columns).
+ */
+function migrateSchema(db: Database.Database): void {
+  const addColumn = (name: string, typeClause: string): void => {
+    try {
+      db.exec(`ALTER TABLE orders ADD COLUMN ${name} ${typeClause}`);
+    } catch {
+      // column already exists — no-op.
+    }
+  };
+  addColumn('strategy_type', "TEXT NOT NULL DEFAULT 'limit'");
+  addColumn('trigger_price', 'TEXT');
+  addColumn('trigger_direction', 'TEXT');
+}
 
 interface OrderRow {
   order_hash: string;
@@ -70,6 +92,9 @@ interface OrderRow {
   encoded_order: string;
   signature: string;
   status: string;
+  strategy_type: string;
+  trigger_price: string | null;
+  trigger_direction: string | null;
   fill_tx_hash: string | null;
   fill_block_number: number | null;
   cancel_tx_hash: string | null;
@@ -96,6 +121,9 @@ function rowToOrder(row: OrderRow): StoredOrder {
     encodedOrder: row.encoded_order as `0x${string}`,
     signature: row.signature as `0x${string}`,
     status: row.status as OrderStatus,
+    strategyType: (row.strategy_type as StrategyType) ?? 'limit',
+    triggerPrice: row.trigger_price ?? null,
+    triggerDirection: (row.trigger_direction as TriggerDirection | null) ?? null,
     fillTxHash: (row.fill_tx_hash as `0x${string}` | null) ?? null,
     fillBlockNumber: row.fill_block_number,
     cancelTxHash: (row.cancel_tx_hash as `0x${string}` | null) ?? null,
@@ -108,6 +136,7 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(CREATE_TABLE_SQL);
+  migrateSchema(db);
 
   const insertStmt = db.prepare(`
     INSERT INTO orders (
@@ -115,13 +144,15 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
       decay_start_time, decay_end_time,
       input_token, input_start_amount, input_end_amount,
       output_token, output_start_amount, output_end_amount, output_recipient,
-      encoded_order, signature, status
+      encoded_order, signature, status,
+      strategy_type, trigger_price, trigger_direction
     ) VALUES (
       @order_hash, @reactor, @swapper, @nonce, @deadline,
       @decay_start_time, @decay_end_time,
       @input_token, @input_start_amount, @input_end_amount,
       @output_token, @output_start_amount, @output_end_amount, @output_recipient,
-      @encoded_order, @signature, @status
+      @encoded_order, @signature, @status,
+      @strategy_type, @trigger_price, @trigger_direction
     )
   `);
 
@@ -157,6 +188,9 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
         encoded_order: order.encodedOrder,
         signature: order.signature,
         status: order.status,
+        strategy_type: order.strategyType,
+        trigger_price: order.triggerPrice ?? null,
+        trigger_direction: order.triggerDirection ?? null,
       });
     },
 
@@ -184,6 +218,10 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
       if (filter.outputToken) {
         where.push(`output_token = @output_token`);
         params.output_token = filter.outputToken.toLowerCase();
+      }
+      if (filter.strategyType) {
+        where.push(`strategy_type = @strategy_type`);
+        params.strategy_type = filter.strategyType;
       }
       if (filter.minDeadline !== undefined) {
         where.push(`deadline >= @min_deadline`);

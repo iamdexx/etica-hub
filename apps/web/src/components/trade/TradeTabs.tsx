@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { SwapCard } from '../swap/SwapCard';
 import { LimitForm } from './LimitForm';
+import { StopForm } from './StopForm';
 
 type Tab = 'market' | 'limit' | 'stop';
 
@@ -11,23 +12,6 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'limit', label: 'Limit' },
   { key: 'stop', label: 'Stop' },
 ];
-
-function ComingSoonPanel({ strategy }: { strategy: 'stop' }) {
-  const copy =
-    'Protect a position with a stop-loss trigger. Your order rests until price crosses the trigger, at which point a keeper executes the swap. Non-custodial; cancellable any time.';
-  return (
-    <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5 text-sm">
-      <div className="mb-1 text-xs uppercase tracking-wider text-amber-200/80">
-        Coming in next release
-      </div>
-      <p className="text-white/80">{copy}</p>
-      <p className="mt-3 text-xs text-white/50">
-        Ships alongside DCA, bounded grid, and infinite-grid wizards. Same signing primitive as Limit;
-        the keeper just holds the fill until the trigger fires.
-      </p>
-    </div>
-  );
-}
 
 export interface TradeTabsProps {
   baseSymbol: 'ETI' | 'EGAZ';
@@ -55,7 +39,7 @@ export function TradeTabs({ baseSymbol }: TradeTabsProps) {
       </div>
       {tab === 'market' && <SwapCard />}
       {tab === 'limit' && <LimitForm baseSymbol={baseSymbol} />}
-      {tab === 'stop' && <ComingSoonPanel strategy="stop" />}
+      {tab === 'stop' && <StopForm baseSymbol={baseSymbol} />}
     </div>
   );
 }

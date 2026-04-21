@@ -186,6 +186,126 @@ describe('orderbook server', () => {
     expect(res.statusCode).toBe(409);
   });
 
+  it('POST /orders stores a stop order with trigger metadata', async () => {
+    const encoded = encodedOrder();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encoded,
+        signature: SIG,
+        strategyType: 'stop',
+        triggerPrice: '1500000000000000000',
+        triggerDirection: 'lte',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.strategyType).toBe('stop');
+    expect(body.triggerPrice).toBe('1500000000000000000');
+    expect(body.triggerDirection).toBe('lte');
+  });
+
+  it('POST /orders defaults strategyType to limit when omitted', async () => {
+    const encoded = encodedOrder();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: { encodedOrder: encoded, signature: SIG },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.strategyType).toBe('limit');
+    expect(body.triggerPrice).toBeNull();
+    expect(body.triggerDirection).toBeNull();
+  });
+
+  it('POST /orders rejects stop without triggerPrice (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        strategyType: 'stop',
+        triggerDirection: 'lte',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /orders rejects stop without triggerDirection (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        strategyType: 'stop',
+        triggerPrice: '1000000000000000000',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /orders rejects limit order carrying a triggerPrice (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        triggerPrice: '1000000000000000000',
+        triggerDirection: 'lte',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /orders rejects non-decimal triggerPrice (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        strategyType: 'stop',
+        triggerPrice: '0xdeadbeef',
+        triggerDirection: 'gte',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('GET /orders?strategyType=stop filters to stop orders only', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: { encodedOrder: encodedOrder({ nonce: 1n }), signature: SIG },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder({ nonce: 2n }),
+        signature: SIG,
+        strategyType: 'stop',
+        triggerPrice: '2000000000000000000',
+        triggerDirection: 'gte',
+      },
+    });
+
+    const stops = await app.inject({ method: 'GET', url: '/orders?strategyType=stop' });
+    expect(stops.statusCode).toBe(200);
+    const body = stops.json();
+    expect(body.count).toBe(1);
+    expect(body.orders[0].strategyType).toBe('stop');
+
+    const limits = await app.inject({ method: 'GET', url: '/orders?strategyType=limit' });
+    expect(limits.json().count).toBe(1);
+    expect(limits.json().orders[0].strategyType).toBe('limit');
+  });
+
   it('POST /orders/:hash/mark-filled requires keeper auth', async () => {
     const encoded = encodedOrder();
     await app.inject({
