@@ -1,4 +1,5 @@
 import {
+  decodeAbiParameters,
   encodeAbiParameters,
   keccak256,
   parseAbiParameters,
@@ -452,6 +453,22 @@ export function encodeDutchOrder(o: DutchOrder): Hex {
  * (`keccak256(encodedOrder)`). Useful for linking to `/orders/:hash`. */
 export function orderBookHash(encoded: Hex): Hex {
   return keccak256(encoded);
+}
+
+/** Inverse of `encodeDutchOrder`: recover the DutchOrder struct from an
+ * ABI-encoded payload. Matches the on-chain reactor's `abi.decode(..., (DutchOrder))`
+ * layout. Used by the dashboard when reading `OrderPosted` events from the
+ * on-chain `OrderRegistry`. */
+export function decodeDutchOrder(encoded: Hex): DutchOrder {
+  const params = parseAbiParameters([
+    'DutchOrder order',
+    'struct DutchOrder { OrderInfo info; uint256 decayStartTime; uint256 decayEndTime; DutchInput input; DutchOutput[] outputs; }',
+    'struct OrderInfo { address reactor; address swapper; uint256 nonce; uint256 deadline; address additionalValidationContract; bytes additionalValidationData; }',
+    'struct DutchInput { address token; uint256 startAmount; uint256 endAmount; }',
+    'struct DutchOutput { address token; uint256 startAmount; uint256 endAmount; address recipient; }',
+  ]);
+  const [o] = decodeAbiParameters(params, encoded);
+  return o as DutchOrder;
 }
 
 /**
