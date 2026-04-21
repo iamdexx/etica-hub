@@ -5,7 +5,9 @@ import { BaseError, formatUnits, type Address, type Hex } from 'viem';
 import {
   useAccount,
   useChainId,
+  usePublicClient,
   useWaitForTransactionReceipt,
+  useWalletClient,
   useWriteContract,
 } from 'wagmi';
 import { DEPLOYMENTS, abis, isSupportedChainId } from '@etica-hub/shared';
@@ -15,6 +17,11 @@ import {
   resolveOrderbookUrl,
   type StoredOrderView,
 } from '@/lib/trading/orderbookClient';
+import {
+  cancelOrderOnRegistry,
+  fetchRegistryOrders,
+  getRegistryAddress,
+} from '@/lib/trading/registryClient';
 import { splitPermit2Nonce } from '@/lib/trading/cancelNonce';
 
 /**
@@ -36,21 +43,40 @@ import { splitPermit2Nonce } from '@/lib/trading/cancelNonce';
 export function ActiveOrders({ swapperOverride }: { swapperOverride?: Address } = {}) {
   const { address } = useAccount();
   const chainId = useChainId();
+  const publicClient = usePublicClient();
   const swapper = swapperOverride ?? address;
   const orderbookUrl = resolveOrderbookUrl();
+  const registryAddress = getRegistryAddress(chainId);
+  // Registry is the source of truth when it's deployed; otherwise fall back to
+  // the off-chain orderbook API. This mirrors the submission-path branch in
+  // OrderForm / DcaForm / GridForm so signing and reading use the same store.
+  const useRegistry = registryAddress !== null && Boolean(publicClient);
   const [orders, setOrders] = useState<StoredOrderView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (!swapper || !orderbookUrl) return;
+    if (!swapper) return;
+    if (!useRegistry && !orderbookUrl) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
       try {
-        if (!swapper || !orderbookUrl) return;
-        const list = await listOrders(orderbookUrl, { swapper, status: 'open', limit: 25 });
+        if (!swapper) return;
+        let list: StoredOrderView[];
+        if (useRegistry && publicClient && isSupportedChainId(chainId)) {
+          const all = await fetchRegistryOrders({
+            publicClient,
+            chainId,
+            swapper,
+          });
+          list = all.filter((o) => o.status === 'open').slice(0, 25);
+        } else if (orderbookUrl) {
+          list = await listOrders(orderbookUrl, { swapper, status: 'open', limit: 25 });
+        } else {
+          return;
+        }
         if (!cancelled) {
           setOrders(list);
           setError(null);
@@ -67,12 +93,13 @@ export function ActiveOrders({ swapperOverride }: { swapperOverride?: Address } 
       cancelled = true;
       clearInterval(t);
     };
-  }, [swapper, orderbookUrl, reloadKey]);
+  }, [swapper, orderbookUrl, reloadKey, useRegistry, publicClient, chainId]);
 
-  if (!orderbookUrl) {
+  if (!useRegistry && !orderbookUrl) {
     return (
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/60">
-        Order book URL not configured. Set <code className="text-white/80">NEXT_PUBLIC_ORDERBOOK_URL</code>.
+        Order store not configured. Deploy the on-chain <code className="text-white/80">OrderRegistry</code>{' '}
+        or set <code className="text-white/80">NEXT_PUBLIC_ORDERBOOK_URL</code>.
       </div>
     );
   }
@@ -113,6 +140,8 @@ export function ActiveOrders({ swapperOverride }: { swapperOverride?: Address } 
               permit2={permit2 as Address}
               canCancel={canCancel}
               orderbookUrl={orderbookUrl}
+              useRegistry={useRegistry}
+              chainId={chainId}
               onCancelled={() => setReloadKey((k) => k + 1)}
             />
           ))}
@@ -126,11 +155,23 @@ interface OrderRowProps {
   order: StoredOrderView;
   permit2: Address;
   canCancel: boolean;
-  orderbookUrl: string;
+  orderbookUrl: string | null;
+  useRegistry: boolean;
+  chainId: number;
   onCancelled: () => void;
 }
 
-function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: OrderRowProps) {
+function OrderRow({
+  order,
+  permit2,
+  canCancel,
+  orderbookUrl,
+  useRegistry,
+  chainId,
+  onCancelled,
+}: OrderRowProps) {
+  const { data: walletClient } = useWalletClient();
+  const { address } = useAccount();
   // Recompute on every render so the countdown advances on each 30s poll.
   const expiresIn = timeUntil(order.deadline);
   const inAmount = safeFormat(order.input.startAmount);
@@ -174,13 +215,15 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
 
   const isSubmitting = Boolean(cancelTxHash) && !receipt.data && !receipt.error;
 
-  // After the invalidate tx confirms on-chain, record the cancel with the
-  // orderbook so the keeper stops considering the order and the UI row
-  // flips to `cancelled` on the next poll.
+  // After the permit2 invalidation tx confirms, flip the order to `cancelled`
+  // in whichever store is authoritative:
+  //   - registry path → call `registry.cancelOrder(orderHash)` so keepers see
+  //     an `OrderCancelled` event and the dashboard's next log poll drops it.
+  //   - orderbook path → POST `/orders/:hash/cancel` so the keeper skips it.
   //
   // `receipt.isSuccess` only means the RPC returned a receipt — the tx itself
   // may have reverted, in which case the nonce is still valid and we must NOT
-  // mark the order cancelled in the orderbook.
+  // mark the order cancelled anywhere.
   useEffect(() => {
     if (!receipt.isSuccess || !cancelTxHash || marking) return;
     if (receipt.data?.status === 'reverted') {
@@ -189,7 +232,25 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
     }
     let aborted = false;
     setMarking(true);
-    markCancelled(orderbookUrl, order.orderHash, cancelTxHash)
+    const finalize = async (): Promise<void> => {
+      if (useRegistry) {
+        if (!walletClient || !address || !isSupportedChainId(chainId)) {
+          throw new Error('Wallet session not ready — try again in a moment.');
+        }
+        await cancelOrderOnRegistry({
+          walletClient,
+          chainId,
+          account: address,
+          orderHash: order.orderHash,
+        });
+      } else {
+        if (!orderbookUrl) {
+          throw new Error('No order store configured — cannot record cancellation.');
+        }
+        await markCancelled(orderbookUrl, order.orderHash, cancelTxHash);
+      }
+    };
+    finalize()
       .then(() => {
         if (aborted) return;
         reset();
