@@ -30,8 +30,45 @@ describe('loadConfig', () => {
     expect(loadConfig(baseEnv({ ORDERBOOK_URL: 'http://a///' })).orderbookUrl).toBe('http://a');
   });
 
-  it('throws when ORDERBOOK_URL is missing', () => {
+  it('throws when ORDERBOOK_URL is missing and no registry address is set', () => {
     expect(() => loadConfig(baseEnv({ ORDERBOOK_URL: undefined }))).toThrow(/ORDERBOOK_URL/);
+  });
+
+  it('accepts a registry address as the sole order source', () => {
+    const registry = '0x' + '1c'.repeat(20);
+    const cfg = loadConfig(
+      baseEnv({ ORDERBOOK_URL: undefined, KEEPER_REGISTRY_ADDRESS: registry }),
+    );
+    expect(cfg.registryAddress?.toLowerCase()).toBe(registry);
+    expect(cfg.orderbookUrl).toBeNull();
+  });
+
+  it('treats zero-address registry as unset', () => {
+    expect(() =>
+      loadConfig(
+        baseEnv({
+          ORDERBOOK_URL: undefined,
+          KEEPER_REGISTRY_ADDRESS: '0x0000000000000000000000000000000000000000',
+        }),
+      ),
+    ).toThrow(/either KEEPER_REGISTRY_ADDRESS or ORDERBOOK_URL/);
+  });
+
+  it('defaults dryRun=true when no private key is set', () => {
+    const cfg = loadConfig(baseEnv());
+    expect(cfg.dryRun).toBe(true);
+  });
+
+  it('defaults dryRun=false when a private key is set', () => {
+    const pk = '0x' + 'ab'.repeat(32);
+    const cfg = loadConfig(baseEnv({ KEEPER_PRIVATE_KEY: pk }));
+    expect(cfg.dryRun).toBe(false);
+  });
+
+  it('KEEPER_DRY_RUN=true wins over the private-key default', () => {
+    const pk = '0x' + 'ab'.repeat(32);
+    const cfg = loadConfig(baseEnv({ KEEPER_PRIVATE_KEY: pk, KEEPER_DRY_RUN: 'true' }));
+    expect(cfg.dryRun).toBe(true);
   });
 
   it('throws when KEEPER_RPC_URL is missing', () => {

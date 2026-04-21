@@ -21,14 +21,65 @@
 import { loadConfig, type KeeperConfig } from './config.js';
 import { createOrderbookClient, type OrderbookClient, type OrderbookOrder } from './orderbook-client.js';
 import { filterFillable } from './filter.js';
+import {
+  createKeeperPublicClient,
+  fetchRegistryOrders,
+} from './registry-source.js';
+import type { PublicClient } from 'viem';
+
+/**
+ * Abstract source of open orders — either the off-chain HTTP orderbook or
+ * an on-chain `OrderRegistry`. Both produce `OrderbookOrder[]`.
+ */
+export interface OrderSource {
+  listOpen(limit: number, minDeadline: number): Promise<OrderbookOrder[]>;
+  /** Surface name for startup logs. */
+  description: string;
+}
 
 export interface KeeperDeps {
+  /** Injected for tests. Defaults to a source derived from config. */
+  source?: OrderSource;
   /** Injected for tests. Defaults to real HTTP client. */
   client?: OrderbookClient;
   /** Injected clock for tests. Defaults to Date.now(). */
   now?: () => number;
   /** Injected logger. Defaults to console. */
   log?: Pick<Console, 'info' | 'warn' | 'error'>;
+}
+
+function buildDefaultSource(config: KeeperConfig, client?: OrderbookClient): OrderSource {
+  if (config.registryAddress) {
+    const publicClient: PublicClient = createKeeperPublicClient(config.rpcUrl);
+    return {
+      description: `registry ${config.registryAddress} via ${config.rpcUrl}`,
+      async listOpen(limit, minDeadline) {
+        const orders = await fetchRegistryOrders({
+          publicClient,
+          registry: config.registryAddress!,
+        });
+        // The registry source doesn't apply deadline / limit server-side,
+        // so replicate the orderbook's semantics here.
+        const kept = orders.filter((o) => o.deadline > minDeadline);
+        return kept.slice(0, limit);
+      },
+    };
+  }
+  if (!config.orderbookUrl) {
+    throw new Error('no source configured — should have been rejected by loadConfig');
+  }
+  const httpClient =
+    client ??
+    createOrderbookClient({
+      baseUrl: config.orderbookUrl,
+      keeperAuthToken: config.keeperAuthToken,
+    });
+  return {
+    description: `orderbook ${config.orderbookUrl}`,
+    async listOpen(limit, minDeadline) {
+      return httpClient.listOrders({ status: 'open', limit, minDeadline });
+    },
+  };
 }
 
 export interface Keeper {
@@ -44,12 +95,7 @@ export function createKeeper(config: KeeperConfig, deps: KeeperDeps = {}): Keepe
   const log = deps.log ?? console;
   const now = deps.now ?? (() => Math.floor(Date.now() / 1000));
 
-  const client =
-    deps.client ??
-    createOrderbookClient({
-      baseUrl: config.orderbookUrl,
-      keeperAuthToken: config.keeperAuthToken,
-    });
+  const source = deps.source ?? buildDefaultSource(config, deps.client);
 
   let running = false;
   let stopped = false;
@@ -57,11 +103,10 @@ export function createKeeper(config: KeeperConfig, deps: KeeperDeps = {}): Keepe
   let waitTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function tick(): Promise<{ fetched: number; fillable: number }> {
-    const orders = await client.listOrders({
-      status: 'open',
-      limit: config.pollBatchSize,
-      minDeadline: now() + config.deadlineGraceSeconds,
-    });
+    const orders = await source.listOpen(
+      config.pollBatchSize,
+      now() + config.deadlineGraceSeconds,
+    );
 
     const fillable = filterFillable(orders, {
       reactor: config.reactor,
@@ -71,8 +116,9 @@ export function createKeeper(config: KeeperConfig, deps: KeeperDeps = {}): Keepe
 
     for (const o of fillable) {
       // v1 stub: emit a structured line. v2 will simulate + submit.
+      const prefix = config.dryRun ? '[keeper:dry] would attempt fill' : '[keeper] would attempt fill';
       log.info(
-        `[keeper] would attempt fill orderHash=${o.orderHash} swapper=${o.swapper} ` +
+        `${prefix} orderHash=${o.orderHash} swapper=${o.swapper} ` +
           `input=${o.input.token} output=${o.output.token} deadline=${o.deadline}`,
       );
     }
@@ -84,8 +130,8 @@ export function createKeeper(config: KeeperConfig, deps: KeeperDeps = {}): Keepe
     if (running) return;
     running = true;
     log.info(
-      `[keeper] starting: orderbook=${config.orderbookUrl} reactor=${config.reactor} ` +
-        `interval=${config.pollIntervalMs}ms`,
+      `[keeper] starting: source=${source.description} reactor=${config.reactor} ` +
+        `interval=${config.pollIntervalMs}ms dryRun=${config.dryRun}`,
     );
 
     while (!stopped) {
