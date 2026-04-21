@@ -134,7 +134,10 @@ export function AdminReactorCard() {
   const [readsError, setReadsError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!publicClient || !onMainnet) return;
+    if (!publicClient || !onMainnet) {
+      setReadsLoading(false);
+      return;
+    }
     let cancelled = false;
     setReadsLoading(true);
     setReadsError(null);
