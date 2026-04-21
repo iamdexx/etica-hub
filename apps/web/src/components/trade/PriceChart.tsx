@@ -8,14 +8,14 @@ import { useEffect, useMemo, useState } from 'react';
  * avoid float precision loss for 18-decimal tokens.
  */
 type Candle = {
-  ts: number;
+  bucketStart: number;
   open: string;
   high: string;
   low: string;
   close: string;
   volumeBase: string;
   volumeQuote: string;
-  trades: number;
+  tradeCount: number;
 };
 
 export type IntervalKey = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
@@ -216,8 +216,8 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
         <span>Low {formatPrice(minP)}</span>
         <span>
           {candles && candles.length > 0
-            ? `${fmtTime(candles[0]!.ts, interval)} → ${fmtTime(
-                candles[candles.length - 1]!.ts,
+            ? `${fmtTime(candles[0]!.bucketStart, interval)} → ${fmtTime(
+                candles[candles.length - 1]!.bucketStart,
                 interval,
               )}`
             : ''}
