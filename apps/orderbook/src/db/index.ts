@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS orders (
   dca_batch_id         TEXT,
   dca_index            INTEGER,
   dca_total            INTEGER,
+  grid_batch_id        TEXT,
+  grid_index           INTEGER,
+  grid_total           INTEGER,
+  grid_level_price     TEXT,
   fill_tx_hash         TEXT,
   fill_block_number    INTEGER,
   cancel_tx_hash       TEXT,
@@ -64,6 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_output_token    ON orders (output_token);
 const CREATE_MIGRATED_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_orders_strategy_type   ON orders (strategy_type);
 CREATE INDEX IF NOT EXISTS idx_orders_dca_batch_id    ON orders (dca_batch_id);
+CREATE INDEX IF NOT EXISTS idx_orders_grid_batch_id   ON orders (grid_batch_id);
 `;
 
 /**
@@ -85,6 +90,10 @@ function migrateSchema(db: Database.Database): void {
   addColumn('dca_batch_id', 'TEXT');
   addColumn('dca_index', 'INTEGER');
   addColumn('dca_total', 'INTEGER');
+  addColumn('grid_batch_id', 'TEXT');
+  addColumn('grid_index', 'INTEGER');
+  addColumn('grid_total', 'INTEGER');
+  addColumn('grid_level_price', 'TEXT');
 }
 
 interface OrderRow {
@@ -111,6 +120,10 @@ interface OrderRow {
   dca_batch_id: string | null;
   dca_index: number | null;
   dca_total: number | null;
+  grid_batch_id: string | null;
+  grid_index: number | null;
+  grid_total: number | null;
+  grid_level_price: string | null;
   fill_tx_hash: string | null;
   fill_block_number: number | null;
   cancel_tx_hash: string | null;
@@ -143,6 +156,10 @@ function rowToOrder(row: OrderRow): StoredOrder {
     dcaBatchId: row.dca_batch_id ?? null,
     dcaIndex: row.dca_index ?? null,
     dcaTotal: row.dca_total ?? null,
+    gridBatchId: row.grid_batch_id ?? null,
+    gridIndex: row.grid_index ?? null,
+    gridTotal: row.grid_total ?? null,
+    gridLevelPrice: row.grid_level_price ?? null,
     fillTxHash: (row.fill_tx_hash as `0x${string}` | null) ?? null,
     fillBlockNumber: row.fill_block_number,
     cancelTxHash: (row.cancel_tx_hash as `0x${string}` | null) ?? null,
@@ -166,7 +183,8 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
       output_token, output_start_amount, output_end_amount, output_recipient,
       encoded_order, signature, status,
       strategy_type, trigger_price, trigger_direction,
-      dca_batch_id, dca_index, dca_total
+      dca_batch_id, dca_index, dca_total,
+      grid_batch_id, grid_index, grid_total, grid_level_price
     ) VALUES (
       @order_hash, @reactor, @swapper, @nonce, @deadline,
       @decay_start_time, @decay_end_time,
@@ -174,7 +192,8 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
       @output_token, @output_start_amount, @output_end_amount, @output_recipient,
       @encoded_order, @signature, @status,
       @strategy_type, @trigger_price, @trigger_direction,
-      @dca_batch_id, @dca_index, @dca_total
+      @dca_batch_id, @dca_index, @dca_total,
+      @grid_batch_id, @grid_index, @grid_total, @grid_level_price
     )
   `);
 
@@ -216,6 +235,10 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
         dca_batch_id: order.dcaBatchId ?? null,
         dca_index: order.dcaIndex ?? null,
         dca_total: order.dcaTotal ?? null,
+        grid_batch_id: order.gridBatchId ?? null,
+        grid_index: order.gridIndex ?? null,
+        grid_total: order.gridTotal ?? null,
+        grid_level_price: order.gridLevelPrice ?? null,
       });
     },
 
@@ -251,6 +274,10 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
       if (filter.dcaBatchId) {
         where.push(`dca_batch_id = @dca_batch_id`);
         params.dca_batch_id = filter.dcaBatchId;
+      }
+      if (filter.gridBatchId) {
+        where.push(`grid_batch_id = @grid_batch_id`);
+        params.grid_batch_id = filter.gridBatchId;
       }
       if (filter.minDeadline !== undefined) {
         where.push(`deadline >= @min_deadline`);

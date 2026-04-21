@@ -26,11 +26,14 @@ export type OrderStatus = 'open' | 'filled' | 'cancelled' | 'expired';
  *               `limit` (decayStartTime acts as the "execute after" timestamp
  *               per leg), but carries `dcaBatchId`/`dcaIndex`/`dcaTotal` so
  *               the UI can group legs into a single strategy row.
- *
- * Grid / infinite grid ride on top of `limit` by submitting multiple orders
- * in one wallet popup; they don't need a new strategy type.
+ *   - `grid`  : one level of a bounded grid. Each level is functionally a
+ *               limit order at its own `gridLevelPrice` (buy-below / sell-above
+ *               the reference price at signing time). The batch shares a
+ *               `gridBatchId` so the dashboard can group levels as one row.
+ *               Infinite grids ride on top by re-signing new upper levels as
+ *               price climbs; they reuse the same strategy type.
  */
-export type StrategyType = 'limit' | 'stop' | 'dca';
+export type StrategyType = 'limit' | 'stop' | 'dca' | 'grid';
 
 /** Trigger direction for stop orders. `lte` = stop-loss, `gte` = buy-stop. */
 export type TriggerDirection = 'lte' | 'gte';
@@ -97,6 +100,20 @@ export interface StoredOrder {
   dcaIndex: number | null;
   dcaTotal: number | null;
 
+  /**
+   * Grid batch grouping. Populated only for `strategyType === 'grid'`. The
+   * `gridBatchId` is a client-generated UUID shared by every level of one
+   * grid plan; `gridIndex` is the 0-based position (lowest-priced level = 0,
+   * sorted ascending); `gridTotal` is the total number of levels;
+   * `gridLevelPrice` is the ETX-per-base limit price of that level (stringified
+   * 1e18-scaled bigint) so the UI can render "buy @ 1.40 ETX" per row. Legacy
+   * rows / non-grid orders have all four as null.
+   */
+  gridBatchId: string | null;
+  gridIndex: number | null;
+  gridTotal: number | null;
+  gridLevelPrice: string | null;
+
   /** Populated after a keeper lands a fill tx. */
   fillTxHash: `0x${string}` | null;
   fillBlockNumber: number | null;
@@ -116,6 +133,8 @@ export interface OrderFilter {
   strategyType?: StrategyType;
   /** Filter to a single DCA batch (used by UI grouping). */
   dcaBatchId?: string;
+  /** Filter to a single grid batch (used by UI grouping). */
+  gridBatchId?: string;
   /** Only orders whose deadline is >= this unix timestamp. */
   minDeadline?: number;
   limit?: number;

@@ -41,14 +41,21 @@ export interface OrderbookOrder {
    *               (each leg carries its own staggered start time), so the keeper
    *               treats `dca` and `limit` identically. `dcaBatchId`/`dcaIndex`/
    *               `dcaTotal` are only used by the UI for grouping.
+   *   - `grid`  : one level of a bounded grid. Each level is a limit order at
+   *               its own `gridLevelPrice`. The keeper treats `grid` identically
+   *               to `limit`; the grid fields are UI-only metadata.
    * Legacy rows without this field are treated as `limit`.
    */
-  strategyType?: 'limit' | 'stop' | 'dca';
+  strategyType?: 'limit' | 'stop' | 'dca' | 'grid';
   triggerPrice?: string | null;
   triggerDirection?: 'lte' | 'gte' | null;
   dcaBatchId?: string | null;
   dcaIndex?: number | null;
   dcaTotal?: number | null;
+  gridBatchId?: string | null;
+  gridIndex?: number | null;
+  gridTotal?: number | null;
+  gridLevelPrice?: string | null;
   fillTxHash: Hex | null;
   fillBlockNumber: number | null;
   cancelTxHash: Hex | null;
@@ -61,8 +68,9 @@ export interface ListOrdersParams {
   swapper?: Address;
   inputToken?: Address;
   outputToken?: Address;
-  strategyType?: 'limit' | 'stop' | 'dca';
+  strategyType?: 'limit' | 'stop' | 'dca' | 'grid';
   dcaBatchId?: string;
+  gridBatchId?: string;
   minDeadline?: number;
   limit?: number;
   offset?: number;
@@ -93,6 +101,7 @@ export function createOrderbookClient(opts: OrderbookClientOptions): OrderbookCl
       if (params.outputToken) qs.set('outputToken', params.outputToken);
       if (params.strategyType) qs.set('strategyType', params.strategyType);
       if (params.dcaBatchId) qs.set('dcaBatchId', params.dcaBatchId);
+      if (params.gridBatchId) qs.set('gridBatchId', params.gridBatchId);
       if (typeof params.minDeadline === 'number') qs.set('minDeadline', String(params.minDeadline));
       if (typeof params.limit === 'number') qs.set('limit', String(params.limit));
       if (typeof params.offset === 'number') qs.set('offset', String(params.offset));

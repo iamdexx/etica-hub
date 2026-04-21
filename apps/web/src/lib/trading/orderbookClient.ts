@@ -14,7 +14,7 @@ import type { Address, Hex } from 'viem';
  * nonce state — those belong to the keeper and the user's wallet, not the UI.
  */
 
-export type StrategyType = 'limit' | 'stop' | 'dca';
+export type StrategyType = 'limit' | 'stop' | 'dca' | 'grid';
 export type TriggerDirection = 'lte' | 'gte';
 
 export interface StoredOrderView {
@@ -35,21 +35,29 @@ export interface StoredOrderView {
   encodedOrder: Hex;
   signature: Hex;
   status: 'open' | 'filled' | 'cancelled' | 'expired';
-  /** `limit` (default), `stop`, or `dca`. Defaults to `limit` for older rows without the field. */
+  /** `limit` (default), `stop`, `dca`, or `grid`. Defaults to `limit` for older rows without the field. */
   strategyType: StrategyType;
   /**
    * Stop-order trigger price, expressed as ETX-per-base with 18 decimals
-   * (stringified bigint). Null for limit / dca orders.
+   * (stringified bigint). Null for limit / dca / grid orders.
    */
   triggerPrice: string | null;
-  /** `lte` for stop-loss (price ≤ trigger), `gte` for buy-stop. Null for limit / dca. */
+  /** `lte` for stop-loss (price ≤ trigger), `gte` for buy-stop. Null for limit / dca / grid. */
   triggerDirection: TriggerDirection | null;
-  /** DCA batch id (client-generated UUID). Shared by every leg; null for limit / stop. */
+  /** DCA batch id (client-generated UUID). Shared by every leg; null for limit / stop / grid. */
   dcaBatchId: string | null;
-  /** 0-based leg position within the DCA batch. Null for limit / stop. */
+  /** 0-based leg position within the DCA batch. Null for limit / stop / grid. */
   dcaIndex: number | null;
-  /** Total number of legs in the DCA batch. Null for limit / stop. */
+  /** Total number of legs in the DCA batch. Null for limit / stop / grid. */
   dcaTotal: number | null;
+  /** Grid batch id (client-generated UUID). Shared by every level; null for non-grid orders. */
+  gridBatchId: string | null;
+  /** 0-based level position within the grid batch (lowest-priced level = 0). */
+  gridIndex: number | null;
+  /** Total number of levels in the grid batch. Null for non-grid orders. */
+  gridTotal: number | null;
+  /** ETX-per-base limit price of this grid level, stringified 1e18-scaled bigint. */
+  gridLevelPrice: string | null;
   fillTxHash: Hex | null;
   fillBlockNumber: number | null;
   cancelTxHash: Hex | null;
@@ -113,6 +121,14 @@ export interface SubmitOrderInput {
   dcaIndex?: number;
   /** Required when `strategyType === "dca"`. Total leg count. */
   dcaTotal?: number;
+  /** Required when `strategyType === "grid"`. 8-64 hex/dash chars, shared across levels. */
+  gridBatchId?: string;
+  /** Required when `strategyType === "grid"`. 0-based level position. */
+  gridIndex?: number;
+  /** Required when `strategyType === "grid"`. Total level count. */
+  gridTotal?: number;
+  /** Required when `strategyType === "grid"`. Stringified 18-dec bigint (ETX-per-base). */
+  gridLevelPrice?: string;
 }
 
 export async function submitOrder(
@@ -132,6 +148,7 @@ export interface ListOrdersParams {
   reactor?: Address;
   strategyType?: StrategyType;
   dcaBatchId?: string;
+  gridBatchId?: string;
   limit?: number;
 }
 
@@ -145,6 +162,7 @@ export async function listOrders(
   if (params.reactor) q.set('reactor', params.reactor);
   if (params.strategyType) q.set('strategyType', params.strategyType);
   if (params.dcaBatchId) q.set('dcaBatchId', params.dcaBatchId);
+  if (params.gridBatchId) q.set('gridBatchId', params.gridBatchId);
   if (params.limit != null) q.set('limit', String(params.limit));
   const suffix = q.toString() ? `?${q.toString()}` : '';
   const out = await request<{ orders: StoredOrderView[] }>(baseUrl, `/orders${suffix}`);
