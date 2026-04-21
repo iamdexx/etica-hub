@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS orders (
   strategy_type        TEXT NOT NULL DEFAULT 'limit',
   trigger_price        TEXT,
   trigger_direction    TEXT,
+  dca_batch_id         TEXT,
+  dca_index            INTEGER,
+  dca_total            INTEGER,
   fill_tx_hash         TEXT,
   fill_block_number    INTEGER,
   cancel_tx_hash       TEXT,
@@ -60,6 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_output_token    ON orders (output_token);
 // whose base table pre-dates the column.
 const CREATE_MIGRATED_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_orders_strategy_type   ON orders (strategy_type);
+CREATE INDEX IF NOT EXISTS idx_orders_dca_batch_id    ON orders (dca_batch_id);
 `;
 
 /**
@@ -78,6 +82,9 @@ function migrateSchema(db: Database.Database): void {
   addColumn('strategy_type', "TEXT NOT NULL DEFAULT 'limit'");
   addColumn('trigger_price', 'TEXT');
   addColumn('trigger_direction', 'TEXT');
+  addColumn('dca_batch_id', 'TEXT');
+  addColumn('dca_index', 'INTEGER');
+  addColumn('dca_total', 'INTEGER');
 }
 
 interface OrderRow {
@@ -101,6 +108,9 @@ interface OrderRow {
   strategy_type: string;
   trigger_price: string | null;
   trigger_direction: string | null;
+  dca_batch_id: string | null;
+  dca_index: number | null;
+  dca_total: number | null;
   fill_tx_hash: string | null;
   fill_block_number: number | null;
   cancel_tx_hash: string | null;
@@ -130,6 +140,9 @@ function rowToOrder(row: OrderRow): StoredOrder {
     strategyType: (row.strategy_type as StrategyType) ?? 'limit',
     triggerPrice: row.trigger_price ?? null,
     triggerDirection: (row.trigger_direction as TriggerDirection | null) ?? null,
+    dcaBatchId: row.dca_batch_id ?? null,
+    dcaIndex: row.dca_index ?? null,
+    dcaTotal: row.dca_total ?? null,
     fillTxHash: (row.fill_tx_hash as `0x${string}` | null) ?? null,
     fillBlockNumber: row.fill_block_number,
     cancelTxHash: (row.cancel_tx_hash as `0x${string}` | null) ?? null,
@@ -152,14 +165,16 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
       input_token, input_start_amount, input_end_amount,
       output_token, output_start_amount, output_end_amount, output_recipient,
       encoded_order, signature, status,
-      strategy_type, trigger_price, trigger_direction
+      strategy_type, trigger_price, trigger_direction,
+      dca_batch_id, dca_index, dca_total
     ) VALUES (
       @order_hash, @reactor, @swapper, @nonce, @deadline,
       @decay_start_time, @decay_end_time,
       @input_token, @input_start_amount, @input_end_amount,
       @output_token, @output_start_amount, @output_end_amount, @output_recipient,
       @encoded_order, @signature, @status,
-      @strategy_type, @trigger_price, @trigger_direction
+      @strategy_type, @trigger_price, @trigger_direction,
+      @dca_batch_id, @dca_index, @dca_total
     )
   `);
 
@@ -198,6 +213,9 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
         strategy_type: order.strategyType,
         trigger_price: order.triggerPrice ?? null,
         trigger_direction: order.triggerDirection ?? null,
+        dca_batch_id: order.dcaBatchId ?? null,
+        dca_index: order.dcaIndex ?? null,
+        dca_total: order.dcaTotal ?? null,
       });
     },
 
@@ -229,6 +247,10 @@ export function createSqliteRepository(dbPath: string): OrderRepository {
       if (filter.strategyType) {
         where.push(`strategy_type = @strategy_type`);
         params.strategy_type = filter.strategyType;
+      }
+      if (filter.dcaBatchId) {
+        where.push(`dca_batch_id = @dca_batch_id`);
+        params.dca_batch_id = filter.dcaBatchId;
       }
       if (filter.minDeadline !== undefined) {
         where.push(`deadline >= @min_deadline`);

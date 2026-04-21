@@ -136,9 +136,20 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
   const inAmount = safeFormat(order.input.startAmount);
   const outAmount = safeFormat(order.output.startAmount);
   const isStop = order.strategyType === 'stop';
+  const isDca = order.strategyType === 'dca';
   const triggerLabel = isStop && order.triggerPrice
     ? `trigger ${order.triggerDirection === 'lte' ? '≤' : '≥'} ${safeFormat(order.triggerPrice)} ETX`
     : null;
+  const dcaLabel =
+    isDca && order.dcaIndex !== null && order.dcaTotal !== null
+      ? `leg ${order.dcaIndex + 1}/${order.dcaTotal} · fires ${timeUntil(order.decayStartTime)}`
+      : null;
+  const badgeClass = isStop
+    ? 'border border-amber-400/20 bg-amber-400/10 text-amber-200/80'
+    : isDca
+      ? 'border border-violet-400/20 bg-violet-400/10 text-violet-200/80'
+      : 'border border-sky-400/20 bg-sky-400/10 text-sky-200/80';
+  const badgeLabel = isStop ? 'Stop' : isDca ? 'DCA' : 'Limit';
 
   const { writeContractAsync, data: cancelTxHash, reset } = useWriteContract();
   const receipt = useWaitForTransactionReceipt({
@@ -207,13 +218,9 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
       <div className="space-y-0.5">
         <div className="flex items-center gap-2">
           <span
-            className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${
-              isStop
-                ? 'border border-amber-400/20 bg-amber-400/10 text-amber-200/80'
-                : 'border border-sky-400/20 bg-sky-400/10 text-sky-200/80'
-            }`}
+            className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${badgeClass}`}
           >
-            {isStop ? 'Stop' : 'Limit'}
+            {badgeLabel}
           </span>
           <span className="font-mono text-white/90">
             {inAmount} {shortToken(order.input.token)} → {outAmount} {shortToken(order.output.token)}
@@ -227,6 +234,12 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
             <>
               <span className="mx-2 text-white/20">·</span>
               {triggerLabel}
+            </>
+          ) : null}
+          {dcaLabel ? (
+            <>
+              <span className="mx-2 text-white/20">·</span>
+              {dcaLabel}
             </>
           ) : null}
         </div>

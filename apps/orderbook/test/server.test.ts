@@ -306,6 +306,107 @@ describe('orderbook server', () => {
     expect(limits.json().orders[0].strategyType).toBe('limit');
   });
 
+  it('POST /orders stores a dca leg with batch metadata', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder({ nonce: 10n }),
+        signature: SIG,
+        strategyType: 'dca',
+        dcaBatchId: 'deadbeef-1234-5678-90ab-cdef01234567',
+        dcaIndex: 0,
+        dcaTotal: 5,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.strategyType).toBe('dca');
+    expect(body.dcaBatchId).toBe('deadbeef-1234-5678-90ab-cdef01234567');
+    expect(body.dcaIndex).toBe(0);
+    expect(body.dcaTotal).toBe(5);
+  });
+
+  it('POST /orders rejects dca without dcaBatchId (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        strategyType: 'dca',
+        dcaIndex: 0,
+        dcaTotal: 5,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /orders rejects dca with dcaIndex >= dcaTotal (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        strategyType: 'dca',
+        dcaBatchId: 'deadbeef-1234-5678-90ab-cdef01234567',
+        dcaIndex: 5,
+        dcaTotal: 5,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /orders rejects non-dca order carrying dcaBatchId (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        dcaBatchId: 'deadbeef-1234-5678-90ab-cdef01234567',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('GET /orders?dcaBatchId=... returns every leg of one batch', async () => {
+    const batchId = 'deadbeef-1234-5678-90ab-cdef01234567';
+    for (let i = 0; i < 3; i += 1) {
+      await app.inject({
+        method: 'POST',
+        url: '/orders',
+        payload: {
+          encodedOrder: encodedOrder({ nonce: BigInt(100 + i) }),
+          signature: SIG,
+          strategyType: 'dca',
+          dcaBatchId: batchId,
+          dcaIndex: i,
+          dcaTotal: 3,
+        },
+      });
+    }
+    // One unrelated limit order that must not leak into the batch query.
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: { encodedOrder: encodedOrder({ nonce: 999n }), signature: SIG },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/orders?dcaBatchId=${batchId}`,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.count).toBe(3);
+    for (const o of body.orders) {
+      expect(o.strategyType).toBe('dca');
+      expect(o.dcaBatchId).toBe(batchId);
+    }
+  });
+
   it('POST /orders/:hash/mark-filled requires keeper auth', async () => {
     const encoded = encodedOrder();
     await app.inject({

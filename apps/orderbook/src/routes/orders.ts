@@ -15,19 +15,28 @@ const HEX_RE = /^0x[0-9a-fA-F]+$/;
 
 const DECIMAL_RE = /^[0-9]+$/;
 
+const DCA_BATCH_ID_RE = /^[0-9a-fA-F-]{8,64}$/;
+
 const PostOrderBody = z
   .object({
     encodedOrder: z.string().regex(HEX_RE, 'encodedOrder must be 0x-prefixed hex'),
     signature: z.string().regex(HEX_RE, 'signature must be 0x-prefixed hex'),
-    strategyType: z.enum(['limit', 'stop']).optional(),
+    strategyType: z.enum(['limit', 'stop', 'dca']).optional(),
     triggerPrice: z
       .string()
       .regex(DECIMAL_RE, 'triggerPrice must be a stringified bigint (no 0x prefix)')
       .optional(),
     triggerDirection: z.enum(['lte', 'gte']).optional(),
+    dcaBatchId: z
+      .string()
+      .regex(DCA_BATCH_ID_RE, 'dcaBatchId must be 8-64 hex/dash characters')
+      .optional(),
+    dcaIndex: z.number().int().nonnegative().optional(),
+    dcaTotal: z.number().int().positive().optional(),
   })
   .superRefine((body, ctx) => {
     const isStop = body.strategyType === 'stop';
+    const isDca = body.strategyType === 'dca';
     if (isStop) {
       if (!body.triggerPrice) {
         ctx.addIssue({
@@ -48,6 +57,51 @@ const PostOrderBody = z
         code: z.ZodIssueCode.custom,
         path: ['strategyType'],
         message: 'triggerPrice/triggerDirection only valid on stop orders',
+      });
+    }
+
+    if (isDca) {
+      if (!body.dcaBatchId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dcaBatchId'],
+          message: 'dca orders require dcaBatchId',
+        });
+      }
+      if (body.dcaIndex === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dcaIndex'],
+          message: 'dca orders require dcaIndex',
+        });
+      }
+      if (body.dcaTotal === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dcaTotal'],
+          message: 'dca orders require dcaTotal',
+        });
+      }
+      if (
+        body.dcaIndex !== undefined &&
+        body.dcaTotal !== undefined &&
+        body.dcaIndex >= body.dcaTotal
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dcaIndex'],
+          message: 'dcaIndex must be < dcaTotal',
+        });
+      }
+    } else if (
+      body.dcaBatchId !== undefined ||
+      body.dcaIndex !== undefined ||
+      body.dcaTotal !== undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['strategyType'],
+        message: 'dcaBatchId/dcaIndex/dcaTotal only valid on dca orders',
       });
     }
   });
@@ -95,6 +149,9 @@ function serializeOrder(o: StoredOrder) {
     strategyType: o.strategyType,
     triggerPrice: o.triggerPrice,
     triggerDirection: o.triggerDirection,
+    dcaBatchId: o.dcaBatchId,
+    dcaIndex: o.dcaIndex,
+    dcaTotal: o.dcaTotal,
     fillTxHash: o.fillTxHash,
     fillBlockNumber: o.fillBlockNumber,
     cancelTxHash: o.cancelTxHash,
@@ -126,6 +183,12 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
       strategyType === 'stop' ? (parsed.data.triggerPrice as string) : null;
     const triggerDirection: TriggerDirection | null =
       strategyType === 'stop' ? (parsed.data.triggerDirection as TriggerDirection) : null;
+    const dcaBatchId: string | null =
+      strategyType === 'dca' ? (parsed.data.dcaBatchId as string) : null;
+    const dcaIndex: number | null =
+      strategyType === 'dca' ? (parsed.data.dcaIndex as number) : null;
+    const dcaTotal: number | null =
+      strategyType === 'dca' ? (parsed.data.dcaTotal as number) : null;
 
     let decoded;
     try {
@@ -175,6 +238,9 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
       strategyType,
       triggerPrice,
       triggerDirection,
+      dcaBatchId,
+      dcaIndex,
+      dcaTotal,
       fillTxHash: null,
       fillBlockNumber: null,
       cancelTxHash: null,
@@ -204,8 +270,11 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
     if (q.outputToken && isAddress(q.outputToken)) {
       filter.outputToken = q.outputToken as `0x${string}`;
     }
-    if (q.strategyType && ['limit', 'stop'].includes(q.strategyType)) {
+    if (q.strategyType && ['limit', 'stop', 'dca'].includes(q.strategyType)) {
       filter.strategyType = q.strategyType as StrategyType;
+    }
+    if (q.dcaBatchId && DCA_BATCH_ID_RE.test(q.dcaBatchId)) {
+      filter.dcaBatchId = q.dcaBatchId;
     }
     if (q.minDeadline) {
       const n = Number(q.minDeadline);
