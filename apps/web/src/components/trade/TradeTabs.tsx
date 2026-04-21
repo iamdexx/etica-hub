@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { SwapCard } from '../swap/SwapCard';
+import { LimitForm } from './LimitForm';
 
 type Tab = 'market' | 'limit' | 'stop';
 
@@ -11,11 +12,9 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'stop', label: 'Stop' },
 ];
 
-function ComingSoonPanel({ strategy }: { strategy: 'limit' | 'stop' }) {
+function ComingSoonPanel({ strategy }: { strategy: 'stop' }) {
   const copy =
-    strategy === 'limit'
-      ? 'Set a buy or sell price. Your order rests in the off-chain book until a keeper can fill it at your limit or better. No funds or keys held — you sign once with your wallet.'
-      : 'Protect a position with a stop-loss trigger. Your order rests until price crosses the trigger, at which point a keeper executes the swap. Non-custodial; cancellable any time.';
+    'Protect a position with a stop-loss trigger. Your order rests until price crosses the trigger, at which point a keeper executes the swap. Non-custodial; cancellable any time.';
   return (
     <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5 text-sm">
       <div className="mb-1 text-xs uppercase tracking-wider text-amber-200/80">
@@ -23,14 +22,18 @@ function ComingSoonPanel({ strategy }: { strategy: 'limit' | 'stop' }) {
       </div>
       <p className="text-white/80">{copy}</p>
       <p className="mt-3 text-xs text-white/50">
-        UniswapX reactor + Permit2 are vendored; the signing flow + wizard ships alongside DCA and
-        grid strategies.
+        Ships alongside DCA, bounded grid, and infinite-grid wizards. Same signing primitive as Limit;
+        the keeper just holds the fill until the trigger fires.
       </p>
     </div>
   );
 }
 
-export function TradeTabs() {
+export interface TradeTabsProps {
+  baseSymbol: 'ETI' | 'EGAZ';
+}
+
+export function TradeTabs({ baseSymbol }: TradeTabsProps) {
   const [tab, setTab] = useState<Tab>('market');
   return (
     <div className="space-y-4">
@@ -51,7 +54,7 @@ export function TradeTabs() {
         ))}
       </div>
       {tab === 'market' && <SwapCard />}
-      {tab === 'limit' && <ComingSoonPanel strategy="limit" />}
+      {tab === 'limit' && <LimitForm baseSymbol={baseSymbol} />}
       {tab === 'stop' && <ComingSoonPanel strategy="stop" />}
     </div>
   );

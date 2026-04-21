@@ -52,6 +52,21 @@ export const DEPLOYMENTS: Record<
     swapRouter: Address;
     /** Research Hub subscription contract (Phase 2). */
     researchSubscription: Address;
+    /**
+     * Permit2 (Uniswap Labs) — canonical address is identical across chains.
+     * Deployed via `script/DeployPermit2.s.sol`. Zero until deploy lands on-chain.
+     */
+    permit2: Address;
+    /**
+     * UniswapX DutchOrderReactor forked verbatim, owner == treasury initially.
+     * Zero until deploy lands on-chain.
+     */
+    dutchReactor: Address;
+    /**
+     * ETX-denominated ProtocolFeeController for the reactor. Zero until
+     * deploy lands on-chain; reactor runs fee-free until the owner wires it in.
+     */
+    etxFeeController: Address;
   }
 > = {
   61803: {
@@ -60,6 +75,9 @@ export const DEPLOYMENTS: Record<
     swapFactory: '0xfc8dE5A5087c8825AA54E2C57B3FFe0e23784bc3',
     swapRouter: '0xaefbf3fB975657a4C71ea0Fb644B4afE5F555723',
     researchSubscription: '0x0000000000000000000000000000000000000000',
+    permit2: '0x0000000000000000000000000000000000000000',
+    dutchReactor: '0x0000000000000000000000000000000000000000',
+    etxFeeController: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -67,6 +85,9 @@ export const DEPLOYMENTS: Record<
     swapFactory: '0x0000000000000000000000000000000000000000',
     swapRouter: '0x0000000000000000000000000000000000000000',
     researchSubscription: '0x0000000000000000000000000000000000000000',
+    permit2: '0x0000000000000000000000000000000000000000',
+    dutchReactor: '0x0000000000000000000000000000000000000000',
+    etxFeeController: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -75,6 +96,9 @@ export const DEPLOYMENTS: Record<
     swapFactory: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
     swapRouter: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
     researchSubscription: '0x0000000000000000000000000000000000000000',
+    permit2: '0x0000000000000000000000000000000000000000',
+    dutchReactor: '0x0000000000000000000000000000000000000000',
+    etxFeeController: '0x0000000000000000000000000000000000000000',
   },
 };
 

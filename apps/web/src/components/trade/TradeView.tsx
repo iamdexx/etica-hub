@@ -37,6 +37,12 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
                 </Link>
               ))}
             </div>
+            <Link
+              href="/trade/orders"
+              className="ml-auto rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              My orders →
+            </Link>
           </div>
           <p className="text-sm text-white/60">{DESCRIPTIONS[baseSymbol]}</p>
         </header>
@@ -48,7 +54,7 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
         />
       </div>
       <aside className="space-y-3">
-        <TradeTabs />
+        <TradeTabs baseSymbol={baseSymbol} />
         <p className="text-[11px] leading-relaxed text-white/40">
           EticaHub never holds your funds or keys. Market orders execute immediately through the
           EticaSwap V2 router; your wallet signs every transaction.
