@@ -1,0 +1,20 @@
+# Foundry config for the non-custodial trading stack.
+#
+# Pinned to solc 0.8.29 + optimizer 1M runs to match upstream UniswapX so that
+# (a) our fee controller can import from lib/uniswapx with identical pragma
+# behavior, and (b) the Reactor/Quoter contracts deployed from here are
+# byte-identical to UniswapX's audited artifacts.
+#
+# Kept isolated from packages/contracts/ (which pins solc 0.8.26, via_ir=false)
+# so the main V2 DEX + launchpad contracts are unaffected.
+
+[profile.default]
+solc = "0.8.29"
+src = "src"
+out = "out"
+libs = ["lib"]
+optimizer = true
+optimizer_runs = 1_000_000
+fs_permissions = [
+    { access = "read-write", path = "./out" },
+]

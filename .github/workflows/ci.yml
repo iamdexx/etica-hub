@@ -29,6 +29,31 @@ jobs:
         run: forge fmt --check
         working-directory: packages/contracts
 
+  trading-contracts:
+    name: Trading Contracts (Foundry + UniswapX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Build
+        run: forge build --sizes
+        working-directory: packages/trading-contracts
+
+      - name: Test
+        run: forge test -vv
+        working-directory: packages/trading-contracts
+
+      - name: Format check
+        run: forge fmt --check src script test
+        working-directory: packages/trading-contracts
+
   js:
     name: Web + Indexer (pnpm)
     runs-on: ubuntu-latest
