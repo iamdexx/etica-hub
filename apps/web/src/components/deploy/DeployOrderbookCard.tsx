@@ -190,7 +190,8 @@ export function DeployOrderbookCard() {
             !onMainnet ||
             !walletClient ||
             state.status === 'signing' ||
-            state.status === 'pending'
+            state.status === 'pending' ||
+            state.status === 'confirmed'
           }
         >
           {state.status === 'signing'
