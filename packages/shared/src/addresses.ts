@@ -67,6 +67,12 @@ export const DEPLOYMENTS: Record<
      * deploy lands on-chain; reactor runs fee-free until the owner wires it in.
      */
     etxFeeController: Address;
+    /**
+     * Permissionless on-chain OrderRegistry: swappers post signed orders as
+     * events; keepers discover them via log subscription. Replaces the need
+     * for a hosted off-chain orderbook HTTP service. Zero until deploy lands.
+     */
+    orderRegistry: Address;
   }
 > = {
   61803: {
@@ -78,6 +84,7 @@ export const DEPLOYMENTS: Record<
     permit2: '0x165F71f549415f44883e370Df12169Dd99570eE5',
     dutchReactor: '0xE2fc7EAcEB0146560bfcf46CC5B167df60E970B8',
     etxFeeController: '0xB9a4FbfC4cA598Be18e09bb9C0Cf19e4a1A4350a',
+    orderRegistry: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -88,6 +95,7 @@ export const DEPLOYMENTS: Record<
     permit2: '0x0000000000000000000000000000000000000000',
     dutchReactor: '0x0000000000000000000000000000000000000000',
     etxFeeController: '0x0000000000000000000000000000000000000000',
+    orderRegistry: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -99,6 +107,7 @@ export const DEPLOYMENTS: Record<
     permit2: '0x0000000000000000000000000000000000000000',
     dutchReactor: '0x0000000000000000000000000000000000000000',
     etxFeeController: '0x0000000000000000000000000000000000000000',
+    orderRegistry: '0x0000000000000000000000000000000000000000',
   },
 };
 
