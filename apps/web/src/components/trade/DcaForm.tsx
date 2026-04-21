@@ -13,12 +13,20 @@ import {
 import {
   useAccount,
   useChainId,
+  usePublicClient,
   useReadContract,
   useSignTypedData,
   useWaitForTransactionReceipt,
+  useWalletClient,
   useWriteContract,
 } from 'wagmi';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis, isSupportedChainId } from '@etica-hub/shared';
+import {
+  DEPLOYMENTS,
+  EXTERNAL_ADDRESSES,
+  abis,
+  isSupportedChainId,
+  type SupportedChainId,
+} from '@etica-hub/shared';
 import {
   buildDcaLegs,
   buildPermit2WitnessTypedData,
@@ -27,6 +35,12 @@ import {
   type Side,
 } from '@/lib/trading/dutchOrder';
 import { resolveOrderbookUrl, submitOrder } from '@/lib/trading/orderbookClient';
+import {
+  buildDcaMeta,
+  getRegistryAddress,
+  postOrderBatchOnChain,
+  toBatchIdBytes32,
+} from '@/lib/trading/registryClient';
 
 type BaseSymbol = 'ETI' | 'EGAZ';
 
@@ -52,6 +66,9 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const orderbookUrl = resolveOrderbookUrl();
+  const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
+  const registryAddress = getRegistryAddress(chainId);
 
   const [side, setSide] = useState<Side>('buy');
   const [totalAmountStr, setTotalAmountStr] = useState('');
@@ -72,7 +89,8 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
   const baseToken: Address =
     baseSymbol === 'ETI' ? (ext?.eti ?? ZERO) : (deployment?.wegaz ?? ZERO);
 
-  const tradingLive = Boolean(orderbookUrl) && permit2 !== ZERO && reactor !== ZERO;
+  const tradingLive =
+    (Boolean(orderbookUrl) || registryAddress !== null) && permit2 !== ZERO && reactor !== ZERO;
 
   const totalBaseAmount = useMemo(() => {
     if (!totalAmountStr) return 0n;
@@ -160,8 +178,12 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
       setError('Connect a wallet first.');
       return;
     }
-    if (!tradingLive || !orderbookUrl) {
+    if (!tradingLive) {
       setError('Order book + keeper are still deploying — DCA plans can be signed once they are online.');
+      return;
+    }
+    if (registryAddress && (!walletClient || !publicClient)) {
+      setError('Wallet session still loading — try again in a moment.');
       return;
     }
     if (totalBaseAmount <= 0n) {
@@ -217,6 +239,9 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
     setSubmitting(true);
     setProgress({ signed: 0, total: plan.length });
     try {
+      const useRegistry = Boolean(registryAddress && walletClient && publicClient && supported);
+      const encodedByLeg: Hex[] = [];
+      const signatureByLeg: Hex[] = [];
       for (let i = 0; i < plan.length; i += 1) {
         const leg = plan[i];
         setStatusLine(
@@ -233,18 +258,47 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
           primaryType: typed.primaryType,
           message: typed.message,
         })) as Hex;
-
-        setStatusLine(`Submitting leg ${i + 1} of ${plan.length}…`);
-        await submitOrder(orderbookUrl, {
-          encodedOrder: encoded,
-          signature,
-          strategyType: 'dca',
-          dcaBatchId: batchId,
-          dcaIndex: leg.index,
-          dcaTotal: plan.length,
-        });
-
+        encodedByLeg.push(encoded);
+        signatureByLeg.push(signature);
         setProgress({ signed: i + 1, total: plan.length });
+
+        if (!useRegistry) {
+          setStatusLine(`Submitting leg ${i + 1} of ${plan.length}…`);
+          await submitOrder(orderbookUrl!, {
+            encodedOrder: encoded,
+            signature,
+            strategyType: 'dca',
+            dcaBatchId: batchId,
+            dcaIndex: leg.index,
+            dcaTotal: plan.length,
+          });
+        }
+      }
+
+      if (useRegistry && walletClient && publicClient) {
+        setStatusLine(`Posting ${plan.length} legs on-chain in one tx…`);
+        const batchIdBytes = toBatchIdBytes32(batchId);
+        const metas = plan.map((leg) =>
+          buildDcaMeta({
+            batchId: batchIdBytes,
+            indexInBatch: leg.index,
+            totalInBatch: plan.length,
+          }),
+        );
+        const { txHash } = await postOrderBatchOnChain({
+          walletClient,
+          publicClient,
+          chainId: chainId as SupportedChainId,
+          account: address,
+          encodedOrders: encodedByLeg,
+          signatures: signatureByLeg,
+          metas,
+        });
+        setStatusLine(`Waiting for registry tx ${shortHash(txHash)}…`);
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+        if (receipt.status !== 'success') {
+          throw new Error('Registry batch tx reverted on-chain');
+        }
       }
 
       setStatusLine(
@@ -433,4 +487,8 @@ function formatInterval(sec: number): string {
   if (sec >= 24 * 60 * 60) return `${Math.floor(sec / (24 * 60 * 60))}d`;
   if (sec >= 60 * 60) return `${Math.floor(sec / (60 * 60))}h`;
   return `${Math.floor(sec / 60)}m`;
+}
+
+function shortHash(hex: Hex): string {
+  return `${hex.slice(0, 6)}…${hex.slice(-4)}`;
 }
