@@ -130,10 +130,18 @@ export function AdminReactorCard() {
   const [reactorFeeController, setReactorFeeController] = useState<Address | null>(null);
   const [reactorOwner, setReactorOwner] = useState<Address | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const [readsLoading, setReadsLoading] = useState(false);
+  const [readsError, setReadsError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!publicClient || !onMainnet) return;
+    if (!publicClient || !onMainnet) {
+      setReadsLoading(false);
+      setReadsError(null);
+      return;
+    }
     let cancelled = false;
+    setReadsLoading(true);
+    setReadsError(null);
 
     (async () => {
       try {
@@ -189,8 +197,11 @@ export function AdminReactorCard() {
           setReactorFeeController(fc as Address);
           setReactorOwner(own as Address);
         }
-      } catch {
-        // leave nulls
+      } catch (err) {
+        if (cancelled) return;
+        setReadsError(shortError(err));
+      } finally {
+        if (!cancelled) setReadsLoading(false);
       }
     })();
 
@@ -198,6 +209,8 @@ export function AdminReactorCard() {
       cancelled = true;
     };
   }, [publicClient, onMainnet, feeController, reactor, feeControllerDeployed, reactorDeployed, reloadTick]);
+
+  const walletReady = isConnected && !!walletClient;
 
   const isControllerAuthorized =
     isConnected &&
@@ -402,6 +415,12 @@ export function AdminReactorCard() {
             >
               Disconnect
             </button>
+            {isConnected && !walletClient && (
+              <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                Wallet session not ready. If taps don&apos;t open your wallet, tap{' '}
+                <strong>Disconnect</strong> above and reconnect.
+              </div>
+            )}
             {onMainnet && feeControllerDeployed && controllerOwner && !isControllerAuthorized && (
               <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
                 Connected wallet is not the fee controller <span className="font-mono">owner</span>.
@@ -463,12 +482,23 @@ export function AdminReactorCard() {
           <dt className="text-white/50">controller.FEE_CAP_BPS</dt>
           <dd className="font-mono">{feeCapBps?.toString() ?? '—'} bps (hard cap)</dd>
         </dl>
-        <button
-          onClick={() => setReloadTick((x) => x + 1)}
-          className="mt-3 rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10"
-        >
-          Refresh
-        </button>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            onClick={() => setReloadTick((x) => x + 1)}
+            disabled={readsLoading}
+            className="rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 disabled:opacity-50"
+          >
+            {readsLoading ? 'Reading…' : 'Refresh'}
+          </button>
+          {readsError && (
+            <span className="text-xs text-red-400">RPC read failed: {readsError}</span>
+          )}
+          {!readsError && !readsLoading && controllerOwner === null && feeControllerDeployed && (
+            <span className="text-xs text-amber-300">
+              State not loaded. Tap Refresh.
+            </span>
+          )}
+        </div>
       </section>
 
       {feeControllerDeployed && (
@@ -502,6 +532,7 @@ export function AdminReactorCard() {
               <button
                 onClick={doSetFeeBps}
                 disabled={
+                  !walletReady ||
                   !isControllerAuthorized ||
                   bpsValid === null ||
                   bpsState.status === 'signing' ||
@@ -540,6 +571,7 @@ export function AdminReactorCard() {
               <button
                 onClick={doSetTreasury}
                 disabled={
+                  !walletReady ||
                   !isControllerAuthorized ||
                   !treasuryValid ||
                   treasuryState.status === 'signing' ||
@@ -582,6 +614,7 @@ export function AdminReactorCard() {
               <button
                 onClick={doSetOwner}
                 disabled={
+                  !walletReady ||
                   !isControllerAuthorized ||
                   !ownerValid ||
                   ownerState.status === 'signing' ||
@@ -624,6 +657,7 @@ export function AdminReactorCard() {
             <button
               onClick={doSetProtocolFeeController}
               disabled={
+                !walletReady ||
                 !isReactorAuthorized ||
                 !controllerValid ||
                 pfcState.status === 'signing' ||
