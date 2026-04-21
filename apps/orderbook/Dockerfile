@@ -3,11 +3,11 @@ WORKDIR /app
 
 RUN apk add --no-cache python3 make g++
 
-COPY pnpm-workspace.yaml package.json ./
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/orderbook/package.json apps/orderbook/
 COPY packages/shared/package.json packages/shared/
 
-RUN npm i -g pnpm@9.15.1 && pnpm install --filter @etica-hub/orderbook... --frozen-lockfile || pnpm install --filter @etica-hub/orderbook...
+RUN npm i -g pnpm@9.15.1 && pnpm install --filter @etica-hub/orderbook... --frozen-lockfile
 
 COPY packages/shared packages/shared
 COPY apps/orderbook apps/orderbook
