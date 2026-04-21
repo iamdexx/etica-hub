@@ -80,3 +80,15 @@ jobs:
 
       - name: Build indexer
         run: pnpm --filter @etica-hub/indexer build
+
+      - name: Build orderbook
+        run: pnpm --filter @etica-hub/orderbook build
+
+      - name: Test orderbook
+        run: pnpm --filter @etica-hub/orderbook test
+
+      - name: Build keeper
+        run: pnpm --filter @etica-hub/keeper build
+
+      - name: Test keeper
+        run: pnpm --filter @etica-hub/keeper test
