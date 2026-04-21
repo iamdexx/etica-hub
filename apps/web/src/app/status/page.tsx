@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import { StatusPanel } from '@/components/StatusPanel';
+import { StatusAutoRefresh } from '@/components/StatusAutoRefresh';
 
 // Always fetch fresh on each request — this is a live on-chain diagnostic
 // and we don't want the Vercel build to try (and fail) to hit an Etica RPC
 // at build time.
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: 'Status · EticaHub',
@@ -22,6 +24,7 @@ export default function StatusPage() {
           (chain 61803). Values are pulled from an Etica RPC when you load this page.
         </p>
       </header>
+      <StatusAutoRefresh />
       <StatusPanel />
     </div>
   );
