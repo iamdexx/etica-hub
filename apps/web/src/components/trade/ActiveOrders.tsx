@@ -140,10 +140,13 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
   const triggerLabel = isStop && order.triggerPrice
     ? `trigger ${order.triggerDirection === 'lte' ? '≤' : '≥'} ${safeFormat(order.triggerPrice)} ETX`
     : null;
-  const dcaLabel =
-    isDca && order.dcaIndex !== null && order.dcaTotal !== null
-      ? `leg ${order.dcaIndex + 1}/${order.dcaTotal} · fires ${timeUntil(order.decayStartTime)}`
-      : null;
+  const dcaLabel = (() => {
+    if (!isDca || order.dcaIndex === null || order.dcaTotal === null) return null;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const fires =
+      order.decayStartTime <= nowSec ? 'active' : `fires ${timeUntil(order.decayStartTime)}`;
+    return `leg ${order.dcaIndex + 1}/${order.dcaTotal} · ${fires}`;
+  })();
   const badgeClass = isStop
     ? 'border border-amber-400/20 bg-amber-400/10 text-amber-200/80'
     : isDca
