@@ -9,16 +9,22 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "lint": "echo 'no lint'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@etica-hub/shared": "workspace:*",
+    "@fastify/cors": "^10.0.1",
+    "better-sqlite3": "^11.10.0",
     "dotenv": "^16.4.5",
+    "fastify": "^5.1.0",
     "viem": "^2.21.44"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^20.17.6",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
   }
 }
