@@ -199,6 +199,8 @@ export function AdminReactorCard() {
     };
   }, [publicClient, onMainnet, feeController, reactor, feeControllerDeployed, reactorDeployed, reloadTick]);
 
+  const walletReady = isConnected && !!walletClient;
+
   const isControllerAuthorized =
     isConnected &&
     onMainnet &&
@@ -402,6 +404,12 @@ export function AdminReactorCard() {
             >
               Disconnect
             </button>
+            {isConnected && !walletClient && (
+              <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                Wallet session not ready. If taps don&apos;t open your wallet, tap{' '}
+                <strong>Disconnect</strong> above and reconnect.
+              </div>
+            )}
             {onMainnet && feeControllerDeployed && controllerOwner && !isControllerAuthorized && (
               <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
                 Connected wallet is not the fee controller <span className="font-mono">owner</span>.
@@ -502,6 +510,7 @@ export function AdminReactorCard() {
               <button
                 onClick={doSetFeeBps}
                 disabled={
+                  !walletReady ||
                   !isControllerAuthorized ||
                   bpsValid === null ||
                   bpsState.status === 'signing' ||
@@ -540,6 +549,7 @@ export function AdminReactorCard() {
               <button
                 onClick={doSetTreasury}
                 disabled={
+                  !walletReady ||
                   !isControllerAuthorized ||
                   !treasuryValid ||
                   treasuryState.status === 'signing' ||
@@ -582,6 +592,7 @@ export function AdminReactorCard() {
               <button
                 onClick={doSetOwner}
                 disabled={
+                  !walletReady ||
                   !isControllerAuthorized ||
                   !ownerValid ||
                   ownerState.status === 'signing' ||
@@ -624,6 +635,7 @@ export function AdminReactorCard() {
             <button
               onClick={doSetProtocolFeeController}
               disabled={
+                !walletReady ||
                 !isReactorAuthorized ||
                 !controllerValid ||
                 pfcState.status === 'signing' ||
