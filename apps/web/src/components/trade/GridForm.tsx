@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BaseError,
   UserRejectedRequestError,
@@ -168,6 +168,21 @@ export function GridForm({ baseSymbol }: GridFormProps) {
   const { signTypedDataAsync } = useSignTypedData();
 
   const isApproving = Boolean(approveTxHash) && !approveReceipt.data && !approveReceipt.error;
+
+  // After a successful Permit2 approval the on-chain allowance changed, but
+  // TanStack Query would otherwise keep the cached pre-approval value until
+  // its next stale-time refetch. Without this effect the Sign button stays
+  // disabled even though the approval landed — same pattern DcaForm and
+  // OrderForm use for their single allowance.
+  useEffect(() => {
+    if (approveReceipt.isSuccess) {
+      void etxAllowance.refetch();
+      void baseAllowance.refetch();
+    }
+    // Intentionally depends only on the boolean flag — refetch identities are
+    // stable across renders and TanStack Query memoizes the closures.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approveReceipt.isSuccess]);
 
   async function onApprove(token: Address) {
     if (!address || !tradingLive) return;
