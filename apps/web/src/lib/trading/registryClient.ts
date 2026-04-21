@@ -314,6 +314,28 @@ export async function fetchRegistryOrders(
       .filter((h): h is Hex => typeof h === 'string'),
   );
 
+  // Resolve block timestamps in parallel (deduped by block number) so
+  // `createdAt` / `updatedAt` reflect the actual mining time instead of
+  // the block number misinterpreted as a unix timestamp.
+  const uniqueBlockNumbers = Array.from(
+    new Set(
+      postedLogs
+        .map((l) => l.blockNumber)
+        .filter((b): b is bigint => typeof b === 'bigint'),
+    ),
+  );
+  const blockTimestamps = new Map<bigint, bigint>();
+  await Promise.all(
+    uniqueBlockNumbers.map(async (bn) => {
+      try {
+        const block = await args.publicClient.getBlock({ blockNumber: bn });
+        blockTimestamps.set(bn, block.timestamp);
+      } catch {
+        // ignore — we'll fall back to `now` for the affected rows
+      }
+    }),
+  );
+
   const rows: StoredOrderView[] = [];
   for (const log of postedLogs) {
     const a = log.args as {
@@ -396,12 +418,30 @@ export async function fetchRegistryOrders(
       fillTxHash: null,
       fillBlockNumber: null,
       cancelTxHash: null,
-      createdAt: new Date(Number(log.blockNumber ?? 0n) * 1000).toISOString(),
-      updatedAt: new Date(Number(log.blockNumber ?? 0n) * 1000).toISOString(),
+      createdAt: resolveBlockIso(blockTimestamps, log.blockNumber),
+      updatedAt: resolveBlockIso(blockTimestamps, log.blockNumber),
     });
   }
 
-  // Newest first (by block number).
-  rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Newest first. We prefer on-chain block number for sorting because
+  // timestamp resolution can fall back to `now` for un-fetched blocks.
+  rows.sort((a, b) => {
+    const ca = Date.parse(a.createdAt);
+    const cb = Date.parse(b.createdAt);
+    return cb - ca;
+  });
   return rows;
+}
+
+function resolveBlockIso(
+  blockTimestamps: Map<bigint, bigint>,
+  blockNumber: bigint | null | undefined,
+): string {
+  if (typeof blockNumber === 'bigint') {
+    const ts = blockTimestamps.get(blockNumber);
+    if (typeof ts === 'bigint') {
+      return new Date(Number(ts) * 1000).toISOString();
+    }
+  }
+  return new Date().toISOString();
 }
