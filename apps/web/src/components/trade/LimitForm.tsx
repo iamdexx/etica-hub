@@ -18,7 +18,7 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
-import { DEPLOYMENTS, abis, isSupportedChainId } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis, isSupportedChainId } from '@etica-hub/shared';
 import {
   buildLimitOrder,
   buildPermit2WitnessTypedData,
@@ -50,13 +50,15 @@ export function LimitForm({ baseSymbol }: LimitFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const deployment = isSupportedChainId(chainId) ? DEPLOYMENTS[chainId] : null;
+  const supported = isSupportedChainId(chainId);
+  const deployment = supported ? DEPLOYMENTS[chainId] : null;
+  const ext = supported ? EXTERNAL_ADDRESSES[chainId] : null;
   const permit2 = deployment?.permit2 ?? '0x0000000000000000000000000000000000000000';
   const reactor = deployment?.dutchReactor ?? '0x0000000000000000000000000000000000000000';
   const etxToken = deployment?.etx ?? '0x0000000000000000000000000000000000000000';
   const baseToken: Address =
     baseSymbol === 'ETI'
-      ? '0x34c61EA91bAcdA647269d4e310A86b875c09946f'
+      ? (ext?.eti ?? '0x0000000000000000000000000000000000000000')
       : (deployment?.wegaz ?? '0x0000000000000000000000000000000000000000');
 
   const tradingLive =

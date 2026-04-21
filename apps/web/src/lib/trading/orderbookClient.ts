@@ -35,8 +35,10 @@ export interface StoredOrderView {
   fillTxHash: Hex | null;
   fillBlockNumber: number | null;
   cancelTxHash: Hex | null;
-  createdAt: number;
-  updatedAt: number;
+  // ISO-8601 datetime strings produced by the orderbook API (SQLite
+  // `datetime('now')`), e.g. `"2024-01-15T12:34:56.789Z"`.
+  createdAt: string;
+  updatedAt: string;
 }
 
 export class OrderbookError extends Error {

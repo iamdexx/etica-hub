@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatUnits, type Address, type Hex } from 'viem';
 import { useAccount } from 'wagmi';
 import {
@@ -96,7 +96,8 @@ export function ActiveOrders({ swapperOverride }: { swapperOverride?: Address } 
 }
 
 function OrderRow({ order }: { order: StoredOrderView }) {
-  const expiresIn = useMemo(() => timeUntil(order.deadline), [order.deadline]);
+  // Recompute on every render so the countdown advances on each 30s poll.
+  const expiresIn = timeUntil(order.deadline);
   const inAmount = safeFormat(order.input.startAmount);
   const outAmount = safeFormat(order.output.startAmount);
   return (
