@@ -423,7 +423,7 @@ function formatAmount(value: bigint): string {
   if (value === 0n) return '0';
   const whole = formatUnits(value, 18);
   const [intPart, fracPart = ''] = whole.split('.');
-  const trimmedFrac = fracPart.replace(/0+$/, '').slice(0, 6);
+  const trimmedFrac = fracPart.slice(0, 6).replace(/0+$/, '');
   return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
 }
 
