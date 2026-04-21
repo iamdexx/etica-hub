@@ -87,12 +87,11 @@ export async function submitOrder(
   baseUrl: string,
   body: SubmitOrderInput,
 ): Promise<StoredOrderView> {
-  const out = await request<{ order: StoredOrderView }>(baseUrl, '/orders', {
+  return request<StoredOrderView>(baseUrl, '/orders', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  return out.order;
 }
 
 export interface ListOrdersParams {
@@ -121,7 +120,7 @@ export async function markCancelled(
   orderHash: Hex,
   cancelTxHash: Hex,
 ): Promise<StoredOrderView> {
-  const out = await request<{ order: StoredOrderView }>(
+  return request<StoredOrderView>(
     baseUrl,
     `/orders/${orderHash}/cancel`,
     {
@@ -130,7 +129,6 @@ export async function markCancelled(
       body: JSON.stringify({ cancelTxHash }),
     },
   );
-  return out.order;
 }
 
 /** Read `NEXT_PUBLIC_ORDERBOOK_URL` at runtime. Returns null if unset so

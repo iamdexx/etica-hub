@@ -35,7 +35,10 @@ export function ActiveOrders({ swapperOverride }: { swapperOverride?: Address } 
       try {
         if (!swapper || !orderbookUrl) return;
         const list = await listOrders(orderbookUrl, { swapper, status: 'open', limit: 25 });
-        if (!cancelled) setOrders(list);
+        if (!cancelled) {
+          setOrders(list);
+          setError(null);
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       } finally {
