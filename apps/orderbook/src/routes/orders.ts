@@ -17,11 +17,13 @@ const DECIMAL_RE = /^[0-9]+$/;
 
 const DCA_BATCH_ID_RE = /^[0-9a-fA-F-]{8,64}$/;
 
+const GRID_BATCH_ID_RE = /^[0-9a-fA-F-]{8,64}$/;
+
 const PostOrderBody = z
   .object({
     encodedOrder: z.string().regex(HEX_RE, 'encodedOrder must be 0x-prefixed hex'),
     signature: z.string().regex(HEX_RE, 'signature must be 0x-prefixed hex'),
-    strategyType: z.enum(['limit', 'stop', 'dca']).optional(),
+    strategyType: z.enum(['limit', 'stop', 'dca', 'grid']).optional(),
     triggerPrice: z
       .string()
       .regex(DECIMAL_RE, 'triggerPrice must be a stringified bigint (no 0x prefix)')
@@ -33,6 +35,16 @@ const PostOrderBody = z
       .optional(),
     dcaIndex: z.number().int().nonnegative().optional(),
     dcaTotal: z.number().int().positive().optional(),
+    gridBatchId: z
+      .string()
+      .regex(GRID_BATCH_ID_RE, 'gridBatchId must be 8-64 hex/dash characters')
+      .optional(),
+    gridIndex: z.number().int().nonnegative().optional(),
+    gridTotal: z.number().int().positive().optional(),
+    gridLevelPrice: z
+      .string()
+      .regex(DECIMAL_RE, 'gridLevelPrice must be a stringified bigint (no 0x prefix)')
+      .optional(),
   })
   .superRefine((body, ctx) => {
     const isStop = body.strategyType === 'stop';
@@ -104,6 +116,60 @@ const PostOrderBody = z
         message: 'dcaBatchId/dcaIndex/dcaTotal only valid on dca orders',
       });
     }
+
+    const isGrid = body.strategyType === 'grid';
+    if (isGrid) {
+      if (!body.gridBatchId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['gridBatchId'],
+          message: 'grid orders require gridBatchId',
+        });
+      }
+      if (body.gridIndex === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['gridIndex'],
+          message: 'grid orders require gridIndex',
+        });
+      }
+      if (body.gridTotal === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['gridTotal'],
+          message: 'grid orders require gridTotal',
+        });
+      }
+      if (!body.gridLevelPrice) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['gridLevelPrice'],
+          message: 'grid orders require gridLevelPrice',
+        });
+      }
+      if (
+        body.gridIndex !== undefined &&
+        body.gridTotal !== undefined &&
+        body.gridIndex >= body.gridTotal
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['gridIndex'],
+          message: 'gridIndex must be < gridTotal',
+        });
+      }
+    } else if (
+      body.gridBatchId !== undefined ||
+      body.gridIndex !== undefined ||
+      body.gridTotal !== undefined ||
+      body.gridLevelPrice !== undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['strategyType'],
+        message: 'gridBatchId/gridIndex/gridTotal/gridLevelPrice only valid on grid orders',
+      });
+    }
   });
 
 const CancelOrderBody = z.object({
@@ -152,6 +218,10 @@ function serializeOrder(o: StoredOrder) {
     dcaBatchId: o.dcaBatchId,
     dcaIndex: o.dcaIndex,
     dcaTotal: o.dcaTotal,
+    gridBatchId: o.gridBatchId,
+    gridIndex: o.gridIndex,
+    gridTotal: o.gridTotal,
+    gridLevelPrice: o.gridLevelPrice,
     fillTxHash: o.fillTxHash,
     fillBlockNumber: o.fillBlockNumber,
     cancelTxHash: o.cancelTxHash,
@@ -189,6 +259,14 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
       strategyType === 'dca' ? (parsed.data.dcaIndex as number) : null;
     const dcaTotal: number | null =
       strategyType === 'dca' ? (parsed.data.dcaTotal as number) : null;
+    const gridBatchId: string | null =
+      strategyType === 'grid' ? (parsed.data.gridBatchId as string) : null;
+    const gridIndex: number | null =
+      strategyType === 'grid' ? (parsed.data.gridIndex as number) : null;
+    const gridTotal: number | null =
+      strategyType === 'grid' ? (parsed.data.gridTotal as number) : null;
+    const gridLevelPrice: string | null =
+      strategyType === 'grid' ? (parsed.data.gridLevelPrice as string) : null;
 
     let decoded;
     try {
@@ -241,6 +319,10 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
       dcaBatchId,
       dcaIndex,
       dcaTotal,
+      gridBatchId,
+      gridIndex,
+      gridTotal,
+      gridLevelPrice,
       fillTxHash: null,
       fillBlockNumber: null,
       cancelTxHash: null,
@@ -270,11 +352,14 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
     if (q.outputToken && isAddress(q.outputToken)) {
       filter.outputToken = q.outputToken as `0x${string}`;
     }
-    if (q.strategyType && ['limit', 'stop', 'dca'].includes(q.strategyType)) {
+    if (q.strategyType && ['limit', 'stop', 'dca', 'grid'].includes(q.strategyType)) {
       filter.strategyType = q.strategyType as StrategyType;
     }
     if (q.dcaBatchId && DCA_BATCH_ID_RE.test(q.dcaBatchId)) {
       filter.dcaBatchId = q.dcaBatchId;
+    }
+    if (q.gridBatchId && GRID_BATCH_ID_RE.test(q.gridBatchId)) {
+      filter.gridBatchId = q.gridBatchId;
     }
     if (q.minDeadline) {
       const n = Number(q.minDeadline);

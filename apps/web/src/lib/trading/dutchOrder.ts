@@ -289,6 +289,134 @@ export function buildDcaLegs(p: BuildDcaLegsParams): DcaLeg[] {
   return out;
 }
 
+/** One level of a bounded-grid plan. */
+export interface GridLevel {
+  /** 0-based level position, ascending by price (lowest = 0). */
+  index: number;
+  /** Side of this level: buy levels sit below the reference price, sell above. */
+  side: Side;
+  /** Limit price for this level (quote-per-base, 18 decimals). */
+  pricePerBase18: bigint;
+  /** Unix seconds when the keeper becomes eligible to fill this level. */
+  decayStartSec: number;
+  /** Unix seconds at which this level expires. */
+  deadlineSec: number;
+  /** The underlying DutchOrder for this level — pass to `encodeDutchOrder`. */
+  order: DutchOrder;
+}
+
+export interface BuildGridLegsParams {
+  reactor: Address;
+  swapper: Address;
+  baseToken: Address;
+  quoteToken: Address;
+  baseDecimals: number;
+  quoteDecimals: number;
+  /** Lowest buy level price (quote-per-base, 18 decimals). Must be > 0. */
+  lowPrice18: bigint;
+  /** Highest sell level price (quote-per-base, 18 decimals). Must be > `lowPrice18`. */
+  highPrice18: bigint;
+  /** Current reference price (quote-per-base, 18 decimals) used to split buy vs sell.
+   * Levels with price < reference are buys; levels with price > reference are sells.
+   * Must satisfy `lowPrice18 < referencePrice18 < highPrice18`. */
+  referencePrice18: bigint;
+  /** Total number of levels. Must be >= 2 and <= 50. Levels are laid out at
+   * evenly-spaced linear price steps between `lowPrice18` and `highPrice18`. */
+  levels: number;
+  /** Base-token amount filled PER SELL level. Multiplied by the number of sell
+   * levels to compute total base required, and again at the equivalent quote
+   * price for buys (so the user needs both `totalBase` base + `totalQuote` quote
+   * on deposit for the grid to fully fill). Must be > 0. */
+  baseAmountPerLevel: bigint;
+  /** Unix seconds when every level's decayStart begins. All levels become
+   * eligible simultaneously — the grid is passive, keeper fills whichever side
+   * the market crosses first. */
+  startSec: number;
+  /** Unix seconds at which every level expires. Must be > `startSec + 300`. */
+  deadlineSec: number;
+  /** Nonce generator. Defaults to `randomPermit2Nonce`; injectable for tests. */
+  nonceGenerator?: () => bigint;
+}
+
+/**
+ * Build N flat limit orders laid out on a bounded grid between `lowPrice18`
+ * and `highPrice18`, split around `referencePrice18`.
+ *
+ * Each level is its own independent limit order (same shape as
+ * `buildLimitOrder`) at its own `pricePerBase18`, all sharing the same
+ * decayStart / deadline so they're simultaneously eligible. The keeper fills
+ * whichever level the market crosses.
+ *
+ * Price layout: evenly-spaced linear steps between `lowPrice18` and
+ * `highPrice18`, inclusive. With N levels the step size is
+ * `(highPrice18 - lowPrice18) / (N - 1)`. Levels strictly below the reference
+ * price become `buy` orders; levels strictly above become `sell` orders. A
+ * level coinciding with the reference is skipped (would be an immediate fill).
+ *
+ * Caller is responsible for generating ONE `gridBatchId` and tagging every
+ * level's POST payload with it + the level's `index` and the total level
+ * count so the dashboard can group levels into a single strategy row.
+ */
+export function buildGridLegs(p: BuildGridLegsParams): GridLevel[] {
+  if (p.levels < 2) throw new Error('grid requires at least 2 levels');
+  if (p.levels > 50) throw new Error('grid capped at 50 levels per batch');
+  if (p.lowPrice18 <= 0n) throw new Error('lowPrice18 must be > 0');
+  if (p.highPrice18 <= p.lowPrice18) {
+    throw new Error('highPrice18 must be > lowPrice18');
+  }
+  if (p.referencePrice18 <= p.lowPrice18 || p.referencePrice18 >= p.highPrice18) {
+    throw new Error('referencePrice18 must be strictly between lowPrice18 and highPrice18');
+  }
+  if (p.baseAmountPerLevel <= 0n) throw new Error('baseAmountPerLevel must be > 0');
+  if (p.deadlineSec <= p.startSec + 300) {
+    throw new Error('deadlineSec must be at least 300s after startSec');
+  }
+
+  const gen = p.nonceGenerator ?? randomPermit2Nonce;
+  const step = (p.highPrice18 - p.lowPrice18) / BigInt(p.levels - 1);
+  if (step === 0n) throw new Error('price step resolves to 0 — widen bounds or reduce levels');
+
+  const out: GridLevel[] = [];
+  for (let i = 0; i < p.levels; i++) {
+    const price =
+      i === p.levels - 1
+        ? p.highPrice18 // anchor the top level exactly at highPrice18 regardless of integer-division drift
+        : p.lowPrice18 + step * BigInt(i);
+    // Skip a level that lands exactly on the reference price — it would be
+    // an immediate fill on both sides.
+    if (price === p.referencePrice18) continue;
+    const side: Side = price < p.referencePrice18 ? 'buy' : 'sell';
+    out.push({
+      index: i,
+      side,
+      pricePerBase18: price,
+      decayStartSec: p.startSec,
+      deadlineSec: p.deadlineSec,
+      order: buildLimitOrder({
+        reactor: p.reactor,
+        swapper: p.swapper,
+        side,
+        baseToken: p.baseToken,
+        quoteToken: p.quoteToken,
+        baseAmount: p.baseAmountPerLevel,
+        pricePerBase18: price,
+        baseDecimals: p.baseDecimals,
+        quoteDecimals: p.quoteDecimals,
+        deadlineSec: p.deadlineSec,
+        nonce: gen(),
+        decayStartSec: p.startSec,
+        decayEndSec: p.startSec,
+      }),
+    });
+  }
+  return out;
+}
+
+/** Random 128-bit hex id shared by every level of one grid batch. */
+export function randomGridBatchId(): string {
+  return randomDcaBatchId();
+}
+
 /** Random 128-bit hex id shared by every leg of one DCA batch. Uses
  * `crypto.randomUUID()` when available, falls back to `getRandomValues`. */
 export function randomDcaBatchId(): string {

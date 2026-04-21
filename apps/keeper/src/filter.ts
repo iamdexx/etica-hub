@@ -24,11 +24,12 @@ export interface FilterArgs {
 /**
  * Returns only orders this keeper should attempt to fill:
  *  - status === 'open'
- *  - strategy is fillable: `limit` and `dca` are treated identically here
- *    (DCA legs are limit orders with staggered `decayStartTime`, which the
- *    time check below already gates correctly). `stop` orders are skipped —
- *    they need a trigger-price check against a live oracle that isn't wired
- *    up yet. Missing `strategyType` (legacy rows) is treated as `limit`.
+ *  - strategy is fillable: `limit`, `dca`, and `grid` are treated identically
+ *    here (DCA legs are limit orders with staggered `decayStartTime`; grid
+ *    levels are limit orders at their own `gridLevelPrice`). The time check
+ *    below already gates both correctly. `stop` orders are skipped — they
+ *    need a trigger-price check against a live oracle that isn't wired up
+ *    yet. Missing `strategyType` (legacy rows) is treated as `limit`.
  *  - reactor address matches
  *  - deadline is comfortably in the future
  *  - decay window has started (decayStartTime <= now)
@@ -43,7 +44,7 @@ export function filterFillable(orders: OrderbookOrder[], args: FilterArgs): Orde
   return orders.filter((o) => {
     if (o.status !== 'open') return false;
     const strategy = o.strategyType ?? 'limit';
-    if (strategy !== 'limit' && strategy !== 'dca') return false;
+    if (strategy !== 'limit' && strategy !== 'dca' && strategy !== 'grid') return false;
     if (o.reactor.toLowerCase() !== reactor) return false;
     if (o.deadline <= cutoff) return false;
     if (o.decayStartTime > args.now) return false;

@@ -407,6 +407,125 @@ describe('orderbook server', () => {
     }
   });
 
+  it('POST /orders stores a grid level with batch metadata', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder({ nonce: 20n }),
+        signature: SIG,
+        strategyType: 'grid',
+        gridBatchId: 'feedface-1234-5678-90ab-cdef01234567',
+        gridIndex: 2,
+        gridTotal: 8,
+        gridLevelPrice: '1500000000000000000',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.strategyType).toBe('grid');
+    expect(body.gridBatchId).toBe('feedface-1234-5678-90ab-cdef01234567');
+    expect(body.gridIndex).toBe(2);
+    expect(body.gridTotal).toBe(8);
+    expect(body.gridLevelPrice).toBe('1500000000000000000');
+  });
+
+  it('POST /orders rejects grid without gridBatchId (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        strategyType: 'grid',
+        gridIndex: 0,
+        gridTotal: 4,
+        gridLevelPrice: '1000000000000000000',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /orders rejects grid without gridLevelPrice (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        strategyType: 'grid',
+        gridBatchId: 'feedface-1234-5678-90ab-cdef01234567',
+        gridIndex: 0,
+        gridTotal: 4,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /orders rejects grid with gridIndex >= gridTotal (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        strategyType: 'grid',
+        gridBatchId: 'feedface-1234-5678-90ab-cdef01234567',
+        gridIndex: 4,
+        gridTotal: 4,
+        gridLevelPrice: '1000000000000000000',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /orders rejects non-grid order carrying gridBatchId (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: {
+        encodedOrder: encodedOrder(),
+        signature: SIG,
+        gridBatchId: 'feedface-1234-5678-90ab-cdef01234567',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('GET /orders?gridBatchId=... returns every level of one batch', async () => {
+    const batchId = 'feedface-aaaa-bbbb-cccc-0123456789ab';
+    for (let i = 0; i < 4; i += 1) {
+      await app.inject({
+        method: 'POST',
+        url: '/orders',
+        payload: {
+          encodedOrder: encodedOrder({ nonce: BigInt(200 + i) }),
+          signature: SIG,
+          strategyType: 'grid',
+          gridBatchId: batchId,
+          gridIndex: i,
+          gridTotal: 4,
+          gridLevelPrice: String(1_000_000_000_000_000_000n + BigInt(i) * 100_000_000_000_000_000n),
+        },
+      });
+    }
+    // Unrelated limit order — must not leak into the grid batch query.
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: { encodedOrder: encodedOrder({ nonce: 9999n }), signature: SIG },
+    });
+
+    const res = await app.inject({ method: 'GET', url: `/orders?gridBatchId=${batchId}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.count).toBe(4);
+    for (const o of body.orders) {
+      expect(o.strategyType).toBe('grid');
+      expect(o.gridBatchId).toBe(batchId);
+    }
+  });
+
   it('POST /orders/:hash/mark-filled requires keeper auth', async () => {
     const encoded = encodedOrder();
     await app.inject({

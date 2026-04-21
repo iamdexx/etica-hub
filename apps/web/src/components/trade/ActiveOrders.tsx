@@ -137,6 +137,7 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
   const outAmount = safeFormat(order.output.startAmount);
   const isStop = order.strategyType === 'stop';
   const isDca = order.strategyType === 'dca';
+  const isGrid = order.strategyType === 'grid';
   const triggerLabel = isStop && order.triggerPrice
     ? `trigger ${order.triggerDirection === 'lte' ? '≤' : '≥'} ${safeFormat(order.triggerPrice)} ETX`
     : null;
@@ -147,12 +148,21 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
       order.decayStartTime <= nowSec ? 'active' : `fires ${timeUntil(order.decayStartTime)}`;
     return `leg ${order.dcaIndex + 1}/${order.dcaTotal} · ${fires}`;
   })();
+  const gridLabel = (() => {
+    if (!isGrid || order.gridIndex === null || order.gridTotal === null) return null;
+    const pricePart = order.gridLevelPrice
+      ? ` @ ${safeFormat(order.gridLevelPrice)} ETX`
+      : '';
+    return `level ${order.gridIndex + 1}/${order.gridTotal}${pricePart}`;
+  })();
   const badgeClass = isStop
     ? 'border border-amber-400/20 bg-amber-400/10 text-amber-200/80'
     : isDca
       ? 'border border-violet-400/20 bg-violet-400/10 text-violet-200/80'
-      : 'border border-sky-400/20 bg-sky-400/10 text-sky-200/80';
-  const badgeLabel = isStop ? 'Stop' : isDca ? 'DCA' : 'Limit';
+      : isGrid
+        ? 'border border-emerald-400/20 bg-emerald-400/10 text-emerald-200/80'
+        : 'border border-sky-400/20 bg-sky-400/10 text-sky-200/80';
+  const badgeLabel = isStop ? 'Stop' : isDca ? 'DCA' : isGrid ? 'Grid' : 'Limit';
 
   const { writeContractAsync, data: cancelTxHash, reset } = useWriteContract();
   const receipt = useWaitForTransactionReceipt({
@@ -243,6 +253,12 @@ function OrderRow({ order, permit2, canCancel, orderbookUrl, onCancelled }: Orde
             <>
               <span className="mx-2 text-white/20">·</span>
               {dcaLabel}
+            </>
+          ) : null}
+          {gridLabel ? (
+            <>
+              <span className="mx-2 text-white/20">·</span>
+              {gridLabel}
             </>
           ) : null}
         </div>

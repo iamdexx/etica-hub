@@ -133,4 +133,27 @@ describe('filterFillable', () => {
     });
     expect(filterFillable([order], BASE_ARGS)).toHaveLength(0);
   });
+
+  it('keeps grid levels whose decayStartTime has elapsed (treated like limit)', () => {
+    const order = mkOrder({
+      strategyType: 'grid',
+      gridBatchId: 'feedface-1234-5678-90ab-cdef01234567',
+      gridIndex: 2,
+      gridTotal: 8,
+      gridLevelPrice: '1500000000000000000',
+    });
+    expect(filterFillable([order], BASE_ARGS)).toHaveLength(1);
+  });
+
+  it('drops grid levels whose decayStartTime is still in the future', () => {
+    const order = mkOrder({
+      strategyType: 'grid',
+      decayStartTime: 1_500,
+      gridBatchId: 'feedface-1234-5678-90ab-cdef01234567',
+      gridIndex: 0,
+      gridTotal: 8,
+      gridLevelPrice: '900000000000000000',
+    });
+    expect(filterFillable([order], BASE_ARGS)).toHaveLength(0);
+  });
 });

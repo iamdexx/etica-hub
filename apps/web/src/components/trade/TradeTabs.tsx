@@ -5,14 +5,16 @@ import { SwapCard } from '../swap/SwapCard';
 import { LimitForm } from './LimitForm';
 import { StopForm } from './StopForm';
 import { DcaForm } from './DcaForm';
+import { GridForm } from './GridForm';
 
-type Tab = 'market' | 'limit' | 'stop' | 'dca';
+type Tab = 'market' | 'limit' | 'stop' | 'dca' | 'grid';
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'market', label: 'Market' },
   { key: 'limit', label: 'Limit' },
   { key: 'stop', label: 'Stop' },
   { key: 'dca', label: 'DCA' },
+  { key: 'grid', label: 'Grid' },
 ];
 
 export interface TradeTabsProps {
@@ -43,6 +45,7 @@ export function TradeTabs({ baseSymbol }: TradeTabsProps) {
       {tab === 'limit' && <LimitForm baseSymbol={baseSymbol} />}
       {tab === 'stop' && <StopForm baseSymbol={baseSymbol} />}
       {tab === 'dca' && <DcaForm baseSymbol={baseSymbol} />}
+      {tab === 'grid' && <GridForm baseSymbol={baseSymbol} />}
     </div>
   );
 }

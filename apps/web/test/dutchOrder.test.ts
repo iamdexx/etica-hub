@@ -3,12 +3,14 @@ import { decodeAbiParameters, parseAbiParameters, parseUnits, type Hex } from 'v
 import {
   baseFromQuote,
   buildDcaLegs,
+  buildGridLegs,
   buildLimitOrder,
   buildPermit2WitnessTypedData,
   encodeDutchOrder,
   orderBookHash,
   quoteFromBase,
   randomDcaBatchId,
+  randomGridBatchId,
   randomPermit2Nonce,
 } from '../src/lib/trading/dutchOrder';
 
@@ -310,6 +312,196 @@ describe('buildDcaLegs', () => {
     expect(() =>
       buildDcaLegs({ ...baseParams, totalBaseAmount: 2n, legs: 3 }),
     ).toThrow(/legs/);
+  });
+});
+
+describe('buildGridLegs', () => {
+  const baseParams = {
+    reactor: REACTOR,
+    swapper: SWAPPER,
+    baseToken: BASE,
+    quoteToken: QUOTE,
+    baseDecimals: 18,
+    quoteDecimals: 18,
+    startSec: NOW,
+    deadlineSec: NOW + 7 * 24 * 60 * 60,
+    baseAmountPerLevel: parseUnits('1', 18),
+  };
+
+  it('produces N levels at evenly-spaced prices split around the reference', () => {
+    let nonce = 1n;
+    const legs = buildGridLegs({
+      ...baseParams,
+      lowPrice18: parseUnits('1', 18),
+      highPrice18: parseUnits('2', 18),
+      referencePrice18: parseUnits('1.5', 18),
+      levels: 5,
+      nonceGenerator: () => nonce++,
+    });
+    // step = (2 - 1) / 4 = 0.25 → candidates 1, 1.25, 1.5, 1.75, 2.
+    // 1.5 is exactly the reference — dropped to avoid an immediate fill.
+    expect(legs).toHaveLength(4);
+    const prices = legs.map((l) => l.pricePerBase18);
+    expect(prices).toContain(parseUnits('1', 18));
+    expect(prices).toContain(parseUnits('1.25', 18));
+    expect(prices).toContain(parseUnits('1.75', 18));
+    expect(prices).toContain(parseUnits('2', 18));
+    expect(prices).not.toContain(parseUnits('1.5', 18));
+  });
+
+  it('anchors the top level exactly at highPrice18 despite integer-division drift', () => {
+    const legs = buildGridLegs({
+      ...baseParams,
+      lowPrice18: 1n,
+      highPrice18: 10n,
+      referencePrice18: 5n,
+      levels: 4,
+      nonceGenerator: () => 1n,
+    });
+    // Top level must equal highPrice18 exactly regardless of (10-1)/3 drift.
+    expect(legs[legs.length - 1].pricePerBase18).toBe(10n);
+  });
+
+  it('splits levels into buys below and sells above reference', () => {
+    const legs = buildGridLegs({
+      ...baseParams,
+      lowPrice18: parseUnits('1', 18),
+      highPrice18: parseUnits('3', 18),
+      referencePrice18: parseUnits('2', 18),
+      levels: 5,
+      nonceGenerator: () => 1n,
+    });
+    const buys = legs.filter((l) => l.side === 'buy');
+    const sells = legs.filter((l) => l.side === 'sell');
+    // prices: 1, 1.5, 2 (ref → skipped), 2.5, 3 → 2 buys, 2 sells.
+    expect(buys).toHaveLength(2);
+    expect(sells).toHaveLength(2);
+    for (const b of buys) expect(b.pricePerBase18 < parseUnits('2', 18)).toBe(true);
+    for (const s of sells) expect(s.pricePerBase18 > parseUnits('2', 18)).toBe(true);
+  });
+
+  it('gives every level the same decayStart and deadline (simultaneously eligible)', () => {
+    const legs = buildGridLegs({
+      ...baseParams,
+      lowPrice18: parseUnits('1', 18),
+      highPrice18: parseUnits('2', 18),
+      referencePrice18: parseUnits('1.4', 18),
+      levels: 4,
+      nonceGenerator: () => 1n,
+    });
+    for (const l of legs) {
+      expect(l.decayStartSec).toBe(baseParams.startSec);
+      expect(l.deadlineSec).toBe(baseParams.deadlineSec);
+      expect(l.order.decayStartTime).toBe(l.order.decayEndTime);
+    }
+  });
+
+  it('uses unique nonces from the injected generator', () => {
+    let nonce = 1000n;
+    const legs = buildGridLegs({
+      ...baseParams,
+      lowPrice18: parseUnits('1', 18),
+      highPrice18: parseUnits('2', 18),
+      referencePrice18: parseUnits('1.3', 18),
+      levels: 4,
+      nonceGenerator: () => nonce++,
+    });
+    const nonces = new Set(legs.map((l) => l.order.info.nonce.toString()));
+    expect(nonces.size).toBe(legs.length);
+  });
+
+  it('rejects levels < 2', () => {
+    expect(() =>
+      buildGridLegs({
+        ...baseParams,
+        lowPrice18: parseUnits('1', 18),
+        highPrice18: parseUnits('2', 18),
+        referencePrice18: parseUnits('1.5', 18),
+        levels: 1,
+      }),
+    ).toThrow(/at least 2/);
+  });
+
+  it('rejects levels > 50', () => {
+    expect(() =>
+      buildGridLegs({
+        ...baseParams,
+        lowPrice18: parseUnits('1', 18),
+        highPrice18: parseUnits('2', 18),
+        referencePrice18: parseUnits('1.5', 18),
+        levels: 51,
+      }),
+    ).toThrow(/50/);
+  });
+
+  it('rejects highPrice18 <= lowPrice18', () => {
+    expect(() =>
+      buildGridLegs({
+        ...baseParams,
+        lowPrice18: parseUnits('2', 18),
+        highPrice18: parseUnits('2', 18),
+        referencePrice18: parseUnits('2', 18),
+        levels: 4,
+      }),
+    ).toThrow(/highPrice18/);
+  });
+
+  it('rejects reference price at or outside the bounds', () => {
+    expect(() =>
+      buildGridLegs({
+        ...baseParams,
+        lowPrice18: parseUnits('1', 18),
+        highPrice18: parseUnits('2', 18),
+        referencePrice18: parseUnits('1', 18),
+        levels: 4,
+      }),
+    ).toThrow(/referencePrice18/);
+    expect(() =>
+      buildGridLegs({
+        ...baseParams,
+        lowPrice18: parseUnits('1', 18),
+        highPrice18: parseUnits('2', 18),
+        referencePrice18: parseUnits('3', 18),
+        levels: 4,
+      }),
+    ).toThrow(/referencePrice18/);
+  });
+
+  it('rejects baseAmountPerLevel <= 0', () => {
+    expect(() =>
+      buildGridLegs({
+        ...baseParams,
+        lowPrice18: parseUnits('1', 18),
+        highPrice18: parseUnits('2', 18),
+        referencePrice18: parseUnits('1.5', 18),
+        levels: 4,
+        baseAmountPerLevel: 0n,
+      }),
+    ).toThrow(/baseAmountPerLevel/);
+  });
+
+  it('rejects deadline too close to start', () => {
+    expect(() =>
+      buildGridLegs({
+        ...baseParams,
+        lowPrice18: parseUnits('1', 18),
+        highPrice18: parseUnits('2', 18),
+        referencePrice18: parseUnits('1.5', 18),
+        levels: 4,
+        deadlineSec: NOW + 100,
+      }),
+    ).toThrow(/deadlineSec/);
+  });
+});
+
+describe('randomGridBatchId', () => {
+  it('returns non-empty string', () => {
+    expect(randomGridBatchId().length).toBeGreaterThan(8);
+  });
+  it('is unique across a small sample', () => {
+    const s = new Set<string>();
+    for (let i = 0; i < 32; i++) s.add(randomGridBatchId());
+    expect(s.size).toBe(32);
   });
 });
 
