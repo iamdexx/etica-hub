@@ -55,7 +55,7 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
             apiBaseUrl={apiBaseUrl}
           />
         ) : (
-          <OnChainPriceChart baseSymbol={baseSymbol} quoteSymbol="ETX" />
+          <OnChainPriceChart key={baseSymbol} baseSymbol={baseSymbol} quoteSymbol="ETX" />
         )}
       </div>
       <aside className="space-y-3">
