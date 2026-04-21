@@ -415,6 +415,133 @@ export function buildGridLegs(p: BuildGridLegsParams): GridLevel[] {
   return out;
 }
 
+export interface BuildInfiniteGridLegsParams {
+  reactor: Address;
+  swapper: Address;
+  baseToken: Address;
+  quoteToken: Address;
+  baseDecimals: number;
+  quoteDecimals: number;
+  /** Reference (current market) price in quote-per-base, 18 decimals. Must be > 0. */
+  referencePrice18: bigint;
+  /** Price step between adjacent levels as a fraction of the reference price,
+   * expressed as a percent × 1e18 (so 2% = 2e16). Must be > 0 and < 50e16. */
+  stepPctE18: bigint;
+  /** Number of buy levels to place below the reference price. Must be >= 0. */
+  buyLevels: number;
+  /** Number of sell levels to place above the reference price. Must be >= 0. */
+  sellLevels: number;
+  /** Base-token amount filled per level (both sides). Must be > 0. */
+  baseAmountPerLevel: bigint;
+  /** Unix seconds when every level becomes eligible. All levels share this. */
+  startSec: number;
+  /** Unix seconds at which every level expires. Must be > `startSec + 300`. */
+  deadlineSec: number;
+  /** Nonce generator. Defaults to `randomPermit2Nonce`; injectable for tests. */
+  nonceGenerator?: () => bigint;
+}
+
+/**
+ * Build an unbounded ("infinite") grid of limit orders around a reference
+ * price at fixed percent spacing.
+ *
+ * Unlike `buildGridLegs` which caps the grid between a user-chosen low/high,
+ * the infinite variant takes a single reference price and a percent step,
+ * then lays down `buyLevels` orders below and `sellLevels` orders above.
+ *
+ * Price layout (reference=R, step=p%):
+ *   buy[i]  = R * (1 - p)^(i+1)    // i in [0, buyLevels-1], furthest first
+ *   sell[i] = R * (1 + p)^(i+1)    // i in [0, sellLevels-1], nearest first
+ *
+ * The emitted array is sorted ascending by price so `index` lines up with
+ * `buildGridLegs` semantics (lowest price = index 0). The caller tags each
+ * level's orderbook POST with a single `gridBatchId` + `index` + total count.
+ *
+ * When the market walks past the top sell level, the user comes back to the
+ * UI and signs another batch extending the grid further — that's what makes
+ * it "infinite". Each batch is its own independent group of orders.
+ */
+export function buildInfiniteGridLegs(p: BuildInfiniteGridLegsParams): GridLevel[] {
+  if (p.referencePrice18 <= 0n) throw new Error('referencePrice18 must be > 0');
+  if (p.stepPctE18 <= 0n) throw new Error('stepPctE18 must be > 0');
+  // 50% cap keeps level prices sensible — any higher and the geometric
+  // spacing quickly collapses to zero (for buys) or diverges (for sells).
+  if (p.stepPctE18 >= 50n * 10n ** 16n) {
+    throw new Error('stepPctE18 must be < 50%');
+  }
+  if (p.buyLevels < 0 || p.sellLevels < 0) {
+    throw new Error('level counts must be non-negative');
+  }
+  if (p.buyLevels + p.sellLevels < 1) {
+    throw new Error('need at least one level (buy or sell)');
+  }
+  if (p.buyLevels + p.sellLevels > 50) {
+    throw new Error('infinite grid capped at 50 levels per batch');
+  }
+  if (p.baseAmountPerLevel <= 0n) throw new Error('baseAmountPerLevel must be > 0');
+  if (p.deadlineSec <= p.startSec + 300) {
+    throw new Error('deadlineSec must be at least 300s after startSec');
+  }
+
+  const gen = p.nonceGenerator ?? randomPermit2Nonce;
+  const ONE = 10n ** 18n;
+  const down = ONE - p.stepPctE18; // 1 - p   (scaled by 1e18)
+  const up = ONE + p.stepPctE18; // 1 + p   (scaled by 1e18)
+
+  // Buy prices are geometric R * down^k for k=1..buyLevels, ordered ascending
+  // so index 0 is the furthest-below level (lowest price). Sells are
+  // geometric R * up^k for k=1..sellLevels, ordered ascending so the nearest
+  // sell sits right above the reference.
+  const prices: Array<{ price: bigint; side: Side }> = [];
+  {
+    let cursor = p.referencePrice18;
+    const buys: bigint[] = [];
+    for (let k = 0; k < p.buyLevels; k += 1) {
+      cursor = (cursor * down) / ONE;
+      if (cursor <= 0n) break;
+      buys.push(cursor);
+    }
+    // Emit lowest first.
+    buys.reverse();
+    for (const price of buys) prices.push({ price, side: 'buy' });
+  }
+  {
+    let cursor = p.referencePrice18;
+    for (let k = 0; k < p.sellLevels; k += 1) {
+      cursor = (cursor * up) / ONE;
+      prices.push({ price: cursor, side: 'sell' });
+    }
+  }
+
+  const out: GridLevel[] = [];
+  for (let i = 0; i < prices.length; i += 1) {
+    const { price, side } = prices[i];
+    out.push({
+      index: out.length,
+      side,
+      pricePerBase18: price,
+      decayStartSec: p.startSec,
+      deadlineSec: p.deadlineSec,
+      order: buildLimitOrder({
+        reactor: p.reactor,
+        swapper: p.swapper,
+        side,
+        baseToken: p.baseToken,
+        quoteToken: p.quoteToken,
+        baseAmount: p.baseAmountPerLevel,
+        pricePerBase18: price,
+        baseDecimals: p.baseDecimals,
+        quoteDecimals: p.quoteDecimals,
+        deadlineSec: p.deadlineSec,
+        nonce: gen(),
+        decayStartSec: p.startSec,
+        decayEndSec: p.startSec,
+      }),
+    });
+  }
+  return out;
+}
+
 /** Random 128-bit hex id shared by every level of one grid batch. */
 export function randomGridBatchId(): string {
   return randomDcaBatchId();
