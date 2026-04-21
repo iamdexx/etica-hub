@@ -240,9 +240,13 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
     setSamples((prev) => {
       const next = [...prev, sample];
       if (next.length > MAX_SAMPLES) next.splice(0, next.length - MAX_SAMPLES);
-      if (cacheKey) {
+      // Only persist once the backfill has advanced the frontier at least
+      // once. Writing `0n` here would tell a future page load to re-scan
+      // from block 1 (bypassing HISTORY_BACKFILL_BLOCKS, which only applies
+      // when the stored frontier is null), hammering the RPC unboundedly.
+      if (cacheKey && lastIngestedBlockRef.current !== null) {
         writeChartCache(cacheKey, {
-          lastBlock: lastIngestedBlockRef.current ?? 0n,
+          lastBlock: lastIngestedBlockRef.current,
           samples: next,
         });
       }
