@@ -1,4 +1,4 @@
-import { http } from 'viem';
+import { fallback, http } from 'viem';
 import { createConfig } from 'wagmi';
 import { injected } from 'wagmi/connectors';
 import { eticaMainnet, eticaLocalFork } from '@etica-hub/shared/chains';
@@ -17,7 +17,12 @@ export const wagmiConfig = createConfig({
   chains: [eticaMainnet, eticaLocalFork],
   connectors: [injected({ shimDisconnect: true })],
   transports: {
-    [eticaMainnet.id]: http(),
+    [eticaMainnet.id]: fallback(
+      eticaMainnet.rpcUrls.default.http.map((url) =>
+        http(url, { timeout: 10_000, retryCount: 2 }),
+      ),
+      { rank: false },
+    ),
     [eticaLocalFork.id]: http(),
   },
   ssr: true,
