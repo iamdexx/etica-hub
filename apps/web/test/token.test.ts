@@ -1,12 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PublicClient } from 'viem';
 import {
   formatTokenAmount,
+  loadAddressTokenTransfers,
   resolveTokenInfos,
   scanAddressTokenTransfers,
   uniqueAddressesFromTransfers,
   type TokenTransfer,
 } from '../src/lib/token';
+import * as explorerIndex from '../src/lib/explorerIndex';
 
 // ------------------------------------------------------------------ //
 // formatTokenAmount
@@ -228,6 +230,77 @@ describe('scanAddressTokenTransfers', () => {
     const client = mockClient([malformed], []);
     const out = await scanAddressTokenTransfers(client, VIEWER, 100n);
     expect(out).toEqual([]);
+  });
+});
+
+// ------------------------------------------------------------------ //
+// loadAddressTokenTransfers
+// ------------------------------------------------------------------ //
+// Indexer-backed loader must degrade gracefully when the indexer
+// returns data that survives JSONL parsing but breaks downstream
+// (e.g. a bad numeric field that makes BigInt throw, or a bad
+// address that makes getAddress throw). Falling back to the plain
+// RPC scan keeps the address page rendering instead of 500ing.
+describe('loadAddressTokenTransfers', () => {
+  const VIEWER = '0x1111111111111111111111111111111111111111' as const;
+  const OTHER = '0x2222222222222222222222222222222222222222' as const;
+  const TOKEN_A = '0xAAaAaaAaaAaaAAaaAAAaaaAAAAAaaaAaAAaAAaaA' as const;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('falls back to the RPC scan when the indexer returns malformed rows', async () => {
+    // Indexer returns a cursor + one row whose `value` field is a
+    // non-numeric string. parseJsonl passes it through (it's valid
+    // JSON), but `BigInt("not_a_number")` throws downstream. Without
+    // the try/catch wrap, this would crash the address page.
+    vi.spyOn(explorerIndex, 'fetchIndexedAddressTransfers').mockResolvedValue({
+      cursor: {
+        lastBlock: 50,
+        chainId: 61803,
+        updatedAt: '2025-01-01T00:00:00.000Z',
+        runs: 1,
+        cumulative: { transfers: 1, syncs: 0 },
+      },
+      rows: [
+        {
+          block: 40,
+          ts: 1700000000,
+          tx: '0xmalformed',
+          logIndex: 0,
+          token: TOKEN_A,
+          from: OTHER,
+          to: VIEWER,
+          value: 'not_a_number',
+        },
+      ],
+    });
+
+    // RPC-side scan returns one row on every call so we can observe
+    // that the function fell back to it rather than throwing or
+    // returning []. Uses a stable mock (not Once) because the try
+    // block's tail scan also calls getLogs — the fallback scan needs
+    // to still have a response available when it runs.
+    const rpcRow = {
+      address: TOKEN_A,
+      args: { from: OTHER, to: VIEWER, value: 123n },
+      blockNumber: 99n,
+      transactionHash: '0xrpc',
+      logIndex: 1,
+    };
+    const client = {
+      getLogs: vi.fn((args: { args?: { from?: string; to?: string } }) => {
+        // Inbound filter (to=viewer) gets the row; outbound gets [].
+        if (args.args?.to) return Promise.resolve([rpcRow]);
+        return Promise.resolve([]);
+      }),
+    } as unknown as PublicClient;
+
+    const out = await loadAddressTokenTransfers(client, VIEWER, 100n);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.txHash).toBe('0xrpc');
+    expect(out[0]!.value).toBe(123n);
   });
 });
 
