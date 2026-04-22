@@ -1,0 +1,109 @@
+name: Explorer indexer
+
+# Scans new Etica mainnet blocks for ERC-20 Transfer and V2 Sync events
+# every 10 minutes and commits the decoded rows as JSONL to the orphan
+# `data-index` branch. The explorer UI then fetches those JSONL files
+# at request time (via raw.githubusercontent.com) to render deep token
+# transfer history, holders counts, and multi-day OHLCV.
+#
+# Why an orphan branch: the data commits are noisy (one per cron run),
+# and we don't want them rebuilding Vercel previews on main. The data
+# branch is entirely separate from code; production deploys never
+# trigger from it.
+#
+# Idempotent on retry: the cursor lives in the data branch itself, so
+# if a run crashes we just pick up from the last successful chunk on
+# the next cron tick.
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub-hosted cron drops/delays events
+    # frequently — this is a best-effort lower bound, not a guarantee.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      max_blocks:
+        description: 'Override INDEX_MAX_BLOCKS_PER_RUN (for manual backfills)'
+        required: false
+        default: ''
+
+permissions:
+  # Needs write access to push the data branch.
+  contents: write
+
+concurrency:
+  group: explorer-indexer
+  # Don't queue parallel runs; if one is in flight, skip the new tick.
+  # A dropped tick is fine — the next one picks up where we left off.
+  cancel-in-progress: false
+
+jobs:
+  index:
+    name: Index new blocks
+    runs-on: ubuntu-latest
+    env:
+      INDEXER_MODULE: explorer
+      CHAIN_ID: '61803'
+      ETICA_MAINNET_RPC_URL: ${{ vars.EXPLORER_INDEXER_RPC_URL || 'https://eticamainnet.eticascan.org' }}
+      INDEX_DATA_DIR: ./data-branch
+      INDEX_BLOCK_BATCH: '1000'
+      INDEX_MAX_BLOCKS_PER_RUN: ${{ github.event.inputs.max_blocks || '5000' }}
+      INDEX_INITIAL_LOOKBACK: '10000'
+    steps:
+      # Main checkout: the indexer code.
+      - uses: actions/checkout@v4
+
+      # Separate checkout of the data-index branch into ./data-branch/.
+      # If the branch doesn't exist yet (first run), fall back to an
+      # empty orphan checkout. The indexer will bootstrap the cursor.
+      - name: Checkout data branch
+        run: |
+          set -e
+          git config --global user.name "etica-hub-indexer"
+          git config --global user.email "indexer@etica-hub.invalid"
+          if git ls-remote --exit-code --heads origin data-index >/dev/null 2>&1; then
+            echo "data-index branch exists; cloning into ./data-branch"
+            git clone --branch data-index --single-branch --depth 1 \
+              "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+              ./data-branch
+          else
+            echo "data-index branch missing; initializing orphan checkout"
+            mkdir -p ./data-branch
+            cd ./data-branch
+            git init -q
+            git checkout -q --orphan data-index
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            printf "# Etica explorer index data\n\nThis is an orphan branch populated by .github/workflows/explorer-indexer.yml.\nDo not edit manually.\n" > README.md
+            git add README.md
+            git commit -q -m "Initialize data-index branch"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Run indexer
+        run: pnpm --filter @etica-hub/indexer exec tsx src/index.ts
+
+      # Commit + push whatever the indexer wrote. If nothing changed
+      # (cursor was already at head), `git diff --quiet` exits 0 and we
+      # skip the push.
+      - name: Commit and push data
+        working-directory: ./data-branch
+        run: |
+          set -e
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No index updates to push."
+            exit 0
+          fi
+          git commit -q -m "Index run @ $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin HEAD:data-index
