@@ -233,17 +233,17 @@ A reference keeper (`apps/keeper`) runs as a GitHub Actions cron (`.github/workf
 | Share token | stETX (`0x75d81d03a98CD9195593b8963aF17E13fAa70334`) |
 | Standard | ERC-4626 |
 | Mint function | none (shares are minted against deposits at the current exchange rate) |
-| Owner role | accepts inbound yield via `notifyReward(uint256 amount)` only; cannot mint, pause, or take user deposits |
+| Owner role | **none** — the contract has no `Ownable` inheritance; the reward-injection path is permissionless |
 | Upgradeability | none (contract is final implementation) |
 | Withdrawal lockup | none (fully liquid; redeem at will) |
-| Source | `packages/contracts/src/stetx/StakedETX.sol` |
+| Source | `packages/contracts/src/etx/StakedETX.sol` |
 
 ### 8.2 Yield mechanics
 
 stETX is a pure redistribution vault, not an emitter. The flow is:
 
 1. Treasury LP positions (ETI/ETX, EGAZ/ETX) accrue swap fees continuously as 0.30% of every trade.
-2. The off-chain keeper ("Harvester", §9) periodically collects a tranche of those accrued fees, converts them to ETX on the DEX, and calls `StakedETX.notifyReward(amount)` with the stETX share of the harvest.
+2. The off-chain keeper ("Harvester", §9) periodically collects a tranche of those accrued fees, converts them to ETX on the DEX, and calls `StakedETX.distributeRewards(amount)` with the stETX share of the harvest.
 3. The vault's `totalAssets()` increases by `amount`, raising the exchange rate `stETX → ETX`. Every existing stETX holder's balance, denominated in ETX, grows pro-rata.
 
 There is no emissions contract, no inflation schedule, no minting, and no new ETX supply. If LP fees stall, stETX yield stalls. If LP fees grow, stETX yield grows. The APY is a function of *observed* harvested yield over the trailing 7 days, rendered on `/stake`.
@@ -259,8 +259,8 @@ The `/stake` page provides:
 
 ### 8.4 Non-custodial guarantees
 
-- The vault owner key **cannot** seize deposits, pause withdrawals, change the asset, or mint stETX shares. The owner can only call `notifyReward`, which monotonically increases the exchange rate in depositors' favor.
-- The keeper that feeds `notifyReward` is unprivileged: any wallet can call it. Calling it with zero amount is a no-op; calling it with a nonzero amount requires transferring that ETX into the vault in the same transaction.
+- **There is no owner key.** The vault has no `Ownable` inheritance, no admin role, no pause function, no upgradeability. The only state-changing external entry points are the ERC-4626 deposit/withdraw paths and `distributeRewards`.
+- `distributeRewards` is **fully permissionless**: any wallet may call it. Calling it with zero amount reverts with `ZeroAmount()`; a nonzero call requires the caller to have approved the vault for the full amount and transfers that ETX into the vault in the same transaction — shares are never minted, only the exchange rate ticks up.
 - Withdrawals are not rate-limited, not paused, not subject to any cooldown.
 
 ---
@@ -271,7 +271,7 @@ The `/stake` page provides:
 
 ### 9.1 Why a delegation contract
 
-Before the Harvester, redistributing LP fees required the treasury EOA to sign a sequence of `removeLiquidity → swap → transfer → notifyReward` transactions. That forced the treasury key to be online whenever a harvest was due, which is both operationally fragile and a key-compromise hazard.
+Before the Harvester, redistributing LP fees required the treasury EOA to sign a sequence of `removeLiquidity → swap → transfer → distributeRewards` transactions. That forced the treasury key to be online whenever a harvest was due, which is both operationally fragile and a key-compromise hazard.
 
 The Harvester inverts this: the treasury one-time-approves the Harvester for ETX + both LP tokens, then delegates the actual redistribution work to a designated keeper EOA via `setKeeper(address)`. The keeper can now call `harvest()` on its own budget; it cannot touch treasury ETX for anything except the 10/10/40/40 split encoded in the contract.
 
@@ -281,14 +281,14 @@ Every successful `harvest()` call partitions the freshly-collected fee tranche (
 
 | Bucket | Share | Destination |
 |---|---|---|
-| stETX yield | 40% | Transferred to `StakedETX` + `notifyReward` |
-| Farms / LP incentives | 40% | Held for the (future) `ETXFarms` contract; parked in treasury until farms are live |
-| Treasury operations | 10% | Kept in treasury for audits, infra, community grants |
-| **POL burn** | **10%** | **Paired with ETI/EGAZ and added to the ETI/ETX and EGAZ/ETX pools as LP, then the resulting LP tokens are sent to `address(0)` — permanently locked liquidity** |
+| stETX yield | 10% | Forwarded to `StakedETX.distributeRewards` (retained in treasury until the vault is wired in on-chain) |
+| Farms / LP incentives | 10% | Forwarded to the (future) `ETXFarms` contract; retained in treasury until farms are live |
+| Treasury operations | 40% | Retained in treasury for audits, infra, community grants, reserves |
+| **POL burn** | **40%** | **Paired with ETI/EGAZ and added to the ETI/ETX and EGAZ/ETX pools as LP, then the resulting LP tokens are sent to the burn sink — permanently locked liquidity** |
 
 ### 9.3 The POL burn is the flywheel
 
-The 10% POL burn is the mechanism that makes every swap structurally accretive to pool depth *forever*. The fees leave the treasury, buy LP tokens, and burn them — depth stays in the pool and can never be withdrawn. Three consequences:
+The 40% POL burn is the mechanism that makes every swap structurally accretive to pool depth *forever*. The fees leave the treasury, buy LP tokens, and burn them — depth stays in the pool and can never be withdrawn. Three consequences:
 
 1. **Slippage curves improve monotonically.** Each harvest deepens the ETI/ETX and EGAZ/ETX pools, reducing slippage for every future trade.
 2. **Depth is independent of any operator.** Because the LP tokens are burned, not held, no future EticaHub key rotation, key loss, or governance action can ever remove the burned depth.
@@ -436,7 +436,7 @@ The EticaHub treasury is an EOA at `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`.
 - Essentially all of the ETX supply at genesis (minus the amount seeded into pools).
 - LP tokens for the initial ETI/ETX and EGAZ/ETX pools (less whatever fraction has been moved through the future TreasuryHarvester POL-burn path, which permanently locks LP tokens to `address(0)`).
 - Any subscription revenue, swap protocol fees (after `feeTo` is set), and pool-creation fees.
-- Any undistributed portion of the 40% farm bucket from the Harvester (parked in treasury until `ETXFarms` is live).
+- Any undistributed portion of the 10% farm bucket from the Harvester (parked in treasury until `ETXFarms` is live).
 
 ### 15.2 Administrative keys
 
@@ -446,7 +446,7 @@ The EticaHub treasury is an EOA at `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`.
 | `EticaSwapFactory` — `feeTo` | Treasury wallet | Receives the 0.05% protocol swap fee and the 10,000 ETX pool-creation fee |
 | `DutchOrderReactor` — `owner` | Treasury wallet | Can change the protocol fee controller; fee itself capped at 1% by the controller |
 | `EticaProtocolFeeController` — `owner` | Treasury wallet | Can flip the ETX-denominated protocol fee between 0 and 100 BPS |
-| `StakedETX` — `owner` | Treasury wallet | Can call `notifyReward` only — **cannot** seize deposits, pause, or mint |
+| `StakedETX` | **no owner** | Contract has no `Ownable` inheritance; `distributeRewards` is permissionless; **cannot** seize deposits, pause, or mint shares |
 | `TreasuryHarvester` — `owner` | Treasury wallet | Can rotate the keeper EOA, emergency-sweep to treasury, and tune the 10/10/40/40 split within contract-enforced caps |
 | `TreasuryHarvester` — `keeper` | Hot keeper EOA | Can call `harvest()` only — cannot change parameters, cannot drain funds |
 
@@ -464,7 +464,7 @@ ETX itself has no admin — no pause, no mint, no blacklist, no upgrade. Governa
 - **Pinned dependencies:** OpenZeppelin v5.1.0 (pinned specifically to avoid Cancun-only `mcopy` on Etica's Paris-EVM).
 - **No upgradeability / no proxies:** Every contract is deployed at its final implementation. There is no upgrade path that could silently change logic.
 - **No admin mints:** ETX supply is fixed at deploy. stETX shares can only be minted in exchange for ETX deposits.
-- **No custody paths:** stETX owner can only *increase* the exchange rate via `notifyReward`. Harvester keeper can only perform the 10/10/40/40 redistribution. Reactor owner can only toggle a capped protocol fee. No key in the system can unilaterally drain user funds.
+- **No custody paths:** `StakedETX` has no owner at all — `distributeRewards` is permissionless and can only *increase* the exchange rate. Harvester keeper can only perform the 10/10/40/40 redistribution. Reactor owner can only toggle a capped protocol fee. No key in the system can unilaterally drain user funds.
 - **No external audits at launch.** v1 ships without a third-party audit. Users should size their exposure accordingly. Audits are on the roadmap (§17) and will be announced once scoped.
 
 ---
@@ -489,7 +489,7 @@ Timeline is indicative, not committed.
 ### Near-term
 
 - **Harvester live cutover:** treasury approves, keeper rotates, `.github/workflows/harvest-live.yml` flipped to live.
-- **LP farms contract (`ETXFarms`):** unlocks the 40% farm bucket parked in treasury; stakers deposit LP tokens, earn from the same fee stream as stETX.
+- **LP farms contract (`ETXFarms`):** unlocks the 10% farm bucket parked in treasury; stakers deposit LP tokens, earn from the same fee stream as stETX.
 - **Multisig treasury migration:** `feeToSetter`, `DutchOrderReactor` owner, `StakedETX` owner, and `TreasuryHarvester` owner all rotated from the launch EOA to a multi-sig.
 
 ### Mid-term
