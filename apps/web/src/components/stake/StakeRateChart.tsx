@@ -129,7 +129,9 @@ export function StakeRateChart({ stakedETX }: StakeRateChartProps) {
         for (let i = 0; i < rewards.length; i++) {
           const deltaBlocks = Number(head - rewards[i].block);
           const ts = headTs - deltaBlocks * ETICA_BLOCKTIME_S;
-          const rateAt = live - suffix[i] / supplyNowF;
+          // Plot the rate IMMEDIATELY AFTER reward i lands. "Rewards after t"
+          // excludes reward i itself, so use suffix[i + 1].
+          const rateAt = live - suffix[i + 1] / supplyNowF;
           series.push({ ts, rate: rateAt });
         }
         // Anchor the live point.
