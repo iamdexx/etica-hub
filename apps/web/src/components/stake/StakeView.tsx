@@ -66,7 +66,7 @@ function StakeHowItWorks() {
           can redeem any time.
         </li>
         <li>
-          A daily keeper harvests treasury LP fees on ETI/ETX and WEGAZ/ETX pools, swaps
+          A daily keeper harvests treasury LP fees on ETI/ETX and EGAZ/ETX pools, swaps
           the non-ETX leg to ETX, and calls <span className="font-mono">distributeRewards</span> on
           the vault. Every call grows <span className="font-mono">pricePerShare</span>.
         </li>

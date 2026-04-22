@@ -392,7 +392,7 @@ export async function StatusPanel() {
             )}
           </Section>
 
-          <Section title="EGAZ / ETX pool (via WEGAZ)">
+          <Section title="EGAZ / ETX pool">
             {snap.egaz_etx ? (
               <>
                 <KV k="pair" v={shortAddr(snap.egaz_etx.pair)} />
