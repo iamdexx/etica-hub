@@ -76,7 +76,7 @@ EticaSwap is a Uniswap V2–style automated market maker adapted to enforce a si
 
 | Contract | Purpose |
 |---|---|
-| `EticaSwapFactory` | Deploys pair contracts via CREATE2. Enforces ETX hub rule. Holds the optional `feeTo` treasury and the `trustedCreators` allow-list (§7). |
+| `EticaSwapFactory` | Deploys pair contracts via CREATE2. Enforces ETX hub rule. Holds the optional `feeTo` treasury and the `trustedCreators` allow-list (§8). |
 | `EticaSwapPair` | Constant-product pair (x·y=k), 0.30% swap fee, optional 0.05% protocol fee to treasury. |
 | `EticaSwapRouter` | User-facing router. Multi-hop swaps, add/remove liquidity, native-EGAZ wrapping via WEGAZ. |
 | `WEGAZ` | Canonical wrapped-EGAZ ERC-20, deposited/withdrawn at 1:1. Enables EGAZ to participate in ERC-20 pairs. |
@@ -92,7 +92,7 @@ EticaSwap is a Uniswap V2–style automated market maker adapted to enforce a si
 The pool-creation fee is charged in ETX, paid by the caller at the moment a new pair is created, and routed to `feeTo` (the treasury). Key properties:
 
 - The fee is **skipped when `feeTo == 0x0`**, so the factory can bootstrap before the treasury wallet is wired. This is used during launch day: the first two pools (ETI/ETX, EGAZ/ETX) are seeded free, then treasury wiring activates the fee for all subsequent pools.
-- Addresses in the `trustedCreators` allow-list are **exempt** from the fee. This exists so the future launchpad (§7) does not double-charge its creators, since the launchpad already collects its own 250 ETX + 250 ETI fee per launch.
+- Addresses in the `trustedCreators` allow-list are **exempt** from the fee. This exists so the future launchpad (§8) does not double-charge its creators, since the launchpad already collects its own 250 ETX + 250 ETI fee per launch.
 - The fee is **adjustable** by the `feeToSetter` governance key via `setPairCreationFee(uint256)`. It may be raised, lowered, or set to zero.
 - The router transparently forwards the fee on first-time pair creation: users simply approve a slightly larger ETX budget to the router, no extra transaction is required.
 
@@ -157,15 +157,69 @@ The Research Hub is live today, independent of the DEX, and does not require ETX
 
 ---
 
-## 7. Launchpad (Design Preview, Deferred to v2)
+## 7. Trading Stack
+
+EticaSwap's Market tab handles immediate one-shot swaps against the AMM. Everything beyond that — limit orders, stop-losses, dollar-cost averaging, and grid bots — lives in the **Trading Stack**, exposed at `/trade/[token]`. The stack is non-custodial, modelled on UniswapX, and uses contracts audited independently of anything EticaHub wrote.
+
+### 7.1 Components
+
+| Component | Audited by | Role |
+|---|---|---|
+| [Permit2](https://github.com/Uniswap/permit2) | OpenZeppelin, Trail of Bits, ABDK | One-time per-token approval. Signature-based allowances with per-user nonces and per-sig deadlines. |
+| [UniswapX `DutchOrderReactor`](https://github.com/Uniswap/UniswapX) | Uniswap Labs audit set | Settles pre-signed Dutch orders. Pulls input via Permit2, swaps through the EticaSwap Router, pushes output to the maker. |
+| `EticaProtocolFeeController` | — (trivial 60-line contract, deployed at 0 BPS) | Pluggable ETX-denominated protocol fee. Capped at 1% on-chain. v1 ships at **0 BPS**. |
+| Order book API + reference keeper | open source, ~500 LoC total | Stores signed orders (off-chain), serves them to fillers, and runs one reference filler. Anyone else can run a filler. |
+
+Full design and the case against each alternative (on-chain order book, custodial bot, etc.) lives in [`docs/TRADING.md`](./TRADING.md).
+
+### 7.2 Order types
+
+| Mode | Semantics | Signatures per wallet popup |
+|---|---|---|
+| Market | AMM swap via the Router | 0 (regular on-chain tx) |
+| Limit | Dutch order with `decayStart == decayEnd == limit` | 1 |
+| Stop | Client-side scheduler submits a pre-signed order when the threshold hits | 1 |
+| DCA | N scheduled buys | N (one popup, multicall EIP-712) |
+| Grid (bounded) | N buys + N sells, linearly spaced inside `[low, high]` | 2N |
+| Infinite grid ("Infinity Bot") | N buys below + M sells above a reference, **geometrically spaced** with percent-step | N + M |
+
+### 7.3 Why the Infinity Bot exists
+
+A bounded grid is brittle for a chain whose price can drift meaningfully over months. Once price walks past the user's `high` or `low`, the grid is dead until the user comes back and re-signs. The Infinity Bot replaces that fragility with geometric (percent-based) spacing around a reference price — `R · (1 ± p)^k`. The level structure is scale-invariant, the level count per side is tunable independently, and when price walks past the outermost signed level the user signs one more batch re-centred on the new price instead of re-authoring the whole strategy.
+
+Guardrails baked into the builder:
+
+- **≤ 50 levels per batch.** Wallet UX degrades past ~30 signatures in one popup; 50 is a practical hard cap.
+- **Step < 50%.** Geometric progressions with `p ≥ 50%` collapse to zero or diverge within a handful of levels.
+- **7-day batch validity.** Same expiry window as the bounded grid.
+- **Shared `gridBatchId`.** Every level of one batch carries one batch id so the orders dashboard and any future cancel-whole-batch flow can address them as a unit.
+
+The full Infinity Bot spec — including the math, the risk table, the deliberate non-goals, and the re-sign policy — lives in [`docs/INFINITY_BOT.md`](./INFINITY_BOT.md).
+
+### 7.4 Non-custodial guarantees
+
+The guarantees EticaHub makes about every order type in the Trading Stack — Market, Limit, Stop, DCA, Grid, Infinity — are identical to those of the core DEX:
+
+- EticaHub never holds user tokens or signing keys.
+- Every fill is atomic: Permit2 pulls exactly the signed input, the Reactor swaps it, and the output lands in the user's wallet in the same transaction. There is no intermediate custody.
+- Users can hard-cancel any signed order by submitting a Permit2 nonce increment on-chain from `/trade/orders`.
+- If EticaHub's order book goes offline, every signed order remains valid until its own deadline; users can submit directly to the Reactor or run their own keeper from `apps/keeper`.
+
+### 7.5 Protocol fee posture at v1
+
+The ETX-denominated fee hook is **deployed at 0 BPS**. There is no protocol take on any trade in v1. The reactor owner (currently the launch operator, rotating to the community multisig per the same schedule as `feeTo` in §5) can flip the fee on later — capped at 1% by the contract itself. When it flips on, the fee is denominated in ETX (every trade has an ETX leg thanks to hub-and-spoke), which routes all protocol revenue through an organic ETX buy rather than introducing a new fee currency.
+
+---
+
+## 8. Launchpad (Design Preview, Deferred to v2)
 
 A creator-gated token launchpad (`ProposalTokenFactory`) is **designed, implemented, and unit-tested in the repo**, but **deliberately not deployed on mainnet as part of v1**. It will be activated as v2, once the base DEX and ETX have established a reliable price and sufficient liquidity depth.
 
-### 7.1 Why
+### 8.1 Why
 
 A launchpad is most useful once (a) the ETX pool has real depth, (b) the ETI/ETX pool has real depth, and (c) the DEX has seen meaningful organic volume. Launching the launchpad simultaneously with ETX itself would create paper-thin pools for every proposal token and serve no one well. We ship base infrastructure first.
 
-### 7.2 Design summary (for v2 reference)
+### 8.2 Design summary (for v2 reference)
 
 | Aspect | Decision |
 |---|---|
@@ -177,11 +231,11 @@ A launchpad is most useful once (a) the ETX pool has real depth, (b) the ETI/ETX
 | Vesting | 90-day linear, via `ProposalTokenVesting` |
 | Pool-creation fee (factory) | Exempt (launchpad is in `trustedCreators` allow-list) |
 
-### 7.3 Why dual-pairing (token/ETX + token/ETI)
+### 8.3 Why dual-pairing (token/ETX + token/ETI)
 
 An earlier single-hub design (ETX-only) was rejected by the community on the grounds that every launched token would concentrate demand onto ETX at ETI's expense. The dual-pairing requirement makes every launch an ETI demand sink: each launch must supply at least 50 ETI plus a 250 ETI fee, and a `token/ETI` pool is opened alongside the `token/ETX` pool. The launchpad is structurally accretive to **both** ETX and ETI, not a dilutive substitute for ETI.
 
-### 7.4 v1 does not include
+### 8.4 v1 does not include
 
 - `/deploy/launchpad` page
 - `/launch/token` author-facing UI
@@ -192,7 +246,7 @@ All of the above are deferred. When activated, a separate announcement and docum
 
 ---
 
-## 8. Bridge (Phase 3, Contracts Ready, Launch Separate)
+## 9. Bridge (Phase 3, Contracts Ready, Launch Separate)
 
 A production-grade bridge stack (`EticaBridgeVault`, `EticaBridgeMinter`, `MultisigVerifier`, and a Node relayer with per-validator signers and a coordinator) exists in the repo. It is designed to move ETI/ERC-20 assets between Etica mainnet and external chains via a k-of-n multisig of independent validators.
 
@@ -200,7 +254,7 @@ The bridge has its own audit scope and operational requirements (validator recru
 
 ---
 
-## 9. Governance and Treasury
+## 10. Governance and Treasury
 
 ### 9.1 Treasury wallet
 
@@ -227,17 +281,17 @@ ETX itself has no admin — no pause, no mint, no blacklist, no upgrade. Governa
 
 ---
 
-## 10. Security
+## 11. Security
 
 - **Foundry test coverage:** 57 tests across swap, research, and launchpad contracts, all passing.
 - **Pinned dependencies:** OpenZeppelin v5.1.0 (pinned specifically to avoid Cancun-only `mcopy` on Etica's Paris-EVM).
 - **No upgradeability / no proxies:** Every contract is deployed at its final implementation. There is no upgrade path that could silently change logic.
 - **No admin mints:** ETX supply is fixed at deploy.
-- **No external audits at launch.** v1 ships without a third-party audit. Users should size their exposure accordingly. Audits are on the roadmap (§11) and will be announced once scoped.
+- **No external audits at launch.** v1 ships without a third-party audit. Users should size their exposure accordingly. Audits are on the roadmap (§12) and will be announced once scoped.
 
 ---
 
-## 11. Roadmap
+## 12. Roadmap
 
 Timeline is indicative, not committed.
 
@@ -249,7 +303,7 @@ Timeline is indicative, not committed.
 
 ---
 
-## 12. Risks
+## 13. Risks
 
 This section is non-exhaustive. ETX and EticaHub are **experimental software** and exposure should be sized accordingly.
 
@@ -261,7 +315,7 @@ This section is non-exhaustive. ETX and EticaHub are **experimental software** a
 
 ---
 
-## 13. FAQ
+## 14. FAQ
 
 **Is ETX the same as ETI?**
 No. ETI is Etica Protocol's native asset. ETX is EticaHub's own ERC-20, unrelated at the token level. They are connected only by the fact that EticaSwap trades them as the first-opened pool.
@@ -276,7 +330,7 @@ No. The team does not sell ETX. The only market is EticaSwap.
 Small FDV + low LP depth keeps the initial unit price small ($0.00001/ETX) and reflects that real distribution happens post-launch as volume arrives, not at genesis. We explicitly do not want to open at a large implied FDV with no capital behind it.
 
 **When does the launchpad open?**
-Not v1. See §7 and §11. No date committed.
+Not v1. See §8 and §12. No date committed.
 
 **Where is the code?**
 [https://github.com/iamdexx/etica-hub](https://github.com/iamdexx/etica-hub) — monorepo, MIT-licensed.

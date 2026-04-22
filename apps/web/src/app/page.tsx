@@ -11,6 +11,15 @@ const MODULES = [
     accent: 'from-emerald-500/30 to-emerald-700/10',
   },
   {
+    href: '/trade/ETI',
+    title: 'Trading',
+    subtitle: 'Limit · Stop · DCA · Grid · Infinity',
+    body:
+      'Non-custodial limit orders, stops, DCA schedules, and the Infinity Bot — an unbounded geometric grid that never structurally dies. Built on Permit2 + UniswapX.',
+    cta: 'Open trading',
+    accent: 'from-amber-500/30 to-amber-700/10',
+  },
+  {
     href: '/research',
     title: 'Research Hub',
     subtitle: 'Open-science proposal viewer',
@@ -68,7 +77,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="grid gap-6 md:grid-cols-3">
+      <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {MODULES.map((m) => (
           <Link
             key={m.href}
