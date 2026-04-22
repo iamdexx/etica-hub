@@ -287,3 +287,50 @@ export async function fetchIndexedPairSyncs(
   });
   return { rows, cursor };
 }
+
+export interface IndexedTokenTransferQuery {
+  /** ERC-20 contract address (either checksum or lowercase — normalized). */
+  token: string;
+  /** How many day-partitions to probe. Defaults to 30. */
+  days?: number;
+  /** Max rows to return (newest first). Applied after filtering. */
+  limit?: number;
+}
+
+/**
+ * Loads transfers emitted by a specific ERC-20 `token` contract from
+ * the indexer. Mirror of {@link fetchIndexedAddressTransfers} for the
+ * token-detail page's "recent transfers" list — shards are day-
+ * partitioned (not token-partitioned) so we filter client-side after
+ * fetching, same tradeoff as the address path.
+ *
+ * Returns null when the data branch is unavailable so callers can
+ * fall back to an RPC-only scan.
+ */
+export async function fetchIndexedTokenTransfers(
+  q: IndexedTokenTransferQuery,
+): Promise<{ rows: IndexedTransferRow[]; cursor: IndexedCursor } | null> {
+  const cursor = await fetchIndexedCursor();
+  if (!cursor) return null;
+
+  const needle = q.token.toLowerCase();
+  const keys = recentPartitionKeys(new Date(), q.days ?? DEFAULT_LOOKBACK_DAYS);
+  const shards = await Promise.all(
+    keys.map((k) => fetchPartition<IndexedTransferRow>('transfers', k)),
+  );
+
+  const rows: IndexedTransferRow[] = [];
+  for (const shard of shards) {
+    for (const r of shard) {
+      if (r.token === needle) rows.push(r);
+    }
+  }
+  rows.sort((a, b) => {
+    if (a.block !== b.block) return b.block - a.block;
+    return b.logIndex - a.logIndex;
+  });
+  return {
+    rows: q.limit ? rows.slice(0, q.limit) : rows,
+    cursor,
+  };
+}

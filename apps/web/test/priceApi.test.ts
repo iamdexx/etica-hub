@@ -333,3 +333,124 @@ describe('headBlockAgeSeconds', () => {
     expect(headBlockAgeSeconds(10_000_000, 0)).toBe(-86_400);
   });
 });
+
+// ------------------------------------------------------------------ //
+// loadSyncLogsForOhlcv
+// ------------------------------------------------------------------ //
+// Indexer-aware Sync-log loader used by the OHLCV route. Must:
+//   - Fall back to an RPC-only scan when the indexer cursor is
+//     missing.
+//   - Merge indexed rows + RPC tail, dedupe on (block, reserve0,
+//     reserve1), clip indexed rows to the requested block range.
+import { afterEach as _afterEach, describe as _describe, expect as _expect, it as _it, vi as _vi } from 'vitest';
+import type { PublicClient as _PublicClient } from 'viem';
+import { loadSyncLogsForOhlcv } from '../src/lib/priceApi';
+
+_describe('loadSyncLogsForOhlcv', () => {
+  const PAIR = '0xCCcCCcCCCcCCcccCcCcCCCcCcCccCcCcCccCCCCc' as const;
+  const ORIG_FETCH = globalThis.fetch;
+  _afterEach(() => {
+    globalThis.fetch = ORIG_FETCH;
+  });
+
+  _it('falls back to an RPC-only scan when the indexer is unavailable', async () => {
+    globalThis.fetch = (async () =>
+      ({ ok: false, status: 404 }) as Response) as typeof fetch;
+
+    const client = {
+      getLogs: _vi.fn().mockResolvedValue([
+        {
+          address: PAIR,
+          args: { reserve0: 100n, reserve1: 200n },
+          blockNumber: 500n,
+        },
+      ]),
+    } as unknown as _PublicClient;
+
+    const out = await loadSyncLogsForOhlcv(PAIR, 400n, 600n, client);
+    _expect(out).toHaveLength(1);
+    _expect(out[0]!.reserve0).toBe(100n);
+    _expect(out[0]!.reserve1).toBe(200n);
+  });
+
+  _it('merges indexed rows with RPC tail and filters by block range', async () => {
+    const cursor = {
+      lastBlock: 500,
+      chainId: 61803,
+      updatedAt: '2025-11-15T12:00:00Z',
+      runs: 1,
+      cumulative: { transfers: 0, syncs: 2 },
+    };
+    // Two indexed syncs in range, one outside the requested range.
+    const inRange = [
+      {
+        block: 450,
+        ts: 1700000000,
+        tx: '0xidx1',
+        logIndex: 0,
+        pair: PAIR.toLowerCase(),
+        reserve0: '1000',
+        reserve1: '2000',
+      },
+      {
+        block: 480,
+        ts: 1700000100,
+        tx: '0xidx2',
+        logIndex: 1,
+        pair: PAIR.toLowerCase(),
+        reserve0: '1100',
+        reserve1: '2100',
+      },
+    ];
+    const outOfRange = [
+      {
+        block: 300, // below the requested fromBlock
+        ts: 1699000000,
+        tx: '0xoob',
+        logIndex: 0,
+        pair: PAIR.toLowerCase(),
+        reserve0: '1',
+        reserve1: '1',
+      },
+    ];
+    const allRows = [...inRange, ...outOfRange];
+    const body = allRows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/cursor.json')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(cursor),
+          json: async () => cursor,
+        } as Response;
+      }
+      if (url.endsWith('.jsonl')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => body,
+        } as Response;
+      }
+      return { ok: false, status: 404 } as Response;
+    }) as typeof fetch;
+
+    // RPC tail scan returns one newer sync at block 550 (past cursor 500).
+    const client = {
+      getLogs: _vi.fn().mockResolvedValue([
+        {
+          address: PAIR,
+          args: { reserve0: 1200n, reserve1: 2200n },
+          blockNumber: 550n,
+        },
+      ]),
+    } as unknown as _PublicClient;
+
+    const out = await loadSyncLogsForOhlcv(PAIR, 400n, 600n, client);
+    const blocks = out.map((r) => r.blockNumber?.toString()).sort();
+    _expect(blocks).toEqual(['450', '480', '550']);
+    // Out-of-range row must NOT appear.
+    _expect(blocks).not.toContain('300');
+  });
+});

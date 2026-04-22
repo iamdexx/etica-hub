@@ -9,10 +9,9 @@ import {
   shortHash,
 } from '@/lib/explorer';
 import {
-  TOKEN_LOG_SCAN_BLOCKS,
   formatTokenAmount,
+  loadTokenRecentTransfers,
   readTokenMetadata,
-  scanRecentTransfers,
   uniqueAddressesFromTransfers,
   type TokenTransfer,
 } from '@/lib/token';
@@ -77,8 +76,11 @@ export default async function TokenPage({ params }: TokenPageProps) {
   }
 
   // This is a real ERC-20. Pull the transfer window and verified manifest.
+  // `loadTokenRecentTransfers` prefers the indexer (weeks of history) and
+  // falls back to a pure RPC window when the data branch is missing, so
+  // the page renders something useful in both states.
   const [transfers, verified] = await Promise.all([
-    scanRecentTransfers(client, addr, head),
+    loadTokenRecentTransfers(client, addr, head),
     Promise.resolve(loadVerified(addr)),
   ]);
   const uniqueAddrs = uniqueAddressesFromTransfers(transfers);
@@ -124,7 +126,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
           {formatTokenAmount(metadata.totalSupply, metadata.decimals)} {metadata.symbol}
         </Field>
         <Field label="Decimals">{metadata.decimals}</Field>
-        <Field label={`Active addresses (last ${TOKEN_LOG_SCAN_BLOCKS.toString()} blocks)`}>
+        <Field label="Active addresses (recent window)">
           {uniqueAddrs > 0 ? uniqueAddrs.toLocaleString() : '—'}
         </Field>
         <Field label="Contract">
@@ -142,14 +144,11 @@ export default async function TokenPage({ params }: TokenPageProps) {
       <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Recent transfers</h2>
-          <span className="text-xs text-white/40">
-            last {TOKEN_LOG_SCAN_BLOCKS.toString()} blocks
-          </span>
+          <span className="text-xs text-white/40">newest first</span>
         </div>
         {transfers.length === 0 ? (
           <p className="text-sm text-white/50">
-            No Transfer events in the last {TOKEN_LOG_SCAN_BLOCKS.toString()} blocks.
-            Older history requires an indexer (not shipped in v1).
+            No Transfer events found for this token yet.
           </p>
         ) : (
           <ul className="space-y-2">

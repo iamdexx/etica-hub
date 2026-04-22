@@ -29,6 +29,7 @@ import {
   type PublicClient,
 } from 'viem';
 import { abis, DEPLOYMENTS, EXTERNAL_ADDRESSES, eticaMainnet } from '@etica-hub/shared';
+import { fetchIndexedPairSyncs } from './explorerIndex';
 
 const MAINNET_CHAIN_ID = 61803;
 const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000';
@@ -487,6 +488,85 @@ export async function fetchSyncLogs(
       if (pageSize < LOGS_PAGE_BLOCKS_MIN) pageSize = LOGS_PAGE_BLOCKS_MIN;
     }
   }
+  return out;
+}
+
+/**
+ * Hard cap on the RPC tail-scan window when the indexer cursor has
+ * fallen behind. Matches the widest single `eth_getLogs` window any
+ * other part of the explorer uses, so worst-case behaviour is
+ * bounded even if the cron has been down for hours.
+ */
+const SYNC_TAIL_MAX_BLOCKS = 10_000n;
+
+export interface SyncLog {
+  blockNumber: bigint | null;
+  reserve0: bigint;
+  reserve1: bigint;
+}
+
+/**
+ * Indexer-aware Sync-log loader. Reads historical syncs for `pair`
+ * from the indexer's `data-index` branch and RPC-scans the tail
+ * between the indexer cursor and `toBlock` so recent ticks appear
+ * without waiting on the next cron. Dedupes on
+ * `(blockNumber, reserve0, reserve1)` — a pair emitting multiple
+ * Syncs in the same block with identical reserves (e.g. two pokes
+ * in the same tx) is rare enough that treating them as one row is
+ * fine for charting.
+ *
+ * When the indexer is unavailable (data branch missing, network
+ * error) falls back to the plain RPC scan so charts still render
+ * for the short-range windows the OHLCV route asks for.
+ */
+export async function loadSyncLogsForOhlcv(
+  pair: Address,
+  fromBlock: bigint,
+  toBlock: bigint,
+  client: PublicClient = priceClient(),
+): Promise<SyncLog[]> {
+  // Probe the indexer over a comfortable lookback window. OHLCV requests
+  // bounded by `limit * intervalSeconds`, so the widest realistic ask
+  // (500 candles × 1d) is ~500 days; we cap at 365 which covers anything
+  // aggregators actually poll for while keeping the JSONL fan-out sane.
+  const indexed = await fetchIndexedPairSyncs(pair.toLowerCase(), 365);
+  if (!indexed) {
+    return fetchSyncLogs(pair, fromBlock, toBlock, client);
+  }
+  const cursorBlock = BigInt(indexed.cursor.lastBlock);
+  const resumeFrom = cursorBlock + 1n > fromBlock ? cursorBlock + 1n : fromBlock;
+  const tailFloor = toBlock > SYNC_TAIL_MAX_BLOCKS ? toBlock - SYNC_TAIL_MAX_BLOCKS : 0n;
+  const tailFrom = resumeFrom > tailFloor ? resumeFrom : tailFloor;
+  const tail: SyncLog[] =
+    tailFrom <= toBlock ? await fetchSyncLogs(pair, tailFrom, toBlock, client) : [];
+
+  const seen = new Set<string>();
+  const out: SyncLog[] = [];
+  for (const row of tail) {
+    const key = `${row.blockNumber?.toString() ?? 'x'}:${row.reserve0}:${row.reserve1}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  for (const r of indexed.rows) {
+    const bn = BigInt(r.block);
+    if (bn < fromBlock || bn > toBlock) continue;
+    const row: SyncLog = {
+      blockNumber: bn,
+      reserve0: BigInt(r.reserve0),
+      reserve1: BigInt(r.reserve1),
+    };
+    const key = `${bn.toString()}:${row.reserve0}:${row.reserve1}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  out.sort((a, b) => {
+    const ax = a.blockNumber ?? 0n;
+    const bx = b.blockNumber ?? 0n;
+    if (ax === bx) return 0;
+    return ax < bx ? -1 : 1;
+  });
   return out;
 }
 
