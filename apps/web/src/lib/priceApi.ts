@@ -24,6 +24,7 @@ import {
   http,
   getAddress,
   isAddress,
+  parseAbiItem,
   type Address,
   type PublicClient,
 } from 'viem';
@@ -389,4 +390,178 @@ export function jsonResponse(body: unknown, init?: ResponseInit): Response {
 
 export function jsonError(status: number, message: string, extra: Record<string, unknown> = {}): Response {
   return jsonResponse({ error: message, ...extra }, { status });
+}
+
+// ---- OHLCV candles from Sync events --------------------------------------
+
+/**
+ * Supported candle intervals. Values are seconds-per-candle, keys are the
+ * user-facing query parameter accepted by `/api/v1/ohlcv/{pair}?interval=…`.
+ */
+export const OHLCV_INTERVALS = {
+  '5m': 5 * 60,
+  '15m': 15 * 60,
+  '1h': 60 * 60,
+  '4h': 4 * 60 * 60,
+  '1d': 24 * 60 * 60,
+} as const;
+export type OhlcvInterval = keyof typeof OHLCV_INTERVALS;
+
+/** Etica's ~5s blocktime, used to estimate a block range from a time range. */
+export const ETICA_AVG_BLOCKTIME_SECONDS = 5;
+
+/** Max candles returned in one response. Keeps worst-case payload bounded. */
+export const OHLCV_MAX_CANDLES = 500;
+export const OHLCV_DEFAULT_CANDLES = 100;
+
+/** Pair `Sync(uint112, uint112)` event — same signature as Uniswap V2. */
+export const SYNC_EVENT = parseAbiItem('event Sync(uint112 reserve0, uint112 reserve1)');
+
+/** Upper bound on blocks per getLogs page. Most RPCs cap at 10k. */
+const LOGS_PAGE_BLOCKS_DEFAULT = 10_000n;
+const LOGS_PAGE_BLOCKS_MIN = 500n;
+
+export interface SyncSample {
+  /** Unix seconds, estimated from block number if the log didn't carry it. */
+  timestamp: number;
+  /** Price of `base` denominated in `quote` at this sync. */
+  price: number;
+}
+
+export interface Candle {
+  /** Unix seconds of the bucket start. */
+  t: number;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  /** Sync-event count in this bucket. Proxy for trade activity until we ship true volume. */
+  samples: number;
+}
+
+/**
+ * Fetch raw `Sync` logs for `pair` between `[fromBlock, toBlock]`, paginated
+ * with exponential backoff on RPC range errors. Mirrors the client-side
+ * backfill the chart uses (see `OnChainPriceChart.tsx`) but runs on the
+ * server so the response can be cached at the CDN and shared across
+ * clients.
+ */
+export async function fetchSyncLogs(
+  pair: Address,
+  fromBlock: bigint,
+  toBlock: bigint,
+  client: PublicClient = priceClient(),
+): Promise<
+  Array<{
+    blockNumber: bigint | null;
+    reserve0: bigint;
+    reserve1: bigint;
+  }>
+> {
+  const out: Array<{ blockNumber: bigint | null; reserve0: bigint; reserve1: bigint }> = [];
+  let pageSize = LOGS_PAGE_BLOCKS_DEFAULT;
+  let cursor = fromBlock;
+  while (cursor <= toBlock) {
+    const end = cursor + pageSize - 1n > toBlock ? toBlock : cursor + pageSize - 1n;
+    try {
+      const logs = await client.getLogs({
+        address: pair,
+        event: SYNC_EVENT,
+        fromBlock: cursor,
+        toBlock: end,
+      });
+      for (const log of logs) {
+        const r0 = log.args.reserve0;
+        const r1 = log.args.reserve1;
+        if (r0 == null || r1 == null) continue;
+        out.push({
+          blockNumber: log.blockNumber ?? null,
+          reserve0: r0,
+          reserve1: r1,
+        });
+      }
+      cursor = end + 1n;
+    } catch (err) {
+      if (pageSize <= LOGS_PAGE_BLOCKS_MIN) throw err;
+      pageSize = pageSize / 2n;
+      if (pageSize < LOGS_PAGE_BLOCKS_MIN) pageSize = LOGS_PAGE_BLOCKS_MIN;
+    }
+  }
+  return out;
+}
+
+/**
+ * Turn a sorted list of `Sync` samples into OHLC candles bucketed at
+ * `intervalSeconds`. `from` and `to` are inclusive unix-second bounds. The
+ * result always contains `Math.floor((to - from) / intervalSeconds) + 1`
+ * slots; buckets with no samples inherit the previous close (so the chart
+ * line is continuous — mirrors how exchanges render empty candles).
+ *
+ * Exported for unit testing. The public route handler calls this on the
+ * output of `fetchSyncLogs` + `spotPriceFromReserves`.
+ */
+export function aggregateCandles(
+  samples: SyncSample[],
+  intervalSeconds: number,
+  from: number,
+  to: number,
+): Candle[] {
+  if (intervalSeconds <= 0) return [];
+  if (to < from) return [];
+  const firstBucket = Math.floor(from / intervalSeconds) * intervalSeconds;
+  const lastBucket = Math.floor(to / intervalSeconds) * intervalSeconds;
+  const bucketCount = Math.floor((lastBucket - firstBucket) / intervalSeconds) + 1;
+
+  const sorted = samples.slice().sort((a, b) => a.timestamp - b.timestamp);
+
+  const candles: Candle[] = [];
+  let prevClose: number | null = null;
+  let cursor = 0;
+  for (let i = 0; i < bucketCount; i += 1) {
+    const bucketStart = firstBucket + i * intervalSeconds;
+    const bucketEnd = bucketStart + intervalSeconds;
+    let o: number | null = null;
+    let h: number | null = null;
+    let l: number | null = null;
+    let c: number | null = null;
+    let count = 0;
+    while (cursor < sorted.length && sorted[cursor].timestamp < bucketEnd) {
+      const s = sorted[cursor];
+      if (s.timestamp < bucketStart) {
+        // Any sample predating the window advances prevClose so the first
+        // real bucket inherits a sensible open instead of 0.
+        prevClose = s.price;
+        cursor += 1;
+        continue;
+      }
+      if (o == null) o = s.price;
+      if (h == null || s.price > h) h = s.price;
+      if (l == null || s.price < l) l = s.price;
+      c = s.price;
+      count += 1;
+      cursor += 1;
+    }
+    if (o == null) {
+      if (prevClose == null) continue; // no baseline yet — drop the bucket
+      candles.push({ t: bucketStart, o: prevClose, h: prevClose, l: prevClose, c: prevClose, samples: 0 });
+    } else {
+      // Guaranteed non-null below because `o` was set in the loop above.
+      const open = o;
+      const high = h ?? open;
+      const low = l ?? open;
+      const close = c ?? open;
+      candles.push({ t: bucketStart, o: open, h: high, l: low, c: close, samples: count });
+      prevClose = close;
+    }
+  }
+  return candles;
+}
+
+// ---- health --------------------------------------------------------------
+
+/** Head-block age in seconds relative to wall-clock, capped at ±1 day. */
+export function headBlockAgeSeconds(headTimestampSeconds: number, now: number = Math.floor(Date.now() / 1000)): number {
+  const delta = now - headTimestampSeconds;
+  const capped = Math.max(-86_400, Math.min(86_400, delta));
+  return capped;
 }
