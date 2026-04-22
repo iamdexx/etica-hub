@@ -6,3 +6,4 @@ export { wegazAbi } from './wegaz';
 export { eticaCoreAbi, ProposalStatus, PROPOSAL_STATUS_LABEL } from './eticaCore';
 export { researchSubscriptionAbi } from './researchSubscription';
 export { permit2Abi } from './permit2';
+export { stakedEtxAbi } from './stakedEtx';
