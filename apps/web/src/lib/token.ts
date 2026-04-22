@@ -13,6 +13,10 @@ import {
   type PublicClient,
 } from 'viem';
 import { abis } from '@etica-hub/shared';
+import {
+  fetchIndexedAddressTransfers,
+  type IndexedTransferRow,
+} from './explorerIndex';
 
 /**
  * Width of the Transfer-log scan window for the token detail page. Same
@@ -176,9 +180,17 @@ export async function scanAddressTokenTransfers(
   client: PublicClient,
   address: Address,
   head: bigint,
+  /**
+   * Optional override for the scan start block. Defaults to
+   * `head - TOKEN_LOG_SCAN_BLOCKS` for standalone use; the indexer-
+   * backed path passes a small tail window (~200 blocks) so the RPC
+   * call only covers what the cron hasn't indexed yet.
+   */
+  fromBlockOverride?: bigint,
 ): Promise<AddressTokenTransfer[]> {
   const fromBlock =
-    head > TOKEN_LOG_SCAN_BLOCKS ? head - TOKEN_LOG_SCAN_BLOCKS : 0n;
+    fromBlockOverride ??
+    (head > TOKEN_LOG_SCAN_BLOCKS ? head - TOKEN_LOG_SCAN_BLOCKS : 0n);
   try {
     const [outbound, inbound] = await Promise.all([
       client.getLogs({
@@ -223,6 +235,83 @@ export async function scanAddressTokenTransfers(
   } catch {
     return [];
   }
+}
+
+/**
+ * Width of the tail-window RPC scan done on top of indexer data. Covers
+ * the gap between the last cron tick and `head`. Capped small because
+ * any given address is very unlikely to have multiple transfers per
+ * ~10-minute window on Etica; the bounded scan also protects us if the
+ * cursor falls very far behind (e.g. the cron was down for hours).
+ */
+export const TAIL_SCAN_BLOCKS = 200n;
+
+/**
+ * Indexer-backed variant of {@link scanAddressTokenTransfers}.
+ *
+ * Strategy:
+ *   1. Try to read the indexer's `data-index` branch for `address`.
+ *      Returns rows from potentially weeks of history, not just the
+ *      last 5000 blocks.
+ *   2. Scan the last `TAIL_SCAN_BLOCKS` blocks up to `head` via RPC to
+ *      cover the gap between the cron's last tick and now. Deduped
+ *      against the indexed rows on `(txHash, logIndex)`.
+ *   3. If the indexer is unavailable (data branch missing, network
+ *      error, etc.), fall back to the existing RPC-only scan so the
+ *      UI still renders. This means shipping this code is safe even
+ *      before the cron has produced any data.
+ *
+ * Returns at most {@link TOKEN_TRANSFERS_PAGE} rows newest-first. The
+ * shape matches `scanAddressTokenTransfers` so callers upgrade with a
+ * single-line rename.
+ */
+export async function loadAddressTokenTransfers(
+  client: PublicClient,
+  address: Address,
+  head: bigint,
+): Promise<AddressTokenTransfer[]> {
+  const indexed = await fetchIndexedAddressTransfers({
+    address: address.toLowerCase(),
+  });
+  if (!indexed) {
+    return scanAddressTokenTransfers(client, address, head);
+  }
+  const tailFrom =
+    head > TAIL_SCAN_BLOCKS ? head - TAIL_SCAN_BLOCKS : 0n;
+  const tail = await scanAddressTokenTransfers(client, address, head, tailFrom);
+
+  const seen = new Set<string>();
+  const merged: AddressTokenTransfer[] = [];
+  for (const t of tail) {
+    const key = `${t.txHash.toLowerCase()}:${t.logIndex}`;
+    seen.add(key);
+    merged.push(t);
+  }
+  for (const r of indexed.rows) {
+    const key = `${r.tx}:${r.logIndex}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(indexedToAddressTransfer(r));
+  }
+  merged.sort((a, b) => {
+    if (a.blockNumber !== b.blockNumber) {
+      return a.blockNumber < b.blockNumber ? 1 : -1;
+    }
+    return b.logIndex - a.logIndex;
+  });
+  return merged.slice(0, TOKEN_TRANSFERS_PAGE);
+}
+
+function indexedToAddressTransfer(r: IndexedTransferRow): AddressTokenTransfer {
+  return {
+    token: getAddress(r.token),
+    from: getAddress(r.from),
+    to: getAddress(r.to),
+    value: BigInt(r.value),
+    txHash: r.tx as `0x${string}`,
+    blockNumber: BigInt(r.block),
+    logIndex: r.logIndex,
+  };
 }
 
 export interface TokenInfo {

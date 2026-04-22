@@ -16,9 +16,9 @@ import { ContractInteractionView } from '@/components/explorer/ContractInteracti
 import {
   TOKEN_LOG_SCAN_BLOCKS,
   formatTokenAmount,
+  loadAddressTokenTransfers,
   readTokenMetadata,
   resolveTokenInfos,
-  scanAddressTokenTransfers,
   type AddressTokenTransfer,
 } from '@/lib/token';
 
@@ -103,7 +103,7 @@ export default async function AddressPage({ params }: AddressPageProps) {
   // probe metadata once per unique emitting contract.
   const [recent, tokenTransfers] = await Promise.all([
     scanRecentTxs(client, addr, head),
-    scanAddressTokenTransfers(client, addr, head),
+    loadAddressTokenTransfers(client, addr, head),
   ]);
   const tokenInfos = await resolveTokenInfos(
     client,
