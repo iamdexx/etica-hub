@@ -37,6 +37,12 @@ export interface BuyBotConfig {
   kvRestUrl: string | null;
   kvRestToken: string | null;
   /**
+   * TCP Redis connection string (`redis://` / `rediss://`). Used when the
+   * HTTP REST variables are not set — covers Vercel Marketplace Redis
+   * (Redis Cloud), self-hosted Redis, and ElastiCache.
+   */
+  redisUrl: string | null;
+  /**
    * Namespace for the KV keys this bot owns, so different deployments sharing
    * a KV instance don't stomp on each other.
    */
@@ -92,6 +98,7 @@ export function loadBuyBotConfig(env: NodeJS.ProcessEnv = process.env): BuyBotCo
     nonkycApiUrl: env.BUYBOT_NONKYC_API_URL ?? 'https://api.nonkyc.io',
     kvRestUrl: env.KV_REST_API_URL ?? env.UPSTASH_REDIS_REST_URL ?? null,
     kvRestToken: env.KV_REST_API_TOKEN ?? env.UPSTASH_REDIS_REST_TOKEN ?? null,
+    redisUrl: env.REDIS_URL ?? null,
     kvNamespace: env.BUYBOT_KV_NAMESPACE ?? 'buybot:v1',
   };
 }

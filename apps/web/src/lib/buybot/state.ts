@@ -13,6 +13,8 @@
  * production, so `/api/cron/buybot` refuses to run in production without KV.
  */
 
+import { Redis } from 'ioredis';
+
 import type { BuyBotConfig } from './config';
 
 export interface KvStore {
@@ -65,6 +67,39 @@ export function restKv(url: string, token: string): KvStore {
   };
 }
 
+/**
+ * TCP Redis driver (`redis://` / `rediss://`) built on `ioredis`. Works
+ * against any RESP-speaking Redis (Redis Cloud, Upstash TCP, ElastiCache,
+ * self-hosted). Connections are created lazily and reused per config url;
+ * `ioredis` handles TLS upgrade for `rediss://` automatically.
+ */
+const tcpClients = new Map<string, Redis>();
+export function tcpKv(url: string): KvStore {
+  let client = tcpClients.get(url);
+  if (!client) {
+    client = new Redis(url, {
+      lazyConnect: false,
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: true,
+    });
+    tcpClients.set(url, client);
+  }
+  const conn = client;
+  return {
+    async get(key) {
+      const v = await conn.get(key);
+      return v ?? null;
+    },
+    async set(key, value) {
+      await conn.set(key, value);
+    },
+    async setIfAbsent(key, value, ttlSeconds) {
+      const result = await conn.set(key, value, 'EX', ttlSeconds, 'NX');
+      return result === 'OK';
+    },
+  };
+}
+
 /** In-memory KV used for unit tests and missing-credential fallback. */
 export function memoryKv(seed: Record<string, string> = {}): KvStore {
   const m = new Map<string, string>(Object.entries(seed));
@@ -84,8 +119,13 @@ export function memoryKv(seed: Record<string, string> = {}): KvStore {
 }
 
 export function kvFor(config: BuyBotConfig): KvStore | null {
-  if (!config.kvRestUrl || !config.kvRestToken) return null;
-  return restKv(config.kvRestUrl, config.kvRestToken);
+  if (config.kvRestUrl && config.kvRestToken) {
+    return restKv(config.kvRestUrl, config.kvRestToken);
+  }
+  if (config.redisUrl) {
+    return tcpKv(config.redisUrl);
+  }
+  return null;
 }
 
 /** Last-scanned block key, namespaced by deployment. */
