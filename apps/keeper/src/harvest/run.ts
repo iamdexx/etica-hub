@@ -460,7 +460,7 @@ async function runDelegation(args: RunDelegationArgs): Promise<HarvestRunResult>
   try {
     const hash = await wallet.writeContract({
       chain: null,
-      account: account.address,
+      account,
       address: harvester,
       abi: abis.treasuryHarvesterAbi,
       functionName: 'harvest',
