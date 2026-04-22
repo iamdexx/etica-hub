@@ -1,0 +1,382 @@
+{
+  "address": "0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9",
+  "name": "OrderRegistry",
+  "compilerVersion": "0.8.29+commit.ab55807c",
+  "optimizer": {
+    "enabled": true,
+    "runs": 1000000
+  },
+  "evmVersion": "prague",
+  "sources": {
+    "src/OrderRegistry.sol": {
+      "content": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\n/// @title  OrderRegistry\n/// @notice Permissionless on-chain registry for signed UniswapX orders.\n///\n///         Swappers call {postOrder} (or {postOrderBatch}) to publish signed\n///         DutchOrders on-chain. Keepers discover work by subscribing to\n///         {OrderPosted} logs and submit fills via the reactor in the normal\n///         UniswapX flow; the registry never touches funds and never talks to\n///         Permit2 or the reactor.\n///\n///         The registry is **fully permissionless**: there is no owner, no\n///         pausing, no censorship surface. Anyone can post anything (they pay\n///         gas). Orders with invalid signatures will simply fail at the\n///         reactor when a keeper tries to fill them and are effectively\n///         filtered out by the keeper's simulation step. Registry-level\n///         cancellation is a convenience signal for keepers to skip an order;\n///         the authoritative cancellation is still on-chain nonce\n///         invalidation via Permit2 (or the order's deadline lapsing).\n///\n///         Designed to be trivially upgradeable by redeploying — keepers\n///         discover the active registry from `DEPLOYMENTS.orderRegistry` in\n///         the frontend, so migration is a single address change.\ncontract OrderRegistry {\n    /// @notice Strategy flavor tag, matched to the off-chain orderbook's\n    ///         `strategyType` enum. Keepers read this to decide whether\n    ///         extra trigger gating applies (e.g. stop orders sleep until\n    ///         their trigger fires).\n    enum Strategy {\n        LIMIT,\n        STOP,\n        DCA,\n        GRID\n    }\n\n    /// @notice Per-order metadata. Packs tightly: one 32-byte slot for the\n    ///         scalar fields + two dynamic 32-byte slots for prices + one\n    ///         slot for the batch id. Fields that don't apply to the current\n    ///         strategy (e.g. `triggerPrice` on a limit order) must be zero.\n    struct OrderMeta {\n        Strategy strategy;\n        /// @dev 0 = lte (stop-loss fires when price ≤ trigger), 1 = gte. Only meaningful for STOP.\n        uint8 triggerDirection;\n        /// @dev 0-based position within a DCA / GRID batch. Zero for LIMIT / STOP.\n        uint16 indexInBatch;\n        /// @dev Total legs / levels in the batch. Zero for LIMIT / STOP.\n        uint16 totalInBatch;\n        /// @dev Shared identifier across every leg of a DCA / GRID batch. Zero for LIMIT / STOP.\n        bytes32 batchId;\n        /// @dev ETX-per-base * 1e18, only set for STOP.\n        uint256 triggerPrice;\n        /// @dev ETX-per-base * 1e18 for this specific GRID level. Zero for LIMIT / STOP / DCA.\n        uint256 levelPrice;\n    }\n\n    /// @notice Stored order record. Indexed by the keccak256 of the raw\n    ///         encoded order (which is stable for a given DutchOrder because\n    ///         the reactor hashes the same bytes during execution).\n    struct StoredOrder {\n        bytes encodedOrder;\n        bytes signature;\n        /// @dev Address that called {postOrder}. Only this address can mark\n        ///      the order cancelled at the registry layer. Typically the\n        ///      swapper themselves, but relayers are possible.\n        address poster;\n        /// @dev Timestamp the order was posted at. Useful for ordering in\n        ///      keeper indexes.\n        uint64 postedAt;\n        /// @dev Set when the poster explicitly cancels via {cancelOrder}.\n        bool cancelled;\n    }\n\n    /// @notice Canonical `keccak256(encodedOrder)` → stored order.\n    mapping(bytes32 => StoredOrder) private _orders;\n\n    /// @notice Emitted once per newly-posted order. Keepers subscribe to\n    ///         this event to discover fresh work. The full encodedOrder +\n    ///         signature are emitted in-band so an indexer-less keeper can\n    ///         reconstruct everything it needs from the log.\n    event OrderPosted(\n        bytes32 indexed orderHash,\n        address indexed poster,\n        Strategy indexed strategy,\n        bytes encodedOrder,\n        bytes signature,\n        OrderMeta meta\n    );\n\n    /// @notice Emitted when the original poster flags an order as cancelled.\n    event OrderCancelled(bytes32 indexed orderHash, address indexed poster);\n\n    error OrderAlreadyPosted();\n    error OrderNotFound();\n    error NotPoster();\n    error EmptyOrder();\n    error EmptySignature();\n    error BatchLengthMismatch();\n    error EmptyBatch();\n\n    /// @notice Post a single signed order.\n    /// @param encodedOrder The abi-encoded UniswapX DutchOrder bytes.\n    /// @param signature The EIP-712 signature over the order's Permit2 witness.\n    /// @param meta Strategy flavor + optional trigger / batch metadata.\n    /// @return orderHash Canonical `keccak256(encodedOrder)` identifier.\n    function postOrder(bytes calldata encodedOrder, bytes calldata signature, OrderMeta calldata meta)\n        external\n        returns (bytes32 orderHash)\n    {\n        orderHash = _post(encodedOrder, signature, meta);\n    }\n\n    /// @notice Post a batch of signed orders in a single transaction. Each\n    ///         order is independent — ordering within the batch only affects\n    ///         gas layout, not execution semantics. Useful for DCA / grid\n    ///         strategies that pre-sign N orders and want to publish them\n    ///         atomically.\n    /// @return orderHashes Canonical hashes for each posted order, in input order.\n    function postOrderBatch(bytes[] calldata encodedOrders, bytes[] calldata signatures, OrderMeta[] calldata metas)\n        external\n        returns (bytes32[] memory orderHashes)\n    {\n        uint256 n = encodedOrders.length;\n        if (n == 0) revert EmptyBatch();\n        if (signatures.length != n || metas.length != n) revert BatchLengthMismatch();\n        orderHashes = new bytes32[](n);\n        for (uint256 i = 0; i < n; i++) {\n            orderHashes[i] = _post(encodedOrders[i], signatures[i], metas[i]);\n        }\n    }\n\n    /// @notice Flag an order as cancelled at the registry layer.\n    /// @dev Only callable by the original poster. Does NOT invalidate the\n    ///      order on-chain (Permit2 still accepts the signature); keepers\n    ///      honour this flag by refusing to submit, but anyone can still\n    ///      call the reactor directly if they ignore the registry. For\n    ///      authoritative cancellation, call Permit2's `invalidateNonces`.\n    function cancelOrder(bytes32 orderHash) external {\n        StoredOrder storage o = _orders[orderHash];\n        if (o.poster == address(0)) revert OrderNotFound();\n        if (o.poster != msg.sender) revert NotPoster();\n        o.cancelled = true;\n        emit OrderCancelled(orderHash, msg.sender);\n    }\n\n    /// @notice Read a stored order. Reverts with {OrderNotFound} if never posted.\n    function getOrder(bytes32 orderHash) external view returns (StoredOrder memory) {\n        StoredOrder memory o = _orders[orderHash];\n        if (o.poster == address(0)) revert OrderNotFound();\n        return o;\n    }\n\n    /// @notice Whether a given order has been posted (regardless of cancellation state).\n    function exists(bytes32 orderHash) external view returns (bool) {\n        return _orders[orderHash].poster != address(0);\n    }\n\n    /// @notice Whether a given order is cancelled. Returns false for unknown / never-posted hashes.\n    function isCancelled(bytes32 orderHash) external view returns (bool) {\n        return _orders[orderHash].cancelled;\n    }\n\n    function _post(bytes calldata encodedOrder, bytes calldata signature, OrderMeta calldata meta)\n        private\n        returns (bytes32 orderHash)\n    {\n        if (encodedOrder.length == 0) revert EmptyOrder();\n        if (signature.length == 0) revert EmptySignature();\n        orderHash = keccak256(encodedOrder);\n        StoredOrder storage slot = _orders[orderHash];\n        if (slot.poster != address(0)) revert OrderAlreadyPosted();\n        slot.encodedOrder = encodedOrder;\n        slot.signature = signature;\n        slot.poster = msg.sender;\n        slot.postedAt = uint64(block.timestamp);\n        emit OrderPosted(orderHash, msg.sender, meta.strategy, encodedOrder, signature, meta);\n    }\n}\n"
+    }
+  },
+  "abi": [
+    {
+      "type": "function",
+      "name": "cancelOrder",
+      "inputs": [
+        {
+          "name": "orderHash",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "exists",
+      "inputs": [
+        {
+          "name": "orderHash",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "getOrder",
+      "inputs": [
+        {
+          "name": "orderHash",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "tuple",
+          "internalType": "struct OrderRegistry.StoredOrder",
+          "components": [
+            {
+              "name": "encodedOrder",
+              "type": "bytes",
+              "internalType": "bytes"
+            },
+            {
+              "name": "signature",
+              "type": "bytes",
+              "internalType": "bytes"
+            },
+            {
+              "name": "poster",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "postedAt",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "cancelled",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ]
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "isCancelled",
+      "inputs": [
+        {
+          "name": "orderHash",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "postOrder",
+      "inputs": [
+        {
+          "name": "encodedOrder",
+          "type": "bytes",
+          "internalType": "bytes"
+        },
+        {
+          "name": "signature",
+          "type": "bytes",
+          "internalType": "bytes"
+        },
+        {
+          "name": "meta",
+          "type": "tuple",
+          "internalType": "struct OrderRegistry.OrderMeta",
+          "components": [
+            {
+              "name": "strategy",
+              "type": "uint8",
+              "internalType": "enum OrderRegistry.Strategy"
+            },
+            {
+              "name": "triggerDirection",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "indexInBatch",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "totalInBatch",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "batchId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "triggerPrice",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "levelPrice",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "orderHash",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "postOrderBatch",
+      "inputs": [
+        {
+          "name": "encodedOrders",
+          "type": "bytes[]",
+          "internalType": "bytes[]"
+        },
+        {
+          "name": "signatures",
+          "type": "bytes[]",
+          "internalType": "bytes[]"
+        },
+        {
+          "name": "metas",
+          "type": "tuple[]",
+          "internalType": "struct OrderRegistry.OrderMeta[]",
+          "components": [
+            {
+              "name": "strategy",
+              "type": "uint8",
+              "internalType": "enum OrderRegistry.Strategy"
+            },
+            {
+              "name": "triggerDirection",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "indexInBatch",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "totalInBatch",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "batchId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "triggerPrice",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "levelPrice",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "orderHashes",
+          "type": "bytes32[]",
+          "internalType": "bytes32[]"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "event",
+      "name": "OrderCancelled",
+      "inputs": [
+        {
+          "name": "orderHash",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "poster",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "OrderPosted",
+      "inputs": [
+        {
+          "name": "orderHash",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "poster",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "strategy",
+          "type": "uint8",
+          "indexed": true,
+          "internalType": "enum OrderRegistry.Strategy"
+        },
+        {
+          "name": "encodedOrder",
+          "type": "bytes",
+          "indexed": false,
+          "internalType": "bytes"
+        },
+        {
+          "name": "signature",
+          "type": "bytes",
+          "indexed": false,
+          "internalType": "bytes"
+        },
+        {
+          "name": "meta",
+          "type": "tuple",
+          "indexed": false,
+          "internalType": "struct OrderRegistry.OrderMeta",
+          "components": [
+            {
+              "name": "strategy",
+              "type": "uint8",
+              "internalType": "enum OrderRegistry.Strategy"
+            },
+            {
+              "name": "triggerDirection",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "indexInBatch",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "totalInBatch",
+              "type": "uint16",
+              "internalType": "uint16"
+            },
+            {
+              "name": "batchId",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "triggerPrice",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "levelPrice",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "error",
+      "name": "BatchLengthMismatch",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "EmptyBatch",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "EmptyOrder",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "EmptySignature",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "NotPoster",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "OrderAlreadyPosted",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "OrderNotFound",
+      "inputs": []
+    }
+  ],
+  "verifiedAt": "2026-04-22T03:37:48.864Z",
+  "bytecodeMatch": "with-metadata-hash"
+}

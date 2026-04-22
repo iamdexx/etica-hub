@@ -10,6 +10,8 @@ import {
   shortAddress,
   shortHash,
 } from '@/lib/explorer';
+import { loadVerified } from '@/lib/verified';
+import { VerifiedContractView } from '@/components/explorer/VerifiedContractView';
 
 export const revalidate = 0;
 export const dynamic = 'force-dynamic';
@@ -78,6 +80,7 @@ export default async function AddressPage({ params }: AddressPageProps) {
   ]);
 
   const isContract = typeof code === 'string' && code !== '0x';
+  const verified = isContract ? loadVerified(addr) : null;
 
   // Bounded recent-tx scan: walk backwards at most RECENT_SCAN_BLOCKS looking
   // for txs involving this address. Cheap for active wallets, degrades
@@ -112,6 +115,14 @@ export default async function AddressPage({ params }: AddressPageProps) {
           ) : (
             <>Account</>
           )}
+          {verified ? (
+            <span
+              className="ml-3 inline-flex items-center gap-1 rounded-full bg-emerald-400/15 px-2 py-0.5 align-middle text-[10px] uppercase tracking-wider text-emerald-300"
+              title={`Source verified · ${verified.name}`}
+            >
+              <span aria-hidden>✓</span> Verified
+            </span>
+          ) : null}
         </h1>
         <p className="break-all font-mono text-xs text-white/50">{addr}</p>
       </section>
@@ -132,6 +143,8 @@ export default async function AddressPage({ params }: AddressPageProps) {
           {isContract ? `${(code!.length - 2) / 2} bytes` : '—'}
         </Field>
       </section>
+
+      {verified ? <VerifiedContractView manifest={verified} /> : null}
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
         <div className="mb-3 flex items-center justify-between">

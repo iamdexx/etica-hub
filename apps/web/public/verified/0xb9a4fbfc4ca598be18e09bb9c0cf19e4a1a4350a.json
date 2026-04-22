@@ -1,0 +1,378 @@
+{
+  "address": "0xB9a4FbfC4cA598Be18e09bb9C0Cf19e4a1A4350a",
+  "name": "EticaProtocolFeeController",
+  "compilerVersion": "0.8.29+commit.ab55807c",
+  "optimizer": {
+    "enabled": true,
+    "runs": 1000000
+  },
+  "evmVersion": "prague",
+  "sources": {
+    "lib/uniswapx/lib/solmate/src/tokens/ERC20.sol": {
+      "content": "// SPDX-License-Identifier: AGPL-3.0-only\npragma solidity >=0.8.0;\n\n/// @notice Modern and gas efficient ERC20 + EIP-2612 implementation.\n/// @author Solmate (https://github.com/transmissions11/solmate/blob/main/src/tokens/ERC20.sol)\n/// @author Modified from Uniswap (https://github.com/Uniswap/uniswap-v2-core/blob/master/contracts/UniswapV2ERC20.sol)\n/// @dev Do not manually set balances without updating totalSupply, as the sum of all user balances must not exceed it.\nabstract contract ERC20 {\n    /*//////////////////////////////////////////////////////////////\n                                 EVENTS\n    //////////////////////////////////////////////////////////////*/\n\n    event Transfer(address indexed from, address indexed to, uint256 amount);\n\n    event Approval(address indexed owner, address indexed spender, uint256 amount);\n\n    /*//////////////////////////////////////////////////////////////\n                            METADATA STORAGE\n    //////////////////////////////////////////////////////////////*/\n\n    string public name;\n\n    string public symbol;\n\n    uint8 public immutable decimals;\n\n    /*//////////////////////////////////////////////////////////////\n                              ERC20 STORAGE\n    //////////////////////////////////////////////////////////////*/\n\n    uint256 public totalSupply;\n\n    mapping(address => uint256) public balanceOf;\n\n    mapping(address => mapping(address => uint256)) public allowance;\n\n    /*//////////////////////////////////////////////////////////////\n                            EIP-2612 STORAGE\n    //////////////////////////////////////////////////////////////*/\n\n    uint256 internal immutable INITIAL_CHAIN_ID;\n\n    bytes32 internal immutable INITIAL_DOMAIN_SEPARATOR;\n\n    mapping(address => uint256) public nonces;\n\n    /*//////////////////////////////////////////////////////////////\n                               CONSTRUCTOR\n    //////////////////////////////////////////////////////////////*/\n\n    constructor(\n        string memory _name,\n        string memory _symbol,\n        uint8 _decimals\n    ) {\n        name = _name;\n        symbol = _symbol;\n        decimals = _decimals;\n\n        INITIAL_CHAIN_ID = block.chainid;\n        INITIAL_DOMAIN_SEPARATOR = computeDomainSeparator();\n    }\n\n    /*//////////////////////////////////////////////////////////////\n                               ERC20 LOGIC\n    //////////////////////////////////////////////////////////////*/\n\n    function approve(address spender, uint256 amount) public virtual returns (bool) {\n        allowance[msg.sender][spender] = amount;\n\n        emit Approval(msg.sender, spender, amount);\n\n        return true;\n    }\n\n    function transfer(address to, uint256 amount) public virtual returns (bool) {\n        balanceOf[msg.sender] -= amount;\n\n        // Cannot overflow because the sum of all user\n        // balances can't exceed the max uint256 value.\n        unchecked {\n            balanceOf[to] += amount;\n        }\n\n        emit Transfer(msg.sender, to, amount);\n\n        return true;\n    }\n\n    function transferFrom(\n        address from,\n        address to,\n        uint256 amount\n    ) public virtual returns (bool) {\n        uint256 allowed = allowance[from][msg.sender]; // Saves gas for limited approvals.\n\n        if (allowed != type(uint256).max) allowance[from][msg.sender] = allowed - amount;\n\n        balanceOf[from] -= amount;\n\n        // Cannot overflow because the sum of all user\n        // balances can't exceed the max uint256 value.\n        unchecked {\n            balanceOf[to] += amount;\n        }\n\n        emit Transfer(from, to, amount);\n\n        return true;\n    }\n\n    /*//////////////////////////////////////////////////////////////\n                             EIP-2612 LOGIC\n    //////////////////////////////////////////////////////////////*/\n\n    function permit(\n        address owner,\n        address spender,\n        uint256 value,\n        uint256 deadline,\n        uint8 v,\n        bytes32 r,\n        bytes32 s\n    ) public virtual {\n        require(deadline >= block.timestamp, \"PERMIT_DEADLINE_EXPIRED\");\n\n        // Unchecked because the only math done is incrementing\n        // the owner's nonce which cannot realistically overflow.\n        unchecked {\n            address recoveredAddress = ecrecover(\n                keccak256(\n                    abi.encodePacked(\n                        \"\\x19\\x01\",\n                        DOMAIN_SEPARATOR(),\n                        keccak256(\n                            abi.encode(\n                                keccak256(\n                                    \"Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)\"\n                                ),\n                                owner,\n                                spender,\n                                value,\n                                nonces[owner]++,\n                                deadline\n                            )\n                        )\n                    )\n                ),\n                v,\n                r,\n                s\n            );\n\n            require(recoveredAddress != address(0) && recoveredAddress == owner, \"INVALID_SIGNER\");\n\n            allowance[recoveredAddress][spender] = value;\n        }\n\n        emit Approval(owner, spender, value);\n    }\n\n    function DOMAIN_SEPARATOR() public view virtual returns (bytes32) {\n        return block.chainid == INITIAL_CHAIN_ID ? INITIAL_DOMAIN_SEPARATOR : computeDomainSeparator();\n    }\n\n    function computeDomainSeparator() internal view virtual returns (bytes32) {\n        return\n            keccak256(\n                abi.encode(\n                    keccak256(\"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)\"),\n                    keccak256(bytes(name)),\n                    keccak256(\"1\"),\n                    block.chainid,\n                    address(this)\n                )\n            );\n    }\n\n    /*//////////////////////////////////////////////////////////////\n                        INTERNAL MINT/BURN LOGIC\n    //////////////////////////////////////////////////////////////*/\n\n    function _mint(address to, uint256 amount) internal virtual {\n        totalSupply += amount;\n\n        // Cannot overflow because the sum of all user\n        // balances can't exceed the max uint256 value.\n        unchecked {\n            balanceOf[to] += amount;\n        }\n\n        emit Transfer(address(0), to, amount);\n    }\n\n    function _burn(address from, uint256 amount) internal virtual {\n        balanceOf[from] -= amount;\n\n        // Cannot underflow because a user's balance\n        // will never be larger than the total supply.\n        unchecked {\n            totalSupply -= amount;\n        }\n\n        emit Transfer(from, address(0), amount);\n    }\n}\n"
+    },
+    "lib/uniswapx/src/base/ReactorStructs.sol": {
+      "content": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\nimport {IReactor} from \"../interfaces/IReactor.sol\";\nimport {IValidationCallback} from \"../interfaces/IValidationCallback.sol\";\nimport {ERC20} from \"solmate/src/tokens/ERC20.sol\";\n\n/// @dev generic order information\n///  should be included as the first field in any concrete order types\nstruct OrderInfo {\n    // The address of the reactor that this order is targeting\n    // Note that this must be included in every order so the swapper\n    // signature commits to the specific reactor that they trust to fill their order properly\n    IReactor reactor;\n    // The address of the user which created the order\n    // Note that this must be included so that order hashes are unique by swapper\n    address swapper;\n    // The nonce of the order, allowing for signature replay protection and cancellation\n    uint256 nonce;\n    // The timestamp after which this order is no longer valid\n    uint256 deadline;\n    // Custom validation contract\n    IValidationCallback additionalValidationContract;\n    // Encoded validation params for additionalValidationContract\n    bytes additionalValidationData;\n}\n\n/// @dev tokens that need to be sent from the swapper in order to satisfy an order\nstruct InputToken {\n    ERC20 token;\n    uint256 amount;\n    // Needed for dutch decaying inputs\n    uint256 maxAmount;\n}\n\n/// @dev tokens that need to be received by the recipient in order to satisfy an order\nstruct OutputToken {\n    address token;\n    uint256 amount;\n    address recipient;\n}\n\n/// @dev generic concrete order that specifies exact tokens which need to be sent and received\nstruct ResolvedOrder {\n    OrderInfo info;\n    InputToken input;\n    OutputToken[] outputs;\n    bytes sig;\n    bytes32 hash;\n}\n\n/// @dev external struct including a generic encoded order and swapper signature\n///  The order bytes will be parsed and mapped to a ResolvedOrder in the concrete reactor contract\nstruct SignedOrder {\n    bytes order;\n    bytes sig;\n}\n"
+    },
+    "lib/uniswapx/src/interfaces/IProtocolFeeController.sol": {
+      "content": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\nimport {ResolvedOrder, OutputToken} from \"../base/ReactorStructs.sol\";\n\n/// @notice Interface for getting fee outputs\ninterface IProtocolFeeController {\n    /// @notice Get fee outputs for the given orders\n    /// @param order The orders to get fee outputs for\n    /// @return List of fee outputs to append for each provided order\n    function getFeeOutputs(ResolvedOrder memory order) external view returns (OutputToken[] memory);\n}\n"
+    },
+    "lib/uniswapx/src/interfaces/IReactor.sol": {
+      "content": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\nimport {SignedOrder} from \"../base/ReactorStructs.sol\";\n\n/// @notice Interface for order execution reactors\ninterface IReactor {\n    /// @notice Execute a single order\n    /// @param order The order definition and valid signature to execute\n    function execute(SignedOrder calldata order) external payable;\n\n    /// @notice Execute a single order using the given callback data\n    /// @param order The order definition and valid signature to execute\n    /// @param callbackData The callbackData to pass to the callback\n    function executeWithCallback(SignedOrder calldata order, bytes calldata callbackData) external payable;\n\n    /// @notice Execute the given orders at once\n    /// @param orders The order definitions and valid signatures to execute\n    function executeBatch(SignedOrder[] calldata orders) external payable;\n\n    /// @notice Execute the given orders at once using a callback with the given callback data\n    /// @param orders The order definitions and valid signatures to execute\n    /// @param callbackData The callbackData to pass to the callback\n    function executeBatchWithCallback(SignedOrder[] calldata orders, bytes calldata callbackData) external payable;\n}\n"
+    },
+    "lib/uniswapx/src/interfaces/IValidationCallback.sol": {
+      "content": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\nimport {ResolvedOrder} from \"../base/ReactorStructs.sol\";\n\n/// @notice Callback to validate an order\ninterface IValidationCallback {\n    /// @notice Called by the reactor for custom validation of an order. Will revert if validation fails\n    /// @param filler The filler of the order\n    /// @param resolvedOrder The resolved order to fill\n    function validate(address filler, ResolvedOrder calldata resolvedOrder) external view;\n}\n"
+    },
+    "src/EticaProtocolFeeController.sol": {
+      "content": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\nimport {IProtocolFeeController} from \"uniswapx/src/interfaces/IProtocolFeeController.sol\";\nimport {ResolvedOrder, OutputToken} from \"uniswapx/src/base/ReactorStructs.sol\";\n\n/// @title  EticaProtocolFeeController\n/// @notice UniswapX fee controller for EticaHub's non-custodial trading stack.\n///         Charges a BPS-denominated protocol fee denominated in ETX on every\n///         fill. Because EticaSwap enforces hub-and-spoke (every pool is\n///         ETX-paired), exactly one leg of every trade is ETX, so the fee is\n///         always skimmable in ETX without any extra swap hop.\n///\n/// @dev    The Reactor adds these fee outputs to the resolved order before the\n///         filler's callback runs, so the filler (keeper) is responsible for\n///         delivering the fee to the treasury atomically with the fill.\n///\n///         Fee is capped at FEE_CAP_BPS (1%). Owner can raise/lower within that\n///         cap and rotate treasury; there is no ability to bypass the cap nor\n///         to transfer funds already in the treasury.\ncontract EticaProtocolFeeController is IProtocolFeeController {\n    /// @notice Hard cap on fee BPS. Owner cannot exceed this under any circumstance.\n    uint256 public constant FEE_CAP_BPS = 100; // 1%\n    /// @notice BPS denominator (10,000 = 100%).\n    uint256 public constant BPS_DENOMINATOR = 10_000;\n\n    /// @notice The ETX token address; fees are always denominated in ETX.\n    address public immutable ETX;\n\n    /// @notice Recipient of all protocol fees.\n    address public treasury;\n    /// @notice Account authorised to update treasury / feeBps / owner.\n    address public owner;\n    /// @notice Current fee rate in basis points (0 = disabled).\n    uint256 public feeBps;\n\n    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);\n    event OwnerUpdated(address indexed oldOwner, address indexed newOwner);\n    event FeeBpsUpdated(uint256 oldBps, uint256 newBps);\n\n    error OnlyOwner();\n    error FeeTooHigh();\n    error ZeroAddress();\n\n    modifier onlyOwner() {\n        if (msg.sender != owner) revert OnlyOwner();\n        _;\n    }\n\n    constructor(address _etx, address _treasury, address _owner, uint256 _feeBps) {\n        if (_etx == address(0) || _treasury == address(0) || _owner == address(0)) revert ZeroAddress();\n        if (_feeBps > FEE_CAP_BPS) revert FeeTooHigh();\n        ETX = _etx;\n        treasury = _treasury;\n        owner = _owner;\n        feeBps = _feeBps;\n    }\n\n    function setFeeBps(uint256 _feeBps) external onlyOwner {\n        if (_feeBps > FEE_CAP_BPS) revert FeeTooHigh();\n        emit FeeBpsUpdated(feeBps, _feeBps);\n        feeBps = _feeBps;\n    }\n\n    function setTreasury(address _treasury) external onlyOwner {\n        if (_treasury == address(0)) revert ZeroAddress();\n        emit TreasuryUpdated(treasury, _treasury);\n        treasury = _treasury;\n    }\n\n    function setOwner(address _owner) external onlyOwner {\n        if (_owner == address(0)) revert ZeroAddress();\n        emit OwnerUpdated(owner, _owner);\n        owner = _owner;\n    }\n\n    /// @inheritdoc IProtocolFeeController\n    /// @dev Returns a single ETX fee output, or an empty array if the order\n    ///      has no ETX leg, fee is zero, or fee truncates to zero on tiny\n    ///      trades.\n    function getFeeOutputs(ResolvedOrder memory order)\n        external\n        view\n        override\n        returns (OutputToken[] memory feeOutputs)\n    {\n        uint256 bps = feeBps;\n        if (bps == 0) return new OutputToken[](0);\n\n        // ETX is on the input leg: skim BPS of input.amount.\n        if (address(order.input.token) == ETX) {\n            uint256 feeAmount = (order.input.amount * bps) / BPS_DENOMINATOR;\n            if (feeAmount == 0) return new OutputToken[](0);\n            feeOutputs = new OutputToken[](1);\n            feeOutputs[0] = OutputToken({token: ETX, amount: feeAmount, recipient: treasury});\n            return feeOutputs;\n        }\n\n        // Otherwise look for ETX on the output side.\n        for (uint256 i = 0; i < order.outputs.length; i++) {\n            if (order.outputs[i].token == ETX) {\n                uint256 feeAmount = (order.outputs[i].amount * bps) / BPS_DENOMINATOR;\n                if (feeAmount == 0) return new OutputToken[](0);\n                feeOutputs = new OutputToken[](1);\n                feeOutputs[0] = OutputToken({token: ETX, amount: feeAmount, recipient: treasury});\n                return feeOutputs;\n            }\n        }\n\n        // No ETX leg at all. On EticaSwap this should be unreachable (factory\n        // rejects non-ETX pairs), so we charge nothing rather than revert, to\n        // keep the Reactor resilient to any future multi-hop path.\n        return new OutputToken[](0);\n    }\n}\n"
+    }
+  },
+  "abi": [
+    {
+      "type": "constructor",
+      "inputs": [
+        {
+          "name": "_etx",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_treasury",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_owner",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_feeBps",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "BPS_DENOMINATOR",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "ETX",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "FEE_CAP_BPS",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "feeBps",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "getFeeOutputs",
+      "inputs": [
+        {
+          "name": "order",
+          "type": "tuple",
+          "internalType": "struct ResolvedOrder",
+          "components": [
+            {
+              "name": "info",
+              "type": "tuple",
+              "internalType": "struct OrderInfo",
+              "components": [
+                {
+                  "name": "reactor",
+                  "type": "address",
+                  "internalType": "contract IReactor"
+                },
+                {
+                  "name": "swapper",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "nonce",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "deadline",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "additionalValidationContract",
+                  "type": "address",
+                  "internalType": "contract IValidationCallback"
+                },
+                {
+                  "name": "additionalValidationData",
+                  "type": "bytes",
+                  "internalType": "bytes"
+                }
+              ]
+            },
+            {
+              "name": "input",
+              "type": "tuple",
+              "internalType": "struct InputToken",
+              "components": [
+                {
+                  "name": "token",
+                  "type": "address",
+                  "internalType": "contract ERC20"
+                },
+                {
+                  "name": "amount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "maxAmount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                }
+              ]
+            },
+            {
+              "name": "outputs",
+              "type": "tuple[]",
+              "internalType": "struct OutputToken[]",
+              "components": [
+                {
+                  "name": "token",
+                  "type": "address",
+                  "internalType": "address"
+                },
+                {
+                  "name": "amount",
+                  "type": "uint256",
+                  "internalType": "uint256"
+                },
+                {
+                  "name": "recipient",
+                  "type": "address",
+                  "internalType": "address"
+                }
+              ]
+            },
+            {
+              "name": "sig",
+              "type": "bytes",
+              "internalType": "bytes"
+            },
+            {
+              "name": "hash",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            }
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "feeOutputs",
+          "type": "tuple[]",
+          "internalType": "struct OutputToken[]",
+          "components": [
+            {
+              "name": "token",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "recipient",
+              "type": "address",
+              "internalType": "address"
+            }
+          ]
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "owner",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "setFeeBps",
+      "inputs": [
+        {
+          "name": "_feeBps",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setOwner",
+      "inputs": [
+        {
+          "name": "_owner",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "setTreasury",
+      "inputs": [
+        {
+          "name": "_treasury",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "treasury",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "event",
+      "name": "FeeBpsUpdated",
+      "inputs": [
+        {
+          "name": "oldBps",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "newBps",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "OwnerUpdated",
+      "inputs": [
+        {
+          "name": "oldOwner",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "newOwner",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "TreasuryUpdated",
+      "inputs": [
+        {
+          "name": "oldTreasury",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "newTreasury",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "error",
+      "name": "FeeTooHigh",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "OnlyOwner",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "ZeroAddress",
+      "inputs": []
+    }
+  ],
+  "verifiedAt": "2026-04-22T03:36:14.973Z",
+  "bytecodeMatch": "with-immutables"
+}
