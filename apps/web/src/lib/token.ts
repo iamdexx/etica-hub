@@ -6,6 +6,7 @@
  * generic address/tx/block toolbelt. Everything here is server-only.
  */
 import {
+  getAddress,
   parseAbiItem,
   formatUnits,
   type Address,
@@ -144,6 +145,117 @@ export async function scanRecentTransfers(
   } catch {
     return [];
   }
+}
+
+export interface AddressTokenTransfer {
+  /** ERC-20 contract emitting the Transfer event. */
+  token: Address;
+  from: Address;
+  to: Address;
+  value: bigint;
+  txHash: `0x${string}`;
+  blockNumber: bigint;
+  logIndex: number;
+}
+
+/**
+ * Scans the last `TOKEN_LOG_SCAN_BLOCKS` blocks for ERC-20 Transfer events
+ * where `address` is either the sender or recipient, across ALL token
+ * contracts (not a specific token). Two `eth_getLogs` calls fan out in
+ * parallel — one for outbound (`from = address`), one for inbound (`to =
+ * address`) — then results are merged, deduped on `(txHash, logIndex)`,
+ * sorted newest-first, and trimmed to the page size.
+ *
+ * We use viem's typed `event + args` form, which produces decoded
+ * `args.from` / `args.to` / `args.value` on each returned log. A missing
+ * or malformed arg on a particular log skips that entry rather than
+ * failing the whole scan. RPC failure degrades to an empty list so the
+ * page still renders ("no recent transfers found").
+ */
+export async function scanAddressTokenTransfers(
+  client: PublicClient,
+  address: Address,
+  head: bigint,
+): Promise<AddressTokenTransfer[]> {
+  const fromBlock =
+    head > TOKEN_LOG_SCAN_BLOCKS ? head - TOKEN_LOG_SCAN_BLOCKS : 0n;
+  try {
+    const [outbound, inbound] = await Promise.all([
+      client.getLogs({
+        event: TRANSFER_EVENT,
+        args: { from: address },
+        fromBlock,
+        toBlock: head,
+      }),
+      client.getLogs({
+        event: TRANSFER_EVENT,
+        args: { to: address },
+        fromBlock,
+        toBlock: head,
+      }),
+    ]);
+    const seen = new Set<string>();
+    const out: AddressTokenTransfer[] = [];
+    for (const l of [...outbound, ...inbound]) {
+      if (!l.transactionHash || l.blockNumber == null) continue;
+      const { from, to, value } = l.args ?? {};
+      if (!from || !to || value == null) continue;
+      const key = `${l.transactionHash}:${l.logIndex ?? 0}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        token: l.address as Address,
+        from: from as Address,
+        to: to as Address,
+        value: value as bigint,
+        txHash: l.transactionHash,
+        blockNumber: l.blockNumber,
+        logIndex: l.logIndex ?? 0,
+      });
+    }
+    out.sort((a, b) => {
+      if (a.blockNumber !== b.blockNumber) {
+        return a.blockNumber < b.blockNumber ? 1 : -1;
+      }
+      return b.logIndex - a.logIndex;
+    });
+    return out.slice(0, TOKEN_TRANSFERS_PAGE);
+  } catch {
+    return [];
+  }
+}
+
+export interface TokenInfo {
+  symbol: string;
+  decimals: number;
+}
+
+/**
+ * Batch-resolves `{symbol, decimals}` for a list of ERC-20 token addresses.
+ * De-duplicates by checksum address so every unique token triggers at most
+ * one parallel metadata probe. Tokens that fail to probe (non-ERC-20 or
+ * RPC error) are omitted from the returned map — callers should render a
+ * neutral fallback (e.g. shortened address) when a lookup is missing.
+ */
+export async function resolveTokenInfos(
+  client: PublicClient,
+  addresses: ReadonlyArray<Address>,
+): Promise<Map<string, TokenInfo>> {
+  const unique = new Set<string>();
+  for (const a of addresses) unique.add(a.toLowerCase());
+  const entries = await Promise.all(
+    Array.from(unique).map(async (lower) => {
+      const a = getAddress(lower);
+      const meta = await readTokenMetadata(client, a);
+      if (!meta) return null;
+      return [lower, { symbol: meta.symbol, decimals: meta.decimals }] as const;
+    }),
+  );
+  const map = new Map<string, TokenInfo>();
+  for (const e of entries) {
+    if (e) map.set(e[0], e[1]);
+  }
+  return map;
 }
 
 /**

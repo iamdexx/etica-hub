@@ -12,7 +12,14 @@ import {
 } from '@/lib/explorer';
 import { loadVerified } from '@/lib/verified';
 import { VerifiedContractView } from '@/components/explorer/VerifiedContractView';
-import { readTokenMetadata } from '@/lib/token';
+import {
+  TOKEN_LOG_SCAN_BLOCKS,
+  formatTokenAmount,
+  readTokenMetadata,
+  resolveTokenInfos,
+  scanAddressTokenTransfers,
+  type AddressTokenTransfer,
+} from '@/lib/token';
 
 export const revalidate = 0;
 export const dynamic = 'force-dynamic';
@@ -89,7 +96,18 @@ export default async function AddressPage({ params }: AddressPageProps) {
   // Bounded recent-tx scan: walk backwards at most RECENT_SCAN_BLOCKS looking
   // for txs involving this address. Cheap for active wallets, degrades
   // gracefully for quiet ones (empty list). No indexer required.
-  const recent = await scanRecentTxs(client, addr, head);
+  //
+  // ERC-20 transfers are scanned separately over a wider TOKEN_LOG_SCAN_BLOCKS
+  // window via two eth_getLogs calls (outbound + inbound Transfer), then we
+  // probe metadata once per unique emitting contract.
+  const [recent, tokenTransfers] = await Promise.all([
+    scanRecentTxs(client, addr, head),
+    scanAddressTokenTransfers(client, addr, head),
+  ]);
+  const tokenInfos = await resolveTokenInfos(
+    client,
+    tokenTransfers.map((t) => t.token),
+  );
 
   const label = addressLabel(addr);
 
@@ -247,6 +265,12 @@ export default async function AddressPage({ params }: AddressPageProps) {
           </ul>
         )}
       </section>
+
+      <TokenTransfersSection
+        transfers={tokenTransfers}
+        tokenInfos={tokenInfos}
+        viewer={addr}
+      />
     </div>
   );
 }
@@ -324,5 +348,119 @@ function Field({
       <div className="text-xs uppercase tracking-wider text-white/40">{label}</div>
       <div className="mt-0.5 break-all text-sm text-white/80">{children}</div>
     </div>
+  );
+}
+
+function TokenTransfersSection({
+  transfers,
+  tokenInfos,
+  viewer,
+}: {
+  transfers: ReadonlyArray<AddressTokenTransfer>;
+  tokenInfos: Map<string, { symbol: string; decimals: number }>;
+  viewer: `0x${string}`;
+}) {
+  const viewerLower = viewer.toLowerCase();
+  return (
+    <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Token transfers</h2>
+        <span className="text-xs text-white/40">
+          last {TOKEN_LOG_SCAN_BLOCKS.toString()} blocks
+        </span>
+      </div>
+      {transfers.length === 0 ? (
+        <p className="text-sm text-white/50">
+          No ERC-20 Transfer events for this address in the last{' '}
+          {TOKEN_LOG_SCAN_BLOCKS.toString()} blocks. Full history requires an
+          indexer (not shipped in v1).
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {transfers.map((t) => {
+            const isMint =
+              t.from.toLowerCase() ===
+              '0x0000000000000000000000000000000000000000';
+            const isBurn =
+              t.to.toLowerCase() ===
+              '0x0000000000000000000000000000000000000000';
+            const dir =
+              isMint && t.to.toLowerCase() === viewerLower
+                ? 'mint'
+                : isBurn && t.from.toLowerCase() === viewerLower
+                  ? 'burn'
+                  : t.from.toLowerCase() === viewerLower
+                    ? 'out'
+                    : 'in';
+            const info = tokenInfos.get(t.token.toLowerCase());
+            const tokenLabel =
+              addressLabel(t.token) ?? info?.symbol ?? shortAddress(t.token);
+            const amount = info
+              ? `${formatTokenAmount(t.value, info.decimals)} ${info.symbol}`
+              : t.value.toString();
+            const counterparty =
+              t.from.toLowerCase() === viewerLower ? t.to : t.from;
+            const dirClass =
+              dir === 'in' || dir === 'mint'
+                ? 'rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300'
+                : dir === 'out' || dir === 'burn'
+                  ? 'rounded-full bg-rose-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-rose-300'
+                  : 'rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/70';
+            return (
+              <li
+                key={`${t.txHash}:${t.logIndex}`}
+                className="rounded-lg border border-white/5 bg-white/[0.01] px-3 py-2 text-xs"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className={dirClass}>{dir}</span>
+                    <Link
+                      href={`/explorer/tx/${t.txHash}`}
+                      className="font-mono text-brand-accent hover:underline"
+                    >
+                      {shortHash(t.txHash)}
+                    </Link>
+                  </div>
+                  <span className="text-white/70">{amount}</span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-white/50">
+                  <span>token</span>
+                  <Link
+                    href={`/explorer/token/${t.token}`}
+                    className="font-mono text-white/80 hover:underline"
+                  >
+                    {tokenLabel}
+                  </Link>
+                  <span>·</span>
+                  <span>
+                    {dir === 'in' || dir === 'mint' ? 'from' : 'to'}{' '}
+                    {isMint && dir === 'mint' ? (
+                      <span className="text-white/60">mint</span>
+                    ) : isBurn && dir === 'burn' ? (
+                      <span className="text-white/60">burn</span>
+                    ) : (
+                      <Link
+                        href={`/explorer/address/${counterparty}`}
+                        className="font-mono text-white/80 hover:underline"
+                      >
+                        {addressLabel(counterparty) ?? shortAddress(counterparty)}
+                      </Link>
+                    )}
+                  </span>
+                  <span>·</span>
+                  <span>block</span>
+                  <Link
+                    href={`/explorer/block/${t.blockNumber.toString()}`}
+                    className="font-mono text-white/80 hover:underline"
+                  >
+                    #{t.blockNumber.toString()}
+                  </Link>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
