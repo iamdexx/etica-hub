@@ -14,11 +14,10 @@ import { loadVerified } from '@/lib/verified';
 import { VerifiedContractView } from '@/components/explorer/VerifiedContractView';
 import { ContractInteractionView } from '@/components/explorer/ContractInteractionView';
 import {
-  TOKEN_LOG_SCAN_BLOCKS,
   formatTokenAmount,
+  loadAddressTokenTransfers,
   readTokenMetadata,
   resolveTokenInfos,
-  scanAddressTokenTransfers,
   type AddressTokenTransfer,
 } from '@/lib/token';
 
@@ -103,7 +102,7 @@ export default async function AddressPage({ params }: AddressPageProps) {
   // probe metadata once per unique emitting contract.
   const [recent, tokenTransfers] = await Promise.all([
     scanRecentTxs(client, addr, head),
-    scanAddressTokenTransfers(client, addr, head),
+    loadAddressTokenTransfers(client, addr, head),
   ]);
   const tokenInfos = await resolveTokenInfos(
     client,
@@ -370,15 +369,12 @@ function TokenTransfersSection({
     <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Token transfers</h2>
-        <span className="text-xs text-white/40">
-          last {TOKEN_LOG_SCAN_BLOCKS.toString()} blocks
-        </span>
+        <span className="text-xs text-white/40">recent</span>
       </div>
       {transfers.length === 0 ? (
         <p className="text-sm text-white/50">
-          No ERC-20 Transfer events for this address in the last{' '}
-          {TOKEN_LOG_SCAN_BLOCKS.toString()} blocks. Full history requires an
-          indexer (not shipped in v1).
+          No ERC-20 Transfer events involving this address in the indexed
+          window.
         </p>
       ) : (
         <ul className="space-y-2">

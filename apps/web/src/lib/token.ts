@@ -13,6 +13,10 @@ import {
   type PublicClient,
 } from 'viem';
 import { abis } from '@etica-hub/shared';
+import {
+  fetchIndexedAddressTransfers,
+  type IndexedTransferRow,
+} from './explorerIndex';
 
 /**
  * Width of the Transfer-log scan window for the token detail page. Same
@@ -176,9 +180,17 @@ export async function scanAddressTokenTransfers(
   client: PublicClient,
   address: Address,
   head: bigint,
+  /**
+   * Optional override for the scan start block. Defaults to
+   * `head - TOKEN_LOG_SCAN_BLOCKS` for standalone use; the indexer-
+   * backed path passes a small tail window (~200 blocks) so the RPC
+   * call only covers what the cron hasn't indexed yet.
+   */
+  fromBlockOverride?: bigint,
 ): Promise<AddressTokenTransfer[]> {
   const fromBlock =
-    head > TOKEN_LOG_SCAN_BLOCKS ? head - TOKEN_LOG_SCAN_BLOCKS : 0n;
+    fromBlockOverride ??
+    (head > TOKEN_LOG_SCAN_BLOCKS ? head - TOKEN_LOG_SCAN_BLOCKS : 0n);
   try {
     const [outbound, inbound] = await Promise.all([
       client.getLogs({
@@ -223,6 +235,97 @@ export async function scanAddressTokenTransfers(
   } catch {
     return [];
   }
+}
+
+/**
+ * Hard upper bound on the RPC tail-scan window. The tail scan normally
+ * starts at `cursor.lastBlock + 1` so it covers exactly the gap
+ * between the indexer and head; this constant caps how far back we're
+ * willing to RPC-scan if the indexer has fallen badly behind (e.g. the
+ * cron was down for hours). Matches `TOKEN_LOG_SCAN_BLOCKS` so worst-
+ * case behavior is identical to the pre-indexer RPC-only path.
+ */
+export const MAX_TAIL_SCAN_BLOCKS = TOKEN_LOG_SCAN_BLOCKS;
+
+/**
+ * Indexer-backed variant of {@link scanAddressTokenTransfers}.
+ *
+ * Strategy:
+ *   1. Try to read the indexer's `data-index` branch for `address`.
+ *      Returns rows from potentially weeks of history, not just the
+ *      last 5000 blocks.
+ *   2. Scan the blocks between the indexer cursor and `head` via RPC
+ *      to cover what the cron hasn't indexed yet. Capped by
+ *      `MAX_TAIL_SCAN_BLOCKS` to protect against unbounded scans when
+ *      the indexer has fallen behind (cron outage). Deduped against
+ *      the indexed rows on `(txHash, logIndex)`.
+ *   3. If the indexer is unavailable (data branch missing, network
+ *      error, etc.), fall back to the existing RPC-only scan so the
+ *      UI still renders. This means shipping this code is safe even
+ *      before the cron has produced any data.
+ *
+ * Returns at most {@link TOKEN_TRANSFERS_PAGE} rows newest-first. The
+ * shape matches `scanAddressTokenTransfers` so callers upgrade with a
+ * single-line rename.
+ */
+export async function loadAddressTokenTransfers(
+  client: PublicClient,
+  address: Address,
+  head: bigint,
+): Promise<AddressTokenTransfer[]> {
+  const indexed = await fetchIndexedAddressTransfers({
+    address: address.toLowerCase(),
+  });
+  if (!indexed) {
+    return scanAddressTokenTransfers(client, address, head);
+  }
+  // Start the RPC tail scan at one block past the indexer cursor so we
+  // cover exactly the gap between the last cron tick and head. If the
+  // indexer has fallen badly behind (cron outage), cap the scan at
+  // MAX_TAIL_SCAN_BLOCKS so we never do an unbounded RPC call — worst
+  // case matches the old pre-indexer RPC-only window.
+  const cursorBlock = BigInt(indexed.cursor.lastBlock);
+  const resumeFrom = cursorBlock + 1n;
+  const windowFloor = head > MAX_TAIL_SCAN_BLOCKS ? head - MAX_TAIL_SCAN_BLOCKS : 0n;
+  const tailFrom = resumeFrom > windowFloor ? resumeFrom : windowFloor;
+  const tail = await scanAddressTokenTransfers(client, address, head, tailFrom);
+
+  const seen = new Set<string>();
+  const merged: AddressTokenTransfer[] = [];
+  for (const t of tail) {
+    const key = `${t.txHash.toLowerCase()}:${t.logIndex}`;
+    seen.add(key);
+    merged.push(t);
+  }
+  for (const r of indexed.rows) {
+    // Lowercase the tx hash to match the tail-side key format: if a
+    // future indexer write path ever emits mixed-case hashes, we'd
+    // otherwise silently double-render rows already present in the
+    // tail-window scan.
+    const key = `${r.tx.toLowerCase()}:${r.logIndex}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(indexedToAddressTransfer(r));
+  }
+  merged.sort((a, b) => {
+    if (a.blockNumber !== b.blockNumber) {
+      return a.blockNumber < b.blockNumber ? 1 : -1;
+    }
+    return b.logIndex - a.logIndex;
+  });
+  return merged.slice(0, TOKEN_TRANSFERS_PAGE);
+}
+
+function indexedToAddressTransfer(r: IndexedTransferRow): AddressTokenTransfer {
+  return {
+    token: getAddress(r.token),
+    from: getAddress(r.from),
+    to: getAddress(r.to),
+    value: BigInt(r.value),
+    txHash: r.tx as `0x${string}`,
+    blockNumber: BigInt(r.block),
+    logIndex: r.logIndex,
+  };
 }
 
 export interface TokenInfo {
