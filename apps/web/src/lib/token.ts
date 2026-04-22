@@ -288,7 +288,11 @@ export async function loadAddressTokenTransfers(
     merged.push(t);
   }
   for (const r of indexed.rows) {
-    const key = `${r.tx}:${r.logIndex}`;
+    // Lowercase the tx hash to match the tail-side key format: if a
+    // future indexer write path ever emits mixed-case hashes, we'd
+    // otherwise silently double-render rows already present in the
+    // tail-window scan.
+    const key = `${r.tx.toLowerCase()}:${r.logIndex}`;
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(indexedToAddressTransfer(r));
