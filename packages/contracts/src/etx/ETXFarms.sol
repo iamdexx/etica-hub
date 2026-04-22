@@ -150,10 +150,7 @@ contract ETXFarms is Ownable2Step, ReentrancyGuard {
         isLpToken[address(lpToken)] = true;
         poolInfo.push(
             PoolInfo({
-                lpToken: lpToken,
-                allocPoint: allocPoint,
-                totalStaked: 0,
-                accRewardPerShare: 0
+                lpToken: lpToken, allocPoint: allocPoint, totalStaked: 0, accRewardPerShare: 0
             })
         );
         totalAllocPoint += allocPoint;

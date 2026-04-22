@@ -124,7 +124,7 @@ contract ETXFarmsTest is Test {
         vm.prank(ALICE);
         farms.deposit(0, 100 * ONE);
 
-        (, , uint256 totalStaked,) = farms.poolInfo(0);
+        (,, uint256 totalStaked,) = farms.poolInfo(0);
         assertEq(totalStaked, 100 * ONE);
         assertEq(lpA.balanceOf(address(farms)), 100 * ONE);
         assertEq(lpA.balanceOf(ALICE), 900 * ONE);
@@ -137,7 +137,7 @@ contract ETXFarmsTest is Test {
         farms.withdraw(0, 40 * ONE);
         assertEq(lpA.balanceOf(ALICE), 940 * ONE);
 
-        (, , uint256 totalStaked,) = farms.poolInfo(0);
+        (,, uint256 totalStaked,) = farms.poolInfo(0);
         assertEq(totalStaked, 60 * ONE);
     }
 
