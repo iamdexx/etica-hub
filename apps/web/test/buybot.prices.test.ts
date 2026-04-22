@@ -163,11 +163,17 @@ describe('computeBuyReport', () => {
     })!;
     const pricing: UsdPricing = { etxUsd: 0.001, etiUsd: null, egazUsd: null };
     const r = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing);
-    // pricePerBoughtInSpent ≈ 249_500/501_000 ≈ 0.498 ETX per XYZ
-    // → USD per XYZ = 0.498 * $0.001 ≈ $0.000498
+    // pricePerBoughtInSpent = 249_500/501_000 = 0.498003... ETX per XYZ
+    // boughtUsd = spentUsd * pricePreInSpent (USD/ETX * ETX/XYZ = USD/XYZ)
+    //          = $0.001 * 0.498003... ≈ $0.000498003
+    expect(r.pricePerBoughtInSpent).toBeCloseTo(249_500 / 501_000, 10);
     expect(r.pricePerBoughtInUsd).not.toBeNull();
-    expect(r.pricePerBoughtInUsd!).toBeGreaterThan(0);
+    expect(r.pricePerBoughtInUsd!).toBeCloseTo(0.000498003, 8);
+    // MC XYZ = 1_000_000 supply * $0.000498 ≈ $498.003
     expect(r.mcBoughtUsd).not.toBeNull();
+    expect(r.mcBoughtUsd!).toBeCloseTo(498.003, 2);
+    // Notional = amountSpent * spentUsd = 500 ETX * $0.001 = $0.50
+    expect(r.notionalUsd).toBeCloseTo(0.5, 8);
   });
 
   it('returns null USD figures when no anchor is available for either side', () => {
