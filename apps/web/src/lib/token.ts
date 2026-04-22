@@ -15,6 +15,7 @@ import {
 import { abis } from '@etica-hub/shared';
 import {
   fetchIndexedAddressTransfers,
+  fetchIndexedTokenTransfers,
   type IndexedTransferRow,
 } from './explorerIndex';
 
@@ -117,9 +118,17 @@ export async function scanRecentTransfers(
   client: PublicClient,
   address: Address,
   head: bigint,
+  /**
+   * Optional override for the scan start block. Defaults to
+   * `head - TOKEN_LOG_SCAN_BLOCKS` for standalone use; the indexer-
+   * backed path passes a small tail window so the RPC call only
+   * covers what the cron hasn't indexed yet.
+   */
+  fromBlockOverride?: bigint,
 ): Promise<TokenTransfer[]> {
   const fromBlock =
-    head > TOKEN_LOG_SCAN_BLOCKS ? head - TOKEN_LOG_SCAN_BLOCKS : 0n;
+    fromBlockOverride ??
+    (head > TOKEN_LOG_SCAN_BLOCKS ? head - TOKEN_LOG_SCAN_BLOCKS : 0n);
   try {
     const logs = await client.getLogs({
       address,
@@ -149,6 +158,69 @@ export async function scanRecentTransfers(
   } catch {
     return [];
   }
+}
+
+/**
+ * Indexer-backed variant of {@link scanRecentTransfers}.
+ *
+ * Reads Transfer rows emitted by `address` from the indexer's data
+ * branch (potentially weeks of history) and RPC-scans the tail
+ * between the indexer cursor and `head` so recent activity appears
+ * without waiting for the next cron tick. Dedupes on
+ * `(txHash, logIndex)` and returns at most
+ * {@link TOKEN_TRANSFERS_PAGE} rows newest-first.
+ *
+ * When the indexer is unavailable (branch missing, network error),
+ * falls back to the plain RPC scan so the page still renders.
+ */
+export async function loadTokenRecentTransfers(
+  client: PublicClient,
+  address: Address,
+  head: bigint,
+): Promise<TokenTransfer[]> {
+  const indexed = await fetchIndexedTokenTransfers({
+    token: address.toLowerCase(),
+  });
+  if (!indexed) {
+    return scanRecentTransfers(client, address, head);
+  }
+  const cursorBlock = BigInt(indexed.cursor.lastBlock);
+  const resumeFrom = cursorBlock + 1n;
+  const windowFloor = head > MAX_TAIL_SCAN_BLOCKS ? head - MAX_TAIL_SCAN_BLOCKS : 0n;
+  const tailFrom = resumeFrom > windowFloor ? resumeFrom : windowFloor;
+  const tail = await scanRecentTransfers(client, address, head, tailFrom);
+
+  const seen = new Set<string>();
+  const merged: TokenTransfer[] = [];
+  for (const t of tail) {
+    const key = `${t.txHash.toLowerCase()}:${t.logIndex}`;
+    seen.add(key);
+    merged.push(t);
+  }
+  for (const r of indexed.rows) {
+    const key = `${r.tx.toLowerCase()}:${r.logIndex}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(indexedToTokenTransfer(r));
+  }
+  merged.sort((a, b) => {
+    if (a.blockNumber !== b.blockNumber) {
+      return a.blockNumber < b.blockNumber ? 1 : -1;
+    }
+    return b.logIndex - a.logIndex;
+  });
+  return merged.slice(0, TOKEN_TRANSFERS_PAGE);
+}
+
+function indexedToTokenTransfer(r: IndexedTransferRow): TokenTransfer {
+  return {
+    from: getAddress(r.from),
+    to: getAddress(r.to),
+    value: BigInt(r.value),
+    txHash: r.tx as `0x${string}`,
+    blockNumber: BigInt(r.block),
+    logIndex: r.logIndex,
+  };
 }
 
 export interface AddressTokenTransfer {

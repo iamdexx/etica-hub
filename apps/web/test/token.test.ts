@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PublicClient } from 'viem';
 import {
   formatTokenAmount,
+  loadTokenRecentTransfers,
   resolveTokenInfos,
   scanAddressTokenTransfers,
   uniqueAddressesFromTransfers,
@@ -294,5 +295,148 @@ describe('resolveTokenInfos', () => {
     const client = mockMetadataClient({});
     const result = await resolveTokenInfos(client, []);
     expect(result.size).toBe(0);
+  });
+});
+
+// ------------------------------------------------------------------ //
+// loadTokenRecentTransfers
+// ------------------------------------------------------------------ //
+// Indexer-backed variant of the per-token transfer window. Must:
+//   - Fall back to the RPC-only scan when the indexer's cursor file
+//     is missing (data branch not yet populated).
+//   - Merge indexed rows + RPC tail rows, newest-first, deduped on
+//     (txHash, logIndex).
+//   - Only RPC-scan `cursor+1..head` when the indexer is available.
+describe('loadTokenRecentTransfers', () => {
+  const TOKEN = '0xAAaAaaAaaAaaAAaaAAAaaaAAAAAaaaAaAAaAAaaA' as const;
+  const ALICE = '0x1111111111111111111111111111111111111111' as const;
+  const BOB = '0x2222222222222222222222222222222222222222' as const;
+
+  const ORIG_FETCH = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = ORIG_FETCH;
+  });
+
+  function rpcLog(opts: {
+    blockNumber: bigint;
+    logIndex: number;
+    from: string;
+    to: string;
+    value: bigint;
+    txHash: string;
+  }) {
+    return {
+      address: TOKEN,
+      args: { from: opts.from, to: opts.to, value: opts.value },
+      blockNumber: opts.blockNumber,
+      transactionHash: opts.txHash,
+      logIndex: opts.logIndex,
+    };
+  }
+
+  it('falls back to RPC-only scan when the indexer cursor is missing', async () => {
+    globalThis.fetch = (async () =>
+      ({ ok: false, status: 404 }) as Response) as typeof fetch;
+
+    const logs = [
+      rpcLog({
+        blockNumber: 100n,
+        logIndex: 0,
+        from: ALICE,
+        to: BOB,
+        value: 1n,
+        txHash: '0xaaaa',
+      }),
+    ];
+    const client = {
+      getLogs: vi.fn().mockResolvedValue(logs),
+    } as unknown as PublicClient;
+
+    const out = await loadTokenRecentTransfers(client, TOKEN, 200n);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.blockNumber).toBe(100n);
+    // Cursor unavailable → scan uses the default RPC window, one getLogs
+    // call targeted at TOKEN (no fan-out into from/to filters — per-token
+    // scan uses `{address, event}`).
+    expect((client.getLogs as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1);
+  });
+
+  it('merges indexed history with RPC tail, newest-first, deduped', async () => {
+    const cursor = {
+      lastBlock: 100,
+      chainId: 61803,
+      updatedAt: '2025-11-15T12:00:00Z',
+      runs: 1,
+      cumulative: { transfers: 1, syncs: 0 },
+    };
+    // One indexed row for TOKEN at block 50, one for a different token
+    // (must be filtered out).
+    const indexedRows = [
+      {
+        block: 50,
+        ts: 1700000000,
+        tx: '0xidx',
+        logIndex: 2,
+        token: TOKEN.toLowerCase(),
+        from: ALICE.toLowerCase(),
+        to: BOB.toLowerCase(),
+        value: '5',
+      },
+      {
+        block: 60,
+        ts: 1700000100,
+        tx: '0xelse',
+        logIndex: 0,
+        token: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+        from: ALICE.toLowerCase(),
+        to: BOB.toLowerCase(),
+        value: '99',
+      },
+    ];
+    const body = indexedRows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/cursor.json')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(cursor),
+          json: async () => cursor,
+        } as Response;
+      }
+      if (url.endsWith('.jsonl')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => body,
+        } as Response;
+      }
+      // gz and any other suffixed shard: 404.
+      return { ok: false, status: 404 } as Response;
+    }) as typeof fetch;
+
+    // RPC tail returns a newer row at block 150 (past the cursor).
+    const rpcTail = [
+      rpcLog({
+        blockNumber: 150n,
+        logIndex: 0,
+        from: BOB,
+        to: ALICE,
+        value: 9n,
+        txHash: '0xrpc',
+      }),
+    ];
+    const client = {
+      getLogs: vi.fn().mockResolvedValue(rpcTail),
+    } as unknown as PublicClient;
+
+    const out = await loadTokenRecentTransfers(client, TOKEN, 200n);
+    // Two rows total: the RPC-tail row (block 150) and the indexed row
+    // (block 50). The cross-token row at block 60 must be filtered out.
+    expect(out).toHaveLength(2);
+    expect(out[0]!.blockNumber).toBe(150n); // newest first
+    expect(out[1]!.blockNumber).toBe(50n);
+    expect(out[1]!.value).toBe(5n);
   });
 });

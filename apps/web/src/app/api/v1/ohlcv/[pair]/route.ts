@@ -36,9 +36,9 @@ import {
   OHLCV_MAX_CANDLES,
   aggregateCandles,
   fetchPairByAddress,
-  fetchSyncLogs,
   jsonError,
   jsonResponse,
+  loadSyncLogsForOhlcv,
   priceClient,
   spotPriceFromReserves,
   tokenByAddress,
@@ -184,7 +184,7 @@ export async function GET(
 
   const { fromBlock, toBlock, fromTs, toTs } = await estimateBlockWindow(client, intervalSeconds, limit);
 
-  const logs = await fetchSyncLogs(pairAddress, fromBlock, toBlock, client);
+  const logs = await loadSyncLogsForOhlcv(pairAddress, fromBlock, toBlock, client);
 
   // Turn each Sync into a (timestamp, price) sample. When a log carries no
   // blockNumber (some providers strip it under load) we fall back to the
