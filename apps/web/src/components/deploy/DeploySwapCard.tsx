@@ -52,9 +52,9 @@ type StepConfig = {
 const STEPS: StepConfig[] = [
   {
     key: 'wegaz',
-    label: '1. Deploy WEGAZ',
+    label: '1. Deploy Wrapped EGAZ',
     description:
-      'Wrapped EGAZ (ERC-20 wrapper for the native gas token). Deploys first — no dependencies.',
+      'ERC-20 wrapper for the native EGAZ gas token. Deploys first — no dependencies. (Contract symbol on-chain: WEGAZ.)',
     abi: wegazArtifact.abi,
     bytecode: wegazArtifact.bytecode,
     args: () => ({ ready: true, args: [] }),
@@ -75,7 +75,7 @@ const STEPS: StepConfig[] = [
     key: 'router',
     label: '3. Deploy EticaSwapRouter',
     description:
-      'Uniswap V2 router wired to the factory and WEGAZ. This is the entry point the swap UI talks to.',
+      'Uniswap V2 router wired to the factory and the wrapped-EGAZ contract. This is the entry point the swap UI talks to.',
     abi: routerArtifact.abi,
     bytecode: routerArtifact.bytecode,
     args: ({ wegaz, factory }) => {
@@ -375,9 +375,9 @@ export function DeploySwapCard() {
           </p>
           <pre className="overflow-x-auto rounded bg-black/60 p-3 text-xs">
             {`chainId: 61803 (Etica Mainnet)
-wegaz:   ${addresses.wegaz}
-factory: ${addresses.factory}
-router:  ${addresses.router}
+wrappedEgaz: ${addresses.wegaz}
+factory:     ${addresses.factory}
+router:      ${addresses.router}
 treasury/feeToSetter: ${treasury}`}
           </pre>
         </section>

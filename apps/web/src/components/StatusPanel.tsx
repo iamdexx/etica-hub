@@ -282,7 +282,7 @@ export async function StatusPanel() {
       <AddressTable
         rows={[
           ['ETX', d.etx],
-          ['WEGAZ', d.wegaz],
+          ['EGAZ (wrapped ERC-20)', d.wegaz],
           ['Factory', d.swapFactory],
           ['Router', d.swapRouter],
           ['Permit2', d.permit2],

@@ -175,8 +175,8 @@ export default async function AddressPage({ params }: AddressPageProps) {
         <Field label="ETI balance">
           {ext?.eti && ext.eti !== ZERO ? formatEgaz(etiBalance) : '—'} ETI
         </Field>
-        <Field label="WEGAZ balance">
-          {d?.wegaz && d.wegaz !== ZERO ? formatEgaz(wegazBalance) : '—'} WEGAZ
+        <Field label="EGAZ balance (wrapped ERC-20)">
+          {d?.wegaz && d.wegaz !== ZERO ? formatEgaz(wegazBalance) : '—'} EGAZ
         </Field>
         <Field label="Type">{isContract ? 'Contract' : 'Externally-owned account'}</Field>
         <Field label="Code size">

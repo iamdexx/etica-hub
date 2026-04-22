@@ -11,7 +11,7 @@ export default function DeploySwapPage() {
       <header className="mb-6 space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Deploy EticaSwap V2</h1>
         <p className="text-sm text-white/60">
-          One-shot deployer for the EticaSwap V2 stack (WEGAZ, Factory, Router). Signs with your
+          One-shot deployer for the EticaSwap V2 stack (wrapped EGAZ, Factory, Router). Signs with your
           connected wallet — no private key ever leaves MetaMask. Intended to be run once per
           chain, by the project operator.
         </p>
