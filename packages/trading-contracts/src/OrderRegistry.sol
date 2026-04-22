@@ -97,6 +97,13 @@ contract OrderRegistry {
     error EmptySignature();
     error BatchLengthMismatch();
     error EmptyBatch();
+    error BatchTooLarge();
+
+    /// @notice Hard cap on orders per {postOrderBatch} call. Chosen to comfortably
+    ///         cover the Infinity / Grid bot's {MAX_LEVELS} (50) with headroom,
+    ///         while keeping the per-call log footprint bounded so indexers
+    ///         don't have to handle pathological single-tx log bursts.
+    uint256 public constant MAX_BATCH_SIZE = 64;
 
     /// @notice Post a single signed order.
     /// @param encodedOrder The abi-encoded UniswapX DutchOrder bytes.
@@ -122,6 +129,7 @@ contract OrderRegistry {
     {
         uint256 n = encodedOrders.length;
         if (n == 0) revert EmptyBatch();
+        if (n > MAX_BATCH_SIZE) revert BatchTooLarge();
         if (signatures.length != n || metas.length != n) revert BatchLengthMismatch();
         orderHashes = new bytes32[](n);
         for (uint256 i = 0; i < n; i++) {

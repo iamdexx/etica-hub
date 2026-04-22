@@ -167,6 +167,38 @@ contract OrderRegistryTest is Test {
         registry.postOrderBatch(encodeds, sigs, metas);
     }
 
+    function test_postOrderBatch_rejectsOversizedBatch() public {
+        uint256 oversized = registry.MAX_BATCH_SIZE() + 1;
+        bytes[] memory encodeds = new bytes[](oversized);
+        bytes[] memory sigs = new bytes[](oversized);
+        OrderRegistry.OrderMeta[] memory metas = new OrderRegistry.OrderMeta[](oversized);
+        for (uint256 i = 0; i < oversized; i++) {
+            encodeds[i] = abi.encodePacked(bytes32(uint256(i + 1)));
+            sigs[i] = abi.encodePacked(bytes32(uint256(i + 1)));
+            metas[i] = _limitMeta();
+        }
+
+        vm.expectRevert(OrderRegistry.BatchTooLarge.selector);
+        vm.prank(ALICE);
+        registry.postOrderBatch(encodeds, sigs, metas);
+    }
+
+    function test_postOrderBatch_acceptsMaxSizeBatch() public {
+        uint256 n = registry.MAX_BATCH_SIZE();
+        bytes[] memory encodeds = new bytes[](n);
+        bytes[] memory sigs = new bytes[](n);
+        OrderRegistry.OrderMeta[] memory metas = new OrderRegistry.OrderMeta[](n);
+        for (uint256 i = 0; i < n; i++) {
+            encodeds[i] = abi.encodePacked(bytes32(uint256(i + 1)));
+            sigs[i] = abi.encodePacked(bytes32(uint256(i + 1)));
+            metas[i] = _limitMeta();
+        }
+
+        vm.prank(ALICE);
+        bytes32[] memory hashes = registry.postOrderBatch(encodeds, sigs, metas);
+        assertEq(hashes.length, n);
+    }
+
     function test_postOrderBatch_rejectsDuplicateAcrossBatch() public {
         bytes[] memory encodeds = new bytes[](2);
         bytes[] memory sigs = new bytes[](2);

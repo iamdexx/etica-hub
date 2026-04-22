@@ -198,6 +198,31 @@ contract ProposalTokenFactoryTest is Test {
         assertEq(launchpad.launchFeeEti(), 1234 ether);
     }
 
+    function test_setLaunchFeeEtx_rejectsAboveCap() public {
+        uint256 cap = launchpad.MAX_LAUNCH_FEE_ETX();
+        vm.prank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(ProposalTokenFactory.LaunchFeeTooHigh.selector, cap + 1, cap)
+        );
+        launchpad.setLaunchFeeEtx(cap + 1);
+    }
+
+    function test_setLaunchFeeEti_rejectsAboveCap() public {
+        uint256 cap = launchpad.MAX_LAUNCH_FEE_ETI();
+        vm.prank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(ProposalTokenFactory.LaunchFeeTooHigh.selector, cap + 1, cap)
+        );
+        launchpad.setLaunchFeeEti(cap + 1);
+    }
+
+    function test_setLaunchFeeEtx_acceptsCapExactly() public {
+        uint256 cap = launchpad.MAX_LAUNCH_FEE_ETX();
+        vm.prank(OWNER);
+        launchpad.setLaunchFeeEtx(cap);
+        assertEq(launchpad.launchFeeEtx(), cap);
+    }
+
     function test_setMinLpEtx_onlyOwner() public {
         vm.expectRevert();
         launchpad.setMinLpEtxAmount(42 ether);
