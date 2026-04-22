@@ -198,10 +198,18 @@ Global view of all of a user's open orders + fill history. Cancellation button p
 |---|---|---|
 | A | This design doc | merged (#28) |
 | B | Vendor Permit2 as submodule + deploy wrapper | merged (#29) |
-| C | Vendor UniswapX Reactor + ETX-denominated `EticaProtocolFeeController` + deploy scripts + deploy to Etica mainnet | this PR |
-| D | Order-book API + reference keeper skeleton | pending |
-| E | Price indexer extension + `/trade/[token]` UI (limit + stop) | pending |
-| F | DCA + bounded grid + infinite grid wizards | pending |
+| C | Vendor UniswapX Reactor + ETX-denominated `EticaProtocolFeeController` + deploy scripts + deploy to Etica mainnet | merged (#31) |
+| D | Order-book API + reference keeper skeleton | merged (#32) |
+| E | Price indexer extension + `/trade/[token]` UI (limit + stop) | merged (#33) |
+| F.1 | Limit orders + orders dashboard | merged (#34) |
+| F.2 | Stop orders + trigger metadata | merged (#35) |
+| F.3 | DCA wizard | merged (#36) |
+| F.4 | Bounded grid bot | merged (#37) |
+| F.5 | Infinite grid bot ("Infinity Bot") with geometric spacing — see [`INFINITY_BOT.md`](./INFINITY_BOT.md) | shipping with this PR |
+| F.6.a | Browser deployer + reactor admin UI | merged (#38) |
+| F.6.b | Wire Permit2 + DutchOrderReactor + fee controller addresses | merged (#39) |
+| F.7.a | On-chain `OrderRegistry` contract + deploy UI + registry-backed posts + dashboard | merged (#47, #48, #49) |
+| F.7.b | Keeper: on-chain registry source + GitHub Actions dry-run cron | merged (#50) |
 | G | Beta launch + docs | pending |
 
 Each PR is independently mergeable and functional — the site continues to work at every step.

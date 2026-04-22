@@ -6,8 +6,9 @@ import { LimitForm } from './LimitForm';
 import { StopForm } from './StopForm';
 import { DcaForm } from './DcaForm';
 import { GridForm } from './GridForm';
+import { InfiniteGridForm } from './InfiniteGridForm';
 
-type Tab = 'market' | 'limit' | 'stop' | 'dca' | 'grid';
+type Tab = 'market' | 'limit' | 'stop' | 'dca' | 'grid' | 'infinite';
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'market', label: 'Market' },
@@ -15,6 +16,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'stop', label: 'Stop' },
   { key: 'dca', label: 'DCA' },
   { key: 'grid', label: 'Grid' },
+  { key: 'infinite', label: 'Infinite' },
 ];
 
 export interface TradeTabsProps {
@@ -46,6 +48,7 @@ export function TradeTabs({ baseSymbol }: TradeTabsProps) {
       {tab === 'stop' && <StopForm baseSymbol={baseSymbol} />}
       {tab === 'dca' && <DcaForm baseSymbol={baseSymbol} />}
       {tab === 'grid' && <GridForm baseSymbol={baseSymbol} />}
+      {tab === 'infinite' && <InfiniteGridForm baseSymbol={baseSymbol} />}
     </div>
   );
 }
