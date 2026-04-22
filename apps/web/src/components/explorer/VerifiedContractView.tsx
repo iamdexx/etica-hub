@@ -1,6 +1,22 @@
 import type { VerifiedContract } from '@/lib/verified';
 
 /**
+ * GitHub repository the verified manifests are committed to. We link the
+ * raw JSON back to this repo (pinned to `VERCEL_GIT_COMMIT_SHA` when
+ * available, otherwise `main`) so any third party can cross-check our
+ * sources without having to trust eticahub.org specifically — the
+ * manifest they see rendered here is byte-identical to the file in the
+ * public repo.
+ */
+const MANIFEST_REPO = 'iamdexx/etica-hub';
+const MANIFEST_PATH_PREFIX = 'apps/web/public/verified';
+
+function manifestRawUrl(address: `0x${string}`): string {
+  const sha = process.env.VERCEL_GIT_COMMIT_SHA || 'main';
+  return `https://raw.githubusercontent.com/${MANIFEST_REPO}/${sha}/${MANIFEST_PATH_PREFIX}/${address.toLowerCase()}.json`;
+}
+
+/**
  * Server-rendered "Contract" section for the explorer address page.
  *
  * Renders the three pieces an etherscan-style verified contract tab needs:
@@ -88,7 +104,15 @@ export function VerifiedContractView({ manifest }: { manifest: VerifiedContract 
 
       <p className="mt-3 text-[10px] text-white/35">
         Verified {new Date(manifest.verifiedAt).toISOString().slice(0, 10)} against on-chain runtime
-        bytecode.
+        bytecode.{' '}
+        <a
+          href={manifestRawUrl(manifest.address)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-emerald-300/70 underline decoration-emerald-300/30 underline-offset-2 hover:text-emerald-200 hover:decoration-emerald-300/70"
+        >
+          Cross-verify manifest on GitHub ↗
+        </a>
       </p>
     </section>
   );
