@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchIndexedAddressTransfers,
@@ -9,6 +10,22 @@ import {
   type IndexedTransferRow,
   type IndexedSyncRow,
 } from '../src/lib/explorerIndex';
+
+/**
+ * Builds a mock Response whose body is a ReadableStream of the given
+ * gzipped bytes, so the reader's DecompressionStream-based path
+ * exercises the same shape it hits against raw.githubusercontent.com.
+ */
+function gzipResponse(text: string): Response {
+  const bytes = gzipSync(text);
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200 });
+}
 
 const ORIG_FETCH = globalThis.fetch;
 
@@ -111,6 +128,100 @@ describe('fetchIndexedAddressTransfers', () => {
   it('returns null when the data branch is not yet populated', async () => {
     mockFetch(() => ({ ok: false, body: '' }));
     expect(await fetchIndexedAddressTransfers({ address: ADDR })).toBeNull();
+  });
+
+  it('prefers gzipped partitions when present', async () => {
+    const cursor: IndexedCursor = {
+      lastBlock: 10,
+      chainId: 61803,
+      updatedAt: '2025-11-15T12:00:00Z',
+      runs: 1,
+      cumulative: { transfers: 1, syncs: 0 },
+    };
+    const gzRow = row({ block: 10, logIndex: 1, tx: '0xgz', to: ADDR });
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/cursor.json')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(cursor),
+          json: async () => cursor,
+        } as Response;
+      }
+      if (url.endsWith('/transfers/2025/11/15.jsonl.gz')) {
+        return gzipResponse(`${JSON.stringify(gzRow)}\n`);
+      }
+      return { ok: false, status: 404 } as Response;
+    }) as typeof fetch;
+
+    const result = await fetchIndexedAddressTransfers({ address: ADDR, days: 1 });
+    expect(result).not.toBeNull();
+    expect(result!.rows.map((r) => r.tx)).toEqual(['0xgz']);
+  });
+
+  it('walks multiple shards in order and concatenates rows', async () => {
+    const cursor: IndexedCursor = {
+      lastBlock: 10,
+      chainId: 61803,
+      updatedAt: '2025-11-15T12:00:00Z',
+      runs: 1,
+      cumulative: { transfers: 3, syncs: 0 },
+    };
+    const shard0 = row({ block: 10, logIndex: 1, tx: '0xs0', to: ADDR });
+    const shard1 = row({ block: 10, logIndex: 2, tx: '0xs1', to: ADDR });
+    const shard2 = row({ block: 10, logIndex: 3, tx: '0xs2', to: ADDR });
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/cursor.json')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(cursor),
+          json: async () => cursor,
+        } as Response;
+      }
+      if (url.endsWith('/transfers/2025/11/15.jsonl.gz')) {
+        return gzipResponse(`${JSON.stringify(shard0)}\n`);
+      }
+      if (url.endsWith('/transfers/2025/11/15.1.jsonl.gz')) {
+        return gzipResponse(`${JSON.stringify(shard1)}\n`);
+      }
+      if (url.endsWith('/transfers/2025/11/15.2.jsonl.gz')) {
+        return gzipResponse(`${JSON.stringify(shard2)}\n`);
+      }
+      return { ok: false, status: 404 } as Response;
+    }) as typeof fetch;
+
+    const result = await fetchIndexedAddressTransfers({ address: ADDR, days: 1 });
+    expect(result).not.toBeNull();
+    // Sorted newest-first by (block, logIndex) — shard 2 has the
+    // highest logIndex even though it was written last.
+    expect(result!.rows.map((r) => r.tx)).toEqual(['0xs2', '0xs1', '0xs0']);
+  });
+
+  it('falls back to plain .jsonl partitions when the gzip file is absent', async () => {
+    const cursor: IndexedCursor = {
+      lastBlock: 10,
+      chainId: 61803,
+      updatedAt: '2025-11-15T12:00:00Z',
+      runs: 1,
+      cumulative: { transfers: 1, syncs: 0 },
+    };
+    const plainRow = row({ block: 10, logIndex: 1, tx: '0xplain', to: ADDR });
+    mockFetch((url) => {
+      if (url.endsWith('/cursor.json')) {
+        return { ok: true, body: JSON.stringify(cursor) };
+      }
+      if (url.endsWith('/transfers/2025/11/15.jsonl')) {
+        return { ok: true, body: `${JSON.stringify(plainRow)}\n` };
+      }
+      return { ok: false, body: '' };
+    });
+
+    const result = await fetchIndexedAddressTransfers({ address: ADDR, days: 1 });
+    expect(result).not.toBeNull();
+    expect(result!.rows.map((r) => r.tx)).toEqual(['0xplain']);
   });
 
   it('filters rows by from or to match, newest first', async () => {

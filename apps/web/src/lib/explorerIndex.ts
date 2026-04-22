@@ -128,16 +128,80 @@ export function parseJsonl<T>(body: string): T[] {
   return out;
 }
 
-async function fetchPartition<T>(prefix: string, key: string): Promise<T[]> {
+/**
+ * Hard cap on how many shards we probe per day. Protects us from
+ * accidentally making a pathological number of 404 round-trips if the
+ * writer ever ends up in a truly absurd state. 128 shards at 50 MB
+ * each = ~6.4 GB compressed per day, which is well beyond anything
+ * realistic, so this ceiling is pure belt-and-suspenders.
+ */
+const MAX_SHARDS_PER_DAY = 128;
+
+/**
+ * Fetches and gunzips a gzipped partition. Uses DecompressionStream
+ * (available in Node 18+ and all modern browsers) so we don't have
+ * to pull in a zlib dep.
+ */
+async function fetchGzipText(url: string): Promise<string | null> {
+  const res = await fetch(url, {
+    next: { revalidate: FETCH_REVALIDATE_SECONDS },
+  });
+  if (!res.ok || !res.body) return null;
+  const stream = res.body.pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).text();
+}
+
+/**
+ * Fetches a single shard's rows. Tries gzip first (current writer
+ * output) and falls back to plain .jsonl so any pre-gzip data or
+ * partially-migrated days still read cleanly. Returns null (distinct
+ * from `[]`) when neither file exists so the shard-walker can stop
+ * probing.
+ */
+async function fetchShard<T>(
+  prefix: string,
+  dayKey: string,
+  shard: number,
+): Promise<T[] | null> {
+  const suffix = shard === 0 ? '' : `.${shard}`;
+  const gzUrl = `${RAW_BASE}/${prefix}/${dayKey}${suffix}.jsonl.gz`;
   try {
-    const res = await fetch(`${RAW_BASE}/${prefix}/${key}.jsonl`, {
+    const gzText = await fetchGzipText(gzUrl);
+    if (gzText !== null) return parseJsonl<T>(gzText);
+  } catch {
+    // swallow — try plain fallback
+  }
+  // Plain fallback only makes sense for shard 0 (legacy writer never
+  // produced suffixed shards at all). For shard > 0, a 404 on the gz
+  // path is a true end-of-shards signal.
+  if (shard !== 0) return null;
+  try {
+    const res = await fetch(`${RAW_BASE}/${prefix}/${dayKey}.jsonl`, {
       next: { revalidate: FETCH_REVALIDATE_SECONDS },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     return parseJsonl<T>(await res.text());
   } catch {
-    return [];
+    return null;
   }
+}
+
+/**
+ * Walks all shards for a given day in order, concatenating rows.
+ * Stops at the first missing shard so we don't do unnecessary
+ * round-trips on days that only have shard 0 (the common case).
+ */
+async function fetchPartition<T>(prefix: string, dayKey: string): Promise<T[]> {
+  const out: T[] = [];
+  for (let n = 0; n < MAX_SHARDS_PER_DAY; n++) {
+    const rows = await fetchShard<T>(prefix, dayKey, n);
+    if (rows === null) {
+      if (n === 0) return [];
+      return out;
+    }
+    out.push(...rows);
+  }
+  return out;
 }
 
 export interface IndexedTransferQuery {
