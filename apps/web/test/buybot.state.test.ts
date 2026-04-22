@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  claimBuyPost,
   lastBlockKey,
   memoryKv,
+  postedKey,
   readLastScannedBlock,
   writeLastScannedBlock,
 } from '../src/lib/buybot/state';
@@ -42,6 +44,70 @@ describe('buybot state (memoryKv)', () => {
     const kv = memoryKv({ 'test:buybot:lastBlock': 'not-a-number' });
     const v = await readLastScannedBlock(kv, cfg());
     expect(v).toBeNull();
+  });
+});
+
+describe('buybot dedup (claimBuyPost)', () => {
+  const tx = '0xABCDEF0000000000000000000000000000000000000000000000000000000001' as const;
+
+  it('namespaces and lowercases the posted key', () => {
+    expect(postedKey(cfg({ BUYBOT_KV_NAMESPACE: 'ns' }), tx, 7)).toBe(
+      'ns:posted:0xabcdef0000000000000000000000000000000000000000000000000000000001:7',
+    );
+  });
+
+  it('returns true on first claim and false on subsequent claims of the same swap', async () => {
+    const kv = memoryKv();
+    const first = await claimBuyPost(kv, cfg(), tx, 5);
+    const second = await claimBuyPost(kv, cfg(), tx, 5);
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+  });
+
+  it('treats different log indices in the same tx as independent', async () => {
+    const kv = memoryKv();
+    expect(await claimBuyPost(kv, cfg(), tx, 1)).toBe(true);
+    expect(await claimBuyPost(kv, cfg(), tx, 2)).toBe(true);
+    expect(await claimBuyPost(kv, cfg(), tx, 1)).toBe(false);
+  });
+
+  it('is case-insensitive on tx hash so mixed-case inputs still dedup', async () => {
+    const kv = memoryKv();
+    expect(await claimBuyPost(kv, cfg(), tx.toUpperCase(), 3)).toBe(true);
+    expect(await claimBuyPost(kv, cfg(), tx.toLowerCase(), 3)).toBe(false);
+  });
+});
+
+describe('restKv.setIfAbsent', () => {
+  it('returns true when Upstash responds result=OK', async () => {
+    const originalFetch = globalThis.fetch;
+    const capturedUrls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      capturedUrls.push(String(input));
+      return new Response(JSON.stringify({ result: 'OK' }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const { restKv } = await import('../src/lib/buybot/state');
+      const kv = restKv('https://kv.example', 'tok');
+      const ok = await kv.setIfAbsent('k', 'v', 60);
+      expect(ok).toBe(true);
+      expect(capturedUrls[0]).toContain('/set/k/v/EX/60/NX');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('returns false when Upstash responds result=null (key already existed)', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ result: null }), { status: 200 })) as typeof fetch;
+    try {
+      const { restKv } = await import('../src/lib/buybot/state');
+      const kv = restKv('https://kv.example', 'tok');
+      expect(await kv.setIfAbsent('k', 'v', 60)).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

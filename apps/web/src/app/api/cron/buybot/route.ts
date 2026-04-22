@@ -24,7 +24,13 @@ import { computeBuyReport, decodeSwapAsBuy, type UsdPricing } from '@/lib/buybot
 import { formatBuy } from '@/lib/buybot/format';
 import { telegramClient } from '@/lib/buybot/telegram';
 import { fetchSwapsInRange, loadAllPairs, planScanWindow, snapshotPool } from '@/lib/buybot/scan';
-import { kvFor, memoryKv, readLastScannedBlock, writeLastScannedBlock } from '@/lib/buybot/state';
+import {
+  claimBuyPost,
+  kvFor,
+  memoryKv,
+  readLastScannedBlock,
+  writeLastScannedBlock,
+} from '@/lib/buybot/state';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -155,6 +161,15 @@ export async function GET(req: NextRequest): Promise<Response> {
       const report = computeBuyReport(decoded, config.etx, config.eti, config.wegaz, pricing);
       if (report.notionalUsd !== null && report.notionalUsd < config.minUsdToPost) {
         bump('below-min-usd');
+        continue;
+      }
+
+      // Claim the (txHash, logIndex) in KV before sending. If a prior run
+      // already posted this swap (e.g. its cursor-write failed and we're
+      // rescanning the range), skip so we don't double-post.
+      const claimed = await claimBuyPost(kv, config, swap.txHash, swap.logIndex);
+      if (!claimed) {
+        bump('already-posted');
         continue;
       }
 
