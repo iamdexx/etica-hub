@@ -212,10 +212,14 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
       setError('Connect a wallet first.');
       return;
     }
-    if (!tradingLive || !orderbookUrl) {
+    if (!tradingLive) {
       setError(
         'Order book + keeper are still deploying — grids can be signed once they are online.',
       );
+      return;
+    }
+    if (registryAddress && (!walletClient || !publicClient)) {
+      setError('Wallet session still loading — try again in a moment.');
       return;
     }
     if (refPrice18 <= 0n) {
@@ -489,7 +493,7 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
           className="w-full rounded-xl bg-brand-accent px-3 py-2 text-sm font-semibold text-brand-ink disabled:opacity-50"
         >
           {submitting
-            ? progress
+            ? progress && progress.signed < progress.total
               ? `Signing ${progress.signed + 1} of ${progress.total}…`
               : 'Submitting…'
             : `Sign ${plan?.length ?? 0}-level infinite grid`}
