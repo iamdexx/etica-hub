@@ -24,6 +24,7 @@ import {
   type HarvestPlan,
   type PairSnapshot,
 } from './plan.js';
+import { buildDelegationCall, type DelegationCall } from './delegation.js';
 
 const DEADLINE_BUFFER_S = 300; // 5 minutes
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -31,7 +32,11 @@ const MAX_UINT256 = (1n << 256n) - 1n;
 export interface HarvestRunResult {
   skipped: boolean;
   dryRun: boolean;
+  /** "delegation" = single harvester.harvest() call; "legacy" = treasury-signed multi-tx. */
+  mode: 'delegation' | 'legacy';
   plan: HarvestPlan;
+  /** Only populated in delegation mode; the calldata that was (or would be) submitted. */
+  delegation?: DelegationCall;
   submittedTxHashes: string[];
   error?: string;
 }
@@ -272,11 +277,14 @@ export async function runHarvest(
   );
   if (snapWegaz) pairs.push(snapWegaz);
 
+  const mode: 'delegation' | 'legacy' = config.harvester ? 'delegation' : 'legacy';
+
   if (pairs.length === 0) {
     log.info('[harvest] no canonical pools exist yet; skipping');
     return {
       skipped: true,
       dryRun: config.dryRun,
+      mode,
       plan: {
         actions: [],
         pools: [],
@@ -291,16 +299,32 @@ export async function runHarvest(
 
   // 2. Build plan.
   const plan = buildHarvestPlan(config, pairs);
+  const delegation = config.harvester ? buildDelegationCall(config, pairs, plan) : undefined;
 
   logPlan(plan, config, log);
+  if (delegation) logDelegation(delegation, config, log);
 
   if (plan.actions.length === 0) {
-    return { skipped: true, dryRun: config.dryRun, plan, submittedTxHashes: [] };
+    return {
+      skipped: true,
+      dryRun: config.dryRun,
+      mode,
+      plan,
+      delegation,
+      submittedTxHashes: [],
+    };
   }
 
   if (config.dryRun) {
     log.info('[harvest] DRY-RUN: not submitting any transactions');
-    return { skipped: false, dryRun: true, plan, submittedTxHashes: [] };
+    return {
+      skipped: false,
+      dryRun: true,
+      mode,
+      plan,
+      delegation,
+      submittedTxHashes: [],
+    };
   }
 
   // 3. Live execution. Requires a private key; the caller should have
@@ -309,17 +333,35 @@ export async function runHarvest(
     return {
       skipped: false,
       dryRun: false,
+      mode,
       plan,
+      delegation,
       submittedTxHashes: [],
       error: 'dryRun=false but HARVEST_PRIVATE_KEY is unset — refusing to submit',
     };
   }
 
   const account = privateKeyToAccount(config.privateKey);
+
+  // Delegation mode: signer is the hot keeper EOA; never the treasury.
+  if (config.harvester && delegation) {
+    return runDelegation({
+      config,
+      plan,
+      delegation,
+      account,
+      client,
+      walletOverride: deps.walletClient,
+      log,
+    });
+  }
+
+  // Legacy path: signer must be the treasury.
   if (account.address.toLowerCase() !== config.treasury.toLowerCase()) {
     return {
       skipped: false,
       dryRun: false,
+      mode,
       plan,
       submittedTxHashes: [],
       error:
@@ -347,6 +389,7 @@ export async function runHarvest(
       return {
         skipped: false,
         dryRun: false,
+        mode,
         plan,
         submittedTxHashes,
         error: `failed at ${a.kind}: ${msg}`,
@@ -354,7 +397,127 @@ export async function runHarvest(
     }
   }
 
-  return { skipped: false, dryRun: false, plan, submittedTxHashes };
+  return { skipped: false, dryRun: false, mode, plan, submittedTxHashes };
+}
+
+interface RunDelegationArgs {
+  config: HarvestConfig;
+  plan: HarvestPlan;
+  delegation: DelegationCall;
+  account: ReturnType<typeof privateKeyToAccount>;
+  client: PublicClient;
+  walletOverride?: WalletClient;
+  log: Pick<Console, 'info' | 'warn' | 'error'>;
+}
+
+async function runDelegation(args: RunDelegationArgs): Promise<HarvestRunResult> {
+  const { config, plan, delegation, account, client, walletOverride, log } = args;
+  const mode = 'delegation' as const;
+  const harvester = config.harvester!;
+
+  // Verify the signer matches the on-chain keeper. If the treasury rotated
+  // keepers between workflow runs we want to fail loud, not force a tx
+  // that the contract will revert anyway.
+  try {
+    const onChainKeeper = (await client.readContract({
+      address: harvester,
+      abi: abis.treasuryHarvesterAbi,
+      functionName: 'keeper',
+    })) as Address;
+    if (onChainKeeper.toLowerCase() !== account.address.toLowerCase()) {
+      return {
+        skipped: false,
+        dryRun: false,
+        mode,
+        plan,
+        delegation,
+        submittedTxHashes: [],
+        error:
+          `HARVEST_PRIVATE_KEY derives ${account.address} but harvester.keeper() is ` +
+          `${onChainKeeper} — rotate the keeper on the contract or the workflow secret`,
+      };
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      skipped: false,
+      dryRun: false,
+      mode,
+      plan,
+      delegation,
+      submittedTxHashes: [],
+      error: `failed to read harvester.keeper() at ${harvester}: ${msg}`,
+    };
+  }
+
+  const wallet =
+    walletOverride ??
+    createWalletClient({
+      account,
+      transport: http(config.rpcUrl),
+    });
+
+  try {
+    const hash = await wallet.writeContract({
+      chain: null,
+      account: account.address,
+      address: harvester,
+      abi: abis.treasuryHarvesterAbi,
+      functionName: 'harvest',
+      args: [
+        delegation.pools.map((p) => ({
+          pair: p.pair,
+          nonEtx: p.nonEtx,
+          lpToBurn: p.lpToBurn,
+          minEtxFromBurn: p.minEtxFromBurn,
+          minNonEtxFromBurn: p.minNonEtxFromBurn,
+          minEtxFromSwap: p.minEtxFromSwap,
+          polEtxForSwap: p.polEtxForSwap,
+          polEtxForPair: p.polEtxForPair,
+          minNonEtxFromPolSwap: p.minNonEtxFromPolSwap,
+        })),
+      ],
+    });
+    log.info(`[harvest] submitted harvester.harvest(): ${hash}`);
+    return {
+      skipped: false,
+      dryRun: false,
+      mode,
+      plan,
+      delegation,
+      submittedTxHashes: [hash],
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    log.error(`[harvest] harvester.harvest() failed: ${msg}`);
+    return {
+      skipped: false,
+      dryRun: false,
+      mode,
+      plan,
+      delegation,
+      submittedTxHashes: [],
+      error: `harvester.harvest() failed: ${msg}`,
+    };
+  }
+}
+
+function logDelegation(
+  delegation: DelegationCall,
+  config: HarvestConfig,
+  log: Pick<Console, 'info' | 'warn' | 'error'>,
+): void {
+  log.info(`[harvest] delegation: harvester=${config.harvester}`);
+  log.info(`  totalPolAssigned=${delegation.totalPolAssigned}`);
+  for (const p of delegation.pools) {
+    log.info(
+      `  pool pair=${p.pair} lpToBurn=${p.lpToBurn} ` +
+        `minEtxFromBurn=${p.minEtxFromBurn} minNonEtxFromBurn=${p.minNonEtxFromBurn} ` +
+        `minEtxFromSwap=${p.minEtxFromSwap} ` +
+        `polEtxForSwap=${p.polEtxForSwap} polEtxForPair=${p.polEtxForPair} ` +
+        `minNonEtxFromPolSwap=${p.minNonEtxFromPolSwap}`,
+    );
+  }
 }
 
 function logPlan(

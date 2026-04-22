@@ -76,6 +76,14 @@ export interface HarvestConfig {
    */
   farms: Address | null;
 
+  /**
+   * TreasuryHarvester delegation contract. When set, the runner submits a
+   * single {harvest} call signed by the hot keeper EOA instead of the
+   * multi-step treasury-signed flow. When null, falls back to the legacy
+   * treasury-signed multi-tx flow (useful for local forks / dry-runs).
+   */
+  harvester: Address | null;
+
   /** Four-way split, BPS must sum to 10000. */
   split: HarvestSplit;
 
@@ -197,6 +205,7 @@ export function loadHarvestConfig(env: NodeJS.ProcessEnv = process.env): Harvest
     factory: reqAddress(env, 'HARVEST_FACTORY_ADDRESS'),
     stakedEtx: optAddress(env, 'HARVEST_STAKED_ETX_ADDRESS'),
     farms: optAddress(env, 'HARVEST_FARMS_ADDRESS'),
+    harvester: optAddress(env, 'HARVEST_HARVESTER_ADDRESS'),
     split,
     burnBpsPerRun,
     maxSlippageBps,

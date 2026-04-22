@@ -80,6 +80,15 @@ export const DEPLOYMENTS: Record<
      * deploy lands on-chain.
      */
     stakedETX: Address;
+    /**
+     * TreasuryHarvester — on-chain delegation contract the hot keeper
+     * EOA calls once per cadence to run the full harvest pipeline (burn
+     * LP → swap to ETX → split across stETX / farms / POL burn / treasury).
+     * The treasury pre-approves LP + ETX allowances to this address once;
+     * the keeper key never has treasury power on its own. Zero until
+     * deploy lands on-chain.
+     */
+    treasuryHarvester: Address;
   }
 > = {
   61803: {
@@ -93,6 +102,7 @@ export const DEPLOYMENTS: Record<
     etxFeeController: '0xB9a4FbfC4cA598Be18e09bb9C0Cf19e4a1A4350a',
     orderRegistry: '0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9',
     stakedETX: '0x0000000000000000000000000000000000000000',
+    treasuryHarvester: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -105,6 +115,7 @@ export const DEPLOYMENTS: Record<
     etxFeeController: '0x0000000000000000000000000000000000000000',
     orderRegistry: '0x0000000000000000000000000000000000000000',
     stakedETX: '0x0000000000000000000000000000000000000000',
+    treasuryHarvester: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -118,6 +129,7 @@ export const DEPLOYMENTS: Record<
     etxFeeController: '0x0000000000000000000000000000000000000000',
     orderRegistry: '0x0000000000000000000000000000000000000000',
     stakedETX: '0x0000000000000000000000000000000000000000',
+    treasuryHarvester: '0x0000000000000000000000000000000000000000',
   },
 };
 
