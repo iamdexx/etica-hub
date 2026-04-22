@@ -22,7 +22,6 @@ import {
 } from 'wagmi';
 import {
   DEPLOYMENTS,
-  EXTERNAL_ADDRESSES,
   abis,
   isSupportedChainId,
   type SupportedChainId,
@@ -47,8 +46,12 @@ import {
   getRegistryAddress,
   postOrderOnChain,
 } from '@/lib/trading/registryClient';
+import {
+  resolveBaseTokenAddress,
+  type TradeBaseSymbol,
+} from '@/lib/trading/baseSymbol';
 
-type BaseSymbol = 'ETI' | 'EGAZ';
+type BaseSymbol = TradeBaseSymbol;
 
 export interface OrderFormProps {
   baseSymbol: BaseSymbol;
@@ -86,14 +89,10 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
 
   const supported = isSupportedChainId(chainId);
   const deployment = supported ? DEPLOYMENTS[chainId] : null;
-  const ext = supported ? EXTERNAL_ADDRESSES[chainId] : null;
   const permit2 = deployment?.permit2 ?? '0x0000000000000000000000000000000000000000';
   const reactor = deployment?.dutchReactor ?? '0x0000000000000000000000000000000000000000';
   const etxToken = deployment?.etx ?? '0x0000000000000000000000000000000000000000';
-  const baseToken: Address =
-    baseSymbol === 'ETI'
-      ? (ext?.eti ?? '0x0000000000000000000000000000000000000000')
-      : (deployment?.wegaz ?? '0x0000000000000000000000000000000000000000');
+  const baseToken: Address = resolveBaseTokenAddress(chainId, baseSymbol);
 
   const tradingLive =
     (Boolean(orderbookUrl) || registryAddress !== null) &&

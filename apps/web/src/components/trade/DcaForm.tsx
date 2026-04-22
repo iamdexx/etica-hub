@@ -22,7 +22,6 @@ import {
 } from 'wagmi';
 import {
   DEPLOYMENTS,
-  EXTERNAL_ADDRESSES,
   abis,
   isSupportedChainId,
   type SupportedChainId,
@@ -41,8 +40,12 @@ import {
   postOrderBatchOnChain,
   toBatchIdBytes32,
 } from '@/lib/trading/registryClient';
+import {
+  resolveBaseTokenAddress,
+  type TradeBaseSymbol,
+} from '@/lib/trading/baseSymbol';
 
-type BaseSymbol = 'ETI' | 'EGAZ';
+type BaseSymbol = TradeBaseSymbol;
 
 export interface DcaFormProps {
   baseSymbol: BaseSymbol;
@@ -82,12 +85,10 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
 
   const supported = isSupportedChainId(chainId);
   const deployment = supported ? DEPLOYMENTS[chainId] : null;
-  const ext = supported ? EXTERNAL_ADDRESSES[chainId] : null;
   const permit2 = deployment?.permit2 ?? ZERO;
   const reactor = deployment?.dutchReactor ?? ZERO;
   const etxToken = deployment?.etx ?? ZERO;
-  const baseToken: Address =
-    baseSymbol === 'ETI' ? (ext?.eti ?? ZERO) : (deployment?.wegaz ?? ZERO);
+  const baseToken: Address = resolveBaseTokenAddress(chainId, baseSymbol);
 
   const tradingLive =
     (Boolean(orderbookUrl) || registryAddress !== null) && permit2 !== ZERO && reactor !== ZERO;

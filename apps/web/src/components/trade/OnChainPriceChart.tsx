@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatUnits, parseAbiItem, type Address, type PublicClient } from 'viem';
 import { useChainId, usePublicClient, useReadContract } from 'wagmi';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
+import { DEPLOYMENTS, abis } from '@etica-hub/shared';
+import { resolveBaseTokenAddress, type TradeBaseSymbol } from '@/lib/trading/baseSymbol';
 
 /**
  * Client-side price chart fallback.
@@ -44,16 +45,16 @@ const CACHE_SCHEMA_VERSION = 1;
 type Sample = { ts: number; price: number };
 
 interface OnChainPriceChartProps {
-  baseSymbol: 'ETI' | 'EGAZ';
+  baseSymbol: TradeBaseSymbol;
   quoteSymbol: string;
 }
 
 export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChartProps) {
   const chainId = useChainId();
   const deployment = DEPLOYMENTS[chainId as keyof typeof DEPLOYMENTS];
-  const external = EXTERNAL_ADDRESSES[chainId as keyof typeof EXTERNAL_ADDRESSES];
 
-  const baseAddress: Address | undefined = baseSymbol === 'ETI' ? external?.eti : deployment?.wegaz;
+  const resolvedBase = resolveBaseTokenAddress(chainId, baseSymbol);
+  const baseAddress: Address | undefined = resolvedBase !== ZERO ? resolvedBase : undefined;
   const quoteAddress = deployment?.etx;
 
   // 1) Resolve the pair address once per chain/symbol combo.
