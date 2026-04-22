@@ -1,15 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { encodeAbiParameters, keccak256 } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { createSqliteRepository, type OrderRepository } from '../src/db/index.js';
 import { DUTCH_ORDER_ABI_TYPE } from '../src/eip712.js';
+import { buildCancelAuthMessage } from '../src/routes/orders.js';
 import { buildServer } from '../src/server.js';
 import type { FastifyInstance } from 'fastify';
 
 const REACTOR = '0x1111111111111111111111111111111111111111' as `0x${string}`;
-const SWAPPER = '0x2222222222222222222222222222222222222222' as `0x${string}`;
+// Deterministic test keypair — public address is the SWAPPER used everywhere
+// below. Never touched on-chain; signs EIP-191 cancel-auth messages in tests.
+const SWAPPER_PRIVATE_KEY =
+  '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as `0x${string}`;
+const swapperAccount = privateKeyToAccount(SWAPPER_PRIVATE_KEY);
+const SWAPPER = swapperAccount.address;
+const OTHER_SWAPPER_PRIVATE_KEY =
+  '0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba' as `0x${string}`;
+const otherSwapperAccount = privateKeyToAccount(OTHER_SWAPPER_PRIVATE_KEY);
+const OTHER_SWAPPER = otherSwapperAccount.address;
 const TOKEN_IN = '0x3333333333333333333333333333333333333333' as `0x${string}`;
 const TOKEN_OUT = '0x4444444444444444444444444444444444444444' as `0x${string}`;
-const OTHER_SWAPPER = '0x5555555555555555555555555555555555555555' as `0x${string}`;
 const ZERO = '0x0000000000000000000000000000000000000000' as `0x${string}`;
 const SIG = `0x${'ab'.repeat(65)}` as `0x${string}`;
 const FILL_TX = `0x${'cd'.repeat(32)}` as `0x${string}`;
@@ -142,7 +152,29 @@ describe('orderbook server', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('POST /orders/:hash/cancel marks an open order cancelled', async () => {
+  it('POST /orders/:hash/cancel marks an open order cancelled when swapper signs', async () => {
+    const encoded = encodedOrder();
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: { encodedOrder: encoded, signature: SIG },
+    });
+    const hash = keccak256(encoded);
+
+    const cancelSignature = await swapperAccount.signMessage({
+      message: buildCancelAuthMessage(hash, CANCEL_TX),
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/orders/${hash}/cancel`,
+      payload: { cancelTxHash: CANCEL_TX, cancelSignature },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe('cancelled');
+    expect(res.json().cancelTxHash).toBe(CANCEL_TX);
+  });
+
+  it('POST /orders/:hash/cancel rejects missing cancelSignature (400)', async () => {
     const encoded = encodedOrder();
     await app.inject({
       method: 'POST',
@@ -156,9 +188,56 @@ describe('orderbook server', () => {
       url: `/orders/${hash}/cancel`,
       payload: { cancelTxHash: CANCEL_TX },
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().status).toBe('cancelled');
-    expect(res.json().cancelTxHash).toBe(CANCEL_TX);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('invalid_body');
+  });
+
+  it('POST /orders/:hash/cancel rejects signature from a different address (401)', async () => {
+    const encoded = encodedOrder();
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: { encodedOrder: encoded, signature: SIG },
+    });
+    const hash = keccak256(encoded);
+
+    // otherSwapperAccount signs a cancel for an order that belongs to swapperAccount.
+    const cancelSignature = await otherSwapperAccount.signMessage({
+      message: buildCancelAuthMessage(hash, CANCEL_TX),
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/orders/${hash}/cancel`,
+      payload: { cancelTxHash: CANCEL_TX, cancelSignature },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe('unauthorized');
+    // Order must still be open.
+    const after = await app.inject({ method: 'GET', url: `/orders/${hash}` });
+    expect(after.json().status).toBe('open');
+  });
+
+  it('POST /orders/:hash/cancel rejects signature over a different cancelTxHash (401)', async () => {
+    const encoded = encodedOrder();
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: { encodedOrder: encoded, signature: SIG },
+    });
+    const hash = keccak256(encoded);
+
+    // Swapper signs for CANCEL_TX but body carries a different tx hash —
+    // attacker can't substitute a replayed signature onto a new claim.
+    const cancelSignature = await swapperAccount.signMessage({
+      message: buildCancelAuthMessage(hash, CANCEL_TX),
+    });
+    const differentTx = `0x${'aa'.repeat(32)}` as `0x${string}`;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/orders/${hash}/cancel`,
+      payload: { cancelTxHash: differentTx, cancelSignature },
+    });
+    expect(res.statusCode).toBe(401);
   });
 
   it('POST /orders/:hash/cancel on a filled order returns 409', async () => {
@@ -178,10 +257,13 @@ describe('orderbook server', () => {
       payload: { fillTxHash: FILL_TX, fillBlockNumber: 1_234_567 },
     });
 
+    const cancelSignature = await swapperAccount.signMessage({
+      message: buildCancelAuthMessage(hash, CANCEL_TX),
+    });
     const res = await app.inject({
       method: 'POST',
       url: `/orders/${hash}/cancel`,
-      payload: { cancelTxHash: CANCEL_TX },
+      payload: { cancelTxHash: CANCEL_TX, cancelSignature },
     });
     expect(res.statusCode).toBe(409);
   });
@@ -552,5 +634,63 @@ describe('orderbook server', () => {
     expect(withAuth.json().status).toBe('filled');
     expect(withAuth.json().fillTxHash).toBe(FILL_TX);
     expect(withAuth.json().fillBlockNumber).toBe(1);
+  });
+});
+
+describe('orderbook server without keeperAuthToken', () => {
+  let app: FastifyInstance;
+  let repo: OrderRepository;
+
+  beforeEach(async () => {
+    repo = createSqliteRepository(':memory:');
+    // Explicitly omit keeperAuthToken to simulate a misconfigured deployment.
+    app = await buildServer({ repo });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    repo.close();
+  });
+
+  it('POST /orders/:hash/mark-filled fails closed with 503 when KEEPER_AUTH_TOKEN unset', async () => {
+    const encoded = encodedOrder();
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: { encodedOrder: encoded, signature: SIG },
+    });
+    const hash = keccak256(encoded);
+
+    // Even with NO auth header, the endpoint must reject rather than accept.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/orders/${hash}/mark-filled`,
+      payload: { fillTxHash: FILL_TX, fillBlockNumber: 1 },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('keeper_auth_not_configured');
+
+    // Order must still be open.
+    const after = await app.inject({ method: 'GET', url: `/orders/${hash}` });
+    expect(after.json().status).toBe('open');
+  });
+
+  it('POST /orders/:hash/mark-filled fails closed with 503 even when a bogus auth header is provided', async () => {
+    const encoded = encodedOrder();
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      payload: { encodedOrder: encoded, signature: SIG },
+    });
+    const hash = keccak256(encoded);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/orders/${hash}/mark-filled`,
+      headers: { 'x-keeper-auth': 'anything-goes-in-dev' },
+      payload: { fillTxHash: FILL_TX, fillBlockNumber: 1 },
+    });
+    // Without a configured token, no header value should unlock the endpoint.
+    expect(res.statusCode).toBe(503);
   });
 });

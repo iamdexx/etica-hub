@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { isAddress, keccak256, type Hex } from 'viem';
+import { isAddress, keccak256, verifyMessage, type Hex } from 'viem';
 import { z } from 'zod';
 import type { OrderRepository } from '../db/index.js';
 import { decodeDutchOrder, validateOrderStructure } from '../eip712.js';
@@ -176,7 +176,28 @@ const CancelOrderBody = z.object({
   cancelTxHash: z
     .string()
     .regex(/^0x[0-9a-fA-F]{64}$/, 'cancelTxHash must be a 32-byte hex tx hash'),
+  /** EIP-191 personal_sign signature from the order's swapper over
+   * `buildCancelAuthMessage(orderHash, cancelTxHash)`. Proves the caller
+   * controls the swapper key, not just that they know the public orderHash
+   * (which is observable in OrderPosted events / GET /orders). Without this
+   * any observer could mark any open order cancelled and DoS the keeper. */
+  cancelSignature: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]+$/, 'cancelSignature must be 0x-prefixed hex'),
 });
+
+/**
+ * Canonical EIP-191 personal_sign message the swapper must sign to authorize
+ * an orderbook-level cancel. Exported so the web client can produce matching
+ * bytes and tests can assert the shape.
+ */
+export function buildCancelAuthMessage(orderHash: string, cancelTxHash: string): string {
+  return [
+    'EticaHub orderbook cancel',
+    `orderHash: ${orderHash.toLowerCase()}`,
+    `cancelTxHash: ${cancelTxHash.toLowerCase()}`,
+  ].join('\n');
+}
 
 const MarkFilledBody = z.object({
   fillTxHash: z
@@ -396,6 +417,11 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
   // `permit2.invalidateUnorderedNonces(...)` or fires a cancel tx against the
   // reactor. This endpoint just records the tx hash so the keeper stops
   // attempting fills and the UI can surface "cancelled" to the user.
+  //
+  // Auth: body must include `cancelSignature`, an EIP-191 personal_sign
+  // signature from the order's swapper over `buildCancelAuthMessage(...)`.
+  // Without this any observer could mark any open order cancelled and DoS
+  // the keeper.
   app.post('/orders/:hash/cancel', async (req, reply) => {
     const params = req.params as { hash?: string };
     const hash = params.hash ?? '';
@@ -414,6 +440,19 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
       return reply.code(409).send({ error: 'not_cancelable', status: existing.status });
     }
 
+    const message = buildCancelAuthMessage(hash, parsed.data.cancelTxHash);
+    let authorized = false;
+    try {
+      authorized = await verifyMessage({
+        address: existing.swapper as `0x${string}`,
+        message,
+        signature: parsed.data.cancelSignature as Hex,
+      });
+    } catch {
+      authorized = false;
+    }
+    if (!authorized) return reply.code(401).send({ error: 'unauthorized' });
+
     repo.updateStatus(hash, 'cancelled', { cancelTxHash: parsed.data.cancelTxHash });
     const updated = repo.findByHash(hash);
     return reply.send(updated ? serializeOrder(updated) : { ok: true });
@@ -421,14 +460,15 @@ export async function ordersRoutes(app: FastifyInstance, opts: OrdersRouteOption
 
   // POST /orders/:hash/mark-filled — keeper reports a landed fill tx.
   //
-  // Auth: requires `X-Keeper-Auth: <KEEPER_AUTH_TOKEN>` header if the env var
-  // was set at startup. In dev without a token the endpoint is open so the
-  // reference keeper can be pointed at any orderbook instance.
+  // Auth: requires `X-Keeper-Auth: <KEEPER_AUTH_TOKEN>` header. Fails closed
+  // if the env var is unset at startup (503) so a misconfigured deployment
+  // can't silently accept anonymous fill claims.
   app.post('/orders/:hash/mark-filled', async (req, reply) => {
-    if (keeperAuthToken) {
-      const provided = req.headers['x-keeper-auth'];
-      if (provided !== keeperAuthToken) return reply.code(401).send({ error: 'unauthorized' });
+    if (!keeperAuthToken) {
+      return reply.code(503).send({ error: 'keeper_auth_not_configured' });
     }
+    const provided = req.headers['x-keeper-auth'];
+    if (provided !== keeperAuthToken) return reply.code(401).send({ error: 'unauthorized' });
 
     const params = req.params as { hash?: string };
     const hash = params.hash ?? '';

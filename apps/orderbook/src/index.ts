@@ -30,6 +30,16 @@ async function main(): Promise<void> {
     }),
   );
 
+  if (!keeperAuthToken) {
+    app.log.warn(
+      JSON.stringify({
+        event: 'orderbook.boot.warning',
+        message:
+          'KEEPER_AUTH_TOKEN is not set. POST /orders/:hash/mark-filled will reject all requests with 503.',
+      }),
+    );
+  }
+
   await app.listen({ host, port });
 
   const shutdown = async (signal: string) => {
