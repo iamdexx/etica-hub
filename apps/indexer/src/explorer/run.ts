@@ -18,7 +18,7 @@
  * `(block, logIndex)`. We don't de-dupe on write because that would
  * require reading the full JSONL back on every run.
  */
-import { createPublicClient, http, type Block, type PublicClient } from 'viem';
+import { createPublicClient, http, type Block, type Log, type PublicClient } from 'viem';
 import { eticaMainnet } from '@etica-hub/shared';
 import {
   DEFAULT_DATA_DIR,
