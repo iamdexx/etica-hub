@@ -114,7 +114,9 @@ export function formatBuy({
   const priceLineUsd =
     report.pricePerBoughtInUsd !== null ? ` (${formatUsd(report.pricePerBoughtInUsd)})` : '';
 
-  const txUrl = `${explorerBaseUrl.replace(/\/$/, '')}/explorer/tx/${txHash}`;
+  const base = explorerBaseUrl.replace(/\/$/, '');
+  const txUrl = `${base}/explorer/tx/${txHash}`;
+  const blockUrl = `${base}/explorer/block/${blockNumber.toString()}`;
 
   const lines = [
     `${emoji} <b>${sym.bought} Buy</b> on EticaHub`,
@@ -126,7 +128,7 @@ export function formatBuy({
     `🧢 <b>MC ${sym.bought}</b>  ${formatUsd(report.mcBoughtUsd)}`,
     `🧢 <b>MC ${sym.spent}</b>   ${formatUsd(report.mcSpentUsd)}`,
     '',
-    `🔗 <a href="${escapeHtml(txUrl)}">view tx</a>  ·  block ${blockNumber.toString()}`,
+    `🔗 <a href="${escapeHtml(txUrl)}">view tx</a>  ·  <a href="${escapeHtml(blockUrl)}">block ${blockNumber.toString()}</a>`,
   ];
 
   return {

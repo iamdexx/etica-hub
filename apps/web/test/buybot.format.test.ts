@@ -83,7 +83,9 @@ describe('formatBuy', () => {
     expect(text).toContain('MC ETI');
     expect(text).toContain('$2.10M');
     expect(text).toContain('<a href="https://eticahub.org/explorer/tx/0xabc123">view tx</a>');
-    expect(text).toContain('block 12345');
+    expect(text).toContain(
+      '<a href="https://eticahub.org/explorer/block/12345">block 12345</a>',
+    );
   });
 
   it('escapes HTML characters in symbols to prevent injection', () => {
