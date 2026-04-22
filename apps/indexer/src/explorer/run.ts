@@ -103,28 +103,28 @@ export async function runIndexerOnce(
   for (let from = startBlock; from <= budgetEnd; from += BigInt(cfg.blockBatchSize)) {
     const to = from + BigInt(cfg.blockBatchSize) - 1n > budgetEnd ? budgetEnd : from + BigInt(cfg.blockBatchSize) - 1n;
 
-    const [transferLogs, syncLogs] = await Promise.all([
-      client.getLogs({
-        fromBlock: from,
-        toBlock: to,
-        event: undefined,
-        // Note: viem's `getLogs` with only `topics` bypasses the typed
-        // event path and hits eth_getLogs directly, which is what we
-        // want — any ERC-20 in the block range.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any).then((ls) =>
-        ls.filter(
-          (l: { topics: readonly `0x${string}`[] }) => l.topics[0] === TRANSFER_TOPIC0,
-        ),
-      ),
-      client.getLogs({
-        fromBlock: from,
-        toBlock: to,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any).then((ls) =>
-        ls.filter((l: { topics: readonly `0x${string}`[] }) => l.topics[0] === SYNC_TOPIC0),
-      ),
-    ]);
+    // Server-side topic0 filter: without this, most RPC providers
+    // enforce a max-results limit (commonly 10k) and either error or
+    // silently truncate when a 1k-block window contains more logs
+    // than the cap — causing missed Transfer/Sync events.
+    const transferParams = {
+      fromBlock: from,
+      toBlock: to,
+      topics: [TRANSFER_TOPIC0],
+    };
+    const syncParams = {
+      fromBlock: from,
+      toBlock: to,
+      topics: [SYNC_TOPIC0],
+    };
+    const [transferLogs, syncLogs] = (await Promise.all([
+      // viem's typed getLogs overload doesn't accept raw `topics`; the
+      // cast is only to get the field through to eth_getLogs.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      client.getLogs(transferParams as any),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      client.getLogs(syncParams as any),
+    ])) as [Log[], Log[]];
 
     const neededBlocks = new Set<bigint>();
     for (const l of transferLogs) if (l.blockNumber != null) neededBlocks.add(l.blockNumber);
