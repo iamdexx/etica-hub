@@ -13,6 +13,7 @@ import { runResearchIndexer } from './research';
 import { openPriceDb } from './prices/db';
 import { createPriceIndexer, type TrackedPair } from './prices/price';
 import { buildPriceServer } from './prices/server';
+import { runExplorerIndexer } from './explorer/run';
 
 /**
  * Indexer entry point.
@@ -26,7 +27,11 @@ import { buildPriceServer } from './prices/server';
  */
 
 const CHAIN_ID = Number(process.env.CHAIN_ID ?? '61803') as SupportedChainId;
-const MODULE = (process.env.INDEXER_MODULE ?? 'status') as 'status' | 'research' | 'prices';
+const MODULE = (process.env.INDEXER_MODULE ?? 'status') as
+  | 'status'
+  | 'research'
+  | 'prices'
+  | 'explorer';
 
 function getChain(id: SupportedChainId) {
   if (id === eticaMainnet.id) return eticaMainnet;
@@ -115,6 +120,11 @@ async function main(): Promise<void> {
       },
     }),
   );
+
+  if (MODULE === 'explorer') {
+    await runExplorerIndexer();
+    return;
+  }
 
   if (MODULE === 'research') {
     await runResearchIndexer({ client, chain, chainId: chain.id, previewCount: 5 });
