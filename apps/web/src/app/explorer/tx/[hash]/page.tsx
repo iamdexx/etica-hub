@@ -58,9 +58,12 @@ export default async function TxPage({ params }: TxPageProps) {
     notFound();
   }
 
-  const block = tx.blockNumber
-    ? await client.getBlock({ blockNumber: tx.blockNumber }).catch(() => null)
-    : null;
+  // `0n` is falsy in JS, so a truthy check here would skip the fetch for a
+  // genesis-block tx. Use an explicit null check.
+  const block =
+    tx.blockNumber != null
+      ? await client.getBlock({ blockNumber: tx.blockNumber }).catch(() => null)
+      : null;
 
   const status = receipt ? (receipt.status === 'success' ? 'Success' : 'Failed') : 'Pending';
 
