@@ -47,9 +47,16 @@ function mkPair(
 }
 
 describe('apiTokens', () => {
-  it('returns the canonical 4-token set', () => {
+  it('returns the canonical Etica-mainnet token set', () => {
     const ids = apiTokens().map((t) => t.id).sort();
-    expect(ids).toEqual(['egaz', 'eti', 'etx', 'wegaz']);
+    expect(ids).toEqual(['egaz', 'eti', 'etx', 'stetx', 'wegaz']);
+  });
+
+  it('surfaces stETX at the deployed vault address', () => {
+    const stetx = tok('stetx');
+    expect(stetx.symbol).toBe('stETX');
+    expect(stetx.isNative).toBe(false);
+    expect(stetx.address).not.toBeNull();
   });
 
   it('flags EGAZ as native and WEGAZ as its wrapped partner', () => {
