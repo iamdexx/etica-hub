@@ -89,6 +89,15 @@ export const DEPLOYMENTS: Record<
      * deploy lands on-chain.
      */
     treasuryHarvester: Address;
+    /**
+     * ETXFarms — MasterChef-style LP staking contract. Receives the 10%
+     * "farms" slice of every harvest cycle via
+     * {distributeRewards(uint256)} and splits it pro-rata across staked
+     * LP pools (ETI/ETX, EGAZ/ETX). No emissions — the contract only
+     * redistributes ETX pushed in by the Harvester. Zero until deploy
+     * lands on-chain.
+     */
+    etxFarms: Address;
   }
 > = {
   61803: {
@@ -103,6 +112,7 @@ export const DEPLOYMENTS: Record<
     orderRegistry: '0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9',
     stakedETX: '0x75d81d03a98CD9195593b8963aF17E13fAa70334',
     treasuryHarvester: '0x0000000000000000000000000000000000000000',
+    etxFarms: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -116,6 +126,7 @@ export const DEPLOYMENTS: Record<
     orderRegistry: '0x0000000000000000000000000000000000000000',
     stakedETX: '0x0000000000000000000000000000000000000000',
     treasuryHarvester: '0x0000000000000000000000000000000000000000',
+    etxFarms: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -130,6 +141,7 @@ export const DEPLOYMENTS: Record<
     orderRegistry: '0x0000000000000000000000000000000000000000',
     stakedETX: '0x0000000000000000000000000000000000000000',
     treasuryHarvester: '0x0000000000000000000000000000000000000000',
+    etxFarms: '0x0000000000000000000000000000000000000000',
   },
 };
 
