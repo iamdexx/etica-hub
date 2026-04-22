@@ -28,6 +28,7 @@ import {
   claimBuyPost,
   kvFor,
   memoryKv,
+  postedKey,
   readLastScannedBlock,
   writeLastScannedBlock,
 } from '@/lib/buybot/state';
@@ -164,11 +165,12 @@ export async function GET(req: NextRequest): Promise<Response> {
         continue;
       }
 
-      // Claim the (txHash, logIndex) in KV before sending. If a prior run
-      // already posted this swap (e.g. its cursor-write failed and we're
-      // rescanning the range), skip so we don't double-post.
-      const claimed = await claimBuyPost(kv, config, swap.txHash, swap.logIndex);
-      if (!claimed) {
+      // Cheap pre-check: if a prior successful run already claimed this
+      // swap, skip it outright. Does NOT claim — we only write the claim
+      // after the telegram send succeeds, so a failed send never locks a
+      // swap out of retries.
+      const seen = await kv.get(postedKey(config, swap.txHash, swap.logIndex));
+      if (seen) {
         bump('already-posted');
         continue;
       }
@@ -183,6 +185,15 @@ export async function GET(req: NextRequest): Promise<Response> {
       const send = await telegram.sendMessage(msg);
       if (send.ok) {
         posted += 1;
+        // Record the claim only after a successful send. If this throws
+        // (transient KV outage), we swallow it: the message is already
+        // delivered; a duplicate on the next rescan is strictly less bad
+        // than crashing the loop mid-batch.
+        try {
+          await claimBuyPost(kv, config, swap.txHash, swap.logIndex);
+        } catch {
+          bump('claim-write-failed');
+        }
       } else {
         bump(`telegram-${send.status}`);
       }
