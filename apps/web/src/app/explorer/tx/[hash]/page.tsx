@@ -221,9 +221,9 @@ function DecodedCallView({
           Could not decode against any known ABI — showing raw calldata below.
         </div>
       )}
-      <details className={decoded ? 'group' : 'group [&]:open'}>
+      <details className="group" open={!decoded}>
         <summary className="cursor-pointer text-xs text-white/45 hover:text-white/70">
-          {decoded ? 'Raw calldata' : 'Raw calldata (expanded)'}
+          Raw calldata
         </summary>
         <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-white/5 bg-black/40 p-3 font-mono text-[11px] leading-relaxed text-white/70">
           {input}
