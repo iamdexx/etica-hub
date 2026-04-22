@@ -1,9 +1,10 @@
 'use client';
 
 import { OrderForm } from './OrderForm';
+import type { TradeBaseSymbol } from '@/lib/trading/baseSymbol';
 
 export interface StopFormProps {
-  baseSymbol: 'ETI' | 'EGAZ';
+  baseSymbol: TradeBaseSymbol;
 }
 
 /**

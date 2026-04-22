@@ -25,7 +25,7 @@ import {
   isSupportedChainId,
 } from '@etica-hub/shared';
 
-type TokenSymbol = 'EGAZ' | 'ETI' | 'ETX';
+type TokenSymbol = 'EGAZ' | 'ETI' | 'ETX' | 'stETX';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -38,6 +38,9 @@ type SwapCtx = {
   wegaz: Address;
   eti: Address;
   etx: Address;
+  // Zero address on chains where the liquid-staking vault is not deployed
+  // yet; the token picker hides the stETX option in that case.
+  stetx: Address;
 };
 
 function useCtx(): SwapCtx | null {
@@ -54,23 +57,31 @@ function useCtx(): SwapCtx | null {
       wegaz: d.wegaz,
       eti: e.eti,
       etx: d.etx,
+      stetx: d.stakedETX,
     };
   }, [chainId]);
+}
+
+function tokenAddress(ctx: SwapCtx, s: TokenSymbol): Address {
+  if (s === 'EGAZ') return ctx.wegaz;
+  if (s === 'ETI') return ctx.eti;
+  if (s === 'stETX') return ctx.stetx;
+  return ctx.etx;
 }
 
 /**
  * Hub-and-spoke routing: all swaps go through ETX. On-wire the ERC20
  * address list is WEGAZ (never the native EGAZ literal), so the router
- * knows where the native wrap/unwrap happens.
+ * knows where the native wrap/unwrap happens. stETX lives on the same
+ * hub — stETX <-> {EGAZ,ETI} routes hop through the stETX/ETX pair then
+ * through the ETX/{WEGAZ,ETI} pair.
  */
 function buildPath(ctx: SwapCtx, from: TokenSymbol, to: TokenSymbol): Address[] | null {
   if (from === to) return null;
-  const addr = (s: TokenSymbol): Address =>
-    s === 'EGAZ' ? ctx.wegaz : s === 'ETI' ? ctx.eti : ctx.etx;
   // If ETX is one of the endpoints, direct 2-token path.
-  if (from === 'ETX' || to === 'ETX') return [addr(from), addr(to)];
-  // Otherwise hub through ETX (e.g. EGAZ <-> ETI).
-  return [addr(from), ctx.etx, addr(to)];
+  if (from === 'ETX' || to === 'ETX') return [tokenAddress(ctx, from), tokenAddress(ctx, to)];
+  // Otherwise hub through ETX.
+  return [tokenAddress(ctx, from), ctx.etx, tokenAddress(ctx, to)];
 }
 
 export function SwapCard() {
@@ -95,7 +106,7 @@ export function SwapCard() {
   const inputTokenAddr = useMemo<Address | null>(() => {
     if (!ctx) return null;
     if (fromSymbol === 'EGAZ') return null; // native — no ERC20 approval
-    return fromSymbol === 'ETI' ? ctx.eti : ctx.etx;
+    return tokenAddress(ctx, fromSymbol);
   }, [ctx, fromSymbol]);
 
   // Balances
@@ -117,10 +128,20 @@ export function SwapCard() {
     args: address ? [address] : undefined,
     query: { enabled: Boolean(address && ctx) },
   });
+  const stetxBal = useReadContract({
+    abi: abis.erc20Abi,
+    address: ctx?.stetx,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: Boolean(address && ctx && ctx.stetx !== ZERO),
+    },
+  });
 
   function balFor(symbol: TokenSymbol): bigint {
     if (symbol === 'EGAZ') return nativeBal.data?.value ?? 0n;
     if (symbol === 'ETI') return (etiBal.data as bigint | undefined) ?? 0n;
+    if (symbol === 'stETX') return (stetxBal.data as bigint | undefined) ?? 0n;
     return (etxBal.data as bigint | undefined) ?? 0n;
   }
 
@@ -238,6 +259,7 @@ export function SwapCard() {
       nativeBal.refetch(),
       etiBal.refetch(),
       etxBal.refetch(),
+      stetxBal.refetch(),
       allowance.refetch(),
       quote.refetch(),
     ]).catch(() => {
@@ -278,6 +300,7 @@ export function SwapCard() {
 
   const priceImpactText = usePriceImpact(ctx, path, amountIn, amountOut);
   const routeText = describePath(path, ctx);
+  const pickerOptions = tokenOptions(ctx);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl">
@@ -290,6 +313,7 @@ export function SwapCard() {
         <TokenInput
           label="From"
           symbol={fromSymbol}
+          options={pickerOptions}
           onChangeSymbol={onChangeFrom}
           balance={fromBal}
           amount={amountInStr}
@@ -310,6 +334,7 @@ export function SwapCard() {
         <TokenInput
           label="To"
           symbol={toSymbol}
+          options={pickerOptions}
           onChangeSymbol={onChangeTo}
           balance={toBal}
           amount={amountOut === 0n ? '' : formatUnits(amountOut, 18)}
@@ -362,16 +387,23 @@ function describePath(path: Address[] | null, ctx: SwapCtx | null): string {
     const low = a.toLowerCase();
     if (low === ctx.wegaz.toLowerCase()) return 'EGAZ';
     if (low === ctx.eti.toLowerCase()) return 'ETI';
+    if (ctx.stetx !== ZERO && low === ctx.stetx.toLowerCase()) return 'stETX';
     return 'ETX';
   };
   return path.map(lookup).join(' → ');
 }
 
-const TOKEN_OPTIONS: TokenSymbol[] = ['EGAZ', 'ETI', 'ETX'];
+const BASE_TOKEN_OPTIONS: TokenSymbol[] = ['EGAZ', 'ETI', 'ETX'];
+
+function tokenOptions(ctx: SwapCtx | null): TokenSymbol[] {
+  if (!ctx || ctx.stetx === ZERO) return BASE_TOKEN_OPTIONS;
+  return [...BASE_TOKEN_OPTIONS, 'stETX'];
+}
 
 function TokenInput(props: {
   label: string;
   symbol: TokenSymbol;
+  options: readonly TokenSymbol[];
   onChangeSymbol?: (s: TokenSymbol) => void;
   balance: bigint;
   amount: string;
@@ -397,7 +429,7 @@ function TokenInput(props: {
             className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm"
             aria-label={`${props.label} token`}
           >
-            {TOKEN_OPTIONS.map((t) => (
+            {props.options.map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>

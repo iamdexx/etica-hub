@@ -7,6 +7,7 @@ import { StopForm } from './StopForm';
 import { DcaForm } from './DcaForm';
 import { GridForm } from './GridForm';
 import { InfiniteGridForm } from './InfiniteGridForm';
+import type { TradeBaseSymbol } from '@/lib/trading/baseSymbol';
 
 type Tab = 'market' | 'limit' | 'stop' | 'dca' | 'grid' | 'infinite';
 
@@ -20,7 +21,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
 ];
 
 export interface TradeTabsProps {
-  baseSymbol: 'ETI' | 'EGAZ';
+  baseSymbol: TradeBaseSymbol;
 }
 
 export function TradeTabs({ baseSymbol }: TradeTabsProps) {

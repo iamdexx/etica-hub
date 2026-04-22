@@ -5,19 +5,28 @@ import { MarketVolumeStrip } from '../MarketVolumeStrip';
 import { OnChainPriceChart } from './OnChainPriceChart';
 import { PriceChart } from './PriceChart';
 import { TradeTabs } from './TradeTabs';
+import type { PairId, TradeBaseSymbol } from '@/lib/trading/baseSymbol';
 
 export interface TradeViewProps {
-  baseSymbol: 'ETI' | 'EGAZ';
-  pairId: 'ETI-ETX' | 'EGAZ-ETX';
+  baseSymbol: TradeBaseSymbol;
+  pairId: PairId;
   apiBaseUrl: string;
 }
 
-const DESCRIPTIONS: Record<TradeViewProps['baseSymbol'], string> = {
+const DESCRIPTIONS: Record<TradeBaseSymbol, string> = {
   ETI: 'Buy and sell ETI against ETX. Price feed is sourced from the on-chain ETI/ETX pool reserves.',
   EGAZ: 'Buy and sell EGAZ against ETX. Price feed is sourced from the on-chain EGAZ/ETX pool reserves.',
+  stETX:
+    'Buy and sell stETX (ERC-4626 liquid-staking receipt) against ETX. Price feed is sourced from the on-chain stETX/ETX pool reserves.',
 };
 
+const BASE_TABS: readonly TradeBaseSymbol[] = ['ETI', 'EGAZ', 'stETX'] as const;
+
 export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
+  // The indexer currently only ships candles for the two genesis pairs; the
+  // stETX/ETX market always falls back to the on-chain reserve-polling chart
+  // until the indexer learns the new pairId.
+  const useIndexerChart = apiBaseUrl && baseSymbol !== 'stETX';
   return (
     <div className="mx-auto grid w-full max-w-5xl gap-6 lg:grid-cols-[1fr_380px]">
       <div className="space-y-4">
@@ -25,7 +34,7 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">Trade {baseSymbol}</h1>
             <div className="flex gap-1">
-              {(['ETI', 'EGAZ'] as const).map((s) => (
+              {BASE_TABS.map((s) => (
                 <Link
                   key={s}
                   href={`/trade/${s}`}
@@ -48,7 +57,7 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
           </div>
           <p className="text-sm text-white/60">{DESCRIPTIONS[baseSymbol]}</p>
         </header>
-        {apiBaseUrl ? (
+        {useIndexerChart ? (
           <PriceChart
             pairId={pairId}
             baseSymbol={baseSymbol}
