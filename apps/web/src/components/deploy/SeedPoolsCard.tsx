@@ -334,8 +334,8 @@ export function SeedPoolsCard() {
           </li>
           <li>
             Seeds the <span className="font-mono">EGAZ/ETX</span> pool via{' '}
-            <span className="font-mono">router.addLiquidityEGAZ</span> (EGAZ is wrapped into WEGAZ
-            inside the router).
+            <span className="font-mono">router.addLiquidityEGAZ</span> (native EGAZ is wrapped
+            into its ERC-20 form inside the router).
           </li>
           <li>
             LP tokens for both pools are minted to <span className="font-mono">your</span>{' '}

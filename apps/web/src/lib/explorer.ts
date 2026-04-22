@@ -73,7 +73,7 @@ function buildAddressLabelMap(): Record<string, string> {
   if (d) {
     const entries: Array<[Address | undefined, string]> = [
       [d.etx, 'ETX Token'],
-      [d.wegaz, 'WEGAZ (Wrapped EGAZ)'],
+      [d.wegaz, 'Wrapped EGAZ'],
       [d.swapFactory, 'EticaSwap Factory'],
       [d.swapRouter, 'EticaSwap Router'],
       [d.researchSubscription, 'Research Subscription'],
