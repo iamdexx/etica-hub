@@ -103,7 +103,7 @@ function assertMainnetDeployments() {
  */
 export function apiTokens(): ApiToken[] {
   const { d, ext } = assertMainnetDeployments();
-  return [
+  const tokens: ApiToken[] = [
     {
       id: 'egaz',
       symbol: 'EGAZ',
@@ -141,6 +141,22 @@ export function apiTokens(): ApiToken[] {
       isNative: false,
     },
   ];
+  // stETX is the ERC-4626 liquid-staking receipt for ETX. Only surface it in
+  // the token registry once the vault has been deployed on the target chain —
+  // pre-deploy chains carry the zero address as a placeholder, and emitting a
+  // token entry for `0x0` would poison every pair-symbol resolution.
+  if (d.stakedETX && d.stakedETX !== ZERO_ADDRESS) {
+    tokens.push({
+      id: 'stetx',
+      symbol: 'stETX',
+      name: 'Staked ETX',
+      decimals: 18,
+      address: d.stakedETX,
+      wrappedAddress: null,
+      isNative: false,
+    });
+  }
+  return tokens;
 }
 
 /** Finds a token by CoinGecko-style id (case-insensitive). */
