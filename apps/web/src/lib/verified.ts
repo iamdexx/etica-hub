@@ -102,6 +102,12 @@ export function loadVerified(
 function isValidManifest(m: unknown): m is VerifiedContract {
   if (!m || typeof m !== 'object') return false;
   const o = m as Record<string, unknown>;
+  // `optimizer` must exist and contain `enabled`+`runs` of the correct
+  // types — the explorer's VerifiedContractView reads both fields
+  // unconditionally, so a malformed manifest here would crash the page
+  // instead of degrading silently to "not verified". Same story for the
+  // other typed fields above.
+  const opt = o.optimizer as Record<string, unknown> | undefined;
   return (
     typeof o.address === 'string' &&
     typeof o.name === 'string' &&
@@ -109,6 +115,10 @@ function isValidManifest(m: unknown): m is VerifiedContract {
     typeof o.evmVersion === 'string' &&
     typeof o.sources === 'object' &&
     o.sources !== null &&
+    typeof opt === 'object' &&
+    opt !== null &&
+    typeof opt.enabled === 'boolean' &&
+    typeof opt.runs === 'number' &&
     Array.isArray(o.abi) &&
     typeof o.verifiedAt === 'string' &&
     (o.bytecodeMatch === 'exact' ||
