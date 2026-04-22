@@ -43,13 +43,13 @@ jobs:
       HARVEST_STAKED_ETX_ADDRESS: ${{ vars.HARVEST_STAKED_ETX_ADDRESS || '' }}
       HARVEST_FARMS_ADDRESS: ${{ vars.HARVEST_FARMS_ADDRESS || '' }}
       # Split knobs (bps, must sum to 10000). Defaults: 10/10/40/40.
-      HARVEST_STETX_BPS: ${{ vars.HARVEST_STETX_BPS || '1000' }}
+      HARVEST_STAKED_ETX_BPS: ${{ vars.HARVEST_STAKED_ETX_BPS || '1000' }}
       HARVEST_FARMS_BPS: ${{ vars.HARVEST_FARMS_BPS || '1000' }}
-      HARVEST_POL_BPS: ${{ vars.HARVEST_POL_BPS || '4000' }}
+      HARVEST_POL_BURN_BPS: ${{ vars.HARVEST_POL_BURN_BPS || '4000' }}
       HARVEST_TREASURY_BPS: ${{ vars.HARVEST_TREASURY_BPS || '4000' }}
-      HARVEST_BURN_PER_RUN_BPS: ${{ vars.HARVEST_BURN_PER_RUN_BPS || '100' }}
+      HARVEST_BURN_BPS_PER_RUN: ${{ vars.HARVEST_BURN_BPS_PER_RUN || '100' }}
       HARVEST_MAX_SLIPPAGE_BPS: ${{ vars.HARVEST_MAX_SLIPPAGE_BPS || '300' }}
-      HARVEST_POL_POOL_WEIGHTING: ${{ vars.HARVEST_POL_POOL_WEIGHTING || 'treasury_lp' }}
+      HARVEST_POL_WEIGHTING: ${{ vars.HARVEST_POL_WEIGHTING || 'treasury_lp' }}
       # Force-disabled here; a live-execution workflow lives separately.
       HARVEST_DRY_RUN: 'true'
     steps:
