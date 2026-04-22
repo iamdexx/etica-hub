@@ -73,6 +73,13 @@ export const DEPLOYMENTS: Record<
      * for a hosted off-chain orderbook HTTP service. Zero until deploy lands.
      */
     orderRegistry: Address;
+    /**
+     * stETX — ERC-4626 liquid staking token for ETX. Deposit ETX, receive
+     * stETX shares whose exchange rate monotonically grows as the keeper
+     * harvests treasury LP fees and calls {distributeRewards}. Zero until
+     * deploy lands on-chain.
+     */
+    stakedETX: Address;
   }
 > = {
   61803: {
@@ -85,6 +92,7 @@ export const DEPLOYMENTS: Record<
     dutchReactor: '0xE2fc7EAcEB0146560bfcf46CC5B167df60E970B8',
     etxFeeController: '0xB9a4FbfC4cA598Be18e09bb9C0Cf19e4a1A4350a',
     orderRegistry: '0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9',
+    stakedETX: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -96,6 +104,7 @@ export const DEPLOYMENTS: Record<
     dutchReactor: '0x0000000000000000000000000000000000000000',
     etxFeeController: '0x0000000000000000000000000000000000000000',
     orderRegistry: '0x0000000000000000000000000000000000000000',
+    stakedETX: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -108,6 +117,7 @@ export const DEPLOYMENTS: Record<
     dutchReactor: '0x0000000000000000000000000000000000000000',
     etxFeeController: '0x0000000000000000000000000000000000000000',
     orderRegistry: '0x0000000000000000000000000000000000000000',
+    stakedETX: '0x0000000000000000000000000000000000000000',
   },
 };
 
