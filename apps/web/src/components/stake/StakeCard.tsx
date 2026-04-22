@@ -131,11 +131,14 @@ export function StakeCard({ stakedETX, etx }: StakeCardProps) {
   const busy =
     flow.status === 'approving' || flow.status === 'staking' || flow.status === 'unstaking';
 
-  // When a tx confirms, reset flow + form + refetch balances.
+  // When a tx confirms, reset flow + refetch balances. We preserve the input
+  // amount across approve→stake because the user still needs it for the
+  // stake tx; only clear after the terminal write (stake/unstake) lands.
   useEffect(() => {
     if (receiptQuery.isSuccess && lastHash) {
+      const wasApproving = flow.status === 'approving';
       setFlow({ status: 'idle' });
-      setAmount('');
+      if (!wasApproving) setAmount('');
       void reads.refetch();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
