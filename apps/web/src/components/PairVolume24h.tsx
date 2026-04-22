@@ -56,8 +56,10 @@ export function usePairVolume24h(pair: Address | null | undefined): State {
       return;
     }
     let cancelled = false;
+    // Reset state when the pair changes so we never render stale data from a
+    // previous pair while the next fetch is in flight.
+    setState({ status: 'loading' });
     const load = async () => {
-      setState((s) => (s.status === 'ready' ? s : { status: 'loading' }));
       try {
         const res = await fetch(`/api/v1/pairs/${pair}/volume?window=24h`, {
           cache: 'no-store',

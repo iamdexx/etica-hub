@@ -23,7 +23,7 @@ import {
 
 export const runtime = 'nodejs';
 export const revalidate = API_REVALIDATE_SECONDS;
-export const dynamic = 'force-static';
+export const dynamic = 'force-dynamic';
 
 interface Context {
   params: Promise<{ address: string }>;
