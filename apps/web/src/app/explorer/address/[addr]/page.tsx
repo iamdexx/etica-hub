@@ -12,6 +12,7 @@ import {
 } from '@/lib/explorer';
 import { loadVerified } from '@/lib/verified';
 import { VerifiedContractView } from '@/components/explorer/VerifiedContractView';
+import { ContractInteractionView } from '@/components/explorer/ContractInteractionView';
 import {
   TOKEN_LOG_SCAN_BLOCKS,
   formatTokenAmount,
@@ -185,6 +186,10 @@ export default async function AddressPage({ params }: AddressPageProps) {
       </section>
 
       {verified ? <VerifiedContractView manifest={verified} /> : null}
+
+      {verified ? (
+        <ContractInteractionView address={addr} abi={verified.abi} />
+      ) : null}
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
         <div className="mb-3 flex items-center justify-between">
