@@ -17,6 +17,30 @@ const NAV = [
   { href: '/status', label: 'Status' },
 ];
 
+const TELEGRAM_URL = 'https://t.me/EticaHubPortal';
+
+function TelegramLink() {
+  return (
+    <a
+      href={TELEGRAM_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Join EticaHub on Telegram"
+      title="EticaHub on Telegram"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/80 transition-colors hover:border-[#229ED9]/60 hover:bg-[#229ED9]/15 hover:text-[#7cc4e8]"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-4 w-4"
+        fill="currentColor"
+      >
+        <path d="M20.665 3.717 2.953 10.55c-1.21.486-1.203 1.161-.222 1.462l4.545 1.418 10.517-6.63c.497-.303.95-.14.577.19l-8.52 7.693h-.002l.002.003-.314 4.693c.46 0 .663-.211.922-.46l2.22-2.16 4.592 3.39c.848.467 1.457.227 1.668-.787l3.018-14.207c.31-1.244-.473-1.808-1.285-1.438Z" />
+      </svg>
+    </a>
+  );
+}
+
 export function SiteHeader() {
   const pathname = usePathname();
   const isActive = (href: string) =>
@@ -52,7 +76,10 @@ export function SiteHeader() {
           })}
         </nav>
 
-        <ConnectButton />
+        <div className="flex items-center gap-2">
+          <TelegramLink />
+          <ConnectButton />
+        </div>
       </div>
 
       {/* Mobile nav: visible only below md, horizontally scrollable so all
