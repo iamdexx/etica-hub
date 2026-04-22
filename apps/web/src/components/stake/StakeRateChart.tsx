@@ -68,7 +68,12 @@ export function StakeRateChart({ stakedETX }: StakeRateChartProps) {
   useEffect(() => {
     let cancelled = false;
     async function run() {
-      if (!publicClient || !blockNumber) return;
+      // Gate on liveRate too: without it the reconstructed series would
+      // anchor against a stale `1.0` value. Because useBlockNumber runs
+      // with `watch: false`, head never changes, so an early run before
+      // liveRate resolves would set lastBlockFetched.current=head and the
+      // guard below would permanently skip every subsequent render.
+      if (!publicClient || !blockNumber || liveRate === null) return;
       const head = blockNumber;
       if (lastBlockFetched.current === head) return;
       lastBlockFetched.current = head;
