@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { MarketVolumeStrip } from '../MarketVolumeStrip';
 import { OnChainPriceChart } from './OnChainPriceChart';
 import { PriceChart } from './PriceChart';
 import { TradeTabs } from './TradeTabs';
@@ -57,6 +58,7 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
         ) : (
           <OnChainPriceChart key={baseSymbol} baseSymbol={baseSymbol} quoteSymbol="ETX" />
         )}
+        <MarketVolumeStrip />
       </div>
       <aside className="space-y-3">
         <TradeTabs baseSymbol={baseSymbol} />

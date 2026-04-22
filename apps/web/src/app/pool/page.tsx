@@ -1,3 +1,4 @@
+import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
 import { PoolAddCard } from '@/components/pool/PoolAddCard';
 import { PoolPositionsList } from '@/components/pool/PoolPositionsList';
 
@@ -13,6 +14,7 @@ export default function PoolPage() {
           earn proportionally to your share of the pool.
         </p>
       </div>
+      <MarketVolumeStrip />
       <PoolAddCard />
       <PoolPositionsList />
       <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-white/50">
