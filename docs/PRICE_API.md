@@ -92,6 +92,65 @@ Snapshot suitable for a status page: chain id, current block number, ETX
 hub token address, pair count, and the list of tokens with at least one
 live pair. 24h volume / TVL will appear here when the indexer ships.
 
+### `GET /api/v1/ohlcv/[pair]?interval=1h&limit=100&base=etx`
+
+OHLC candles for a single EticaSwap V2 pair, derived on-the-fly from
+`Sync(uint112, uint112)` event logs. Returns candles in ascending time
+order; the newest candle is the currently-open bucket.
+
+- `interval` — one of `5m | 15m | 1h | 4h | 1d`. Default `1h`.
+- `limit` — 1 ≤ limit ≤ 500. Default 100.
+- `base` — optional token id (see `/api/v1/tokens`) to price. Defaults to
+  the non-ETX side of the pair, falling back to `token0` when both sides
+  are unknown to the registry.
+
+```json
+{
+  "pair": "0x…",
+  "base": "eti", "quote": "etx",
+  "interval": "1h", "intervalSeconds": 3600,
+  "fromBlock": "…", "toBlock": "…",
+  "candles": [
+    { "t": 1713312000, "o": 0.12, "h": 0.13, "l": 0.115, "c": 0.128, "samples": 17 },
+    ...
+  ]
+}
+```
+
+Shipped specifically so DEX Screener / GeckoTerminal have a stable URL to
+pull short-range candle history from without us running an indexer. Empty
+intermediate buckets inherit the previous close so the series renders as
+a continuous line. Deeper history still waits on F.12.c.
+
+### `GET /api/v1/pools`
+
+Superset of `/pairs` laid out in a CoinGecko / GeckoTerminal-style pools
+schema: every pool has `base` and `quote` token objects, a stable
+`pool_id` (`etica-mainnet_{address}`), raw reserves, and both price
+directions. Where `/pairs` normalizes everything to ETX, `/pools` keeps
+the pair's native `token0`/`token1` orientation so consumers can overlay
+their own quote logic.
+
+### `GET /api/v1/health`
+
+Cheap liveness check for aggregator bots and status pages. Returns `ok:
+true` iff RPC is reachable, the factory pair count decodes, and the head
+block is less than 120s old. Returns `503` with the same body shape when
+any of those checks fail.
+
+```json
+{
+  "ok": true,
+  "chainId": 61803,
+  "headBlockNumber": "…",
+  "headAgeSeconds": 4,
+  "stale": false,
+  "pairCount": 3,
+  "responseTimeMs": 87,
+  "errors": []
+}
+```
+
 ## Caching
 
 Every endpoint sets `Cache-Control: public, s-maxage=30,
@@ -103,7 +162,10 @@ fresher data — please self-throttle.
 - **Launchpad-minted tokens** created via the factory's `createPair` path
   are returned inside `/api/v1/pairs` with `null` symbols. F.12.b.2 will
   add an on-demand ERC-20 metadata resolver so those surface by symbol.
-- **No historical data.** OHLCV + 24h volume wait on the indexer (F.12.c),
-  which we'll ship once there's demand or aggregator pressure.
+- **Short-range OHLCV only.** `/ohlcv` back-computes candles from the
+  last `limit × intervalSeconds` of history at request time. For the `5m`
+  and `15m` intervals this is ~hours; for `1d` it's ~1.5 years but quite
+  slow on first request. True deep OHLCV + 24h volume wait on the indexer
+  (F.12.c), which we'll ship once there's demand or aggregator pressure.
 - **No testnet.** Helvetia (chain id 61888) doesn't have EticaSwap
   deployed yet. Requests to this API always return mainnet data.

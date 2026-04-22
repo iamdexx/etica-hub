@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { getAddress, type Address } from 'viem';
 import {
+  aggregateCandles,
   apiTokens,
+  headBlockAgeSeconds,
+  OHLCV_INTERVALS,
   priceVia,
   spotPriceFromReserves,
   tokenByAddress,
   tokenById,
   type ApiPairRaw,
   type ApiToken,
+  type SyncSample,
 } from '../src/lib/priceApi';
 
 // These addresses mirror `packages/shared/src/addresses.ts` entry for chain
@@ -202,5 +206,130 @@ describe('priceVia', () => {
       500n * 10n ** 18n,
     );
     expect(priceVia([etiEtx], tok('eti'), tok('egaz'))).toBeNull();
+  });
+});
+
+describe('OHLCV_INTERVALS', () => {
+  it('exposes the canonical 5m/15m/1h/4h/1d set', () => {
+    expect(Object.keys(OHLCV_INTERVALS).sort()).toEqual(
+      ['15m', '1d', '1h', '4h', '5m'].sort(),
+    );
+  });
+  it('uses seconds as the unit', () => {
+    expect(OHLCV_INTERVALS['1h']).toBe(3600);
+    expect(OHLCV_INTERVALS['1d']).toBe(86400);
+  });
+});
+
+describe('aggregateCandles', () => {
+  // All timestamps below are seconds and align to fixed buckets so the math
+  // stays obvious. Interval is 1m (60s) unless noted.
+
+  const INTERVAL = 60;
+
+  function sample(timestamp: number, price: number): SyncSample {
+    return { timestamp, price };
+  }
+
+  it('returns an empty array when from > to', () => {
+    expect(aggregateCandles([], INTERVAL, 120, 60)).toEqual([]);
+  });
+
+  it('drops leading empty buckets with no prior sample', () => {
+    // One sample in the last bucket, no baseline — first two buckets are
+    // silently dropped rather than invented.
+    const candles = aggregateCandles(
+      [sample(180, 5)],
+      INTERVAL,
+      60, // first-bucket start: 60
+      180, // last-bucket start: 180
+    );
+    expect(candles).toEqual([
+      { t: 180, o: 5, h: 5, l: 5, c: 5, samples: 1 },
+    ]);
+  });
+
+  it('buckets multiple samples into a single candle with correct OHLC', () => {
+    const candles = aggregateCandles(
+      [
+        sample(60, 10),
+        sample(80, 20),
+        sample(100, 5),
+        sample(119, 15),
+      ],
+      INTERVAL,
+      60,
+      60,
+    );
+    expect(candles).toEqual([
+      { t: 60, o: 10, h: 20, l: 5, c: 15, samples: 4 },
+    ]);
+  });
+
+  it('carries previous close into empty buckets', () => {
+    // Sample at t=60 then nothing until t=240 — the intermediate buckets
+    // should inherit the 7.0 close as flat doji candles.
+    const candles = aggregateCandles(
+      [sample(60, 7), sample(240, 12)],
+      INTERVAL,
+      60,
+      240,
+    );
+    expect(candles.map((c) => [c.t, c.o, c.c, c.samples])).toEqual([
+      [60, 7, 7, 1],
+      [120, 7, 7, 0],
+      [180, 7, 7, 0],
+      [240, 12, 12, 1],
+    ]);
+  });
+
+  it('ignores samples outside the requested window but uses them as baseline', () => {
+    // Pre-window sample sets the open for the first real bucket.
+    const candles = aggregateCandles(
+      [sample(10, 100), sample(120, 200)],
+      INTERVAL,
+      60,
+      120,
+    );
+    expect(candles).toEqual([
+      { t: 60, o: 100, h: 100, l: 100, c: 100, samples: 0 },
+      { t: 120, o: 200, h: 200, l: 200, c: 200, samples: 1 },
+    ]);
+  });
+
+  it('sorts unsorted input before bucketing', () => {
+    const candles = aggregateCandles(
+      [sample(119, 2), sample(60, 3), sample(80, 5)],
+      INTERVAL,
+      60,
+      60,
+    );
+    expect(candles).toEqual([
+      { t: 60, o: 3, h: 5, l: 2, c: 2, samples: 3 },
+    ]);
+  });
+
+  it('aligns buckets to interval boundaries via floor()', () => {
+    // A 1h window from ts=3599 to ts=3601 covers two buckets: [0, 3600).
+    const candles = aggregateCandles(
+      [sample(3599, 1), sample(3601, 2)],
+      3600,
+      3599,
+      3601,
+    );
+    expect(candles.map((c) => c.t)).toEqual([0, 3600]);
+  });
+});
+
+describe('headBlockAgeSeconds', () => {
+  it('returns positive delta when head is in the past', () => {
+    expect(headBlockAgeSeconds(1000, 1060)).toBe(60);
+  });
+  it('returns negative delta when head is in the future (clock skew)', () => {
+    expect(headBlockAgeSeconds(1100, 1060)).toBe(-40);
+  });
+  it('caps to ±86400 to avoid absurd values from bogus timestamps', () => {
+    expect(headBlockAgeSeconds(0, 10_000_000)).toBe(86_400);
+    expect(headBlockAgeSeconds(10_000_000, 0)).toBe(-86_400);
   });
 });
