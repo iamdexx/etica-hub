@@ -30,7 +30,6 @@
 
 import { getAddress, isAddress, type Address, type PublicClient } from 'viem';
 import {
-  API_REVALIDATE_SECONDS,
   ETICA_AVG_BLOCKTIME_SECONDS,
   OHLCV_DEFAULT_CANDLES,
   OHLCV_INTERVALS,
@@ -51,10 +50,20 @@ import {
 } from '@/lib/priceApi';
 
 export const runtime = 'nodejs';
-// One minute — OHLCV is much more expensive to compute than spot, and
-// clients can poll `/api/v1/pairs` for the latest tick between buckets.
-export const revalidate = 60;
 export const dynamic = 'force-dynamic';
+
+/**
+ * One-minute cache window — OHLCV is much more expensive to compute than
+ * spot, and clients can poll `/api/v1/pairs` for the latest tick between
+ * buckets.
+ *
+ * Next.js drops the route-segment `revalidate` export entirely when
+ * `dynamic = 'force-dynamic'`, so the only cache knob we have is the
+ * `Cache-Control` header on the response. `JSON_HEADERS` defaults it to
+ * 30s s-maxage which would double the RPC load for this endpoint, so we
+ * override it below.
+ */
+const OHLCV_CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=120';
 
 function parseInterval(raw: string | null): OhlcvInterval | null {
   if (raw == null) return '1h';
@@ -200,23 +209,26 @@ export async function GET(
 
   const candles = aggregateCandles(samples, intervalSeconds, fromTs, toTs).slice(-limit);
 
-  return jsonResponse({
-    chainId: 61803,
-    chain: 'etica-mainnet',
-    pair: pairAddress,
-    base: base.id,
-    quote: quote.id,
-    interval,
-    intervalSeconds,
-    fromBlock: fromBlock.toString(),
-    toBlock: toBlock.toString(),
-    fromTs,
-    toTs,
-    count: candles.length,
-    candles,
-    notes: [
-      'Candles derived from Sync events; sample count is included but volume is not yet tracked (F.12.c).',
-      `Timestamps are estimated using ${ETICA_AVG_BLOCKTIME_SECONDS}s blocktime and are accurate to within one block.`,
-    ],
-  });
+  return jsonResponse(
+    {
+      chainId: 61803,
+      chain: 'etica-mainnet',
+      pair: pairAddress,
+      base: base.id,
+      quote: quote.id,
+      interval,
+      intervalSeconds,
+      fromBlock: fromBlock.toString(),
+      toBlock: toBlock.toString(),
+      fromTs,
+      toTs,
+      count: candles.length,
+      candles,
+      notes: [
+        'Candles derived from Sync events; sample count is included but volume is not yet tracked (F.12.c).',
+        `Timestamps are estimated using ${ETICA_AVG_BLOCKTIME_SECONDS}s blocktime and are accurate to within one block.`,
+      ],
+    },
+    { headers: { 'cache-control': OHLCV_CACHE_CONTROL } },
+  );
 }
