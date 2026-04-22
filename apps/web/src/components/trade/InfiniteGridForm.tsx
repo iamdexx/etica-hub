@@ -13,12 +13,20 @@ import {
 import {
   useAccount,
   useChainId,
+  usePublicClient,
   useReadContract,
   useSignTypedData,
   useWaitForTransactionReceipt,
+  useWalletClient,
   useWriteContract,
 } from 'wagmi';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis, isSupportedChainId } from '@etica-hub/shared';
+import {
+  DEPLOYMENTS,
+  EXTERNAL_ADDRESSES,
+  abis,
+  isSupportedChainId,
+  type SupportedChainId,
+} from '@etica-hub/shared';
 import {
   buildInfiniteGridLegs,
   buildPermit2WitnessTypedData,
@@ -27,6 +35,12 @@ import {
   type GridLevel,
 } from '@/lib/trading/dutchOrder';
 import { resolveOrderbookUrl, submitOrder } from '@/lib/trading/orderbookClient';
+import {
+  buildGridMeta,
+  getRegistryAddress,
+  postOrderBatchOnChain,
+  toBatchIdBytes32,
+} from '@/lib/trading/registryClient';
 
 type BaseSymbol = 'ETI' | 'EGAZ';
 
@@ -46,6 +60,9 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const orderbookUrl = resolveOrderbookUrl();
+  const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
+  const registryAddress = getRegistryAddress(chainId);
 
   const [refPriceStr, setRefPriceStr] = useState('');
   const [stepPctStr, setStepPctStr] = useState('2');
@@ -66,7 +83,8 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
   const baseToken: Address =
     baseSymbol === 'ETI' ? (ext?.eti ?? ZERO) : (deployment?.wegaz ?? ZERO);
 
-  const tradingLive = Boolean(orderbookUrl) && permit2 !== ZERO && reactor !== ZERO;
+  const tradingLive =
+    (Boolean(orderbookUrl) || registryAddress !== null) && permit2 !== ZERO && reactor !== ZERO;
 
   const refPrice18 = useMemo(() => parseDecimal(refPriceStr), [refPriceStr]);
   const stepPctE18 = useMemo(() => parsePct(stepPctStr), [stepPctStr]);
@@ -257,6 +275,9 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
     setSubmitting(true);
     setProgress({ signed: 0, total: legs.length });
     try {
+      const useRegistry = Boolean(registryAddress && walletClient && publicClient && supported);
+      const encodedByLevel: Hex[] = [];
+      const signatureByLevel: Hex[] = [];
       for (let i = 0; i < legs.length; i += 1) {
         const lvl = legs[i];
         setStatusLine(
@@ -273,22 +294,52 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
           primaryType: typed.primaryType,
           message: typed.message,
         })) as Hex;
-
-        setStatusLine(`Submitting level ${i + 1} of ${legs.length}…`);
-        await submitOrder(orderbookUrl, {
-          encodedOrder: encoded,
-          signature,
-          // Reuse the 'grid' strategy bucket on the orderbook side — the
-          // dashboard renders infinite-grid batches the same way (pre-signed
-          // limit orders grouped by batchId).
-          strategyType: 'grid',
-          gridBatchId: batchId,
-          gridIndex: lvl.index,
-          gridTotal: legs.length,
-          gridLevelPrice: lvl.pricePerBase18.toString(),
-        });
-
+        encodedByLevel.push(encoded);
+        signatureByLevel.push(signature);
         setProgress({ signed: i + 1, total: legs.length });
+
+        if (!useRegistry) {
+          setStatusLine(`Submitting level ${i + 1} of ${legs.length}…`);
+          await submitOrder(orderbookUrl!, {
+            encodedOrder: encoded,
+            signature,
+            // Reuse the 'grid' strategy bucket on the orderbook side — the
+            // dashboard renders infinite-grid batches the same way (pre-signed
+            // limit orders grouped by batchId).
+            strategyType: 'grid',
+            gridBatchId: batchId,
+            gridIndex: lvl.index,
+            gridTotal: legs.length,
+            gridLevelPrice: lvl.pricePerBase18.toString(),
+          });
+        }
+      }
+
+      if (useRegistry && walletClient && publicClient) {
+        setStatusLine(`Posting ${legs.length} levels on-chain in one tx…`);
+        const batchIdBytes = toBatchIdBytes32(batchId);
+        const metas = legs.map((lvl) =>
+          buildGridMeta({
+            batchId: batchIdBytes,
+            indexInBatch: lvl.index,
+            totalInBatch: legs.length,
+            levelPrice: lvl.pricePerBase18,
+          }),
+        );
+        const { txHash } = await postOrderBatchOnChain({
+          walletClient,
+          publicClient,
+          chainId: chainId as SupportedChainId,
+          account: address,
+          encodedOrders: encodedByLevel,
+          signatures: signatureByLevel,
+          metas,
+        });
+        setStatusLine(`Waiting for registry tx ${shortHash(txHash)}…`);
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+        if (receipt.status !== 'success') {
+          throw new Error('Registry batch tx reverted on-chain');
+        }
       }
 
       setStatusLine(
@@ -501,4 +552,8 @@ function formatAmount(value: bigint): string {
 
 function formatPrice(value: bigint): string {
   return `${formatAmount(value)} ETX`;
+}
+
+function shortHash(hex: Hex): string {
+  return `${hex.slice(0, 6)}…${hex.slice(-4)}`;
 }

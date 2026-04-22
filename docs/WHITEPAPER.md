@@ -256,7 +256,7 @@ The bridge has its own audit scope and operational requirements (validator recru
 
 ## 10. Governance and Treasury
 
-### 9.1 Treasury wallet
+### 10.1 Treasury wallet
 
 The EticaHub treasury is an EOA at `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`. It holds:
 
@@ -264,7 +264,7 @@ The EticaHub treasury is an EOA at `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`.
 - LP tokens for the initial ETI/ETX and EGAZ/ETX pools.
 - Any future subscription revenue, swap protocol fees (after `feeTo` is set), and pool-creation fees.
 
-### 9.2 Administrative keys
+### 10.2 Administrative keys
 
 The Factory has two admin keys, both controlled by the treasury address at launch:
 
@@ -275,7 +275,7 @@ The Factory has two admin keys, both controlled by the treasury address at launc
 
 The `feeToSetter` key is intentionally low-ceremony at launch (EOA) to minimize operational risk during the first few weeks. It will be migrated to a multi-signature wallet as a follow-up, announced separately.
 
-### 9.3 On-chain authority of ETX
+### 10.3 On-chain authority of ETX
 
 ETX itself has no admin — no pause, no mint, no blacklist, no upgrade. Governance in the "change the token" sense is impossible because the contract has no mutable configuration. All governance discretion is exercised over the DEX and treasury, not over ETX.
 
