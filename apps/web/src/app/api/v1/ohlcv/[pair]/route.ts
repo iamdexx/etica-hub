@@ -68,7 +68,10 @@ const OHLCV_CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=120';
 function parseInterval(raw: string | null): OhlcvInterval | null {
   if (raw == null) return '1h';
   const needle = raw.trim().toLowerCase();
-  if (needle in OHLCV_INTERVALS) return needle as OhlcvInterval;
+  // Object.hasOwn (not `in`) so `?interval=constructor` or `__proto__`
+  // don't match inherited prototype keys and crash estimateBlockWindow
+  // on BigInt(NaN).
+  if (Object.hasOwn(OHLCV_INTERVALS, needle)) return needle as OhlcvInterval;
   return null;
 }
 
