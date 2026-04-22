@@ -4,6 +4,7 @@ import {
   baseFromQuote,
   buildDcaLegs,
   buildGridLegs,
+  buildInfiniteGridLegs,
   buildLimitOrder,
   buildPermit2WitnessTypedData,
   encodeDutchOrder,
@@ -518,6 +519,133 @@ describe('randomGridBatchId', () => {
     const s = new Set<string>();
     for (let i = 0; i < 32; i++) s.add(randomGridBatchId());
     expect(s.size).toBe(32);
+  });
+});
+
+describe('buildInfiniteGridLegs', () => {
+  const baseParams = {
+    reactor: REACTOR,
+    swapper: SWAPPER,
+    baseToken: BASE,
+    quoteToken: QUOTE,
+    baseDecimals: 18,
+    quoteDecimals: 18,
+    referencePrice18: parseUnits('100', 18),
+    stepPctE18: parseUnits('0.02', 18), // 2% per level
+    buyLevels: 3,
+    sellLevels: 3,
+    baseAmountPerLevel: parseUnits('1', 18),
+    startSec: NOW,
+    deadlineSec: DEADLINE,
+  } as const;
+
+  it('produces buys + sells in ascending price order around the reference', () => {
+    let nonce = 1n;
+    const legs = buildInfiniteGridLegs({
+      ...baseParams,
+      nonceGenerator: () => nonce++,
+    });
+    expect(legs.length).toBe(6);
+    // Ascending price across the whole array.
+    for (let i = 1; i < legs.length; i += 1) {
+      expect(legs[i].pricePerBase18).toBeGreaterThan(legs[i - 1].pricePerBase18);
+    }
+    // First three are buys (below ref), last three are sells (above ref).
+    for (let i = 0; i < 3; i += 1) {
+      expect(legs[i].side).toBe('buy');
+      expect(legs[i].pricePerBase18).toBeLessThan(baseParams.referencePrice18);
+    }
+    for (let i = 3; i < 6; i += 1) {
+      expect(legs[i].side).toBe('sell');
+      expect(legs[i].pricePerBase18).toBeGreaterThan(baseParams.referencePrice18);
+    }
+  });
+
+  it('places the nearest buy at R*(1-p) and nearest sell at R*(1+p)', () => {
+    const legs = buildInfiniteGridLegs({ ...baseParams, buyLevels: 1, sellLevels: 1 });
+    expect(legs.length).toBe(2);
+    const ONE = 10n ** 18n;
+    const down = ONE - baseParams.stepPctE18;
+    const up = ONE + baseParams.stepPctE18;
+    expect(legs[0].pricePerBase18).toBe((baseParams.referencePrice18 * down) / ONE);
+    expect(legs[1].pricePerBase18).toBe((baseParams.referencePrice18 * up) / ONE);
+  });
+
+  it('produces contiguous 0-based indices', () => {
+    const legs = buildInfiniteGridLegs({ ...baseParams, buyLevels: 4, sellLevels: 2 });
+    expect(legs.length).toBe(6);
+    for (let i = 0; i < legs.length; i += 1) {
+      expect(legs[i].index).toBe(i);
+    }
+  });
+
+  it('supports asymmetric grids (buys-only or sells-only)', () => {
+    const buysOnly = buildInfiniteGridLegs({ ...baseParams, buyLevels: 5, sellLevels: 0 });
+    expect(buysOnly.length).toBe(5);
+    expect(buysOnly.every((l) => l.side === 'buy')).toBe(true);
+    const sellsOnly = buildInfiniteGridLegs({ ...baseParams, buyLevels: 0, sellLevels: 5 });
+    expect(sellsOnly.length).toBe(5);
+    expect(sellsOnly.every((l) => l.side === 'sell')).toBe(true);
+  });
+
+  it('shares decayStart + deadline across all levels', () => {
+    const legs = buildInfiniteGridLegs(baseParams);
+    for (const lvl of legs) {
+      expect(lvl.decayStartSec).toBe(baseParams.startSec);
+      expect(lvl.deadlineSec).toBe(baseParams.deadlineSec);
+      expect(lvl.order.decayStartTime).toBe(BigInt(baseParams.startSec));
+      expect(lvl.order.decayEndTime).toBe(BigInt(baseParams.startSec));
+    }
+  });
+
+  it('injected nonce generator provides unique nonces', () => {
+    let nonce = 1000n;
+    const legs = buildInfiniteGridLegs({
+      ...baseParams,
+      nonceGenerator: () => nonce++,
+    });
+    const nonces = new Set(legs.map((l) => l.order.info.nonce.toString()));
+    expect(nonces.size).toBe(legs.length);
+  });
+
+  it('rejects zero reference price', () => {
+    expect(() =>
+      buildInfiniteGridLegs({ ...baseParams, referencePrice18: 0n }),
+    ).toThrow(/referencePrice18/);
+  });
+
+  it('rejects zero step', () => {
+    expect(() => buildInfiniteGridLegs({ ...baseParams, stepPctE18: 0n })).toThrow(/stepPctE18/);
+  });
+
+  it('rejects step >= 50%', () => {
+    expect(() =>
+      buildInfiniteGridLegs({ ...baseParams, stepPctE18: parseUnits('0.5', 18) }),
+    ).toThrow(/50%/);
+  });
+
+  it('rejects zero-total levels', () => {
+    expect(() =>
+      buildInfiniteGridLegs({ ...baseParams, buyLevels: 0, sellLevels: 0 }),
+    ).toThrow(/at least one/);
+  });
+
+  it('rejects total > 50', () => {
+    expect(() =>
+      buildInfiniteGridLegs({ ...baseParams, buyLevels: 26, sellLevels: 26 }),
+    ).toThrow(/capped at 50/);
+  });
+
+  it('rejects baseAmountPerLevel <= 0', () => {
+    expect(() =>
+      buildInfiniteGridLegs({ ...baseParams, baseAmountPerLevel: 0n }),
+    ).toThrow(/baseAmountPerLevel/);
+  });
+
+  it('rejects deadline too close to start', () => {
+    expect(() =>
+      buildInfiniteGridLegs({ ...baseParams, deadlineSec: baseParams.startSec + 100 }),
+    ).toThrow(/300s/);
   });
 });
 
