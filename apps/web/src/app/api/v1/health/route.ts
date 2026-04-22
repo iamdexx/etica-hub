@@ -23,12 +23,22 @@ import {
 import { DEPLOYMENTS } from '@etica-hub/shared';
 
 export const runtime = 'nodejs';
-export const revalidate = 5;
 export const dynamic = 'force-dynamic';
 
 const MAINNET_CHAIN_ID = 61803;
 /** Acceptable upper bound on head-block age before we flip `ok` to false. */
 const STALE_HEAD_SECONDS = 120;
+/**
+ * Short cache window tuned for monitoring consumers.
+ *
+ * We're `force-dynamic`, so Next.js ISR caching never kicks in — the only
+ * layer that respects freshness is the CDN, which obeys our explicit
+ * `Cache-Control` header. The default `JSON_HEADERS` apply 30s s-maxage,
+ * which would gate unhealthy state behind a stale 200 for up to 90s once
+ * stale-while-revalidate is considered; override it so a status page or
+ * aggregator bot polling every 5s actually sees a fresh response.
+ */
+const HEALTH_CACHE_CONTROL = 'public, s-maxage=5, stale-while-revalidate=10';
 
 export async function GET(): Promise<Response> {
   const startedAt = Date.now();
@@ -72,5 +82,8 @@ export async function GET(): Promise<Response> {
     errors,
   };
 
-  return jsonResponse(body, { status: ok ? 200 : 503 });
+  return jsonResponse(body, {
+    status: ok ? 200 : 503,
+    headers: { 'cache-control': HEALTH_CACHE_CONTROL },
+  });
 }
