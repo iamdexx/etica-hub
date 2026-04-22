@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "dry-run": "tsx src/dry-run.ts",
     "harvest:dry-run": "tsx src/harvest/dry-run.ts",
+    "harvest:live": "tsx src/harvest/run-live.ts",
     "build": "tsc -p tsconfig.json",
     "lint": "echo 'no lint'",
     "typecheck": "tsc --noEmit",
