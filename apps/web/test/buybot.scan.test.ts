@@ -29,9 +29,20 @@ describe('planScanWindow', () => {
     expect(w.toBlock - w.fromBlock + 1n).toBe(2_000n);
   });
 
-  it('falls back to lookback if cursor is ahead of chain (e.g. chain reorg)', () => {
+  it('returns an empty no-op window when the cursor equals the latest block', () => {
+    // Chain has not advanced since the previous cron run. Must not re-scan the
+    // last N blocks or the bot would repost every buy each minute.
+    const w = planScanWindow(1000n, 1000n, config, 50n);
+    expect(w.fromBlock).toBe(1001n);
+    expect(w.toBlock).toBe(1000n);
+    // Caller uses `toBlock < fromBlock` as a no-op signal:
+    expect(w.toBlock < w.fromBlock).toBe(true);
+  });
+
+  it('returns an empty no-op window when the cursor is ahead of chain (reorg)', () => {
     const w = planScanWindow(100n, 500n, config, 20n);
-    expect(w.fromBlock).toBe(80n);
+    expect(w.fromBlock).toBe(101n);
     expect(w.toBlock).toBe(100n);
+    expect(w.toBlock < w.fromBlock).toBe(true);
   });
 });

@@ -220,7 +220,10 @@ export function planScanWindow(
   freshDeployLookback = 50n,
 ): ScanWindow {
   const cap = BigInt(config.maxBlocksPerRun);
-  if (lastScanned === null || lastScanned >= latestBlock) {
+  if (lastScanned !== null && lastScanned >= latestBlock) {
+    return { fromBlock: latestBlock + 1n, toBlock: latestBlock };
+  }
+  if (lastScanned === null) {
     const from = latestBlock > freshDeployLookback ? latestBlock - freshDeployLookback : 0n;
     return { fromBlock: from, toBlock: latestBlock };
   }

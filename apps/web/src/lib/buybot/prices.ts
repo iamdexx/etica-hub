@@ -167,7 +167,7 @@ export function computeBuyReport(
   const spentUsd = usdPriceOf(decoded.spent, etx, eti, wegaz, pricing);
   const boughtUsd =
     usdPriceOf(decoded.bought, etx, eti, wegaz, pricing) ??
-    (spentUsd !== null ? spentUsd / decoded.pricePreInSpent : null);
+    (spentUsd !== null ? spentUsd * decoded.pricePreInSpent : null);
 
   const notionalUsd =
     spentUsd !== null
