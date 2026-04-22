@@ -12,6 +12,7 @@ import {
 } from '@/lib/explorer';
 import { loadVerified } from '@/lib/verified';
 import { VerifiedContractView } from '@/components/explorer/VerifiedContractView';
+import { readTokenMetadata } from '@/lib/token';
 
 export const revalidate = 0;
 export const dynamic = 'force-dynamic';
@@ -81,6 +82,9 @@ export default async function AddressPage({ params }: AddressPageProps) {
 
   const isContract = typeof code === 'string' && code !== '0x';
   const verified = isContract ? loadVerified(addr) : null;
+  // Probe ERC-20 metadata only for contracts — an EOA has no code to query
+  // and the reads would all revert. Returns null for any non-token contract.
+  const tokenMetadata = isContract ? await readTokenMetadata(client, addr) : null;
 
   // Bounded recent-tx scan: walk backwards at most RECENT_SCAN_BLOCKS looking
   // for txs involving this address. Cheap for active wallets, degrades
@@ -123,8 +127,26 @@ export default async function AddressPage({ params }: AddressPageProps) {
               <span aria-hidden>✓</span> Verified
             </span>
           ) : null}
+          {tokenMetadata ? (
+            <span
+              className="ml-2 inline-flex items-center gap-1 rounded-full bg-sky-400/15 px-2 py-0.5 align-middle text-[10px] uppercase tracking-wider text-sky-300"
+              title={`ERC-20 · ${tokenMetadata.name}`}
+            >
+              ERC-20
+            </span>
+          ) : null}
         </h1>
         <p className="break-all font-mono text-xs text-white/50">{addr}</p>
+        {tokenMetadata ? (
+          <p className="text-xs">
+            <Link
+              href={`/explorer/token/${addr}`}
+              className="inline-flex items-center gap-1 rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-sky-200 hover:bg-sky-400/20"
+            >
+              View as token: {tokenMetadata.symbol} →
+            </Link>
+          </p>
+        ) : null}
       </section>
 
       <section className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm md:grid-cols-2">
