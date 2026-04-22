@@ -80,11 +80,28 @@ function chooseBase(pair: ApiPairRaw, explicit: ApiToken | null): ApiToken | nul
   return t0 ?? t1 ?? null;
 }
 
+/**
+ * True if `token` on-chain is the requested `base` for quoting purposes.
+ *
+ * EGAZ is the native coin (no address, just a `wrappedAddress` pointing at
+ * WEGAZ) while WEGAZ is the matching ERC-20 wrapper. A pair on-chain only
+ * ever contains WEGAZ, but callers are welcome to ask `?base=egaz` — we
+ * treat the two as interchangeable for side-matching so that request
+ * doesn't spuriously 400.
+ */
+function isSameSide(token: ApiToken | null, base: ApiToken): boolean {
+  if (!token) return false;
+  if (token.id === base.id) return true;
+  if (base.id === 'egaz' && token.id === 'wegaz') return true;
+  if (base.id === 'wegaz' && token.id === 'egaz') return true;
+  return false;
+}
+
 function otherSide(pair: ApiPairRaw, base: ApiToken): ApiToken | null {
   const t0 = tokenByAddress(pair.token0);
   const t1 = tokenByAddress(pair.token1);
-  if (t0 && t0.id === base.id) return t1;
-  if (t1 && t1.id === base.id) return t0;
+  if (isSameSide(t0, base)) return t1;
+  if (isSameSide(t1, base)) return t0;
   return null;
 }
 
