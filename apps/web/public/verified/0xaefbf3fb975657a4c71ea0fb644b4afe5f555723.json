@@ -1,0 +1,663 @@
+{
+  "address": "0xaefbf3fB975657a4C71ea0Fb644B4afE5F555723",
+  "name": "EticaSwapRouter",
+  "compilerVersion": "0.8.26+commit.8a97fa7a",
+  "optimizer": {
+    "enabled": true,
+    "runs": 1000000
+  },
+  "evmVersion": "paris",
+  "sources": {
+    "src/swap/EticaSwapRouter.sol": {
+      "content": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.26;\n\nimport {IEticaSwapFactory} from \"./interfaces/IEticaSwapFactory.sol\";\nimport {IEticaSwapPair} from \"./interfaces/IEticaSwapPair.sol\";\nimport {IERC20Minimal} from \"./interfaces/IERC20Minimal.sol\";\nimport {IWEGAZ} from \"./interfaces/IWEGAZ.sol\";\nimport {EticaSwapLibrary} from \"./libraries/EticaSwapLibrary.sol\";\nimport {TransferHelper} from \"./libraries/TransferHelper.sol\";\n\n/// @title EticaSwap V2 router\n/// @notice User-facing entry point for swap + liquidity ops.\n///         Supports ERC20/ERC20 and EGAZ/ERC20 pairs (EGAZ wrapped via WEGAZ).\ncontract EticaSwapRouter {\n    address public immutable factory;\n    address public immutable WEGAZ_TOKEN;\n\n    modifier ensure(uint256 deadline) {\n        require(deadline >= block.timestamp, \"ESwap: EXPIRED\");\n        _;\n    }\n\n    constructor(address _factory, address _wegaz) {\n        factory = _factory;\n        WEGAZ_TOKEN = _wegaz;\n    }\n\n    receive() external payable {\n        // Only WEGAZ may send native EGAZ here (on withdraw).\n        require(msg.sender == WEGAZ_TOKEN, \"ESwap: NOT_WEGAZ\");\n    }\n\n    // ------------------------------------------------------------------ ADD LIQUIDITY\n\n    function _addLiquidity(\n        address tokenA,\n        address tokenB,\n        uint256 amountADesired,\n        uint256 amountBDesired,\n        uint256 amountAMin,\n        uint256 amountBMin\n    ) internal returns (uint256 amountA, uint256 amountB) {\n        IEticaSwapFactory fac = IEticaSwapFactory(factory);\n        if (fac.getPair(tokenA, tokenB) == address(0)) {\n            // Forward the ETX pair-creation fee from the original caller so\n            // `router.addLiquidity` can transparently open a new pair without\n            // a separate `factory.createPair` step. Fee is skipped when the\n            // router itself is a trusted creator, the fee is zero, or `feeTo`\n            // is unset (pre-bootstrap).\n            uint256 fee = fac.pairCreationFee();\n            address recipient = fac.feeTo();\n            if (fee > 0 && recipient != address(0) && !fac.trustedCreators(address(this))) {\n                address etxToken = fac.etx();\n                TransferHelper.safeTransferFrom(etxToken, msg.sender, address(this), fee);\n                TransferHelper.safeApprove(etxToken, factory, fee);\n            }\n            fac.createPair(tokenA, tokenB);\n        }\n        (uint256 reserveA, uint256 reserveB) = _reservesOrZero(tokenA, tokenB);\n        if (reserveA == 0 && reserveB == 0) {\n            (amountA, amountB) = (amountADesired, amountBDesired);\n        } else {\n            uint256 amountBOptimal = EticaSwapLibrary.quote(amountADesired, reserveA, reserveB);\n            if (amountBOptimal <= amountBDesired) {\n                require(amountBOptimal >= amountBMin, \"ESwap: INSUFFICIENT_B_AMOUNT\");\n                (amountA, amountB) = (amountADesired, amountBOptimal);\n            } else {\n                uint256 amountAOptimal = EticaSwapLibrary.quote(amountBDesired, reserveB, reserveA);\n                assert(amountAOptimal <= amountADesired);\n                require(amountAOptimal >= amountAMin, \"ESwap: INSUFFICIENT_A_AMOUNT\");\n                (amountA, amountB) = (amountAOptimal, amountBDesired);\n            }\n        }\n    }\n\n    function _reservesOrZero(address tokenA, address tokenB)\n        private\n        view\n        returns (uint256 reserveA, uint256 reserveB)\n    {\n        address pair = IEticaSwapFactory(factory).getPair(tokenA, tokenB);\n        if (pair == address(0)) return (0, 0);\n        (address token0,) = EticaSwapLibrary.sortTokens(tokenA, tokenB);\n        (uint112 r0, uint112 r1,) = IEticaSwapPair(pair).getReserves();\n        (reserveA, reserveB) = tokenA == token0 ? (r0, r1) : (r1, r0);\n    }\n\n    function addLiquidity(\n        address tokenA,\n        address tokenB,\n        uint256 amountADesired,\n        uint256 amountBDesired,\n        uint256 amountAMin,\n        uint256 amountBMin,\n        address to,\n        uint256 deadline\n    ) external ensure(deadline) returns (uint256 amountA, uint256 amountB, uint256 liquidity) {\n        (amountA, amountB) =\n            _addLiquidity(tokenA, tokenB, amountADesired, amountBDesired, amountAMin, amountBMin);\n        address pair = EticaSwapLibrary.pairFor(factory, tokenA, tokenB);\n        TransferHelper.safeTransferFrom(tokenA, msg.sender, pair, amountA);\n        TransferHelper.safeTransferFrom(tokenB, msg.sender, pair, amountB);\n        liquidity = IEticaSwapPair(pair).mint(to);\n    }\n\n    function addLiquidityEGAZ(\n        address token,\n        uint256 amountTokenDesired,\n        uint256 amountTokenMin,\n        uint256 amountEGAZMin,\n        address to,\n        uint256 deadline\n    )\n        external\n        payable\n        ensure(deadline)\n        returns (uint256 amountToken, uint256 amountEGAZ, uint256 liquidity)\n    {\n        (amountToken, amountEGAZ) = _addLiquidity(\n            token, WEGAZ_TOKEN, amountTokenDesired, msg.value, amountTokenMin, amountEGAZMin\n        );\n        address pair = EticaSwapLibrary.pairFor(factory, token, WEGAZ_TOKEN);\n        TransferHelper.safeTransferFrom(token, msg.sender, pair, amountToken);\n        IWEGAZ(WEGAZ_TOKEN).deposit{value: amountEGAZ}();\n        assert(IWEGAZ(WEGAZ_TOKEN).transfer(pair, amountEGAZ));\n        liquidity = IEticaSwapPair(pair).mint(to);\n        if (msg.value > amountEGAZ) {\n            TransferHelper.safeTransferEGAZ(msg.sender, msg.value - amountEGAZ);\n        }\n    }\n\n    // ------------------------------------------------------------------ REMOVE LIQUIDITY\n\n    function removeLiquidity(\n        address tokenA,\n        address tokenB,\n        uint256 liquidity,\n        uint256 amountAMin,\n        uint256 amountBMin,\n        address to,\n        uint256 deadline\n    ) public ensure(deadline) returns (uint256 amountA, uint256 amountB) {\n        address pair = EticaSwapLibrary.pairFor(factory, tokenA, tokenB);\n        IEticaSwapPair(pair).transferFrom(msg.sender, pair, liquidity);\n        (uint256 amount0, uint256 amount1) = IEticaSwapPair(pair).burn(to);\n        (address token0,) = EticaSwapLibrary.sortTokens(tokenA, tokenB);\n        (amountA, amountB) = tokenA == token0 ? (amount0, amount1) : (amount1, amount0);\n        require(amountA >= amountAMin, \"ESwap: INSUFFICIENT_A_AMOUNT\");\n        require(amountB >= amountBMin, \"ESwap: INSUFFICIENT_B_AMOUNT\");\n    }\n\n    function removeLiquidityEGAZ(\n        address token,\n        uint256 liquidity,\n        uint256 amountTokenMin,\n        uint256 amountEGAZMin,\n        address to,\n        uint256 deadline\n    ) public ensure(deadline) returns (uint256 amountToken, uint256 amountEGAZ) {\n        (amountToken, amountEGAZ) = removeLiquidity(\n            token, WEGAZ_TOKEN, liquidity, amountTokenMin, amountEGAZMin, address(this), deadline\n        );\n        TransferHelper.safeTransfer(token, to, amountToken);\n        IWEGAZ(WEGAZ_TOKEN).withdraw(amountEGAZ);\n        TransferHelper.safeTransferEGAZ(to, amountEGAZ);\n    }\n\n    // ------------------------------------------------------------------ SWAPS\n\n    function _swap(uint256[] memory amounts, address[] memory path, address _to) internal {\n        for (uint256 i; i < path.length - 1; i++) {\n            (address input, address output) = (path[i], path[i + 1]);\n            (address token0,) = EticaSwapLibrary.sortTokens(input, output);\n            uint256 amountOut = amounts[i + 1];\n            (uint256 amount0Out, uint256 amount1Out) =\n                input == token0 ? (uint256(0), amountOut) : (amountOut, uint256(0));\n            address to =\n                i < path.length - 2 ? EticaSwapLibrary.pairFor(factory, output, path[i + 2]) : _to;\n            IEticaSwapPair(EticaSwapLibrary.pairFor(factory, input, output))\n                .swap(amount0Out, amount1Out, to, new bytes(0));\n        }\n    }\n\n    function swapExactTokensForTokens(\n        uint256 amountIn,\n        uint256 amountOutMin,\n        address[] calldata path,\n        address to,\n        uint256 deadline\n    ) external ensure(deadline) returns (uint256[] memory amounts) {\n        amounts = EticaSwapLibrary.getAmountsOut(factory, amountIn, path);\n        require(amounts[amounts.length - 1] >= amountOutMin, \"ESwap: INSUFFICIENT_OUTPUT_AMOUNT\");\n        TransferHelper.safeTransferFrom(\n            path[0], msg.sender, EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0]\n        );\n        _swap(amounts, path, to);\n    }\n\n    function swapTokensForExactTokens(\n        uint256 amountOut,\n        uint256 amountInMax,\n        address[] calldata path,\n        address to,\n        uint256 deadline\n    ) external ensure(deadline) returns (uint256[] memory amounts) {\n        amounts = EticaSwapLibrary.getAmountsIn(factory, amountOut, path);\n        require(amounts[0] <= amountInMax, \"ESwap: EXCESSIVE_INPUT_AMOUNT\");\n        TransferHelper.safeTransferFrom(\n            path[0], msg.sender, EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0]\n        );\n        _swap(amounts, path, to);\n    }\n\n    function swapExactEGAZForTokens(\n        uint256 amountOutMin,\n        address[] calldata path,\n        address to,\n        uint256 deadline\n    ) external payable ensure(deadline) returns (uint256[] memory amounts) {\n        require(path[0] == WEGAZ_TOKEN, \"ESwap: INVALID_PATH\");\n        amounts = EticaSwapLibrary.getAmountsOut(factory, msg.value, path);\n        require(amounts[amounts.length - 1] >= amountOutMin, \"ESwap: INSUFFICIENT_OUTPUT_AMOUNT\");\n        IWEGAZ(WEGAZ_TOKEN).deposit{value: amounts[0]}();\n        assert(\n            IWEGAZ(WEGAZ_TOKEN)\n                .transfer(EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0])\n        );\n        _swap(amounts, path, to);\n    }\n\n    function swapTokensForExactEGAZ(\n        uint256 amountOut,\n        uint256 amountInMax,\n        address[] calldata path,\n        address to,\n        uint256 deadline\n    ) external ensure(deadline) returns (uint256[] memory amounts) {\n        require(path[path.length - 1] == WEGAZ_TOKEN, \"ESwap: INVALID_PATH\");\n        amounts = EticaSwapLibrary.getAmountsIn(factory, amountOut, path);\n        require(amounts[0] <= amountInMax, \"ESwap: EXCESSIVE_INPUT_AMOUNT\");\n        TransferHelper.safeTransferFrom(\n            path[0], msg.sender, EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0]\n        );\n        _swap(amounts, path, address(this));\n        IWEGAZ(WEGAZ_TOKEN).withdraw(amounts[amounts.length - 1]);\n        TransferHelper.safeTransferEGAZ(to, amounts[amounts.length - 1]);\n    }\n\n    function swapExactTokensForEGAZ(\n        uint256 amountIn,\n        uint256 amountOutMin,\n        address[] calldata path,\n        address to,\n        uint256 deadline\n    ) external ensure(deadline) returns (uint256[] memory amounts) {\n        require(path[path.length - 1] == WEGAZ_TOKEN, \"ESwap: INVALID_PATH\");\n        amounts = EticaSwapLibrary.getAmountsOut(factory, amountIn, path);\n        require(amounts[amounts.length - 1] >= amountOutMin, \"ESwap: INSUFFICIENT_OUTPUT_AMOUNT\");\n        TransferHelper.safeTransferFrom(\n            path[0], msg.sender, EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0]\n        );\n        _swap(amounts, path, address(this));\n        IWEGAZ(WEGAZ_TOKEN).withdraw(amounts[amounts.length - 1]);\n        TransferHelper.safeTransferEGAZ(to, amounts[amounts.length - 1]);\n    }\n\n    function swapEGAZForExactTokens(\n        uint256 amountOut,\n        address[] calldata path,\n        address to,\n        uint256 deadline\n    ) external payable ensure(deadline) returns (uint256[] memory amounts) {\n        require(path[0] == WEGAZ_TOKEN, \"ESwap: INVALID_PATH\");\n        amounts = EticaSwapLibrary.getAmountsIn(factory, amountOut, path);\n        require(amounts[0] <= msg.value, \"ESwap: EXCESSIVE_INPUT_AMOUNT\");\n        IWEGAZ(WEGAZ_TOKEN).deposit{value: amounts[0]}();\n        assert(\n            IWEGAZ(WEGAZ_TOKEN)\n                .transfer(EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0])\n        );\n        _swap(amounts, path, to);\n        if (msg.value > amounts[0]) {\n            TransferHelper.safeTransferEGAZ(msg.sender, msg.value - amounts[0]);\n        }\n    }\n\n    // ------------------------------------------------------------------ VIEWS\n\n    function quote(uint256 amountA, uint256 reserveA, uint256 reserveB)\n        external\n        pure\n        returns (uint256)\n    {\n        return EticaSwapLibrary.quote(amountA, reserveA, reserveB);\n    }\n\n    function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut)\n        external\n        pure\n        returns (uint256)\n    {\n        return EticaSwapLibrary.getAmountOut(amountIn, reserveIn, reserveOut);\n    }\n\n    function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut)\n        external\n        pure\n        returns (uint256)\n    {\n        return EticaSwapLibrary.getAmountIn(amountOut, reserveIn, reserveOut);\n    }\n\n    function getAmountsOut(uint256 amountIn, address[] calldata path)\n        external\n        view\n        returns (uint256[] memory)\n    {\n        return EticaSwapLibrary.getAmountsOut(factory, amountIn, path);\n    }\n\n    function getAmountsIn(uint256 amountOut, address[] calldata path)\n        external\n        view\n        returns (uint256[] memory)\n    {\n        return EticaSwapLibrary.getAmountsIn(factory, amountOut, path);\n    }\n}\n"
+    },
+    "src/swap/interfaces/IERC20Minimal.sol": {
+      "content": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.0;\n\ninterface IERC20Minimal {\n    function balanceOf(address owner) external view returns (uint256);\n    function totalSupply() external view returns (uint256);\n    function transfer(address to, uint256 value) external returns (bool);\n    function transferFrom(address from, address to, uint256 value) external returns (bool);\n    function approve(address spender, uint256 value) external returns (bool);\n    function allowance(address owner, address spender) external view returns (uint256);\n    function decimals() external view returns (uint8);\n    function symbol() external view returns (string memory);\n    function name() external view returns (string memory);\n}\n"
+    },
+    "src/swap/interfaces/IEticaSwapFactory.sol": {
+      "content": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.0;\n\n/// @title EticaSwap V2 factory interface\n/// @notice Uniswap V2–compatible factory deploying CREATE2 pair contracts.\ninterface IEticaSwapFactory {\n    event PairCreated(address indexed token0, address indexed token1, address pair, uint256);\n    event TrustedCreatorSet(address indexed creator, bool trusted);\n    event PairCreationFeeSet(uint256 fee);\n\n    function etx() external view returns (address);\n    function feeTo() external view returns (address);\n    function feeToSetter() external view returns (address);\n    function trustedCreators(address creator) external view returns (bool);\n    function pairCreationFee() external view returns (uint256);\n\n    function getPair(address tokenA, address tokenB) external view returns (address pair);\n    function allPairs(uint256) external view returns (address pair);\n    function allPairsLength() external view returns (uint256);\n\n    function createPair(address tokenA, address tokenB) external returns (address pair);\n\n    function setFeeTo(address) external;\n    function setFeeToSetter(address) external;\n    function setTrustedCreator(address creator, bool trusted) external;\n    function setPairCreationFee(uint256 fee) external;\n}\n"
+    },
+    "src/swap/interfaces/IEticaSwapPair.sol": {
+      "content": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.0;\n\n/// @title EticaSwap V2 pair interface\n/// @notice Uniswap V2–compatible pair (ERC20 LP token + AMM).\ninterface IEticaSwapPair {\n    event Approval(address indexed owner, address indexed spender, uint256 value);\n    event Transfer(address indexed from, address indexed to, uint256 value);\n\n    function name() external pure returns (string memory);\n    function symbol() external pure returns (string memory);\n    function decimals() external pure returns (uint8);\n    function totalSupply() external view returns (uint256);\n    function balanceOf(address owner) external view returns (uint256);\n    function allowance(address owner, address spender) external view returns (uint256);\n\n    function approve(address spender, uint256 value) external returns (bool);\n    function transfer(address to, uint256 value) external returns (bool);\n    function transferFrom(address from, address to, uint256 value) external returns (bool);\n\n    function DOMAIN_SEPARATOR() external view returns (bytes32);\n    function PERMIT_TYPEHASH() external pure returns (bytes32);\n    function nonces(address owner) external view returns (uint256);\n\n    function permit(\n        address owner,\n        address spender,\n        uint256 value,\n        uint256 deadline,\n        uint8 v,\n        bytes32 r,\n        bytes32 s\n    ) external;\n\n    event Mint(address indexed sender, uint256 amount0, uint256 amount1);\n    event Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to);\n    event Swap(\n        address indexed sender,\n        uint256 amount0In,\n        uint256 amount1In,\n        uint256 amount0Out,\n        uint256 amount1Out,\n        address indexed to\n    );\n    event Sync(uint112 reserve0, uint112 reserve1);\n\n    function MINIMUM_LIQUIDITY() external pure returns (uint256);\n    function factory() external view returns (address);\n    function token0() external view returns (address);\n    function token1() external view returns (address);\n    function getReserves()\n        external\n        view\n        returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);\n\n    function price0CumulativeLast() external view returns (uint256);\n    function price1CumulativeLast() external view returns (uint256);\n    function kLast() external view returns (uint256);\n\n    function mint(address to) external returns (uint256 liquidity);\n    function burn(address to) external returns (uint256 amount0, uint256 amount1);\n    function swap(uint256 amount0Out, uint256 amount1Out, address to, bytes calldata data) external;\n    function skim(address to) external;\n    function sync() external;\n\n    function initialize(address, address) external;\n}\n"
+    },
+    "src/swap/interfaces/IWEGAZ.sol": {
+      "content": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.0;\n\ninterface IWEGAZ {\n    function deposit() external payable;\n    function withdraw(uint256) external;\n    function transfer(address to, uint256 value) external returns (bool);\n    function balanceOf(address owner) external view returns (uint256);\n    function approve(address spender, uint256 value) external returns (bool);\n    function allowance(address owner, address spender) external view returns (uint256);\n    function transferFrom(address from, address to, uint256 value) external returns (bool);\n}\n"
+    },
+    "src/swap/libraries/EticaSwapLibrary.sol": {
+      "content": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.0;\n\nimport {IEticaSwapFactory} from \"../interfaces/IEticaSwapFactory.sol\";\nimport {IEticaSwapPair} from \"../interfaces/IEticaSwapPair.sol\";\n\n/// @notice Pure helpers for the EticaSwap router.\n/// @dev Uses `IEticaSwapFactory.getPair` to resolve pair addresses instead of\n///      a CREATE2 hardcoded init-code hash, so forks don't have to recompute\n///      the hash when bytecode changes.\nlibrary EticaSwapLibrary {\n    function sortTokens(address tokenA, address tokenB)\n        internal\n        pure\n        returns (address token0, address token1)\n    {\n        require(tokenA != tokenB, \"ESwap: IDENTICAL_ADDRESSES\");\n        (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);\n        require(token0 != address(0), \"ESwap: ZERO_ADDRESS\");\n    }\n\n    function pairFor(address factory, address tokenA, address tokenB)\n        internal\n        view\n        returns (address pair)\n    {\n        pair = IEticaSwapFactory(factory).getPair(tokenA, tokenB);\n        require(pair != address(0), \"ESwap: PAIR_NOT_FOUND\");\n    }\n\n    function getReserves(address factory, address tokenA, address tokenB)\n        internal\n        view\n        returns (uint256 reserveA, uint256 reserveB)\n    {\n        (address token0,) = sortTokens(tokenA, tokenB);\n        (uint112 reserve0, uint112 reserve1,) =\n            IEticaSwapPair(pairFor(factory, tokenA, tokenB)).getReserves();\n        (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);\n    }\n\n    function quote(uint256 amountA, uint256 reserveA, uint256 reserveB)\n        internal\n        pure\n        returns (uint256 amountB)\n    {\n        require(amountA > 0, \"ESwap: INSUFFICIENT_AMOUNT\");\n        require(reserveA > 0 && reserveB > 0, \"ESwap: INSUFFICIENT_LIQUIDITY\");\n        amountB = (amountA * reserveB) / reserveA;\n    }\n\n    /// @dev 0.30% fee applied to input.\n    function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut)\n        internal\n        pure\n        returns (uint256 amountOut)\n    {\n        require(amountIn > 0, \"ESwap: INSUFFICIENT_INPUT_AMOUNT\");\n        require(reserveIn > 0 && reserveOut > 0, \"ESwap: INSUFFICIENT_LIQUIDITY\");\n        uint256 amountInWithFee = amountIn * 997;\n        uint256 numerator = amountInWithFee * reserveOut;\n        uint256 denominator = reserveIn * 1000 + amountInWithFee;\n        amountOut = numerator / denominator;\n    }\n\n    function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut)\n        internal\n        pure\n        returns (uint256 amountIn)\n    {\n        require(amountOut > 0, \"ESwap: INSUFFICIENT_OUTPUT_AMOUNT\");\n        require(reserveIn > 0 && reserveOut > 0, \"ESwap: INSUFFICIENT_LIQUIDITY\");\n        uint256 numerator = reserveIn * amountOut * 1000;\n        uint256 denominator = (reserveOut - amountOut) * 997;\n        amountIn = (numerator / denominator) + 1;\n    }\n\n    function getAmountsOut(address factory, uint256 amountIn, address[] memory path)\n        internal\n        view\n        returns (uint256[] memory amounts)\n    {\n        require(path.length >= 2, \"ESwap: INVALID_PATH\");\n        amounts = new uint256[](path.length);\n        amounts[0] = amountIn;\n        for (uint256 i; i < path.length - 1; i++) {\n            (uint256 reserveIn, uint256 reserveOut) = getReserves(factory, path[i], path[i + 1]);\n            amounts[i + 1] = getAmountOut(amounts[i], reserveIn, reserveOut);\n        }\n    }\n\n    function getAmountsIn(address factory, uint256 amountOut, address[] memory path)\n        internal\n        view\n        returns (uint256[] memory amounts)\n    {\n        require(path.length >= 2, \"ESwap: INVALID_PATH\");\n        amounts = new uint256[](path.length);\n        amounts[amounts.length - 1] = amountOut;\n        for (uint256 i = path.length - 1; i > 0; i--) {\n            (uint256 reserveIn, uint256 reserveOut) = getReserves(factory, path[i - 1], path[i]);\n            amounts[i - 1] = getAmountIn(amounts[i], reserveIn, reserveOut);\n        }\n    }\n}\n"
+    },
+    "src/swap/libraries/TransferHelper.sol": {
+      "content": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.0;\n\n/// @notice Safe transfer helpers that tolerate ERC20s that don't return a boolean.\nlibrary TransferHelper {\n    function safeApprove(address token, address to, uint256 value) internal {\n        (bool ok, bytes memory data) = token.call(abi.encodeWithSelector(0x095ea7b3, to, value));\n        require(ok && (data.length == 0 || abi.decode(data, (bool))), \"TH: APPROVE_FAILED\");\n    }\n\n    function safeTransfer(address token, address to, uint256 value) internal {\n        (bool ok, bytes memory data) = token.call(abi.encodeWithSelector(0xa9059cbb, to, value));\n        require(ok && (data.length == 0 || abi.decode(data, (bool))), \"TH: TRANSFER_FAILED\");\n    }\n\n    function safeTransferFrom(address token, address from, address to, uint256 value) internal {\n        (bool ok, bytes memory data) =\n            token.call(abi.encodeWithSelector(0x23b872dd, from, to, value));\n        require(ok && (data.length == 0 || abi.decode(data, (bool))), \"TH: TRANSFER_FROM_FAILED\");\n    }\n\n    function safeTransferEGAZ(address to, uint256 value) internal {\n        (bool ok,) = to.call{value: value}(new bytes(0));\n        require(ok, \"TH: EGAZ_TRANSFER_FAILED\");\n    }\n}\n"
+    }
+  },
+  "abi": [
+    {
+      "type": "constructor",
+      "inputs": [
+        {
+          "name": "_factory",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_wegaz",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "receive",
+      "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "WEGAZ_TOKEN",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "addLiquidity",
+      "inputs": [
+        {
+          "name": "tokenA",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "tokenB",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amountADesired",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountBDesired",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountAMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountBMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amountA",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountB",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "liquidity",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "addLiquidityEGAZ",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amountTokenDesired",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountTokenMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountEGAZMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amountToken",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountEGAZ",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "liquidity",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "factory",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "getAmountIn",
+      "inputs": [
+        {
+          "name": "amountOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "reserveIn",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "reserveOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "pure"
+    },
+    {
+      "type": "function",
+      "name": "getAmountOut",
+      "inputs": [
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "reserveIn",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "reserveOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "pure"
+    },
+    {
+      "type": "function",
+      "name": "getAmountsIn",
+      "inputs": [
+        {
+          "name": "amountOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "path",
+          "type": "address[]",
+          "internalType": "address[]"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "getAmountsOut",
+      "inputs": [
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "path",
+          "type": "address[]",
+          "internalType": "address[]"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "quote",
+      "inputs": [
+        {
+          "name": "amountA",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "reserveA",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "reserveB",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "pure"
+    },
+    {
+      "type": "function",
+      "name": "removeLiquidity",
+      "inputs": [
+        {
+          "name": "tokenA",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "tokenB",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "liquidity",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountAMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountBMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amountA",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountB",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "removeLiquidityEGAZ",
+      "inputs": [
+        {
+          "name": "token",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "liquidity",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountTokenMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountEGAZMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amountToken",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountEGAZ",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "swapEGAZForExactTokens",
+      "inputs": [
+        {
+          "name": "amountOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "path",
+          "type": "address[]",
+          "internalType": "address[]"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amounts",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "swapExactEGAZForTokens",
+      "inputs": [
+        {
+          "name": "amountOutMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "path",
+          "type": "address[]",
+          "internalType": "address[]"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amounts",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "swapExactTokensForEGAZ",
+      "inputs": [
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountOutMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "path",
+          "type": "address[]",
+          "internalType": "address[]"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amounts",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "swapExactTokensForTokens",
+      "inputs": [
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountOutMin",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "path",
+          "type": "address[]",
+          "internalType": "address[]"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amounts",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "swapTokensForExactEGAZ",
+      "inputs": [
+        {
+          "name": "amountOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountInMax",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "path",
+          "type": "address[]",
+          "internalType": "address[]"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amounts",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "swapTokensForExactTokens",
+      "inputs": [
+        {
+          "name": "amountOut",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "amountInMax",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "path",
+          "type": "address[]",
+          "internalType": "address[]"
+        },
+        {
+          "name": "to",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "amounts",
+          "type": "uint256[]",
+          "internalType": "uint256[]"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    }
+  ],
+  "verifiedAt": "2026-04-22T03:35:58.279Z",
+  "bytecodeMatch": "with-immutables"
+}
