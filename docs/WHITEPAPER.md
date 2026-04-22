@@ -263,6 +263,16 @@ The `/stake` page provides:
 - `distributeRewards` is **fully permissionless**: any wallet may call it. Calling it with zero amount reverts with `ZeroAmount()`; a nonzero call requires the caller to have approved the vault for the full amount and transfers that ETX into the vault in the same transaction — shares are never minted, only the exchange rate ticks up.
 - Withdrawals are not rate-limited, not paused, not subject to any cooldown.
 
+### 8.5 Treasury seed stake (20M ETX)
+
+The EticaHub treasury seeds stETX with **20,000,000 ETX** (20% of fixed supply) as a public commitment to the vault's design and to bootstrap non-zero TVL on day one. Concrete implications:
+
+- **Real floor on TVL.** The `/stake` page does not open with an empty vault. APY math and exchange-rate history have a meaningful denominator from the first block.
+- **Skin-in-the-game signal.** The treasury is the largest stETX holder. Every design decision about the vault applies to the treasury first — there is no separate "team pool" on better terms.
+- **No special privileges.** The treasury's stETX shares are identical to any other depositor's. Treasury cannot front-run distributions, cannot block withdrawals, cannot mint extra shares. The `distributeRewards` path is permissionless and capped by the fees the harvester actually collected.
+- **Dilutive to treasury by design.** As outside stakers deposit, treasury's proportional claim on the 10% harvest bucket falls. This is the intended direction: the seed stake exists to bootstrap credibility, not to lock in a permanent treasury revenue line. The 40% treasury bucket and the 40% POL burn (see §9) are unaffected by stETX participation.
+- **Liquid commitment, not a rug-pull vector.** The 20M is held as stETX shares in the treasury wallet and is liquid under ERC-4626. Any intent to unwind would be fully visible on-chain as a `Redeem` event. A time-locked wrapper is under consideration as a follow-up (see roadmap).
+
 ---
 
 ## 9. Treasury Harvester & POL Flywheel
