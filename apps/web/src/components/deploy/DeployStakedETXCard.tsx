@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BaseError,
   UserRejectedRequestError,
@@ -65,7 +65,19 @@ export function DeployStakedETXCard() {
   const defaultEtx = onMainnet ? DEPLOYMENTS[eticaMainnet.id].etx : ZERO_ADDRESS;
 
   const [etxInput, setEtxInput] = useState<string>(defaultEtx);
+  const userEditedRef = useRef(false);
   const [state, setState] = useState<DeployState>({ status: 'idle' });
+
+  // Keep the ETX input in sync with the connected chain's canonical ETX
+  // address, unless the operator has manually edited it. Without this,
+  // useState's initializer runs only on first render and a chain switch
+  // (e.g. user clicks "Switch to Etica Mainnet") leaves the stale
+  // zero-address value in the field, disabling the deploy button.
+  useEffect(() => {
+    if (!userEditedRef.current) {
+      setEtxInput(defaultEtx);
+    }
+  }, [defaultEtx]);
 
   const parsedEtx = useMemo<Address | null>(() => {
     try {
@@ -168,7 +180,10 @@ export function DeployStakedETXCard() {
             type="text"
             className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
             value={etxInput}
-            onChange={(e) => setEtxInput(e.target.value)}
+            onChange={(e) => {
+              userEditedRef.current = true;
+              setEtxInput(e.target.value);
+            }}
             placeholder="0x…"
             spellCheck={false}
           />
