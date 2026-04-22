@@ -268,8 +268,13 @@ function WriteCard({
       }
     }
     setState({ status: 'running' });
+    // Declared outside the try so that a receipt-polling failure after
+    // a successful `writeContract` still surfaces the tx hash in the
+    // error state — otherwise the user loses their link to a submitted
+    // transaction if the RPC hiccups during confirmation.
+    let hash: Hex | undefined;
     try {
-      const hash = await walletClient.writeContract({
+      hash = await walletClient.writeContract({
         address,
         abi,
         functionName: fn.name,
@@ -284,7 +289,11 @@ function WriteCard({
         setState({ status: 'confirmed', hash });
       }
     } catch (err) {
-      setState({ status: 'error', error: shortError(err) });
+      setState({
+        status: 'error',
+        error: shortError(err),
+        ...(hash ? { hash } : {}),
+      });
     }
   }
 
