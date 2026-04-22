@@ -89,7 +89,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       {
         ok: false,
         enabled: true,
-        error: 'KV credentials (KV_REST_API_URL / KV_REST_API_TOKEN) missing in production',
+        error:
+          'KV credentials missing in production — set either KV_REST_API_URL + KV_REST_API_TOKEN (Upstash/Vercel KV REST) or REDIS_URL (TCP)',
       } satisfies CronResult,
       { status: 500 },
     );
