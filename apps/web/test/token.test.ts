@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { PublicClient } from 'viem';
 import {
   formatTokenAmount,
+  resolveTokenInfos,
+  scanAddressTokenTransfers,
   uniqueAddressesFromTransfers,
   type TokenTransfer,
 } from '../src/lib/token';
@@ -107,5 +110,189 @@ describe('uniqueAddressesFromTransfers', () => {
     // prefix. That's fine — the function normalizes via toLowerCase.
     const w = [transfer(upper, B), transfer(B, mixed)];
     expect(uniqueAddressesFromTransfers(w)).toBe(2);
+  });
+});
+
+// ------------------------------------------------------------------ //
+// scanAddressTokenTransfers
+// ------------------------------------------------------------------ //
+// The per-address Transfer-log scanner is the backbone of the "Token
+// transfers" section on /explorer/address/[addr]. It issues two
+// parallel getLogs calls (outbound + inbound) and must de-dupe on
+// (txHash, logIndex), sort newest-first, and bail cleanly when the RPC
+// errors. Tests fake a PublicClient via a minimal mock that only
+// implements getLogs.
+describe('scanAddressTokenTransfers', () => {
+  const VIEWER = '0x1111111111111111111111111111111111111111' as const;
+  const OTHER = '0x2222222222222222222222222222222222222222' as const;
+  const TOKEN_A = '0xAAaAaaAaaAaaAAaaAAAaaaAAAAAaaaAaAAaAAaaA' as const;
+
+  // Shape viem returns from `getLogs({ event, args })` — args are already
+  // decoded. We fake the same shape.
+  function log(opts: {
+    blockNumber: bigint;
+    logIndex: number;
+    from: string;
+    to: string;
+    value: bigint;
+    token: string;
+    txHash: string;
+  }) {
+    return {
+      address: opts.token,
+      args: { from: opts.from, to: opts.to, value: opts.value },
+      blockNumber: opts.blockNumber,
+      transactionHash: opts.txHash,
+      logIndex: opts.logIndex,
+    };
+  }
+
+  function mockClient(outboundLogs: unknown[], inboundLogs: unknown[]) {
+    return {
+      getLogs: vi
+        .fn()
+        .mockImplementationOnce(() => Promise.resolve(outboundLogs))
+        .mockImplementationOnce(() => Promise.resolve(inboundLogs)),
+    } as unknown as PublicClient;
+  }
+
+  it('merges outbound + inbound logs, sorts newest-first, and decodes fields', async () => {
+    const outbound = [
+      log({
+        blockNumber: 100n,
+        logIndex: 0,
+        from: VIEWER,
+        to: OTHER,
+        value: 1000n,
+        token: TOKEN_A,
+        txHash: '0xaaaa',
+      }),
+    ];
+    const inbound = [
+      log({
+        blockNumber: 200n,
+        logIndex: 0,
+        from: OTHER,
+        to: VIEWER,
+        value: 2000n,
+        token: TOKEN_A,
+        txHash: '0xbbbb',
+      }),
+    ];
+    const client = mockClient(outbound, inbound);
+    const out = await scanAddressTokenTransfers(client, VIEWER, 300n);
+    expect(out).toHaveLength(2);
+    // Newest first — block 200 before block 100.
+    expect(out[0]!.blockNumber).toBe(200n);
+    expect(out[1]!.blockNumber).toBe(100n);
+    expect(out[0]!.value).toBe(2000n);
+    expect(out[0]!.from.toLowerCase()).toBe(OTHER.toLowerCase());
+    expect(out[0]!.to.toLowerCase()).toBe(VIEWER.toLowerCase());
+  });
+
+  it('de-duplicates a log that appears in both result sets', async () => {
+    // A self-transfer (viewer → viewer) matches both the outbound filter
+    // (from=viewer) and the inbound filter (to=viewer); without dedup
+    // we'd emit two identical entries.
+    const l = log({
+      blockNumber: 50n,
+      logIndex: 3,
+      from: VIEWER,
+      to: VIEWER,
+      value: 7n,
+      token: TOKEN_A,
+      txHash: '0xcafe',
+    });
+    const client = mockClient([l], [l]);
+    const out = await scanAddressTokenTransfers(client, VIEWER, 100n);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.value).toBe(7n);
+  });
+
+  it('returns an empty array when the RPC rejects', async () => {
+    const client = {
+      getLogs: vi.fn().mockRejectedValue(new Error('boom')),
+    } as unknown as PublicClient;
+    const out = await scanAddressTokenTransfers(client, VIEWER, 100n);
+    expect(out).toEqual([]);
+  });
+
+  it('skips logs missing any of (from, to, value)', async () => {
+    const malformed = {
+      address: TOKEN_A,
+      args: { from: VIEWER }, // no `to`, no `value`
+      blockNumber: 10n,
+      transactionHash: '0xdead',
+      logIndex: 0,
+    };
+    const client = mockClient([malformed], []);
+    const out = await scanAddressTokenTransfers(client, VIEWER, 100n);
+    expect(out).toEqual([]);
+  });
+});
+
+// ------------------------------------------------------------------ //
+// resolveTokenInfos
+// ------------------------------------------------------------------ //
+// Per-page batch metadata resolver. Must de-duplicate the input set so
+// the same token address never triggers two parallel probes even if it
+// appears many times in the transfer list. Also must omit tokens whose
+// metadata read fails (rather than propagating the exception).
+describe('resolveTokenInfos', () => {
+  const TOKEN_A = '0xAAaAaaAaaAaaAAaaAAAaaaAAAAAaaaAaAAaAAaaA' as const;
+  const TOKEN_B = '0xBBbBbBbBbBbBBBbBbBbBBbBbbbbBbbbBbbbbBBbB' as const;
+
+  function mockMetadataClient(responses: Record<string, unknown>) {
+    return {
+      readContract: vi.fn((args: { address: string; functionName: string }) => {
+        const addrLower = args.address.toLowerCase();
+        const tokenResponses = responses[addrLower] as
+          | Record<string, unknown>
+          | undefined;
+        if (!tokenResponses) return Promise.reject(new Error('no such token'));
+        const val = tokenResponses[args.functionName];
+        if (val === undefined) return Promise.reject(new Error('no-op'));
+        return Promise.resolve(val);
+      }),
+    } as unknown as PublicClient;
+  }
+
+  it('de-duplicates by address before probing', async () => {
+    const client = mockMetadataClient({
+      [TOKEN_A.toLowerCase()]: {
+        name: 'Token A',
+        symbol: 'AAA',
+        decimals: 18,
+        totalSupply: 0n,
+      },
+    });
+    // TOKEN_A repeated 3 times — should still only issue 4 reads total
+    // (name + symbol + decimals + totalSupply), not 12.
+    const result = await resolveTokenInfos(client, [TOKEN_A, TOKEN_A, TOKEN_A]);
+    expect(result.size).toBe(1);
+    expect(result.get(TOKEN_A.toLowerCase())?.symbol).toBe('AAA');
+    expect((client.readContract as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(4);
+  });
+
+  it('omits tokens whose metadata probe fails', async () => {
+    const client = mockMetadataClient({
+      [TOKEN_A.toLowerCase()]: {
+        name: 'Token A',
+        symbol: 'AAA',
+        decimals: 18,
+        totalSupply: 0n,
+      },
+      // TOKEN_B intentionally missing — probe will reject.
+    });
+    const result = await resolveTokenInfos(client, [TOKEN_A, TOKEN_B]);
+    expect(result.size).toBe(1);
+    expect(result.has(TOKEN_A.toLowerCase())).toBe(true);
+    expect(result.has(TOKEN_B.toLowerCase())).toBe(false);
+  });
+
+  it('returns an empty map for an empty input', async () => {
+    const client = mockMetadataClient({});
+    const result = await resolveTokenInfos(client, []);
+    expect(result.size).toBe(0);
   });
 });
