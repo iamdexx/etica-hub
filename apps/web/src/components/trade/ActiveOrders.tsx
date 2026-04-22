@@ -12,6 +12,7 @@ import {
 } from 'wagmi';
 import { DEPLOYMENTS, abis, isSupportedChainId } from '@etica-hub/shared';
 import {
+  buildCancelAuthMessage,
   listOrders,
   markCancelled,
   resolveOrderbookUrl,
@@ -247,7 +248,23 @@ function OrderRow({
         if (!orderbookUrl) {
           throw new Error('No order store configured — cannot record cancellation.');
         }
-        await markCancelled(orderbookUrl, order.orderHash, cancelTxHash);
+        if (!walletClient || !address) {
+          throw new Error('Wallet session not ready — try again in a moment.');
+        }
+        // Orderbook /cancel requires a personal_sign from the swapper over
+        // (orderHash, cancelTxHash) — proves the caller owns the key, not
+        // just that they observed the public orderHash.
+        const message = buildCancelAuthMessage(order.orderHash, cancelTxHash);
+        const cancelSignature = await walletClient.signMessage({
+          account: address,
+          message,
+        });
+        await markCancelled(
+          orderbookUrl,
+          order.orderHash,
+          cancelTxHash,
+          cancelSignature,
+        );
       }
     };
     finalize()

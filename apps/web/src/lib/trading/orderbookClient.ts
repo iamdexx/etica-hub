@@ -169,10 +169,24 @@ export async function listOrders(
   return out.orders;
 }
 
+/**
+ * Canonical EIP-191 personal_sign message the swapper must sign to authorize
+ * an orderbook-level cancel. Must match `buildCancelAuthMessage` in
+ * `apps/orderbook/src/routes/orders.ts` byte-for-byte.
+ */
+export function buildCancelAuthMessage(orderHash: Hex, cancelTxHash: Hex): string {
+  return [
+    'EticaHub orderbook cancel',
+    `orderHash: ${orderHash.toLowerCase()}`,
+    `cancelTxHash: ${cancelTxHash.toLowerCase()}`,
+  ].join('\n');
+}
+
 export async function markCancelled(
   baseUrl: string,
   orderHash: Hex,
   cancelTxHash: Hex,
+  cancelSignature: Hex,
 ): Promise<StoredOrderView> {
   return request<StoredOrderView>(
     baseUrl,
@@ -180,7 +194,7 @@ export async function markCancelled(
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cancelTxHash }),
+      body: JSON.stringify({ cancelTxHash, cancelSignature }),
     },
   );
 }
