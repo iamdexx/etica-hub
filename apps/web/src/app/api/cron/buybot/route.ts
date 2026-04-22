@@ -168,8 +168,16 @@ export async function GET(req: NextRequest): Promise<Response> {
       // Cheap pre-check: if a prior successful run already claimed this
       // swap, skip it outright. Does NOT claim — we only write the claim
       // after the telegram send succeeds, so a failed send never locks a
-      // swap out of retries.
-      const seen = await kv.get(postedKey(config, swap.txHash, swap.logIndex));
+      // swap out of retries. A transient KV read error is treated as
+      // "not seen" so a flaky KV can't stall the loop indefinitely on
+      // the same swap (worst case: one duplicate post once KV recovers,
+      // which is the same tradeoff as the post-send claim write below).
+      let seen: string | null = null;
+      try {
+        seen = await kv.get(postedKey(config, swap.txHash, swap.logIndex));
+      } catch {
+        bump('dedup-read-failed');
+      }
       if (seen) {
         bump('already-posted');
         continue;
