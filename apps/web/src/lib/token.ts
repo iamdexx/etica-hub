@@ -238,13 +238,14 @@ export async function scanAddressTokenTransfers(
 }
 
 /**
- * Width of the tail-window RPC scan done on top of indexer data. Covers
- * the gap between the last cron tick and `head`. Capped small because
- * any given address is very unlikely to have multiple transfers per
- * ~10-minute window on Etica; the bounded scan also protects us if the
- * cursor falls very far behind (e.g. the cron was down for hours).
+ * Hard upper bound on the RPC tail-scan window. The tail scan normally
+ * starts at `cursor.lastBlock + 1` so it covers exactly the gap
+ * between the indexer and head; this constant caps how far back we're
+ * willing to RPC-scan if the indexer has fallen badly behind (e.g. the
+ * cron was down for hours). Matches `TOKEN_LOG_SCAN_BLOCKS` so worst-
+ * case behavior is identical to the pre-indexer RPC-only path.
  */
-export const TAIL_SCAN_BLOCKS = 200n;
+export const MAX_TAIL_SCAN_BLOCKS = TOKEN_LOG_SCAN_BLOCKS;
 
 /**
  * Indexer-backed variant of {@link scanAddressTokenTransfers}.
@@ -253,9 +254,11 @@ export const TAIL_SCAN_BLOCKS = 200n;
  *   1. Try to read the indexer's `data-index` branch for `address`.
  *      Returns rows from potentially weeks of history, not just the
  *      last 5000 blocks.
- *   2. Scan the last `TAIL_SCAN_BLOCKS` blocks up to `head` via RPC to
- *      cover the gap between the cron's last tick and now. Deduped
- *      against the indexed rows on `(txHash, logIndex)`.
+ *   2. Scan the blocks between the indexer cursor and `head` via RPC
+ *      to cover what the cron hasn't indexed yet. Capped by
+ *      `MAX_TAIL_SCAN_BLOCKS` to protect against unbounded scans when
+ *      the indexer has fallen behind (cron outage). Deduped against
+ *      the indexed rows on `(txHash, logIndex)`.
  *   3. If the indexer is unavailable (data branch missing, network
  *      error, etc.), fall back to the existing RPC-only scan so the
  *      UI still renders. This means shipping this code is safe even
@@ -276,8 +279,15 @@ export async function loadAddressTokenTransfers(
   if (!indexed) {
     return scanAddressTokenTransfers(client, address, head);
   }
-  const tailFrom =
-    head > TAIL_SCAN_BLOCKS ? head - TAIL_SCAN_BLOCKS : 0n;
+  // Start the RPC tail scan at one block past the indexer cursor so we
+  // cover exactly the gap between the last cron tick and head. If the
+  // indexer has fallen badly behind (cron outage), cap the scan at
+  // MAX_TAIL_SCAN_BLOCKS so we never do an unbounded RPC call — worst
+  // case matches the old pre-indexer RPC-only window.
+  const cursorBlock = BigInt(indexed.cursor.lastBlock);
+  const resumeFrom = cursorBlock + 1n;
+  const windowFloor = head > MAX_TAIL_SCAN_BLOCKS ? head - MAX_TAIL_SCAN_BLOCKS : 0n;
+  const tailFrom = resumeFrom > windowFloor ? resumeFrom : windowFloor;
   const tail = await scanAddressTokenTransfers(client, address, head, tailFrom);
 
   const seen = new Set<string>();
