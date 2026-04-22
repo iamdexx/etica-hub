@@ -87,6 +87,14 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
           straight from RPC — no indexer, no database, and no paywall. Known contracts
           are labeled for you.
         </p>
+        <div className="flex flex-wrap gap-2 pt-1 text-xs">
+          <Link
+            href="/explorer/gas"
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/70 hover:bg-white/10 hover:text-white"
+          >
+            Gas tracker →
+          </Link>
+        </div>
       </section>
 
       <form action={handleSearch} className="flex flex-col gap-2 sm:flex-row">
