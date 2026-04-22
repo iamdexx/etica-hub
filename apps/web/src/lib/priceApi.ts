@@ -645,3 +645,129 @@ export function headBlockAgeSeconds(headTimestampSeconds: number, now: number = 
   const capped = Math.max(-86_400, Math.min(86_400, delta));
   return capped;
 }
+
+// ---- pair volume ---------------------------------------------------------
+
+/**
+ * Pair `Swap(address,uint256,uint256,uint256,uint256,address)` event —
+ * same signature as Uniswap V2. Emitted exactly once per token swap, so
+ * summing `amountInXxx` fields gives volume directly (no deduping needed
+ * beyond ordinary reorg semantics).
+ */
+export const SWAP_EVENT = parseAbiItem(
+  'event Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to)',
+);
+
+/** Default reporting window for `/api/v1/pairs/{pair}/volume`. */
+export const VOLUME_WINDOW_24H_SECONDS = 24 * 60 * 60;
+
+export interface PairVolumeSummary {
+  /** Sum of amounts of `token0` that moved through the pair (in + out). */
+  volume0: bigint;
+  /** Sum of amounts of `token1` that moved through the pair (in + out). */
+  volume1: bigint;
+  /** Number of Swap events observed in the window. */
+  swapCount: number;
+}
+
+/**
+ * Fetch raw `Swap` logs for `pair` over `[fromBlock, toBlock]`, paginated
+ * with the same exponential-backoff pattern as {@link fetchSyncLogs} so
+ * we stay below RPC per-range limits on large scans.
+ */
+export async function fetchSwapLogs(
+  pair: Address,
+  fromBlock: bigint,
+  toBlock: bigint,
+  client: PublicClient = priceClient(),
+): Promise<
+  Array<{
+    blockNumber: bigint | null;
+    amount0In: bigint;
+    amount1In: bigint;
+    amount0Out: bigint;
+    amount1Out: bigint;
+  }>
+> {
+  const out: Array<{
+    blockNumber: bigint | null;
+    amount0In: bigint;
+    amount1In: bigint;
+    amount0Out: bigint;
+    amount1Out: bigint;
+  }> = [];
+  let pageSize = LOGS_PAGE_BLOCKS_DEFAULT;
+  let cursor = fromBlock;
+  while (cursor <= toBlock) {
+    const end = cursor + pageSize - 1n > toBlock ? toBlock : cursor + pageSize - 1n;
+    try {
+      const logs = await client.getLogs({
+        address: pair,
+        event: SWAP_EVENT,
+        fromBlock: cursor,
+        toBlock: end,
+      });
+      for (const log of logs) {
+        out.push({
+          blockNumber: log.blockNumber ?? null,
+          amount0In: log.args.amount0In ?? 0n,
+          amount1In: log.args.amount1In ?? 0n,
+          amount0Out: log.args.amount0Out ?? 0n,
+          amount1Out: log.args.amount1Out ?? 0n,
+        });
+      }
+      cursor = end + 1n;
+    } catch (err) {
+      if (pageSize <= LOGS_PAGE_BLOCKS_MIN) throw err;
+      pageSize = pageSize / 2n;
+      if (pageSize < LOGS_PAGE_BLOCKS_MIN) pageSize = LOGS_PAGE_BLOCKS_MIN;
+    }
+  }
+  return out;
+}
+
+/**
+ * Reduces a set of Swap events into per-token turnover. V2 emits exactly
+ * one Swap per swap, with either (amount0In, amount1Out) or (amount1In,
+ * amount0Out) non-zero. "Volume" for token N is `amountNIn + amountNOut`,
+ * i.e. the gross flow regardless of direction — this matches how
+ * Uniswap / Sushi / Aerodrome surface per-pair volume.
+ */
+export function summarizeSwapVolume(
+  logs: Array<{ amount0In: bigint; amount1In: bigint; amount0Out: bigint; amount1Out: bigint }>,
+): PairVolumeSummary {
+  let volume0 = 0n;
+  let volume1 = 0n;
+  for (const l of logs) {
+    volume0 += l.amount0In + l.amount0Out;
+    volume1 += l.amount1In + l.amount1Out;
+  }
+  return { volume0, volume1, swapCount: logs.length };
+}
+
+/**
+ * Convenience wrapper: derive the block window for the last `windowSeconds`
+ * (default 24h) using the chain's average blocktime, then fetch + sum.
+ * Both the raw summary and the computed window are returned so callers
+ * can report the exact block range they scanned.
+ */
+export async function loadPairVolume(
+  pair: Address,
+  windowSeconds: number = VOLUME_WINDOW_24H_SECONDS,
+  client: PublicClient = priceClient(),
+): Promise<{
+  summary: PairVolumeSummary;
+  fromBlock: bigint;
+  toBlock: bigint;
+  fromTs: number;
+  toTs: number;
+}> {
+  const head = await client.getBlock({ blockTag: 'latest' });
+  const toBlock = head.number;
+  const toTs = Number(head.timestamp);
+  const approxBlocks = BigInt(Math.ceil(windowSeconds / ETICA_AVG_BLOCKTIME_SECONDS));
+  const fromBlock = toBlock > approxBlocks ? toBlock - approxBlocks : 0n;
+  const fromTs = toTs - windowSeconds;
+  const logs = await fetchSwapLogs(pair, fromBlock, toBlock, client);
+  return { summary: summarizeSwapVolume(logs), fromBlock, toBlock, fromTs, toTs };
+}

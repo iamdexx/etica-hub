@@ -7,6 +7,7 @@ import {
   OHLCV_INTERVALS,
   priceVia,
   spotPriceFromReserves,
+  summarizeSwapVolume,
   tokenByAddress,
   tokenById,
   type ApiPairRaw,
@@ -318,6 +319,31 @@ describe('aggregateCandles', () => {
       3601,
     );
     expect(candles.map((c) => c.t)).toEqual([0, 3600]);
+  });
+});
+
+describe('summarizeSwapVolume', () => {
+  it('sums gross per-token turnover across a mix of swap directions', () => {
+    // Two token0→token1 swaps + one token1→token0 swap.
+    // V2 emits exactly one of (amount0In, amount1In) and one of
+    // (amount0Out, amount1Out) as non-zero per swap.
+    const summary = summarizeSwapVolume([
+      { amount0In: 100n, amount1In: 0n, amount0Out: 0n, amount1Out: 190n },
+      { amount0In: 50n, amount1In: 0n, amount0Out: 0n, amount1Out: 96n },
+      { amount0In: 0n, amount1In: 200n, amount0Out: 104n, amount1Out: 0n },
+    ]);
+    // token0 volume = 100 + 50 + 104 = 254
+    expect(summary.volume0).toBe(254n);
+    // token1 volume = 190 + 96 + 200 = 486
+    expect(summary.volume1).toBe(486n);
+    expect(summary.swapCount).toBe(3);
+  });
+
+  it('returns zero volume and zero swap count on empty input', () => {
+    const summary = summarizeSwapVolume([]);
+    expect(summary.volume0).toBe(0n);
+    expect(summary.volume1).toBe(0n);
+    expect(summary.swapCount).toBe(0);
   });
 });
 
