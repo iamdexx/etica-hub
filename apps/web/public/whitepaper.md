@@ -434,7 +434,7 @@ The bridge has its own audit scope and operational requirements (validator recru
 The EticaHub treasury is an EOA at `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`. It holds:
 
 - Essentially all of the ETX supply at genesis (minus the amount seeded into pools).
-- LP tokens for the initial ETI/ETX and EGAZ/ETX pools (less whatever fraction has been moved through the future TreasuryHarvester POL-burn path, which permanently locks LP tokens to `address(0)`).
+- LP tokens for the initial ETI/ETX and EGAZ/ETX pools (less whatever fraction has been moved through the future TreasuryHarvester POL-burn path, which permanently locks LP tokens to the burn sink).
 - Any subscription revenue, swap protocol fees (after `feeTo` is set), and pool-creation fees.
 - Any undistributed portion of the 10% farm bucket from the Harvester (parked in treasury until `ETXFarms` is live).
 
@@ -490,7 +490,7 @@ Timeline is indicative, not committed.
 
 - **Harvester live cutover:** treasury approves, keeper rotates, `.github/workflows/harvest-live.yml` flipped to live.
 - **LP farms contract (`ETXFarms`):** unlocks the 10% farm bucket parked in treasury; stakers deposit LP tokens, earn from the same fee stream as stETX.
-- **Multisig treasury migration:** `feeToSetter`, `DutchOrderReactor` owner, `StakedETX` owner, and `TreasuryHarvester` owner all rotated from the launch EOA to a multi-sig.
+- **Multisig treasury migration:** `feeToSetter`, `DutchOrderReactor` owner, `EticaProtocolFeeController` owner, and `TreasuryHarvester` owner all rotated from the launch EOA to a multi-sig. (`StakedETX` has no owner — nothing to rotate.)
 
 ### Mid-term
 
@@ -532,7 +532,7 @@ Small FDV + low LP depth keeps the initial unit price small ($0.00001/ETX) and r
 No. stETX is a pure redistribution vault. Every stETX yield dollar comes from LP fees the treasury *already earned* and redistributed. If fees stall, yield stalls. There is no emissions schedule and no new ETX can ever be created.
 
 **What is the POL burn?**
-Every Harvester cycle permanently locks 10% of the harvested fee tranche (paired with ETI/EGAZ) as LP in the ETI/ETX and EGAZ/ETX pools, then sends the resulting LP tokens to `address(0)`. The depth stays in the pool forever and can never be withdrawn. See §9.3.
+Every Harvester cycle permanently locks 40% of the harvested fee tranche (paired with ETI/EGAZ) as LP in the ETI/ETX and EGAZ/ETX pools, then sends the resulting LP tokens to the burn sink. The depth stays in the pool forever and can never be withdrawn. See §9.3.
 
 **When does the launchpad open?**
 Not v1. See §13 and §17. No date committed.
