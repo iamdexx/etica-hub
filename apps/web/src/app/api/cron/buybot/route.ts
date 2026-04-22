@@ -24,7 +24,14 @@ import { computeBuyReport, decodeSwapAsBuy, type UsdPricing } from '@/lib/buybot
 import { formatBuy } from '@/lib/buybot/format';
 import { telegramClient } from '@/lib/buybot/telegram';
 import { fetchSwapsInRange, loadAllPairs, planScanWindow, snapshotPool } from '@/lib/buybot/scan';
-import { kvFor, memoryKv, readLastScannedBlock, writeLastScannedBlock } from '@/lib/buybot/state';
+import {
+  claimBuyPost,
+  kvFor,
+  memoryKv,
+  postedKey,
+  readLastScannedBlock,
+  writeLastScannedBlock,
+} from '@/lib/buybot/state';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -158,6 +165,24 @@ export async function GET(req: NextRequest): Promise<Response> {
         continue;
       }
 
+      // Cheap pre-check: if a prior successful run already claimed this
+      // swap, skip it outright. Does NOT claim — we only write the claim
+      // after the telegram send succeeds, so a failed send never locks a
+      // swap out of retries. A transient KV read error is treated as
+      // "not seen" so a flaky KV can't stall the loop indefinitely on
+      // the same swap (worst case: one duplicate post once KV recovers,
+      // which is the same tradeoff as the post-send claim write below).
+      let seen: string | null = null;
+      try {
+        seen = await kv.get(postedKey(config, swap.txHash, swap.logIndex));
+      } catch {
+        bump('dedup-read-failed');
+      }
+      if (seen) {
+        bump('already-posted');
+        continue;
+      }
+
       const msg = formatBuy({
         decoded,
         report,
@@ -168,6 +193,15 @@ export async function GET(req: NextRequest): Promise<Response> {
       const send = await telegram.sendMessage(msg);
       if (send.ok) {
         posted += 1;
+        // Record the claim only after a successful send. If this throws
+        // (transient KV outage), we swallow it: the message is already
+        // delivered; a duplicate on the next rescan is strictly less bad
+        // than crashing the loop mid-batch.
+        try {
+          await claimBuyPost(kv, config, swap.txHash, swap.logIndex);
+        } catch {
+          bump('claim-write-failed');
+        }
       } else {
         bump(`telegram-${send.status}`);
       }

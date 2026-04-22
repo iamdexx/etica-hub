@@ -18,6 +18,12 @@ import type { BuyBotConfig } from './config';
 export interface KvStore {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
+  /**
+   * SET with NX + EX semantics: writes `value` at `key` only if `key` does
+   * not exist, with a `ttlSeconds` expiry. Returns `true` if the write
+   * happened (key was new), `false` if the key already existed.
+   */
+  setIfAbsent(key: string, value: string, ttlSeconds: number): Promise<boolean>;
 }
 
 /**
@@ -46,6 +52,16 @@ export function restKv(url: string, token: string): KvStore {
       );
       if (!res.ok) throw new Error(`kv set ${key}: ${res.status}`);
     },
+    async setIfAbsent(key, value, ttlSeconds) {
+      // Upstash REST: `SET key value EX <ttl> NX` expressed as path segments.
+      // Responds with `{"result":"OK"}` on write, `{"result":null}` if the
+      // key already existed and NX prevented the overwrite.
+      const path = `${base}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}/EX/${ttlSeconds}/NX`;
+      const res = await fetch(path, { method: 'POST', headers });
+      if (!res.ok) throw new Error(`kv setIfAbsent ${key}: ${res.status}`);
+      const json = (await res.json()) as { result?: string | null };
+      return json.result === 'OK';
+    },
   };
 }
 
@@ -58,6 +74,11 @@ export function memoryKv(seed: Record<string, string> = {}): KvStore {
     },
     async set(key, value) {
       m.set(key, value);
+    },
+    async setIfAbsent(key, value) {
+      if (m.has(key)) return false;
+      m.set(key, value);
+      return true;
     },
   };
 }
@@ -92,4 +113,34 @@ export async function writeLastScannedBlock(
   value: bigint,
 ): Promise<void> {
   await kv.set(lastBlockKey(config), value.toString());
+}
+
+/** 24h — long enough to ride out any transient KV-write failure + retry. */
+export const POSTED_TTL_SECONDS = 24 * 60 * 60;
+
+export function postedKey(
+  config: BuyBotConfig,
+  txHash: string,
+  logIndex: number,
+): string {
+  return `${config.kvNamespace}:posted:${txHash.toLowerCase()}:${logIndex}`;
+}
+
+/**
+ * Atomically claim a `(txHash, logIndex)` as posted. Returns `true` if this
+ * call was the first to claim it (caller should post to Telegram), `false`
+ * if another run already posted this swap (caller should skip).
+ *
+ * This is the safety net against the classic at-least-once cron hazard: if
+ * `writeLastScannedBlock` fails after we've already sent Telegram messages,
+ * the next run would rescan the same range — without this, every buy in that
+ * range posts twice.
+ */
+export async function claimBuyPost(
+  kv: KvStore,
+  config: BuyBotConfig,
+  txHash: string,
+  logIndex: number,
+): Promise<boolean> {
+  return kv.setIfAbsent(postedKey(config, txHash, logIndex), '1', POSTED_TTL_SECONDS);
 }
