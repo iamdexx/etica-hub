@@ -15,7 +15,11 @@ export const revalidate = 0;
 export const dynamic = 'force-dynamic';
 
 const MAINNET_CHAIN_ID = 61803;
-const RECENT_SCAN_BLOCKS = 500n;
+// Width of the recent-tx scan window on the address page. Kept in sync with
+// the hard cap inside `scanRecentTxs` so the UI text never advertises a
+// larger range than we actually walk. Raising this above ~200 means raising
+// the hard cap too, which increases worst-case RPC fan-out per request.
+const RECENT_SCAN_BLOCKS = 200n;
 const ZERO = '0x0000000000000000000000000000000000000000';
 
 interface AddressPageProps {

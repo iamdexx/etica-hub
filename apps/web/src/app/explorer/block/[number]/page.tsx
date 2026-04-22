@@ -70,12 +70,19 @@ export default async function BlockPage({ params }: BlockPageProps) {
           {block.hash}
         </Field>
         <Field label="Parent">
-          <Link
-            href={`/explorer/block/${(block.number - 1n).toString()}`}
-            className="font-mono text-brand-accent hover:underline"
-          >
-            {shortHash(block.parentHash)}
-          </Link>
+          {block.number > 0n ? (
+            <Link
+              href={`/explorer/block/${(block.number - 1n).toString()}`}
+              className="font-mono text-brand-accent hover:underline"
+            >
+              {shortHash(block.parentHash)}
+            </Link>
+          ) : (
+            // Genesis has no real parent. parentHash is the zero hash
+            // per EIP-3675 / pre-merge chains; rendering as a link would
+            // point at /explorer/block/-1 which 404s.
+            <span className="font-mono text-white/50">{shortHash(block.parentHash)}</span>
+          )}
         </Field>
         <Field label="Miner">
           <Link
