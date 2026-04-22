@@ -139,7 +139,7 @@ This structure is chosen deliberately to minimize the set of plausible securitie
 
 ### 5.4 Vercel-hosted UI
 
-The full EticaHub frontend lives at [https://eticahub.org](https://eticahub.org), hosted on Vercel out of `apps/web`. The v1 genesis was executed via three operator-only deploy pages:
+The full EticaHub frontend lives at [https://eticahub.com](https://eticahub.com), hosted on Vercel out of `apps/web`. The v1 genesis was executed via three operator-only deploy pages:
 
 1. `/deploy/etx` — one-click MetaMask deploy of `ETXToken`. Minted 100M to the connected treasury wallet.
 2. `/deploy/swap` — three-click deploy of `WEGAZ`, `EticaSwapFactory(etx)`, `EticaSwapRouter(factory, wegaz)`.
@@ -518,7 +518,7 @@ Timeline is indicative, not committed.
 
 ### Shipped
 
-- **v1 — ETX genesis:** ETX deployed, EticaSwap deployed, ETI/ETX and EGAZ/ETX pools seeded, hub-and-spoke invariant active, pool-creation fee switch activated by setting `feeTo`. `eticahub.org` routes swaps through the new contracts.
+- **v1 — ETX genesis:** ETX deployed, EticaSwap deployed, ETI/ETX and EGAZ/ETX pools seeded, hub-and-spoke invariant active, pool-creation fee switch activated by setting `feeTo`. `eticahub.com` routes swaps through the new contracts.
 - **v1 — Research Hub:** `/research/proposals` reader, tipping, subscription contract.
 - **v1.1 — Trading Stack:** Permit2 + UniswapX DutchOrderReactor + EticaProtocolFeeController + OrderRegistry + off-chain order book + reference keeper. Market, Limit, Stop, DCA, bounded Grid, and Infinity Bot modes all live on `/trade/[token]`.
 - **v1.1 — Explorer:** `/explorer` with blocks, txs, addresses, ERC-20 token pages, gas tracker, Sourcify-backed verification, JSONL indexer.
@@ -623,7 +623,7 @@ Etica mainnet (chain id `61803`). Canonical source: `packages/shared/src/address
 | RPC URL | `https://eticamainnet.eticascan.org` |
 | Chain ID | 61803 |
 | Native gas token | EGAZ |
-| Block explorer (EticaHub) | `https://eticahub.org/explorer` |
+| Block explorer (EticaHub) | `https://eticahub.com/explorer` |
 | Block explorer (Etica Protocol) | `https://eticascan.org` |
 | Canonical ETI address | `0x34c61EA91bAcdA647269d4e310A86b875c09946f` |
 

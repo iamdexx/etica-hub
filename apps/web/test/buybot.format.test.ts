@@ -67,7 +67,7 @@ describe('formatBuy', () => {
       },
       txHash: '0xabc123',
       blockNumber: 12345n,
-      explorerBaseUrl: 'https://eticahub.org',
+      explorerBaseUrl: 'https://eticahub.com',
     });
 
     expect(out.parseMode).toBe('HTML');
@@ -82,9 +82,9 @@ describe('formatBuy', () => {
     expect(text).toContain('$1.00M');
     expect(text).toContain('MC ETI');
     expect(text).toContain('$2.10M');
-    expect(text).toContain('<a href="https://eticahub.org/explorer/tx/0xabc123">view tx</a>');
+    expect(text).toContain('<a href="https://eticahub.com/explorer/tx/0xabc123">view tx</a>');
     expect(text).toContain(
-      '<a href="https://eticahub.org/explorer/block/12345">block 12345</a>',
+      '<a href="https://eticahub.com/explorer/block/12345">block 12345</a>',
     );
   });
 
@@ -104,7 +104,7 @@ describe('formatBuy', () => {
       },
       txHash: '0xdead',
       blockNumber: 1n,
-      explorerBaseUrl: 'https://eticahub.org',
+      explorerBaseUrl: 'https://eticahub.com',
     });
     expect(out.text).toContain('EV&lt;IL&gt;');
     expect(out.text).not.toContain('EV<IL>');
@@ -124,7 +124,7 @@ describe('formatBuy', () => {
       },
       txHash: '0xdead',
       blockNumber: 2n,
-      explorerBaseUrl: 'https://eticahub.org',
+      explorerBaseUrl: 'https://eticahub.com',
     });
     expect(out.text).toContain('1 ETX = 2 ETI');
     expect(out.text).not.toContain('(—)');

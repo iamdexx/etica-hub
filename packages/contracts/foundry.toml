@@ -39,7 +39,7 @@ etica_crucible = "${ETICA_CRUCIBLE_RPC_URL}"
 # Contracts are verified against forge artifacts + on-chain bytecode by
 # `apps/web/scripts/verify-contract.mjs`, which writes manifests to
 # `apps/web/public/verified/<address>.json`. The explorer at
-# eticahub.org/explorer consumes those manifests directly.
+# eticahub.com/explorer consumes those manifests directly.
 #
 # If/when either eticascan.org ships a verification API or Sourcify adds
 # chain 61803, re-add an `[etherscan]` entry here and a `forge verify-contract`
