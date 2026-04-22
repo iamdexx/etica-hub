@@ -9,6 +9,7 @@ const NAV = [
   { href: '/swap', label: 'Swap' },
   { href: '/trade', label: 'Trade' },
   { href: '/pool', label: 'Pool' },
+  { href: '/stake', label: 'Stake' },
   { href: '/research', label: 'Research' },
   { href: '/bridge', label: 'Bridge' },
   { href: '/explorer', label: 'Explorer' },
