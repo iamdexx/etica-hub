@@ -27,9 +27,23 @@ remappings = [
 etica_mainnet = "${ETICA_MAINNET_RPC_URL}"
 etica_crucible = "${ETICA_CRUCIBLE_RPC_URL}"
 
-[etherscan]
-# Etica explorer uses a Blockscout-compatible API.
-etica_mainnet = { key = "${ETICASCAN_API_KEY}", url = "https://www.eticascan.org/api" }
+# No [etherscan] block.
+#
+# eticascan.org does NOT currently expose an Etherscan- or Blockscout-style
+# contract-verification API. The `/verifyContract` page is an unimplemented
+# Vue placeholder and the `/api` path serves only API documentation HTML; the
+# real `/api/*` surface is Etica-protocol-specific (proposals / disease /
+# slashs / stakes / etc.) with no generic EVM verify route. Sourcify likewise
+# does not support chainId 61803 at time of writing.
+#
+# Contracts are verified against forge artifacts + on-chain bytecode by
+# `apps/web/scripts/verify-contract.mjs`, which writes manifests to
+# `apps/web/public/verified/<address>.json`. The explorer at
+# eticahub.org/explorer consumes those manifests directly.
+#
+# If/when either eticascan.org ships a verification API or Sourcify adds
+# chain 61803, re-add an `[etherscan]` entry here and a `forge verify-contract`
+# step to the release runbook.
 
 [fmt]
 line_length = 100
