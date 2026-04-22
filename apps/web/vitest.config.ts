@@ -9,6 +9,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      // Shim Next's `server-only` marker so server-side lib modules
+      // (e.g. `src/lib/research.ts`) can be unit-tested under vitest.
+      'server-only': path.resolve(__dirname, 'test/shims/server-only.ts'),
     },
   },
 });

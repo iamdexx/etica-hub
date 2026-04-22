@@ -68,14 +68,14 @@ export default async function ProposalDetailPage({
         </div>
       </header>
 
-      <section className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="space-y-4">
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-4">
           {proposal.description && (
             <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-white/60">
                 Summary
               </h2>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/90">
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/90">
                 {proposal.description}
               </p>
             </div>
@@ -131,7 +131,9 @@ export default async function ProposalDetailPage({
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-white/60">
                 Freefield
               </h2>
-              <p className="whitespace-pre-wrap text-sm text-white/80">{proposal.freefield}</p>
+              <p className="whitespace-pre-wrap break-all text-sm text-white/80">
+                {proposal.freefield}
+              </p>
             </div>
           )}
         </div>
