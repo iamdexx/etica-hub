@@ -59,7 +59,28 @@ export type Disease = {
   name: string;
 };
 
-export const DEFAULT_IPFS_GATEWAY = 'https://cloudflare-ipfs.com/ipfs/';
+/**
+ * Preferred public IPFS gateway. `dweb.link` is operated by Protocol
+ * Labs and has been the most reliable free gateway since Cloudflare
+ * deprecated `cloudflare-ipfs.com` in September 2024.
+ */
+export const DEFAULT_IPFS_GATEWAY = 'https://dweb.link/ipfs/';
+
+/**
+ * Ordered fallback chain tried by {@link fetchIpfsText}. Each entry is
+ * a full `ipfs/` prefix; the CID is appended directly. Order matters —
+ * the first gateway to respond 2xx wins. Keep the list short so slow
+ * gateways don't block the page render.
+ */
+const IPFS_GATEWAYS: readonly string[] = [
+  'https://dweb.link/ipfs/',
+  'https://ipfs.io/ipfs/',
+  'https://nftstorage.link/ipfs/',
+  'https://gateway.pinata.cloud/ipfs/',
+];
+
+/** Per-gateway timeout for {@link fetchIpfsText}. */
+const IPFS_FETCH_TIMEOUT_MS = 6_000;
 const IPFS_CID_REGEX = /^(Qm[1-9A-HJ-NP-Za-km-z]{44,}|b[A-Za-z2-7]{58,})$/;
 
 export function resolveChainId(): SupportedChainId {
@@ -370,21 +391,34 @@ export async function getProposal(
 }
 
 /**
- * Best-effort IPFS fetch for a proposal's `raw_release_hash`. Returns
- * undefined on network error so the UI can fall back to the gateway link.
+ * Best-effort IPFS fetch for a proposal's `raw_release_hash`. Walks
+ * {@link IPFS_GATEWAYS} in order, returning the first gateway's
+ * content. Each gateway is given {@link IPFS_FETCH_TIMEOUT_MS} before
+ * we give up and try the next — a single stalled gateway can't block
+ * the page render. Returns undefined only if every gateway errors or
+ * times out so the UI can fall back to the "try another gateway"
+ * hint.
  */
 export async function fetchIpfsText(cid: string): Promise<string | undefined> {
-  try {
-    const res = await fetch(`${DEFAULT_IPFS_GATEWAY}${cid}`, {
-      next: { revalidate: 600 },
-    });
-    if (!res.ok) return undefined;
-    const text = await res.text();
-    // hard cap on what we render — avoid dumping 10MB documents into HTML
-    return text.slice(0, 200_000);
-  } catch {
-    return undefined;
+  for (const gateway of IPFS_GATEWAYS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), IPFS_FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${gateway}${cid}`, {
+        next: { revalidate: 600 },
+        signal: controller.signal,
+      });
+      if (!res.ok) continue;
+      const text = await res.text();
+      // hard cap on what we render — avoid dumping 10MB documents into HTML
+      return text.slice(0, 200_000);
+    } catch {
+      // network error / timeout — fall through to the next gateway
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return undefined;
 }
 
 export function shortAddress(addr: string): string {
