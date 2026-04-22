@@ -314,6 +314,39 @@ The live-mode workflow is `workflow_dispatch`-only, gated behind a `harvest-live
 
 The keeper EOA only needs a small EGAZ balance (for gas) and *no* ETX, ETI, or LP tokens. Specifically: it holds nothing, it transfers nothing on its own account, it just calls `harvester.harvest()`. If the keeper key is ever compromised, the worst an attacker can do is burn gas calling `harvest()` — which does nothing they don't already get paid for as any other keeper would. Scope of damage is bounded by the contract, not by the keeper's custody posture.
 
+### 9.6 ETXFarms — the farms-bucket consumer
+
+The 10% "farms" slice of every harvest cycle is consumed by the `ETXFarms` contract (`packages/contracts/src/etx/ETXFarms.sol`, 25 unit tests in `test/etx/ETXFarms.t.sol`, all green). ETXFarms is an accumulator-style LP staking contract — the MasterChef pattern, but *without emissions*. It only distributes ETX that the Harvester actively pushes in.
+
+**Architecture — pull-based, no vesting.** The Harvester calls `farms.distributeRewards(amount)` at the end of each cycle (permissionless entry point, symmetric with `StakedETX.distributeRewards`). Rewards are written directly into the per-pool `accRewardPerShare` accumulator with no drip/vesting window. Stakers see rewards spike on harvest days and flat between them. This is deliberate: it matches the cadence the Harvester actually emits at, and avoids the timing-attack surface that linear-drip models like Synthetix's `StakingRewards` carry (jump in before a big notify, jump out after).
+
+**Pool set at launch.** Two pools, both seeded with the treasury's genesis LPs:
+
+| pid | LP token | Default weight |
+|---|---|---|
+| 0 | EticaSwap ETI/ETX | 5000 |
+| 1 | EticaSwap EGAZ/ETX | 5000 |
+
+Weights are `allocPoint` values (sum = 10,000 by convention). The owner can `addPool(lp, allocPoint)` to register new pools, or `setAllocPoint(pid, newAllocPoint)` to retune weights. The sum of weights is capped so no pool can starve the others permanently.
+
+**Reward split math.** Every `distributeRewards(amount)` call loops over pools: `poolShare = amount * pool.allocPoint / totalAllocPoint`. If a pool has zero staked LP at the moment of distribution, its share is routed to the fallback recipient (treasury, by default) rather than sitting idle forever. If a pool has stakers, `pool.accRewardPerShare += poolShare * 1e18 / pool.totalStaked`, the standard MasterChef formula, so a late joiner cannot claim a pro-rata share of rewards distributed before their deposit.
+
+**User surface — no lockup, no penalty.**
+
+- `deposit(pid, amount)` — auto-harvests any pending rewards into the user's ETX balance, then credits `amount` LP to their stake.
+- `withdraw(pid, amount)` — same auto-harvest, then returns `amount` LP.
+- `harvest(pid)` — claim pending rewards without touching the LP position.
+- `emergencyWithdraw(pid)` — panic exit that returns all staked LP and *forfeits* pending rewards. Exists so a user can always get their LP back even if reward-accounting is somehow stuck.
+- No deposit fee, no withdrawal fee, no cooldown. Matches the rest of the stack's "non-custodial by default" posture.
+
+**No emissions, ever.** ETXFarms holds no mint authority on ETX (ETX is a fixed-supply ERC-20 with no minter). It can *only* distribute ETX that was transferred into the contract and then accounted for via `distributeRewards`. The total supply cap at 100M ETX is unaffected by farms going live — farms redistribute existing protocol fees, they do not create new supply.
+
+**Owner scope.** The contract owner can register new pools, retune weights, and set the fallback recipient. The owner *cannot* steal staked LP (`rescueToken` is explicitly guarded against rescuing any registered LP token or the reward token ETX). The owner *cannot* pause withdrawals. The owner *cannot* change reward semantics retroactively. Owner will be rotated to the same multisig that holds `feeToSetter` and `TreasuryHarvester.owner` as part of the near-term multisig migration (§17).
+
+**Audit posture.** Forge unit tests cover: metadata and shape, owner-only gates, deposit/withdraw mechanics, accumulator math for the solo-staker and two-staker-pro-rata cases, multi-harvest sequencing, late-joiner protection, empty-pool fallback routing, emergency withdrawal, rescue guards, and permissionless `distributeRewards` parity. No external audit has been commissioned for v1.1 — same posture as stETX and the Harvester. External review will be scoped once the broader v1.1 surface stabilizes.
+
+**Deployment.** Operators deploy via `/deploy/farms` (browser-based, signs from the connected wallet). Post-deploy: paste the address into `packages/shared/src/addresses.ts → DEPLOYMENTS[61803].etxFarms`, call `addPool(ETI/ETX LP, 5000)` and `addPool(EGAZ/ETX LP, 5000)`, then call `TreasuryHarvester.setFarms(etxFarms)` to route the 10% farms bucket. `/farms` will light up the moment the address is non-zero.
+
 ---
 
 ## 10. EticaHub Explorer
@@ -499,7 +532,7 @@ Timeline is indicative, not committed.
 ### Near-term
 
 - **Harvester live cutover:** treasury approves, keeper rotates, `.github/workflows/harvest-live.yml` flipped to live.
-- **LP farms contract (`ETXFarms`):** unlocks the 10% farm bucket parked in treasury; stakers deposit LP tokens, earn from the same fee stream as stETX.
+- **ETXFarms deployment:** contract + tests + `/deploy/farms` deployer + `/farms` staking UI shipped (see §9.6); remaining step is the on-chain deploy, `addPool` × 2, and `TreasuryHarvester.setFarms` wiring. Once live, the 10% farm bucket flows automatically on every harvest.
 - **Multisig treasury migration:** `feeToSetter`, `DutchOrderReactor` owner, `EticaProtocolFeeController` owner, and `TreasuryHarvester` owner all rotated from the launch EOA to a multi-sig. (`StakedETX` has no owner — nothing to rotate.)
 
 ### Mid-term

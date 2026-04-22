@@ -8,3 +8,4 @@ export { researchSubscriptionAbi } from './researchSubscription';
 export { permit2Abi } from './permit2';
 export { stakedEtxAbi } from './stakedEtx';
 export { treasuryHarvesterAbi } from './treasuryHarvester';
+export { etxFarmsAbi } from './etxFarms';
