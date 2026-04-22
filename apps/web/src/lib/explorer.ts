@@ -118,7 +118,10 @@ export function shortAddress(address: Address | string, size = 4): string {
 
 /** Shortens a tx/block hash. */
 export function shortHash(hash: string, size = 6): string {
-  if (!hash.startsWith('0x') || hash.length <= 2 + size + 3) return hash;
+  // Output width is `0x` + size + `…` + size = 2*size + 3. Only shorten when
+  // the input is strictly longer than that; otherwise we'd "shorten" a
+  // 12–15-char hash into a longer ellipsized string.
+  if (!hash.startsWith('0x') || hash.length <= 2 + size * 2 + 1) return hash;
   return `${hash.slice(0, 2 + size)}…${hash.slice(-size)}`;
 }
 
