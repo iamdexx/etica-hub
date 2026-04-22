@@ -175,6 +175,131 @@ export function tokenByAddress(addr: Address | string): ApiToken | null {
   );
 }
 
+// ---- ERC-20 helpers -------------------------------------------------------
+
+/**
+ * Minimal ERC-20 ABI fragment used by the public price API. We declare it
+ * locally rather than pulling the OpenZeppelin JSON so the API route has no
+ * dependency on the contracts package.
+ */
+const ERC20_READ_ABI = [
+  {
+    type: 'function',
+    name: 'totalSupply',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
+
+/**
+ * Canonical dead-address used by {TreasuryHarvester} when permanently locking
+ * POL LP. Any ETX sent here is considered burned for the purposes of
+ * circulating-supply math.
+ */
+export const BURN_ADDRESS: Address = '0x000000000000000000000000000000000000dEaD';
+
+/**
+ * For circulating-supply math we subtract a fixed list of "not-in-circulation"
+ * holders. The treasury multisig counts because it is the programmatic source
+ * of supply for the stETX vault + TreasuryHarvester and is not freely tradable.
+ * Keeping this list tight so we don't accidentally under-report.
+ */
+function circulatingExcludedHolders(): Address[] {
+  return [BURN_ADDRESS];
+}
+
+export async function fetchErc20TotalSupply(
+  token: Address,
+  client: PublicClient = priceClient(),
+): Promise<bigint> {
+  return (await client.readContract({
+    abi: ERC20_READ_ABI,
+    address: token,
+    functionName: 'totalSupply',
+  })) as bigint;
+}
+
+export async function fetchErc20Balance(
+  token: Address,
+  holder: Address,
+  client: PublicClient = priceClient(),
+): Promise<bigint> {
+  return (await client.readContract({
+    abi: ERC20_READ_ABI,
+    address: token,
+    functionName: 'balanceOf',
+    args: [holder],
+  })) as bigint;
+}
+
+export interface TokenSupplyStats {
+  /** Raw uint256 total supply as returned by the token. */
+  totalSupply: bigint;
+  /** Amount held at {BURN_ADDRESS} and treated as permanently removed. */
+  burned: bigint;
+  /**
+   * Total supply minus the list of excluded holders (burn + treasury-locked
+   * if applicable). Aggregators poll this as "circulating".
+   */
+  circulatingSupply: bigint;
+  /** The addresses that were subtracted (in checksummed form) for reference. */
+  excludedHolders: Address[];
+}
+
+/**
+ * Read the supply stats for an ERC-20 token tracked by the price API. The
+ * returned numbers are raw uint256s — callers format with the token's
+ * {decimals} before rendering.
+ */
+export async function fetchTokenSupplyStats(
+  token: ApiToken,
+  client: PublicClient = priceClient(),
+): Promise<TokenSupplyStats | null> {
+  if (!token.address) return null;
+  const totalSupply = await fetchErc20TotalSupply(token.address, client);
+  const excluded = circulatingExcludedHolders();
+  const balances = await Promise.all(
+    excluded.map((h) => fetchErc20Balance(token.address as Address, h, client)),
+  );
+  const burnedIdx = excluded.findIndex(
+    (h) => getAddress(h) === getAddress(BURN_ADDRESS),
+  );
+  const burned = burnedIdx === -1 ? 0n : balances[burnedIdx];
+  const subtract = balances.reduce((acc, b) => acc + b, 0n);
+  const circulating = totalSupply > subtract ? totalSupply - subtract : 0n;
+  return {
+    totalSupply,
+    burned,
+    circulatingSupply: circulating,
+    excludedHolders: excluded.map((h) => getAddress(h)),
+  };
+}
+
+/**
+ * Format a raw uint256 token amount to a fixed-decimal string. Keeps full
+ * precision so plain-text supply endpoints return the exact on-chain value.
+ */
+export function formatTokenAmount(raw: bigint, decimals: number): string {
+  if (raw === 0n) return '0';
+  const neg = raw < 0n;
+  const abs = neg ? -raw : raw;
+  const d = BigInt(decimals);
+  const base = 10n ** d;
+  const whole = abs / base;
+  const frac = abs % base;
+  if (frac === 0n) return `${neg ? '-' : ''}${whole.toString()}`;
+  const fracStr = frac.toString().padStart(decimals, '0').replace(/0+$/, '');
+  return `${neg ? '-' : ''}${whole.toString()}.${fracStr}`;
+}
+
 // ---- pair discovery + reserves -------------------------------------------
 
 export interface ApiPairRaw {

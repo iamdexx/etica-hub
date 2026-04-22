@@ -41,12 +41,19 @@ weeks depending on queue.
 - **Contract explorer link:**
   `https://eticascan.org/address/0xa5A1Bc6307b0b87989B8456D4b35F88a68650044`
   and `https://eticahub.com/explorer/address/0xa5A1Bc6307b0b87989B8456D4b35F88a68650044`
-- **Total supply:** (fetch on submission day from
-  `https://eticahub.com/api/v1/tokens` or from the explorer `Token` tab on
-  the ETX contract page)
-- **Circulating supply:** (same as above, minus any locked balances —
-  include Treasury balance at `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`
-  if subject to a vesting lock)
+- **Total supply:** `100000000` (fixed at deploy; paste the live value from
+  https://eticahub.com/api/v1/supply/total?token=etx). The endpoint returns a
+  single plain-text number — ready for CoinGecko's "Total Supply API URL"
+  field as-is.
+- **Circulating supply:** paste live value from
+  https://eticahub.com/api/v1/supply/circulating?token=etx (total minus the
+  POL-burn balance at `0x000000000000000000000000000000000000dEaD`). Again:
+  plain-text single number, paste directly into the "Circulating Supply API
+  URL" field.
+- **Burned supply (optional, for "Max Supply – Burned" disclosure):**
+  https://eticahub.com/api/v1/supply/burned?token=etx
+- **Full rich snapshot (supply + spot prices + metadata) for reference:**
+  https://eticahub.com/api/v1/tokens/etx
 
 ### Project metadata
 
@@ -88,9 +95,10 @@ CoinGecko requires:
 - PNG 200×200 logo for the coin
 - Preferably SVG as well
 
-If you don't have these for ETX yet, that's a blocker — finish them before
-opening the form, or submit with a placeholder and tell reviewers you'll
-update.
+Both live at:
+- https://eticahub.com/etx-logo-200.png (200×200 PNG)
+- https://eticahub.com/etx-logo-512.png (512×512 PNG — for CMC / DEX Screener)
+- https://eticahub.com/etx-logo.svg (vector)
 
 ## Submission 2 — EticaSwap V2 (DEX)
 

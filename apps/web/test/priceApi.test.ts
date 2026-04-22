@@ -3,6 +3,7 @@ import { getAddress, type Address } from 'viem';
 import {
   aggregateCandles,
   apiTokens,
+  formatTokenAmount,
   headBlockAgeSeconds,
   OHLCV_INTERVALS,
   priceVia,
@@ -485,5 +486,25 @@ _describe('loadSyncLogsForOhlcv', () => {
     _expect(blocks).toEqual(['450', '480', '550']);
     // Out-of-range row must NOT appear.
     _expect(blocks).not.toContain('300');
+  });
+});
+
+describe('formatTokenAmount', () => {
+  it('renders whole 18-decimal amounts without a fractional part', () => {
+    expect(formatTokenAmount(100_000_000n * 10n ** 18n, 18)).toBe('100000000');
+  });
+
+  it('renders fractional amounts with trailing zeros trimmed', () => {
+    expect(formatTokenAmount(123456789n * 10n ** 10n, 18)).toBe('1.23456789');
+    expect(formatTokenAmount(15n * 10n ** 17n, 18)).toBe('1.5');
+  });
+
+  it('returns "0" for zero regardless of decimals', () => {
+    expect(formatTokenAmount(0n, 18)).toBe('0');
+    expect(formatTokenAmount(0n, 6)).toBe('0');
+  });
+
+  it('handles 6-decimal tokens (USDC-style)', () => {
+    expect(formatTokenAmount(1_234_567n, 6)).toBe('1.234567');
   });
 });
