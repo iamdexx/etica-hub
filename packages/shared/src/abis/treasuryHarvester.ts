@@ -2,26 +2,120 @@
  * ABI for the TreasuryHarvester delegation contract.
  *
  * Source: packages/contracts/src/etx/TreasuryHarvester.sol. Only the
- * fields the keeper + frontend actually touch are included. The treasury
- * pre-approves LP + token allowances once to this contract; a separate
- * hot keeper EOA then calls {harvest} on each run so the treasury key
- * never has to sign live transactions.
+ * fields the frontend + scheduler actually touch are included. The
+ * treasury pre-approves LP + token allowances once to this contract;
+ * `harvest` is permissionless on-chain, so any wallet (a community
+ * crank, a cron on any box, etc.) can invoke it subject to the
+ * `harvestCooldown` and `maxBurnBpsPerRun` caps.
  */
 export const treasuryHarvesterAbi = [
   // ─── Views ─────────────────────────────────────────────────────────────
-  { type: 'function', name: 'etx', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'factory', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'owner', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'keeper', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'stakedEtx', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'farms', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'maxBurnBpsPerRun', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint16' }] },
-  { type: 'function', name: 'stakedEtxBps', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint16' }] },
-  { type: 'function', name: 'farmsBps', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint16' }] },
-  { type: 'function', name: 'polBurnBps', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint16' }] },
-  { type: 'function', name: 'treasuryBps', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint16' }] },
-  { type: 'function', name: 'DEAD', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  // ─── Core call ─────────────────────────────────────────────────────────
+  {
+    type: 'function',
+    name: 'etx',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'factory',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'owner',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'stakedEtx',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'farms',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'maxBurnBpsPerRun',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint16' }],
+  },
+  {
+    type: 'function',
+    name: 'stakedEtxBps',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint16' }],
+  },
+  {
+    type: 'function',
+    name: 'farmsBps',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint16' }],
+  },
+  {
+    type: 'function',
+    name: 'polBurnBps',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint16' }],
+  },
+  {
+    type: 'function',
+    name: 'treasuryBps',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint16' }],
+  },
+  {
+    type: 'function',
+    name: 'harvestCooldown',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint32' }],
+  },
+  {
+    type: 'function',
+    name: 'lastHarvestAt',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint64' }],
+  },
+  {
+    type: 'function',
+    name: 'callerTipEtx',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint128' }],
+  },
+  {
+    type: 'function',
+    name: 'MAX_HARVEST_COOLDOWN',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint32' }],
+  },
+  {
+    type: 'function',
+    name: 'DEAD',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  // ─── Core call (permissionless) ────────────────────────────────────────
   {
     type: 'function',
     name: 'harvest',
@@ -46,13 +140,6 @@ export const treasuryHarvesterAbi = [
     outputs: [],
   },
   // ─── Admin (owner only) ────────────────────────────────────────────────
-  {
-    type: 'function',
-    name: 'setKeeper',
-    stateMutability: 'nonpayable',
-    inputs: [{ name: 'newKeeper', type: 'address' }],
-    outputs: [],
-  },
   {
     type: 'function',
     name: 'setStakedEtx',
@@ -86,17 +173,39 @@ export const treasuryHarvesterAbi = [
     inputs: [{ name: 'bps', type: 'uint16' }],
     outputs: [],
   },
+  {
+    type: 'function',
+    name: 'setHarvestCooldown',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'cooldownSeconds', type: 'uint32' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'setCallerTipEtx',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'tipEtx', type: 'uint128' }],
+    outputs: [],
+  },
   // ─── Events ────────────────────────────────────────────────────────────
   {
     type: 'event',
     name: 'HarvestExecuted',
     inputs: [
-      { indexed: true, name: 'keeper', type: 'address' },
+      { indexed: true, name: 'caller', type: 'address' },
       { indexed: false, name: 'totalEtxHarvested', type: 'uint256' },
       { indexed: false, name: 'stakedSlice', type: 'uint256' },
       { indexed: false, name: 'farmsSlice', type: 'uint256' },
       { indexed: false, name: 'polSlice', type: 'uint256' },
       { indexed: false, name: 'treasurySlice', type: 'uint256' },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'CallerTipPaid',
+    inputs: [
+      { indexed: true, name: 'caller', type: 'address' },
+      { indexed: false, name: 'amount', type: 'uint256' },
     ],
   },
   {

@@ -415,39 +415,45 @@ async function runDelegation(args: RunDelegationArgs): Promise<HarvestRunResult>
   const mode = 'delegation' as const;
   const harvester = config.harvester!;
 
-  // Verify the signer matches the on-chain keeper. If the treasury rotated
-  // keepers between workflow runs we want to fail loud, not force a tx
-  // that the contract will revert anyway.
+  // `harvest` is permissionless on-chain; any EOA can submit. Still verify
+  // the cooldown so a workflow run fails loud if it arrives before the
+  // contract window has reopened (otherwise every call would waste gas
+  // revert-ing on `CooldownNotElapsed`).
   try {
-    const onChainKeeper = (await client.readContract({
-      address: harvester,
-      abi: abis.treasuryHarvesterAbi,
-      functionName: 'keeper',
-    })) as Address;
-    if (onChainKeeper.toLowerCase() !== account.address.toLowerCase()) {
-      return {
-        skipped: false,
-        dryRun: false,
-        mode,
-        plan,
-        delegation,
-        submittedTxHashes: [],
-        error:
-          `HARVEST_PRIVATE_KEY derives ${account.address} but harvester.keeper() is ` +
-          `${onChainKeeper} — rotate the keeper on the contract or the workflow secret`,
-      };
+    const [lastHarvestAt, cooldown] = await Promise.all([
+      client.readContract({
+        address: harvester,
+        abi: abis.treasuryHarvesterAbi,
+        functionName: 'lastHarvestAt',
+      }) as Promise<bigint>,
+      client.readContract({
+        address: harvester,
+        abi: abis.treasuryHarvesterAbi,
+        functionName: 'harvestCooldown',
+      }) as Promise<number>,
+    ]);
+    if (lastHarvestAt !== 0n) {
+      const nextAllowed = Number(lastHarvestAt) + Number(cooldown);
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec < nextAllowed) {
+        const msg =
+          `harvester cooldown active: last=${lastHarvestAt} cooldown=${cooldown}s ` +
+          `nextAllowed=${nextAllowed} now=${nowSec}`;
+        log.info(`[harvest] ${msg}`);
+        return {
+          skipped: true,
+          dryRun: false,
+          mode,
+          plan,
+          delegation,
+          submittedTxHashes: [],
+          error: msg,
+        };
+      }
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return {
-      skipped: false,
-      dryRun: false,
-      mode,
-      plan,
-      delegation,
-      submittedTxHashes: [],
-      error: `failed to read harvester.keeper() at ${harvester}: ${msg}`,
-    };
+    log.warn(`[harvest] failed to read harvester cooldown (proceeding anyway): ${msg}`);
   }
 
   const wallet =
@@ -526,7 +532,9 @@ function logPlan(
   log: Pick<Console, 'info' | 'warn' | 'error'>,
 ): void {
   log.info('[harvest] plan:');
-  log.info(`  split: ${config.split.stakedEtxBps}/${config.split.farmsBps}/${config.split.polBurnBps}/${config.split.treasuryBps} bps (stETX/farms/POL/treasury)`);
+  log.info(
+    `  split: ${config.split.stakedEtxBps}/${config.split.farmsBps}/${config.split.polBurnBps}/${config.split.treasuryBps} bps (stETX/farms/POL/treasury)`,
+  );
   log.info(`  burn-per-run: ${config.burnBpsPerRun} bps per pool`);
   log.info(`  slippage cap: ${config.maxSlippageBps} bps`);
   log.info(`  POL weighting: ${config.polWeighting}`);

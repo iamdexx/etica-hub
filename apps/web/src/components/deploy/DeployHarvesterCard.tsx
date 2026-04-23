@@ -25,18 +25,22 @@ import treasuryHarvesterArtifact from '@/lib/treasury-harvester-artifact.json';
 /**
  * One-shot deployer for the TreasuryHarvester delegation contract.
  *
- * Constructor takes four arguments:
- *   - owner: treasury multisig (sole admin post-deploy — sets keeper, split,
- *     reward sinks, safety caps).
+ * Constructor takes three arguments:
+ *   - owner: treasury multisig (sole admin post-deploy — sets split,
+ *     reward sinks, safety caps, cooldown, caller tip).
  *   - etx: ETX token address (the hub asset of every pair this contract
  *     harvests).
  *   - factory: EticaSwap factory — used to validate pair registration.
- *   - keeper: hot EOA that will fire `harvest(pools)` on schedule. Separate
- *     from the treasury multisig so live txs never require a multisig round.
+ *
+ * `harvest()` is permissionless: any wallet may call it, subject to the
+ * on-chain cooldown and LP-burn cap. No keeper EOA exists in the design
+ * — the protocol stays live even if every operator disappears.
  *
  * Defaults baked into the constructor:
  *   - Split 10 / 10 / 40 / 40 bps (stETX / farms / POL-burn / treasury).
  *   - {maxBurnBpsPerRun} = 100 (1% of treasury LP per harvest run).
+ *   - {harvestCooldown} = 23 hours (owner-tunable up to 30 days).
+ *   - {callerTipEtx} = 0 (owner-tunable to reimburse third-party cranks).
  *
  * After deploy, the treasury multisig must (in this order):
  *   1. Paste the deployed address into `packages/shared/src/addresses.ts`
@@ -48,9 +52,8 @@ import treasuryHarvesterArtifact from '@/lib/treasury-harvester-artifact.json';
  *   4. Approve the harvester to pull LP from the treasury on each ETX pair:
  *      `IERC20(stETX/ETX LP).approve(harvester, type(uint256).max)` and the
  *      same for EGAZ/ETX and ETI/ETX LP tokens.
- *   5. Fund the hot keeper EOA with ~100 EGAZ (overprovisioned per the
- *      runbook) and flip `HARVESTER_LIVE=true` in the GitHub Actions env to
- *      enable the live harvest cron.
+ *   5. (Optional) `harvester.setCallerTipEtx(tip)` — small ETX reimbursement
+ *      paid to third-party cranks out of the treasury slice.
  */
 
 type DeployState = {
@@ -86,7 +89,6 @@ export function DeployHarvesterCard() {
   const [ownerInput, setOwnerInput] = useState<string>(defaultOwner);
   const [etxInput, setEtxInput] = useState<string>(defaultEtx);
   const [factoryInput, setFactoryInput] = useState<string>(defaultFactory);
-  const [keeperInput, setKeeperInput] = useState<string>('');
   const ownerEditedRef = useRef(false);
   const etxEditedRef = useRef(false);
   const factoryEditedRef = useRef(false);
@@ -129,18 +131,6 @@ export function DeployHarvesterCard() {
     }
   }, [factoryInput]);
 
-  const parsedKeeper = useMemo<Address | null>(() => {
-    try {
-      const a = getAddress(keeperInput.trim());
-      return a === ZERO_ADDRESS ? null : a;
-    } catch {
-      return null;
-    }
-  }, [keeperInput]);
-
-  const keeperEqualsTreasury =
-    parsedKeeper !== null && parsedOwner !== null && parsedKeeper === parsedOwner;
-
   async function onDeploy() {
     if (
       !walletClient ||
@@ -148,8 +138,7 @@ export function DeployHarvesterCard() {
       !address ||
       !parsedOwner ||
       !parsedEtx ||
-      !parsedFactory ||
-      !parsedKeeper
+      !parsedFactory
     ) {
       return;
     }
@@ -160,8 +149,8 @@ export function DeployHarvesterCard() {
       const data = encodeDeployData({
         abi: treasuryHarvesterArtifact.abi,
         bytecode: treasuryHarvesterArtifact.bytecode as Hex,
-        // owner, etx, factory, keeper
-        args: [parsedOwner, parsedEtx, parsedFactory, parsedKeeper],
+        // owner, etx, factory
+        args: [parsedOwner, parsedEtx, parsedFactory],
       });
       txHash = await walletClient.sendTransaction({
         account: address,
@@ -205,17 +194,18 @@ export function DeployHarvesterCard() {
         <h2 className="mb-3 text-lg font-semibold">What this deploys</h2>
         <p className="text-sm text-white/70">
           The <span className="font-mono">TreasuryHarvester</span> delegation contract — a thin
-          on-chain pipeline that lets a limited-funds hot keeper wallet run the daily fee-harvest
-          cycle without ever touching the treasury multisig. The keeper pulls a capped slice of
-          treasury LP on each ETX pair, burns it, swaps the non-ETX leg back to ETX, then splits the
-          harvested ETX into four slices per BPS: stETX rewards, farms rewards, POL-burn (permanent
-          depth), and treasury retained.
+          on-chain pipeline that runs the daily fee-harvest cycle with no privileged caller. Any
+          wallet may invoke <span className="font-mono">harvest(pools)</span>. The contract pulls a
+          capped slice of treasury LP on each ETX pair, burns it, swaps the non-ETX leg back to ETX,
+          then splits the harvested ETX into four slices per BPS: stETX rewards, farms rewards,
+          POL-burn (permanent depth), and treasury retained.
         </p>
         <p className="mt-2 text-sm text-white/70">
           Compiled with <span className="font-mono">{treasuryHarvesterArtifact.version}</span>.
           Default split is <span className="font-mono">10 / 10 / 40 / 40</span> (stETX / farms /
-          POL-burn / treasury) and <span className="font-mono">maxBurnBpsPerRun = 100</span> (1% of
-          treasury LP per run). Both are owner-tunable post-deploy without redeploying the contract.
+          POL-burn / treasury), <span className="font-mono">maxBurnBpsPerRun = 100</span> (1% of
+          treasury LP per run), and <span className="font-mono">harvestCooldown = 23 hours</span>.
+          All owner-tunable post-deploy without redeploying the contract.
         </p>
       </section>
 
@@ -228,10 +218,17 @@ export function DeployHarvesterCard() {
             slice at the moment of each run.
           </li>
           <li>
-            <span className="font-mono">harvest(pools)</span> is{' '}
-            <span className="font-mono">onlyKeeper</span>. If the hot keeper key leaks, the attacker
-            can at most burn <span className="font-mono">maxBurnBpsPerRun</span> of treasury LP per
-            run with adversarial slippage — bounded blast radius, no direct drain.
+            <span className="font-mono">harvest(pools)</span> is permissionless. Two on-chain caps
+            bound the blast radius regardless of caller:{' '}
+            <span className="font-mono">maxBurnBpsPerRun</span> (LP fraction per run) and{' '}
+            <span className="font-mono">harvestCooldown</span> (minimum seconds between runs).
+            Together they cap total treasury LP outflow over any window — and the protocol keeps
+            running even if every operator key is lost.
+          </li>
+          <li>
+            Optional <span className="font-mono">callerTipEtx</span> pays a small ETX reimbursement
+            out of the treasury slice to whoever invokes each harvest. Owner-configurable; leave at
+            zero until you want to incentivise third-party cranks.
           </li>
           <li>
             All harvested ETX must be fully accounted for each run. Split slices that can&apos;t be
@@ -239,8 +236,8 @@ export function DeployHarvesterCard() {
             stays stuck on the contract.
           </li>
           <li>
-            Zero native EGAZ touches the contract. The keeper EOA funds its own gas; the harvester
-            pipeline is ERC-20-only.
+            Zero native EGAZ touches the contract. The caller pays for gas out of its own balance;
+            the harvester pipeline is ERC-20-only.
           </li>
         </ul>
       </section>
@@ -262,10 +259,11 @@ export function DeployHarvesterCard() {
           />
         </label>
         <p className="mt-1 text-xs text-white/50">
-          Defaults to the EticaHub treasury multisig. Owner is the only address that can rotate the
-          keeper, change the split, adjust the safety caps, set reward sinks, or rescue mis-sent
-          tokens. Use <span className="font-mono">Ownable2Step.transferOwnership</span> (two-step)
-          if you need to rotate after deploy.
+          Defaults to the EticaHub treasury multisig. Owner is the only address that can change the
+          split, adjust the safety caps, tune the cooldown, configure the caller tip, set reward
+          sinks, or rescue mis-sent tokens. Use{' '}
+          <span className="font-mono">Ownable.transferOwnership</span> if you need to rotate after
+          deploy.
         </p>
 
         <label className="mt-4 block text-sm text-white/70">
@@ -305,34 +303,6 @@ export function DeployHarvesterCard() {
           Used at harvest time to validate that every pair passed in is a real factory-registered{' '}
           <span className="font-mono">(etx, nonEtx)</span> pair.
         </p>
-
-        <label className="mt-4 block text-sm text-white/70">
-          Hot keeper EOA
-          <input
-            type="text"
-            className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
-            value={keeperInput}
-            onChange={(e) => setKeeperInput(e.target.value)}
-            placeholder="0x…  (separate EOA — not the treasury multisig)"
-            spellCheck={false}
-          />
-        </label>
-        <p className="mt-1 text-xs text-white/50">
-          The EOA that will call <span className="font-mono">harvest(pools)</span> on schedule
-          (typically from the <span className="font-mono">harvest-live.yml</span> GitHub Actions
-          cron). Must be a dedicated address the keeper workflow controls — see{' '}
-          <span className="font-mono">docs/HARVESTER_EGAZ_RUNBOOK.md</span>. If you haven&apos;t
-          generated one yet: run <span className="font-mono">cast wallet new</span>, MetaMask&apos;s
-          &quot;Add account&quot;, or any fresh burner; save the private key in your password
-          manager; paste the public address here.
-        </p>
-        {keeperEqualsTreasury && (
-          <p className="mt-2 rounded-md border border-amber-400/30 bg-amber-500/10 p-2 text-xs text-amber-200">
-            Warning: the keeper address equals the treasury/owner address. That defeats the
-            split-key design — every harvest would require a full multisig coordination round. Use a
-            dedicated hot EOA instead.
-          </p>
-        )}
       </section>
 
       <section className="rounded-xl border border-white/10 bg-white/5 p-5">
@@ -389,7 +359,6 @@ export function DeployHarvesterCard() {
             !parsedOwner ||
             !parsedEtx ||
             !parsedFactory ||
-            !parsedKeeper ||
             state.status === 'signing' ||
             state.status === 'pending' ||
             state.status === 'confirmed'
@@ -403,9 +372,9 @@ export function DeployHarvesterCard() {
                 ? 'Deployed'
                 : 'Deploy TreasuryHarvester'}
         </button>
-        {(!parsedOwner || !parsedEtx || !parsedFactory || !parsedKeeper) && (
+        {(!parsedOwner || !parsedEtx || !parsedFactory) && (
           <p className="mt-2 text-xs text-amber-300/80">
-            All four constructor addresses must be valid to enable the deploy button.
+            All three constructor addresses must be valid to enable the deploy button.
           </p>
         )}
         {state.status === 'error' && state.error && (
@@ -453,15 +422,15 @@ export function DeployHarvesterCard() {
                   even with infinite allowance.
                 </li>
                 <li>
-                  Fund the hot keeper EOA with ~100 EGAZ (per the runbook — steady state is ~0.001
-                  EGAZ/day, this is deliberately overprovisioned to absorb gas spikes without
-                  stranding a cycle).
+                  (Optional) From the treasury multisig, call{' '}
+                  <span className="font-mono">harvester.setCallerTipEtx(tip)</span> with a small ETX
+                  amount (e.g. <span className="font-mono">1e18</span>) to reimburse third-party
+                  cranks for gas. Leave at zero until you&apos;ve observed the harvester running
+                  cleanly through a full cycle.
                 </li>
                 <li>
-                  Set <span className="font-mono">HARVESTER_LIVE=true</span> in the GitHub Actions
-                  repo env, and add <span className="font-mono">HARVEST_KEEPER_PRIVATE_KEY</span> as
-                  a repo secret if not already present. This activates the daily live harvest cron
-                  in <span className="font-mono">.github/workflows/harvest-live.yml</span>.
+                  Call <span className="font-mono">harvest(pools)</span> from any wallet — or rely
+                  on the permissionless GitHub Actions cron — to run the first cycle.
                 </li>
               </ol>
             </div>
