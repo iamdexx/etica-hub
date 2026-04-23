@@ -153,8 +153,14 @@ export async function fetchSwapsInRange(
 }
 
 /**
- * Resolve a pair to a full {@link PoolSnapshot} at a given block. Looks up
- * token0 + token1 + current reserves + both tokens' totalSupply.
+ * Resolve a pair to a full {@link PoolSnapshot}. Looks up token0 + token1 +
+ * current reserves + both tokens' totalSupply at the latest block.
+ *
+ * We read at `latest` (not the swap's block) because most public RPCs run
+ * as full nodes and prune historical trie state after ~128 blocks. Since
+ * swap amounts come from the event log itself (exact), the only thing the
+ * reserves feed is USD price derivation — for which current reserves are
+ * the right answer regardless.
  *
  * Each pair goes through {@link fetchTokenMeta} once per call; callers that
  * process many swaps across the same pools should memoize at the call site.
@@ -162,7 +168,7 @@ export async function fetchSwapsInRange(
 export async function snapshotPool(
   client: PublicClient,
   pair: Address,
-  blockNumber: bigint,
+  _blockNumber: bigint,
 ): Promise<PoolSnapshot | null> {
   try {
     const [token0, token1, reserves] = await Promise.all([
@@ -170,19 +176,16 @@ export async function snapshotPool(
         abi: abis.pairAbi,
         address: pair,
         functionName: 'token0',
-        blockNumber,
       }) as Promise<Address>,
       client.readContract({
         abi: abis.pairAbi,
         address: pair,
         functionName: 'token1',
-        blockNumber,
       }) as Promise<Address>,
       client.readContract({
         abi: abis.pairAbi,
         address: pair,
         functionName: 'getReserves',
-        blockNumber,
       }) as Promise<readonly [bigint, bigint, number]>,
     ]);
 
