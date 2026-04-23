@@ -9,6 +9,13 @@ export const etxFarmsAbi = [
   // ─── Views ─────────────────────────────────────────────────────────────
   {
     type: 'function',
+    name: 'owner',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
     name: 'rewardToken',
     stateMutability: 'view',
     inputs: [],
