@@ -1,13 +1,12 @@
-import { notFound } from 'next/navigation';
 import { DeployStorageFixtureCard } from '@/components/deploy/DeployStorageFixtureCard';
-import { operatorUiEnabled } from '@/lib/operatorUi';
+import { OperatorBanner } from '@/components/OperatorBanner';
 
 export const metadata = { title: 'Deploy Sourcify Storage fixture · EticaHub' };
 
 export default function DeployStorageFixturePage() {
-  if (!operatorUiEnabled()) notFound();
   return (
     <div className="mx-auto max-w-2xl">
+      <OperatorBanner />
       <header className="mb-6 space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Deploy Sourcify Storage fixture</h1>
         <p className="text-sm text-white/60">

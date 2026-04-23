@@ -50,14 +50,7 @@ export default async function AddressPage({ params }: AddressPageProps) {
   // contract vs EOA), and ERC-20 balances for ETX, ETI, WEGAZ. We don't
   // fetch arbitrary tokens — the explorer only knows the protocol-native
   // assets in v1.
-  const [
-    nativeBalance,
-    code,
-    etxBalance,
-    etiBalance,
-    wegazBalance,
-    head,
-  ] = await Promise.all([
+  const [nativeBalance, code, etxBalance, etiBalance, wegazBalance, head] = await Promise.all([
     client.getBalance({ address: addr }),
     client.getCode({ address: addr }).catch(() => undefined),
     d?.etx && d.etx !== ZERO
@@ -179,28 +172,23 @@ export default async function AddressPage({ params }: AddressPageProps) {
           {d?.wegaz && d.wegaz !== ZERO ? formatEgaz(wegazBalance) : '—'} EGAZ
         </Field>
         <Field label="Type">{isContract ? 'Contract' : 'Externally-owned account'}</Field>
-        <Field label="Code size">
-          {isContract ? `${(code!.length - 2) / 2} bytes` : '—'}
-        </Field>
+        <Field label="Code size">{isContract ? `${(code!.length - 2) / 2} bytes` : '—'}</Field>
       </section>
 
       {verified ? <VerifiedContractView manifest={verified} /> : null}
 
-      {verified ? (
-        <ContractInteractionView address={addr} abi={verified.abi} />
-      ) : null}
+      {verified ? <ContractInteractionView address={addr} abi={verified.abi} /> : null}
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Recent transactions</h2>
-          <span className="text-xs text-white/40">
-            last {RECENT_SCAN_BLOCKS.toString()} blocks
-          </span>
+          <span className="text-xs text-white/40">last {RECENT_SCAN_BLOCKS.toString()} blocks</span>
         </div>
         {recent.length === 0 ? (
           <p className="text-sm text-white/50">
-            No transactions involving this address in the last {RECENT_SCAN_BLOCKS.toString()} blocks.
-            Full history requires an indexer (not shipped in v1).
+            No transactions involving this address in the last {RECENT_SCAN_BLOCKS.toString()}{' '}
+            blocks. Older activity lives in the public tx-log indexer and can be pulled from the
+            on-chain archive.
           </p>
         ) : (
           <ul className="space-y-2">
@@ -270,11 +258,7 @@ export default async function AddressPage({ params }: AddressPageProps) {
         )}
       </section>
 
-      <TokenTransfersSection
-        transfers={tokenTransfers}
-        tokenInfos={tokenInfos}
-        viewer={addr}
-      />
+      <TokenTransfersSection transfers={tokenTransfers} tokenInfos={tokenInfos} viewer={addr} />
     </div>
   );
 }
@@ -304,9 +288,7 @@ async function scanRecentTxs(
   // Pull blocks with txs inlined in parallel — bounded at 200 calls.
   const blocks = await Promise.all(
     numbers.map((n) =>
-      client
-        .getBlock({ blockNumber: n, includeTransactions: true })
-        .catch(() => null),
+      client.getBlock({ blockNumber: n, includeTransactions: true }).catch(() => null),
     ),
   );
   const out: Array<{
@@ -340,13 +322,7 @@ async function scanRecentTxs(
   return out;
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <div className="text-xs uppercase tracking-wider text-white/40">{label}</div>
@@ -373,18 +349,13 @@ function TokenTransfersSection({
       </div>
       {transfers.length === 0 ? (
         <p className="text-sm text-white/50">
-          No ERC-20 Transfer events involving this address in the indexed
-          window.
+          No ERC-20 Transfer events involving this address in the indexed window.
         </p>
       ) : (
         <ul className="space-y-2">
           {transfers.map((t) => {
-            const isMint =
-              t.from.toLowerCase() ===
-              '0x0000000000000000000000000000000000000000';
-            const isBurn =
-              t.to.toLowerCase() ===
-              '0x0000000000000000000000000000000000000000';
+            const isMint = t.from.toLowerCase() === '0x0000000000000000000000000000000000000000';
+            const isBurn = t.to.toLowerCase() === '0x0000000000000000000000000000000000000000';
             const dir =
               isMint && t.to.toLowerCase() === viewerLower
                 ? 'mint'
@@ -394,13 +365,11 @@ function TokenTransfersSection({
                     ? 'out'
                     : 'in';
             const info = tokenInfos.get(t.token.toLowerCase());
-            const tokenLabel =
-              addressLabel(t.token) ?? info?.symbol ?? shortAddress(t.token);
+            const tokenLabel = addressLabel(t.token) ?? info?.symbol ?? shortAddress(t.token);
             const amount = info
               ? `${formatTokenAmount(t.value, info.decimals)} ${info.symbol}`
               : t.value.toString();
-            const counterparty =
-              t.from.toLowerCase() === viewerLower ? t.to : t.from;
+            const counterparty = t.from.toLowerCase() === viewerLower ? t.to : t.from;
             const dirClass =
               dir === 'in' || dir === 'mint'
                 ? 'rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300'

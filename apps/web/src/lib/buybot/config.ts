@@ -92,7 +92,7 @@ export function loadBuyBotConfig(env: NodeJS.ProcessEnv = process.env): BuyBotCo
     wegaz: optionalAddr(env, 'BUYBOT_WEGAZ', deployments.wegaz),
     telegramBotToken: token,
     telegramChatId: chat,
-    explorerBaseUrl: env.BUYBOT_EXPLORER_BASE_URL ?? 'https://eticahub.org',
+    explorerBaseUrl: env.BUYBOT_EXPLORER_BASE_URL ?? 'https://eticahub.com',
     minUsdToPost: Number.isFinite(minUsd) && minUsd >= 0 ? minUsd : 1,
     maxBlocksPerRun: Number.isFinite(maxBlocks) && maxBlocks > 0 ? Math.floor(maxBlocks) : 2000,
     nonkycApiUrl: env.BUYBOT_NONKYC_API_URL ?? 'https://api.nonkyc.io',

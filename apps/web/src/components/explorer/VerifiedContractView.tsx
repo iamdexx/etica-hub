@@ -4,7 +4,7 @@ import type { VerifiedContract } from '@/lib/verified';
  * GitHub repository the verified manifests are committed to. We link the
  * raw JSON back to this repo (pinned to `VERCEL_GIT_COMMIT_SHA` when
  * available, otherwise `main`) so any third party can cross-check our
- * sources without having to trust eticahub.org specifically — the
+ * sources without having to trust eticahub.com specifically — the
  * manifest they see rendered here is byte-identical to the file in the
  * public repo.
  */
@@ -54,7 +54,9 @@ export function VerifiedContractView({ manifest }: { manifest: VerifiedContract 
             Compiled with solc {manifest.compilerVersion}
             {' · '}
             optimizer {manifest.optimizer.enabled ? 'on' : 'off'}
-            {manifest.optimizer.enabled ? ` (${manifest.optimizer.runs.toLocaleString()} runs)` : ''}
+            {manifest.optimizer.enabled
+              ? ` (${manifest.optimizer.runs.toLocaleString()} runs)`
+              : ''}
             {' · '}
             evm {manifest.evmVersion}
           </p>

@@ -1,13 +1,12 @@
-import { notFound } from 'next/navigation';
 import { AdminReactorCard } from '@/components/admin/AdminReactorCard';
-import { operatorUiEnabled } from '@/lib/operatorUi';
+import { OperatorBanner } from '@/components/OperatorBanner';
 
 export const metadata = { title: 'Admin · Reactor · EticaHub' };
 
 export default function AdminReactorPage() {
-  if (!operatorUiEnabled()) notFound();
   return (
     <div className="mx-auto max-w-3xl">
+      <OperatorBanner />
       <header className="mb-6 space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">UniswapX Reactor — Admin</h1>
         <p className="text-sm text-white/60">
