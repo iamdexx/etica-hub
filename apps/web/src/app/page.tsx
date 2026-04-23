@@ -5,17 +5,31 @@ const MODULES = [
     href: '/swap',
     title: 'EticaSwap',
     subtitle: 'On-chain DEX · live',
-    body:
-      'Swap EGAZ, ETI, and ETX on Etica Mainnet. First Uniswap V2-style AMM on chain 61803, with ETX as the shared hub. 0.30% LP fee.',
+    body: 'Swap EGAZ, ETI, ETX, and stETX on Etica Mainnet. Uniswap V2-style AMM on chain 61803, with ETX as the shared hub. 0.30% LP fee.',
     cta: 'Open swap',
     accent: 'from-emerald-500/30 to-emerald-700/10',
+  },
+  {
+    href: '/stake',
+    title: 'Stake ETX',
+    subtitle: 'stETX liquid staking vault',
+    body: 'Deposit ETX, get stETX. The vault’s ETX/stETX exchange rate rises every harvest as 40% of protocol fees stream in, so your balance appreciates without ever unstaking.',
+    cta: 'Open stake',
+    accent: 'from-indigo-500/30 to-indigo-700/10',
+  },
+  {
+    href: '/farms',
+    title: 'LP Farms',
+    subtitle: 'Emission-weighted LP staking',
+    body: 'Stake stETX/ETX, EGAZ/ETX, or ETI/ETX LP tokens and earn ETX emissions funded by the 10% farms slice of every harvest cycle. stETX/ETX carries the heaviest weight.',
+    cta: 'Open farms',
+    accent: 'from-emerald-500/30 to-teal-700/10',
   },
   {
     href: '/trade/ETI',
     title: 'Trading',
     subtitle: 'Limit · Stop · DCA · Grid · Infinity',
-    body:
-      'Non-custodial limit orders, stops, DCA schedules, and the Infinity Bot — an unbounded geometric grid that never structurally dies. Built on Permit2 + UniswapX.',
+    body: 'Non-custodial limit orders, stops, DCA schedules, and the Infinity Bot — an unbounded geometric grid that never structurally dies. Built on Permit2 + UniswapX.',
     cta: 'Open trading',
     accent: 'from-amber-500/30 to-amber-700/10',
   },
@@ -23,8 +37,7 @@ const MODULES = [
     href: '/research',
     title: 'Research Hub',
     subtitle: 'Open-science proposal viewer',
-    body:
-      'Index every on-chain research proposal, render its IPFS content, track voter activity, and tip researchers directly in ETI.',
+    body: 'Index every on-chain research proposal, render its IPFS content, track voter activity, and tip researchers directly in ETI.',
     cta: 'Browse research',
     accent: 'from-sky-500/30 to-sky-700/10',
   },
@@ -32,8 +45,7 @@ const MODULES = [
     href: '/bridge',
     title: 'EticaBridge',
     subtitle: 'ETI ↔ Ethereum',
-    body:
-      'Lock ETI on Etica, mint wETI on Ethereum. Unlocks Uniswap, 1inch, and the wider EVM DeFi universe for Etica assets.',
+    body: 'Lock ETI on Etica, mint wETI on Ethereum. Unlocks Uniswap, 1inch, and the wider EVM DeFi universe for Etica assets.',
     cta: 'Open bridge',
     accent: 'from-fuchsia-500/30 to-fuchsia-700/10',
   },
@@ -51,9 +63,10 @@ export default function Home() {
           The on-chain home of the <span className="text-brand-accent">Etica ecosystem.</span>
         </h1>
         <p className="max-w-2xl text-lg text-white/70">
-          EticaHub is the first DEX on Etica Mainnet — swap EGAZ, ETI, and ETX through a shared
-          ETX hub — plus a searchable research hub for every proposal and a bridge to Ethereum.
-          One site, one wallet, one place to support open-source medical research.
+          EticaHub is the on-chain home of the Etica ecosystem — swap EGAZ, ETI, ETX, and stETX
+          through a shared ETX hub, stake for auto-compounding yield, farm LP emissions, run
+          non-custodial limit orders and grid bots, read every research proposal, and bridge to
+          Ethereum. One site, one wallet.
         </p>
         <div className="flex flex-wrap gap-3 pt-2">
           <Link
@@ -77,7 +90,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {MODULES.map((m) => (
           <Link
             key={m.href}
@@ -97,8 +110,8 @@ export default function Home() {
           <div className="mb-2 text-xs uppercase tracking-wider text-white/50">Whitepaper</div>
           <div className="text-xl font-semibold">Read the EticaHub v1 design</div>
           <p className="mt-2 max-w-2xl text-sm text-white/70">
-            ETX tokenomics, hub-and-spoke DEX rules, launch parameters, governance, and an
-            explicit statement on our independence from the Etica Protocol core team.
+            ETX tokenomics, hub-and-spoke DEX rules, launch parameters, governance, and an explicit
+            statement on our independence from the Etica Protocol core team.
           </p>
         </div>
         <Link

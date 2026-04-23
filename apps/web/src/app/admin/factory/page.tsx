@@ -1,13 +1,12 @@
-import { notFound } from 'next/navigation';
 import { AdminFactoryCard } from '@/components/admin/AdminFactoryCard';
-import { operatorUiEnabled } from '@/lib/operatorUi';
+import { OperatorBanner } from '@/components/OperatorBanner';
 
 export const metadata = { title: 'Admin · Factory · EticaHub' };
 
 export default function AdminFactoryPage() {
-  if (!operatorUiEnabled()) notFound();
   return (
     <div className="mx-auto max-w-3xl">
+      <OperatorBanner />
       <header className="mb-6 space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">EticaSwap Factory — Admin</h1>
         <p className="text-sm text-white/60">
