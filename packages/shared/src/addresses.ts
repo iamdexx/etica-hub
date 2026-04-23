@@ -81,12 +81,12 @@ export const DEPLOYMENTS: Record<
      */
     stakedETX: Address;
     /**
-     * TreasuryHarvester — on-chain delegation contract the hot keeper
-     * EOA calls once per cadence to run the full harvest pipeline (burn
-     * LP → swap to ETX → split across stETX / farms / POL burn / treasury).
-     * The treasury pre-approves LP + ETX allowances to this address once;
-     * the keeper key never has treasury power on its own. Zero until
-     * deploy lands on-chain.
+     * TreasuryHarvester — on-chain delegation contract that runs the full
+     * harvest pipeline (burn LP → swap to ETX → split across stETX / farms
+     * / POL burn / treasury) in a single call. The treasury pre-approves
+     * LP + ETX allowances to this address once; {harvest} is permissionless
+     * on-chain and is bounded by {maxBurnBpsPerRun} + {harvestCooldown}
+     * so the protocol stays live even if every operator disappears.
      */
     treasuryHarvester: Address;
     /**
@@ -111,7 +111,7 @@ export const DEPLOYMENTS: Record<
     etxFeeController: '0xB9a4FbfC4cA598Be18e09bb9C0Cf19e4a1A4350a',
     orderRegistry: '0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9',
     stakedETX: '0x75d81d03a98CD9195593b8963aF17E13fAa70334',
-    treasuryHarvester: '0x0000000000000000000000000000000000000000',
+    treasuryHarvester: '0x5d8B1138559fADc3Bb90e8317eB16922eAa076f5',
     etxFarms: '0xEBAfdd24ABF8290f0B433E689631466ABD13c6aD',
   },
   61888: {
