@@ -282,6 +282,9 @@ export async function StatusPanel() {
       <AddressTable
         rows={[
           ['ETX', d.etx],
+          ['stETX (staking vault)', d.stakedETX],
+          ['ETXFarms (LP staking)', d.etxFarms],
+          ['TreasuryHarvester', d.treasuryHarvester],
           ['EGAZ (wrapped ERC-20)', d.wegaz],
           ['Factory', d.swapFactory],
           ['Router', d.swapRouter],
@@ -347,24 +350,16 @@ export async function StatusPanel() {
               <>
                 <KV k="reactor" v={shortAddr(snap.reactor.reactor)} />
                 <KV k="reactor owner" v={shortAddr(snap.reactor.reactorOwner)} />
-                <KV
-                  k="reactor.feeController()"
-                  v={shortAddr(snap.reactor.reactorFeeController)}
-                />
+                <KV k="reactor.feeController()" v={shortAddr(snap.reactor.reactorFeeController)} />
                 <KV
                   k="fee controller"
                   v={
-                    snap.reactor.controller
-                      ? shortAddr(snap.reactor.controller)
-                      : '0x0 (not wired)'
+                    snap.reactor.controller ? shortAddr(snap.reactor.controller) : '0x0 (not wired)'
                   }
                 />
                 {snap.reactor.controller && (
                   <>
-                    <KV
-                      k="controller.owner"
-                      v={shortAddr(snap.reactor.controllerOwner ?? ZERO)}
-                    />
+                    <KV k="controller.owner" v={shortAddr(snap.reactor.controllerOwner ?? ZERO)} />
                     <KV
                       k="controller.treasury"
                       v={shortAddr(snap.reactor.controllerTreasury ?? ZERO)}
