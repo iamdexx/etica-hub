@@ -100,7 +100,8 @@ export function FarmsView() {
           <div className="mb-1 text-base font-semibold text-white">No farms configured yet</div>
           <p>
             ETXFarms is deployed but the owner has not registered any pools. Expected pools at
-            launch: ETI/ETX (weight 5000) and EGAZ/ETX (weight 5000).
+            launch: stETX/ETX (weight 6000, 60%), EGAZ/ETX (weight 2500, 25%), and ETI/ETX
+            (weight 1500, 15%).
           </p>
         </div>
         <FarmsHowItWorks />
@@ -181,8 +182,9 @@ function FarmsHowItWorks() {
       <div className="font-medium text-white/70">How ETXFarms works</div>
       <ul className="mt-1 list-disc space-y-1 pl-5">
         <li>
-          Stake EticaSwap LP tokens (ETI/ETX or EGAZ/ETX). Your LP keeps earning its regular
-          swap-fee yield on top of ETX farm rewards — staking here does not leave the pool.
+          Stake EticaSwap LP tokens (stETX/ETX, EGAZ/ETX, or ETI/ETX). Your LP keeps earning
+          its regular swap-fee yield on top of ETX farm rewards — staking here does not leave
+          the pool.
         </li>
         <li>
           Each harvest cycle, the Treasury Harvester forwards 10% of fees to ETXFarms via a

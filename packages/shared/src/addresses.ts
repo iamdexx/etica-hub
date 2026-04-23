@@ -93,7 +93,7 @@ export const DEPLOYMENTS: Record<
      * ETXFarms — MasterChef-style LP staking contract. Receives the 10%
      * "farms" slice of every harvest cycle via
      * {distributeRewards(uint256)} and splits it pro-rata across staked
-     * LP pools (ETI/ETX, EGAZ/ETX). No emissions — the contract only
+     * LP pools (stETX/ETX, EGAZ/ETX, ETI/ETX). No emissions — the contract only
      * redistributes ETX pushed in by the Harvester. Zero until deploy
      * lands on-chain.
      */
