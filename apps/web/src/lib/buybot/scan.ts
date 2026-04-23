@@ -78,6 +78,83 @@ async function fetchTokenMeta(client: PublicClient, address: Address): Promise<T
   return { address: getAddress(address), symbol, decimals, totalSupply };
 }
 
+/**
+ * Resolve ETX/USD via an on-chain anchor pool (ETX/EGAZ preferred, ETX/ETI
+ * fallback). Reads reserves at `latest` so it's independent of which swaps
+ * happened this cron cycle — guarantees we have a fresh ETX/USD any time
+ * either anchor pool has liquidity + a known USDT anchor off NonKYC.
+ *
+ * Returns `null` when no anchor pool has been created yet, both pools are
+ * drained, or both NonKYC anchors are unreachable.
+ */
+export async function fetchAnchorEtxUsd(
+  client: PublicClient,
+  args: {
+    factory: Address;
+    etx: Address;
+    eti: Address;
+    wegaz: Address;
+    anchors?: { etiUsd: number | null; egazUsd: number | null };
+  },
+  fetchAnchors?: () => Promise<{ etiUsd: number | null; egazUsd: number | null }>,
+): Promise<number | null> {
+  const anchors = args.anchors ?? (fetchAnchors ? await fetchAnchors() : null);
+  if (!anchors) return null;
+  const candidates: { other: Address; otherUsd: number | null }[] = [
+    { other: args.wegaz, otherUsd: anchors.egazUsd },
+    { other: args.eti, otherUsd: anchors.etiUsd },
+  ];
+  for (const c of candidates) {
+    if (c.otherUsd === null || c.otherUsd <= 0) continue;
+    try {
+      const pair = (await client.readContract({
+        abi: abis.factoryAbi,
+        address: args.factory,
+        functionName: 'getPair',
+        args: [args.etx, c.other],
+      })) as Address;
+      if (pair === ZERO_ADDRESS) continue;
+      const [token0, reserves] = await Promise.all([
+        client.readContract({
+          abi: abis.pairAbi,
+          address: pair,
+          functionName: 'token0',
+        }) as Promise<Address>,
+        client.readContract({
+          abi: abis.pairAbi,
+          address: pair,
+          functionName: 'getReserves',
+        }) as Promise<readonly [bigint, bigint, number]>,
+      ]);
+      // Both tokens here are 18-decimals in the EticaHub hub-and-spoke model,
+      // but resolve decimals for safety in case launchpad tokens ever end up
+      // as anchors.
+      const [etxDec, otherDec] = await Promise.all([
+        client.readContract({
+          abi: erc20Abi,
+          address: args.etx,
+          functionName: 'decimals',
+        }) as Promise<number>,
+        client.readContract({
+          abi: erc20Abi,
+          address: c.other,
+          functionName: 'decimals',
+        }) as Promise<number>,
+      ]);
+      const etxIsToken0 = token0.toLowerCase() === args.etx.toLowerCase();
+      const etxReserve = etxIsToken0 ? reserves[0] : reserves[1];
+      const otherReserve = etxIsToken0 ? reserves[1] : reserves[0];
+      if (etxReserve === 0n || otherReserve === 0n) continue;
+      const etxUnits = Number(etxReserve) / 10 ** etxDec;
+      const otherUnits = Number(otherReserve) / 10 ** otherDec;
+      return (otherUnits / etxUnits) * c.otherUsd;
+    } catch {
+      // Next candidate.
+    }
+  }
+  return null;
+}
+
 export async function loadAllPairs(client: PublicClient, factory: Address): Promise<Address[]> {
   if (factory === ZERO_ADDRESS) return [];
   const length = (await client.readContract({
@@ -153,8 +230,14 @@ export async function fetchSwapsInRange(
 }
 
 /**
- * Resolve a pair to a full {@link PoolSnapshot} at a given block. Looks up
- * token0 + token1 + current reserves + both tokens' totalSupply.
+ * Resolve a pair to a full {@link PoolSnapshot}. Looks up token0 + token1 +
+ * current reserves + both tokens' totalSupply at the latest block.
+ *
+ * We read at `latest` (not the swap's block) because most public RPCs run
+ * as full nodes and prune historical trie state after ~128 blocks. Since
+ * swap amounts come from the event log itself (exact), the only thing the
+ * reserves feed is USD price derivation — for which current reserves are
+ * the right answer regardless.
  *
  * Each pair goes through {@link fetchTokenMeta} once per call; callers that
  * process many swaps across the same pools should memoize at the call site.
@@ -162,7 +245,7 @@ export async function fetchSwapsInRange(
 export async function snapshotPool(
   client: PublicClient,
   pair: Address,
-  blockNumber: bigint,
+  _blockNumber: bigint,
 ): Promise<PoolSnapshot | null> {
   try {
     const [token0, token1, reserves] = await Promise.all([
@@ -170,19 +253,16 @@ export async function snapshotPool(
         abi: abis.pairAbi,
         address: pair,
         functionName: 'token0',
-        blockNumber,
       }) as Promise<Address>,
       client.readContract({
         abi: abis.pairAbi,
         address: pair,
         functionName: 'token1',
-        blockNumber,
       }) as Promise<Address>,
       client.readContract({
         abi: abis.pairAbi,
         address: pair,
         functionName: 'getReserves',
-        blockNumber,
       }) as Promise<readonly [bigint, bigint, number]>,
     ]);
 

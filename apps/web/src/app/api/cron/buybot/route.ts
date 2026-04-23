@@ -23,7 +23,13 @@ import { fetchUsdAnchors } from '@/lib/buybot/oracle';
 import { computeBuyReport, decodeSwapAsBuy, type UsdPricing } from '@/lib/buybot/prices';
 import { formatBuy } from '@/lib/buybot/format';
 import { telegramClient } from '@/lib/buybot/telegram';
-import { fetchSwapsInRange, loadAllPairs, planScanWindow, snapshotPool } from '@/lib/buybot/scan';
+import {
+  fetchAnchorEtxUsd,
+  fetchSwapsInRange,
+  loadAllPairs,
+  planScanWindow,
+  snapshotPool,
+} from '@/lib/buybot/scan';
 import {
   claimBuyPost,
   kvFor,
@@ -105,6 +111,18 @@ export async function GET(req: NextRequest): Promise<Response> {
       fetchUsdAnchors(config),
     ]);
 
+    // Resolve ETX/USD independently of which swaps happen this cycle by
+    // reading reserves on the ETX/EGAZ (preferred) or ETX/ETI anchor pool
+    // directly. Without this, a run that only sees stETX/ETX or launchpad
+    // swaps would have etxUsd=null and render MC as "—".
+    const anchorEtxUsd = await fetchAnchorEtxUsd(client, {
+      factory: config.factory,
+      etx: config.etx,
+      eti: config.eti,
+      wegaz: config.wegaz,
+      anchors,
+    });
+
     const window = planScanWindow(latestBlock, lastScanned, config);
     const pairs = await loadAllPairs(client, config.factory);
 
@@ -133,15 +151,21 @@ export async function GET(req: NextRequest): Promise<Response> {
       }
     }
 
-    // Derive ETX-in-USD from the first ETX/ETI or ETX/EGAZ pool we encounter.
-    const pricing: UsdPricing = deriveEtxUsd({
-      swaps,
-      poolsByPair,
-      anchors,
-      etx: config.etx,
-      eti: config.eti,
-      wegaz: config.wegaz,
-    });
+    // Prefer the anchor-pool read (always available); fall back to deriving
+    // from a swap snapshot if the anchor call errored (e.g. no ETX/EGAZ pool
+    // exists yet on this chain).
+    const derived: UsdPricing =
+      anchorEtxUsd !== null
+        ? { etxUsd: anchorEtxUsd, etiUsd: anchors.etiUsd, egazUsd: anchors.egazUsd }
+        : deriveEtxUsd({
+            swaps,
+            poolsByPair,
+            anchors,
+            etx: config.etx,
+            eti: config.eti,
+            wegaz: config.wegaz,
+          });
+    const pricing: UsdPricing = derived;
 
     const telegram = telegramClient(config.telegramBotToken, config.telegramChatId);
 
