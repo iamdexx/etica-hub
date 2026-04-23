@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.0;
+
+/// @title EticaSwap V2 factory interface
+/// @notice Uniswap V2–compatible factory deploying CREATE2 pair contracts.
+interface IEticaSwapFactory {
+    event PairCreated(address indexed token0, address indexed token1, address pair, uint256);
+    event TrustedCreatorSet(address indexed creator, bool trusted);
+    event PairCreationFeeSet(uint256 fee);
+
+    function etx() external view returns (address);
+    function feeTo() external view returns (address);
+    function feeToSetter() external view returns (address);
+    function trustedCreators(address creator) external view returns (bool);
+    function pairCreationFee() external view returns (uint256);
+
+    function getPair(address tokenA, address tokenB) external view returns (address pair);
+    function allPairs(uint256) external view returns (address pair);
+    function allPairsLength() external view returns (uint256);
+
+    function createPair(address tokenA, address tokenB) external returns (address pair);
+
+    function setFeeTo(address) external;
+    function setFeeToSetter(address) external;
+    function setTrustedCreator(address creator, bool trusted) external;
+    function setPairCreationFee(uint256 fee) external;
+}
