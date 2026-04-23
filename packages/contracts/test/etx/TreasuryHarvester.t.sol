@@ -27,9 +27,9 @@ contract MockRewardSink {
 
 contract TreasuryHarvesterTest is Test {
     address internal constant TREASURY = address(0x7EA5);
-    address internal constant KEEPER = address(0xBEEF);
     address internal constant FEE_SETTER = address(0xFEE5E77E8);
     address internal constant ALICE = address(0xA11CE);
+    address internal constant BOB = address(0xB0B);
     address internal constant ATTACKER = address(0xBAD);
 
     uint256 internal constant ONE = 1e18;
@@ -108,8 +108,9 @@ contract TreasuryHarvesterTest is Test {
         stVault = new StakedETX(IERC20(address(etx)));
         farmsSink = new MockRewardSink(address(etx));
 
-        // Deploy harvester owned by treasury with hot keeper.
-        harvester = new TreasuryHarvester(TREASURY, address(etx), address(factory), KEEPER);
+        // Deploy harvester owned by treasury. Harvest is permissionless;
+        // no keeper EOA exists in the design.
+        harvester = new TreasuryHarvester(TREASURY, address(etx), address(factory));
 
         // Treasury wires optional sinks and approves harvester for LP on both
         // pairs. We use unbounded approvals here; in production the treasury
@@ -130,46 +131,60 @@ contract TreasuryHarvesterTest is Test {
         assertEq(harvester.owner(), TREASURY);
         assertEq(harvester.etx(), address(etx));
         assertEq(address(harvester.factory()), address(factory));
-        assertEq(harvester.keeper(), KEEPER);
         assertEq(harvester.maxBurnBpsPerRun(), 100);
         assertEq(harvester.stakedEtxBps(), 1_000);
         assertEq(harvester.farmsBps(), 1_000);
         assertEq(harvester.polBurnBps(), 4_000);
         assertEq(harvester.treasuryBps(), 4_000);
+        assertEq(uint256(harvester.harvestCooldown()), 23 hours);
+        assertEq(uint256(harvester.callerTipEtx()), 0);
+        assertEq(uint256(harvester.lastHarvestAt()), 0);
     }
 
     function test_constructor_revertsOnZeroAddresses() public {
         vm.expectRevert(TreasuryHarvester.ZeroAddress.selector);
-        new TreasuryHarvester(TREASURY, address(0), address(factory), KEEPER);
+        new TreasuryHarvester(TREASURY, address(0), address(factory));
 
         vm.expectRevert(TreasuryHarvester.ZeroAddress.selector);
-        new TreasuryHarvester(TREASURY, address(etx), address(0), KEEPER);
-
-        vm.expectRevert(TreasuryHarvester.ZeroAddress.selector);
-        new TreasuryHarvester(TREASURY, address(etx), address(factory), address(0));
+        new TreasuryHarvester(TREASURY, address(etx), address(0));
     }
 
     // -------------------------------------------------------------------------
     // Access control: admin
     // -------------------------------------------------------------------------
 
-    function test_setKeeper_onlyOwner() public {
+    function test_setHarvestCooldown_onlyOwner() public {
         vm.prank(ATTACKER);
         vm.expectRevert();
-        harvester.setKeeper(ATTACKER);
+        harvester.setHarvestCooldown(1 hours);
     }
 
-    function test_setKeeper_zeroReverts() public {
+    function test_setHarvestCooldown_rejectsTooLong() public {
+        uint32 maxCooldown = harvester.MAX_HARVEST_COOLDOWN();
+        uint32 tooLong = maxCooldown + 1;
+        vm.expectRevert(
+            abi.encodeWithSelector(TreasuryHarvester.CooldownTooLong.selector, tooLong, maxCooldown)
+        );
         vm.prank(TREASURY);
-        vm.expectRevert(TreasuryHarvester.ZeroAddress.selector);
-        harvester.setKeeper(address(0));
+        harvester.setHarvestCooldown(tooLong);
     }
 
-    function test_setKeeper_rotates() public {
-        address newKeeper = address(0xC0FFEE);
+    function test_setHarvestCooldown_rotates() public {
         vm.prank(TREASURY);
-        harvester.setKeeper(newKeeper);
-        assertEq(harvester.keeper(), newKeeper);
+        harvester.setHarvestCooldown(1 hours);
+        assertEq(uint256(harvester.harvestCooldown()), 1 hours);
+    }
+
+    function test_setCallerTipEtx_onlyOwner() public {
+        vm.prank(ATTACKER);
+        vm.expectRevert();
+        harvester.setCallerTipEtx(uint128(1 * ONE));
+    }
+
+    function test_setCallerTipEtx_rotates() public {
+        vm.prank(TREASURY);
+        harvester.setCallerTipEtx(uint128(5 * ONE));
+        assertEq(uint256(harvester.callerTipEtx()), 5 * ONE);
     }
 
     function test_setSplit_mustSumTo10000() public {
@@ -216,21 +231,106 @@ contract TreasuryHarvesterTest is Test {
     }
 
     // -------------------------------------------------------------------------
-    // Access control: harvest
+    // Permissionless harvest: any caller, subject to cooldown + cap
     // -------------------------------------------------------------------------
 
-    function test_harvest_onlyKeeper() public {
+    function test_harvest_permissionless_anyCallerCanTrigger() public {
+        // A wallet with no privileges should be able to crank the harvester.
+        TreasuryHarvester.PoolPlan[] memory plans = _makeMinimalPlans();
+        uint256 treasuryBefore = etx.balanceOf(TREASURY);
+        vm.prank(ALICE);
+        harvester.harvest(plans);
+        assertGt(etx.balanceOf(TREASURY), treasuryBefore, "treasury slice missing");
+    }
+
+    function test_harvest_permissionless_attackerCanTrigger() public {
+        // Even an explicitly-adversarial caller cannot cause bounded-on-chain
+        // damage, so the contract must accept the call.
         TreasuryHarvester.PoolPlan[] memory plans = _makeMinimalPlans();
         vm.prank(ATTACKER);
-        vm.expectRevert(TreasuryHarvester.OnlyKeeper.selector);
         harvester.harvest(plans);
+        assertEq(uint256(harvester.lastHarvestAt()), block.timestamp);
+    }
+
+    function test_harvest_cooldown_blocksRapidCalls() public {
+        TreasuryHarvester.PoolPlan[] memory plans = _makeMinimalPlans();
+
+        // First call succeeds (lastHarvestAt == 0).
+        vm.prank(ALICE);
+        harvester.harvest(plans);
+        uint256 firstAt = block.timestamp;
+
+        // Second call in the same block must revert with the next-allowed
+        // timestamp in the error payload.
+        vm.prank(BOB);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TreasuryHarvester.CooldownNotElapsed.selector, firstAt + 23 hours
+            )
+        );
+        harvester.harvest(plans);
+    }
+
+    function test_harvest_cooldown_releasesAfterWindow() public {
+        vm.prank(ALICE);
+        harvester.harvest(_makeMinimalPlans());
+
+        // Jump past the cooldown and re-run. Another caller should succeed.
+        // Rebuild plans so lpToBurn is recomputed against the treasury's
+        // now-smaller LP balance (cap shifts by 1% each run).
+        vm.warp(block.timestamp + 23 hours + 1);
+        vm.prank(BOB);
+        harvester.harvest(_makeMinimalPlans());
+        assertEq(uint256(harvester.lastHarvestAt()), block.timestamp);
+    }
+
+    function test_harvest_cooldown_ownerCanShorten() public {
+        vm.prank(ALICE);
+        harvester.harvest(_makeMinimalPlans());
+
+        // Owner drops cooldown to 10s; post-window call succeeds.
+        vm.prank(TREASURY);
+        harvester.setHarvestCooldown(10);
+
+        vm.warp(block.timestamp + 10 + 1);
+        vm.prank(BOB);
+        harvester.harvest(_makeMinimalPlans());
     }
 
     function test_harvest_rejectsEmptyPools() public {
         TreasuryHarvester.PoolPlan[] memory empty;
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         vm.expectRevert(TreasuryHarvester.NoPoolsProvided.selector);
         harvester.harvest(empty);
+    }
+
+    function test_harvest_callerTip_paidFromTreasurySlice() public {
+        // Owner sets a 1 ETX tip. The caller should receive it out of the
+        // retained treasury slice (so treasury + tip ~= original slice).
+        uint128 tip = uint128(1 * ONE);
+        vm.prank(TREASURY);
+        harvester.setCallerTipEtx(tip);
+
+        TreasuryHarvester.PoolPlan[] memory plans = _makeMinimalPlans();
+
+        uint256 aliceEtxBefore = etx.balanceOf(ALICE);
+        uint256 treasuryEtxBefore = etx.balanceOf(TREASURY);
+
+        vm.prank(ALICE);
+        harvester.harvest(plans);
+
+        assertEq(etx.balanceOf(ALICE) - aliceEtxBefore, tip, "caller did not receive tip");
+        // Treasury still gains ETX (retained slice was > tip).
+        assertGt(etx.balanceOf(TREASURY), treasuryEtxBefore, "treasury net missing");
+    }
+
+    function test_harvest_callerTip_zeroByDefault() public {
+        // Default tip is zero; caller should not receive any ETX.
+        TreasuryHarvester.PoolPlan[] memory plans = _makeMinimalPlans();
+        uint256 aliceEtxBefore = etx.balanceOf(ALICE);
+        vm.prank(ALICE);
+        harvester.harvest(plans);
+        assertEq(etx.balanceOf(ALICE), aliceEtxBefore, "no tip should be paid by default");
     }
 
     // -------------------------------------------------------------------------
@@ -243,7 +343,7 @@ contract TreasuryHarvesterTest is Test {
         // 200 bps > the default 100 bps cap.
         plans[0].lpToBurn = (treasuryLp * 200) / 10_000;
 
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         vm.expectRevert(
             abi.encodeWithSelector(
                 TreasuryHarvester.LpExceedsCap.selector,
@@ -267,7 +367,7 @@ contract TreasuryHarvesterTest is Test {
             polEtxForPair: 0,
             minNonEtxFromPolSwap: 0
         });
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         vm.expectRevert(TreasuryHarvester.InvalidPool.selector);
         harvester.harvest(plans);
     }
@@ -287,7 +387,7 @@ contract TreasuryHarvesterTest is Test {
             polEtxForPair: 0,
             minNonEtxFromPolSwap: 0
         });
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         vm.expectRevert(TreasuryHarvester.InvalidPool.selector);
         harvester.harvest(plans);
     }
@@ -296,7 +396,7 @@ contract TreasuryHarvesterTest is Test {
         TreasuryHarvester.PoolPlan[] memory plans = _makeMinimalPlans();
         plans[0].minEtxFromBurn = type(uint256).max; // impossible
 
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         vm.expectRevert(TreasuryHarvester.SlippageExceeded.selector);
         harvester.harvest(plans);
     }
@@ -305,7 +405,7 @@ contract TreasuryHarvesterTest is Test {
         TreasuryHarvester.PoolPlan[] memory plans = _makeMinimalPlans();
         plans[0].minEtxFromSwap = type(uint256).max; // impossible
 
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         vm.expectRevert(TreasuryHarvester.SlippageExceeded.selector);
         harvester.harvest(plans);
     }
@@ -316,7 +416,7 @@ contract TreasuryHarvesterTest is Test {
         plans[0].polEtxForSwap = 100 * ONE;
         plans[0].polEtxForPair = 0;
 
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         vm.expectRevert(TreasuryHarvester.UnevenPolPair.selector);
         harvester.harvest(plans);
     }
@@ -328,7 +428,7 @@ contract TreasuryHarvesterTest is Test {
         plans[0].polEtxForSwap = type(uint128).max;
         plans[0].polEtxForPair = type(uint128).max;
 
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         vm.expectRevert();
         harvester.harvest(plans);
     }
@@ -346,7 +446,7 @@ contract TreasuryHarvesterTest is Test {
         uint256 deadLpEtiBefore = etiPair.balanceOf(harvester.DEAD());
         uint256 deadLpWegazBefore = wegazPair.balanceOf(harvester.DEAD());
 
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         harvester.harvest(plans);
 
         // stETX got ETX (balance grew).
@@ -381,7 +481,7 @@ contract TreasuryHarvesterTest is Test {
         uint256 stVaultBefore = etx.balanceOf(address(stVault));
         uint256 farmsBefore = etx.balanceOf(address(farmsSink));
 
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         harvester.harvest(plans);
 
         assertEq(etx.balanceOf(address(stVault)), stVaultBefore, "stVault should be untouched");
@@ -403,7 +503,7 @@ contract TreasuryHarvesterTest is Test {
         uint256 deadLpBefore = etiPair.balanceOf(harvester.DEAD());
         uint256 treasuryBefore = etx.balanceOf(TREASURY);
 
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         harvester.harvest(plans);
 
         assertEq(etiPair.balanceOf(harvester.DEAD()), deadLpBefore, "unexpected POL LP");
@@ -413,7 +513,7 @@ contract TreasuryHarvesterTest is Test {
 
     function test_harvest_leavesNoAllowanceOnSinks() public {
         TreasuryHarvester.PoolPlan[] memory plans = _makeMinimalPlans();
-        vm.prank(KEEPER);
+        vm.prank(ALICE);
         harvester.harvest(plans);
 
         assertEq(

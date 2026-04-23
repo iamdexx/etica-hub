@@ -4,7 +4,6 @@ pragma solidity ^0.8.26;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IEticaSwapFactory} from "../swap/interfaces/IEticaSwapFactory.sol";
 import {IEticaSwapPair} from "../swap/interfaces/IEticaSwapPair.sol";
@@ -18,9 +17,10 @@ interface IRewardSink {
 }
 
 /// @title TreasuryHarvester
-/// @notice Atomic on-chain harvester that lets a limited-funds hot keeper
-///         wallet run the daily fee-harvest pipeline without ever touching
-///         the treasury key.
+/// @notice Atomic, permissionless on-chain harvester that runs the daily
+///         fee-harvest pipeline without any privileged caller. Anyone may
+///         call {harvest}; the treasury multisig (owner) configures the
+///         split, caps, cooldown, and reward sinks.
 ///
 ///         Flow per run:
 ///           1. Pull a capped slice of treasury LP on each ETX pair.
@@ -32,39 +32,54 @@ interface IRewardSink {
 ///                - farms.distributeRewards (or retained if not set)
 ///                - POL burn: pair ETX with freshly bought non-ETX and mint
 ///                  LP to 0xdead (permanent depth)
-///                - Treasury retained
+///                - Treasury retained (net of optional caller tip)
 ///
 ///         Trust model:
 ///           - `owner()` (treasury multisig) is the only address that can
-///             set the keeper, split, safety caps, reward sink addresses,
-///             or rescue tokens.
-///           - `keeper` is a hot EOA funded with just enough EGAZ for gas.
-///             It can only call `harvest`, which is bounded by per-run LP
-///             caps + user-supplied min-out slippage guards. If the key
-///             is compromised, the blast radius is at most
-///             `maxBurnBpsPerRun` of treasury LP on the allowlisted pairs
-///             per run.
+///             set the split, safety caps, cooldown, caller tip, reward
+///             sink addresses, or rescue tokens.
+///           - `harvest` is permissionless — any wallet can call it. The
+///             treasury is protected by two on-chain caps that hold
+///             regardless of who calls:
+///               * {maxBurnBpsPerRun}: upper bound on the LP fraction that
+///                 can be burned per pair in a single run (default 1%).
+///               * {harvestCooldown}: minimum seconds between harvests
+///                 (default 23h), so the per-run cap is also a per-day cap.
+///             The caller-supplied `PoolPlan` fields (slippage guards, LP
+///             amount, POL allocation) are defensive only and cannot be
+///             used to exceed either cap.
+///
+///         Liveness model:
+///           - No single keeper key can halt the protocol. If the default
+///             crank stops running (operator death, secret loss, disabled
+///             workflow), any third party can invoke {harvest} and keep
+///             the fee flywheel turning. An optional {callerTipEtx} gives
+///             third-party cranks a gas reimbursement out of the treasury
+///             slice, making the role self-sustaining.
 ///
 ///         Non-goals:
 ///           - This contract does NOT receive or send native EGAZ; gas is
-///             paid by `keeper` out of its own balance. Only the ERC-20
+///             paid by the caller out of its own balance. Only the ERC-20
 ///             rails are touched.
 ///           - This contract does NOT deploy pairs or change factory state.
 ///             Pairs must already exist and be registered in the factory.
-contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
+contract TreasuryHarvester is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// @notice Dead address that receives permanently-burned POL LP.
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
+
+    /// @notice Upper bound on {harvestCooldown} to prevent the owner from
+    ///         setting an adversarial cooldown that strands the protocol.
+    ///         30 days is long enough to cover any reasonable emergency
+    ///         pause but short enough that liveness can recover.
+    uint32 public constant MAX_HARVEST_COOLDOWN = 30 days;
 
     /// @notice The ETX reward asset (also the hub of every pair harvested here).
     address public immutable etx;
 
     /// @notice The EticaSwap factory. Used to validate pair registration.
     IEticaSwapFactory public immutable factory;
-
-    /// @notice Hot keeper EOA allowed to call {harvest}.
-    address public keeper;
 
     /// @notice stETX vault that receives the LST slice. Zero disables the slice
     ///         (ETX re-routed to treasury).
@@ -82,6 +97,23 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
     uint16 public farmsBps;
     uint16 public polBurnBps;
     uint16 public treasuryBps;
+
+    /// @notice Minimum number of seconds that must elapse between successful
+    ///         {harvest} calls. Together with {maxBurnBpsPerRun} this caps
+    ///         the treasury's LP outflow over any window.
+    uint32 public harvestCooldown;
+
+    /// @notice Block timestamp of the most recent successful {harvest}.
+    ///         Zero until the first run (so the first call after deploy
+    ///         is always immediately available).
+    uint64 public lastHarvestAt;
+
+    /// @notice Optional ETX tip paid to `msg.sender` on each successful
+    ///         {harvest}, deducted from the treasury slice. Zero disables
+    ///         the tip. Set this above realistic gas costs on chain to
+    ///         guarantee third-party cranks will run the pipeline even
+    ///         if the default GitHub Actions crank is paused.
+    uint128 public callerTipEtx;
 
     struct PoolPlan {
         /// @dev Pair address. Must be registered in {factory} as (etx, nonEtx).
@@ -106,7 +138,7 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
     }
 
     event HarvestExecuted(
-        address indexed keeper,
+        address indexed caller,
         uint256 totalEtxHarvested,
         uint256 stakedSlice,
         uint256 farmsSlice,
@@ -121,15 +153,16 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
         uint256 etxFromSwap
     );
     event PolAddLiquidity(address indexed pair, uint256 etxIn, uint256 nonEtxIn, uint256 lp);
-    event KeeperUpdated(address indexed previousKeeper, address indexed newKeeper);
+    event CallerTipPaid(address indexed caller, uint256 amount);
     event StakedEtxUpdated(address indexed newStakedEtx);
     event FarmsUpdated(address indexed newFarms);
     event SplitUpdated(uint16 stakedBps, uint16 farmsBps, uint16 polBps, uint16 treasuryBps);
     event MaxBurnBpsUpdated(uint16 newBps);
+    event HarvestCooldownUpdated(uint32 newCooldownSeconds);
+    event CallerTipUpdated(uint128 newTipEtx);
     event Rescue(address indexed token, address indexed to, uint256 amount);
 
     error ZeroAddress();
-    error OnlyKeeper();
     error NoPoolsProvided();
     error InvalidPool();
     error LpExceedsCap(uint256 requested, uint256 cap);
@@ -138,24 +171,19 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
     error BpsTooHigh();
     error PolAllocationInvalid(uint256 assigned, uint256 available);
     error UnevenPolPair();
-
-    modifier onlyKeeper() {
-        if (msg.sender != keeper) revert OnlyKeeper();
-        _;
-    }
+    error CooldownNotElapsed(uint256 nextAllowedAt);
+    error CooldownTooLong(uint32 requested, uint32 max);
 
     /// @param _owner Treasury address (multisig). Receives the retained slice
     ///        and is the sole admin.
     /// @param _etx  ETX token address.
     /// @param _factory EticaSwap factory address.
-    /// @param _keeper Initial hot keeper EOA. May be updated later.
-    constructor(address _owner, address _etx, address _factory, address _keeper) Ownable(_owner) {
-        if (_etx == address(0) || _factory == address(0) || _keeper == address(0)) {
+    constructor(address _owner, address _etx, address _factory) Ownable(_owner) {
+        if (_etx == address(0) || _factory == address(0)) {
             revert ZeroAddress();
         }
         etx = _etx;
         factory = IEticaSwapFactory(_factory);
-        keeper = _keeper;
 
         maxBurnBpsPerRun = 100; // 1%
         // Default split: 10 / 10 / 40 / 40
@@ -163,25 +191,49 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
         farmsBps = 1_000;
         polBurnBps = 4_000;
         treasuryBps = 4_000;
+        // Default cooldown: 23 hours. Pairs well with a daily cron
+        // without requiring the cron to hit an exact 24h stride.
+        harvestCooldown = 23 hours;
+        // Caller tip: disabled by default. Owner flips it on once the
+        // harvester has been observed running through a full cycle.
+        callerTipEtx = 0;
     }
 
     // -------------------------------------------------------------------------
     // Harvest
     // -------------------------------------------------------------------------
 
-    /// @notice Execute a single harvest run. Callable only by {keeper}.
+    /// @notice Execute a single harvest run. Permissionless.
     /// @dev Atomic: if any step reverts (e.g. slippage), the whole run
     ///      reverts and no treasury state changes.
-    function harvest(PoolPlan[] calldata pools) external onlyKeeper nonReentrant {
+    ///
+    ///      Security boundaries that hold regardless of caller:
+    ///        - LP burn per pair is capped by {maxBurnBpsPerRun}.
+    ///        - Minimum interval between runs is {harvestCooldown}.
+    ///        - Reward sinks are fixed on-chain by the owner.
+    ///        - Splits are fixed on-chain by the owner.
+    ///        - Caller tip is fixed on-chain by the owner.
+    function harvest(PoolPlan[] calldata pools) external nonReentrant {
         if (pools.length == 0) revert NoPoolsProvided();
+
+        // Cooldown: first run always passes (lastHarvestAt == 0 after
+        // deploy); subsequent runs must wait at least `harvestCooldown`
+        // seconds. uint64 + uint32 cannot overflow on any realistic chain.
+        uint64 _last = lastHarvestAt;
+        if (_last != 0) {
+            uint256 nextAllowed = uint256(_last) + harvestCooldown;
+            if (block.timestamp < nextAllowed) {
+                revert CooldownNotElapsed(nextAllowed);
+            }
+        }
+        lastHarvestAt = uint64(block.timestamp);
 
         address _treasury = owner();
         uint256 totalEtxBefore = IERC20(etx).balanceOf(address(this));
 
         // Phase 1: burn + swap per pool.
-        uint256 totalHarvested;
         for (uint256 i = 0; i < pools.length; i++) {
-            totalHarvested += _burnAndSwap(_treasury, pools[i]);
+            _burnAndSwap(_treasury, pools[i]);
         }
 
         // Read actual ETX balance delta as source of truth for splits.
@@ -208,21 +260,26 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
             _distributePol(_treasury, pools, polSlice);
         }
 
-        // Phase 6: retained slice to treasury.
-        if (treasurySlice > 0) {
-            IERC20(etx).safeTransfer(_treasury, treasurySlice);
+        // Phase 6: pay optional caller tip out of the treasury slice, then
+        // forward the remainder to treasury. The tip is capped at
+        // min(callerTipEtx, treasurySlice) so we can never under-deliver
+        // to treasury and can never exceed the allocated slice.
+        uint256 tip = callerTipEtx;
+        if (tip > treasurySlice) tip = treasurySlice;
+        if (tip > 0) {
+            IERC20(etx).safeTransfer(msg.sender, tip);
+            emit CallerTipPaid(msg.sender, tip);
+        }
+        uint256 treasuryNet = treasurySlice - tip;
+        if (treasuryNet > 0) {
+            IERC20(etx).safeTransfer(_treasury, treasuryNet);
         }
 
-        emit HarvestExecuted(
-            msg.sender, harvested, stakedSlice, farmsSlice, polSlice, treasurySlice
-        );
+        emit HarvestExecuted(msg.sender, harvested, stakedSlice, farmsSlice, polSlice, treasuryNet);
     }
 
-    function _burnAndSwap(address _treasury, PoolPlan calldata plan)
-        internal
-        returns (uint256 etxHarvested)
-    {
-        if (plan.lpToBurn == 0) return 0;
+    function _burnAndSwap(address _treasury, PoolPlan calldata plan) internal {
+        if (plan.lpToBurn == 0) return;
 
         IEticaSwapPair pair = IEticaSwapPair(plan.pair);
         bool etxIs0 = _validatePairAndEtxIs0(plan, pair);
@@ -248,7 +305,6 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
 
         // Swap non-ETX → ETX directly against the pair.
         uint256 etxFromSwap = _swapNonEtxToEtx(plan, pair, etxIs0, nonEtxOut);
-        etxHarvested = etxOut + etxFromSwap;
         emit PoolHarvested(plan.pair, plan.lpToBurn, etxOut, nonEtxOut, etxFromSwap);
     }
 
@@ -302,7 +358,7 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
     {
         // Sum the caller's per-pool POL assignment; any unassigned residual
         // reverts to the treasury. We require assigned <= polSlice so the
-        // keeper cannot over-spend by mis-constructing the plan.
+        // caller cannot over-spend by mis-constructing the plan.
         uint256 assigned;
         for (uint256 i = 0; i < pools.length; i++) {
             PoolPlan calldata p = pools[i];
@@ -370,12 +426,6 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
     // Admin (owner = treasury)
     // -------------------------------------------------------------------------
 
-    function setKeeper(address newKeeper) external onlyOwner {
-        if (newKeeper == address(0)) revert ZeroAddress();
-        emit KeeperUpdated(keeper, newKeeper);
-        keeper = newKeeper;
-    }
-
     function setStakedEtx(address newStakedEtx) external onlyOwner {
         stakedEtx = newStakedEtx;
         emit StakedEtxUpdated(newStakedEtx);
@@ -404,6 +454,19 @@ contract TreasuryHarvester is Ownable2Step, ReentrancyGuard {
         if (bps > 10_000) revert BpsTooHigh();
         maxBurnBpsPerRun = bps;
         emit MaxBurnBpsUpdated(bps);
+    }
+
+    function setHarvestCooldown(uint32 cooldownSeconds) external onlyOwner {
+        if (cooldownSeconds > MAX_HARVEST_COOLDOWN) {
+            revert CooldownTooLong(cooldownSeconds, MAX_HARVEST_COOLDOWN);
+        }
+        harvestCooldown = cooldownSeconds;
+        emit HarvestCooldownUpdated(cooldownSeconds);
+    }
+
+    function setCallerTipEtx(uint128 tipEtx) external onlyOwner {
+        callerTipEtx = tipEtx;
+        emit CallerTipUpdated(tipEtx);
     }
 
     /// @notice Sweep tokens out of the contract to the treasury. For clearing

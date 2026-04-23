@@ -11,9 +11,12 @@
  *     the TreasuryHarvester delegation contract; the legacy treasury-signed
  *     multi-tx path is disabled in automation).
  *
- * The live workflow passes the hot keeper EOA's private key via a secret
- * — never the treasury key. The treasury's on-chain role is limited to
- * pre-approving LP + ETX allowances to the harvester contract once.
+ * `harvester.harvest` is permissionless on-chain, so the live workflow can
+ * be signed by any funded EOA — the default cron uses a hot "crank" EOA
+ * dedicated to this job, but any community member could equivalently run
+ * this script from their own box if the default cron is down. The treasury
+ * key is only used once, to pre-approve LP + ETX allowances to the
+ * harvester contract.
  */
 
 import { loadHarvestConfig } from './config.js';
