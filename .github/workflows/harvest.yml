@@ -1,25 +1,26 @@
-name: Harvest (dry-run)
+name: Harvest (live)
 
-# Daily harvester that plans how treasury protocol-fee LP would be burned,
-# swapped to ETX, and split 10/10/40/40 across stETX holders, LP farms,
-# protocol-owned liquidity (POL burned to 0xdead), and the treasury.
+# Daily permissionless treasury harvest.
 #
-# This workflow runs log-only: `apps/keeper/src/harvest/dry-run.ts` force-
-# enables dryRun regardless of whether a signer key is present. Any live
-# execution must be gated behind a separate, manually-triggered workflow
-# with explicit keeper key secrets — not this one.
+# Calls `TreasuryHarvester.harvest(pools)` on the deployed v2 harvester
+# (0x5d8B…76f5) from a hot "crank" EOA that has no privileged role on-chain.
+# `harvest()` is permissionless (anyone can call it) — the crank EOA exists
+# solely to pay gas on a predictable cadence. Blast radius per call is
+# capped by on-chain `maxBurnBpsPerRun` (1% of treasury LP) and
+# `harvestCooldown` (23h). Any community member could equivalently run
+# this script from their own box if the default cron is down.
 #
-# Defaults: 10% stETX / 10% farms / 40% POL / 40% treasury, burn-per-run
-# of 100 bps (1% of treasury LP), slippage cap 300 bps (3%), POL slice
-# split across ETI/ETX and WEGAZ/ETX pools by treasury-LP weight.
+# Split: 10% stETX / 10% farms / 40% POL-burn / 40% treasury.
+# POL slice is split across ETI/ETX and WEGAZ/ETX pools by treasury-LP
+# weight (`HARVEST_POL_WEIGHTING=treasury_lp`).
 #
 # All knobs are env-var driven — change the split, burn cadence, or
 # weighting by editing repo variables, no code change needed.
 
 on:
   schedule:
-    # Once per day at 00:15 UTC. Treasury LP accrues slowly today; a daily
-    # cadence surfaces drift without spamming logs.
+    # Once per day at 00:15 UTC. On-chain cooldown is 23h so daily is the
+    # tightest cadence that is never rejected.
     - cron: '15 0 * * *'
   workflow_dispatch:
 
@@ -27,9 +28,10 @@ permissions:
   contents: read
 
 jobs:
-  harvest-dry-run:
-    name: Harvest dry-run tick
+  harvest-live:
+    name: Harvest live tick
     runs-on: ubuntu-latest
+    environment: harvest-live
     env:
       HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://eticamainnet.eticascan.org' }}
       HARVEST_CHAIN_ID: ${{ vars.HARVEST_CHAIN_ID || '61803' }}
@@ -39,14 +41,9 @@ jobs:
       HARVEST_ETI_ADDRESS: ${{ vars.HARVEST_ETI_ADDRESS || '0x34c61EA91bAcdA647269d4e310A86b875c09946f' }}
       HARVEST_WEGAZ_ADDRESS: ${{ vars.HARVEST_WEGAZ_ADDRESS || '0x232fb2B87CAce92B2438054A7eB79B4081E3E11a' }}
       HARVEST_TREASURY_ADDRESS: ${{ vars.HARVEST_TREASURY_ADDRESS || '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D' }}
-      # Optional — empty / zero address routes those slices to treasury retain.
-      HARVEST_STAKED_ETX_ADDRESS: ${{ vars.HARVEST_STAKED_ETX_ADDRESS || '' }}
-      HARVEST_FARMS_ADDRESS: ${{ vars.HARVEST_FARMS_ADDRESS || '' }}
-      # Optional TreasuryHarvester delegation contract. When set, dry-runs log
-      # the delegation calldata in addition to the legacy tx plan; live runs
-      # (separate workflow) require this to be set.
-      HARVEST_HARVESTER_ADDRESS: ${{ vars.HARVEST_HARVESTER_ADDRESS || '' }}
-      # Split knobs (bps, must sum to 10000). Defaults: 10/10/40/40.
+      HARVEST_STAKED_ETX_ADDRESS: ${{ vars.HARVEST_STAKED_ETX_ADDRESS || '0x75d81d03a98CD9195593b8963aF17E13fAa70334' }}
+      HARVEST_FARMS_ADDRESS: ${{ vars.HARVEST_FARMS_ADDRESS || '0xEBAfdd24ABF8290f0B433E689631466ABD13c6aD' }}
+      HARVEST_HARVESTER_ADDRESS: ${{ vars.HARVEST_HARVESTER_ADDRESS || '0x5d8B1138559fADc3Bb90e8317eB16922eAa076f5' }}
       HARVEST_STAKED_ETX_BPS: ${{ vars.HARVEST_STAKED_ETX_BPS || '1000' }}
       HARVEST_FARMS_BPS: ${{ vars.HARVEST_FARMS_BPS || '1000' }}
       HARVEST_POL_BURN_BPS: ${{ vars.HARVEST_POL_BURN_BPS || '4000' }}
@@ -54,9 +51,26 @@ jobs:
       HARVEST_BURN_BPS_PER_RUN: ${{ vars.HARVEST_BURN_BPS_PER_RUN || '100' }}
       HARVEST_MAX_SLIPPAGE_BPS: ${{ vars.HARVEST_MAX_SLIPPAGE_BPS || '300' }}
       HARVEST_POL_WEIGHTING: ${{ vars.HARVEST_POL_WEIGHTING || 'treasury_lp' }}
-      # Force-disabled here; a live-execution workflow lives separately.
-      HARVEST_DRY_RUN: 'true'
+      HARVEST_DRY_RUN: 'false'
+      # Gas-paying EOA key — NO privileged role on-chain. The harvester is
+      # permissionless; this key only pays gas. If it ever leaks, rotate
+      # the repo secret — there is nothing to revoke on-chain.
+      HARVEST_PRIVATE_KEY: ${{ secrets.HARVEST_KEEPER_PRIVATE_KEY }}
     steps:
+      - name: Guard against missing harvester address
+        if: ${{ env.HARVEST_HARVESTER_ADDRESS == '' }}
+        run: |
+          echo "::error ::HARVEST_HARVESTER_ADDRESS is unset."
+          echo "Set it as a repo variable to the deployed TreasuryHarvester contract."
+          exit 1
+
+      - name: Guard against missing gas-payer key
+        if: ${{ env.HARVEST_PRIVATE_KEY == '' }}
+        run: |
+          echo "::error ::HARVEST_KEEPER_PRIVATE_KEY secret is unset on the 'harvest-live' environment."
+          echo "Provision a funded EOA and wire its private key as a secret."
+          exit 1
+
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
@@ -69,5 +83,5 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Harvest dry-run
-        run: pnpm --filter @etica-hub/keeper run harvest:dry-run
+      - name: Harvest live
+        run: pnpm --filter @etica-hub/keeper run harvest:live
