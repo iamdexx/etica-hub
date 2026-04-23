@@ -23,7 +23,12 @@ export interface UsdAnchors {
 }
 
 interface NonkycTicker {
+  /** CoinGecko-spec ticker ID, e.g. "ETI_USDT" / "EGAZ_USDT". */
+  ticker_id?: string;
+  /** Legacy/alternate symbol field, e.g. "ETI/USDT". */
   symbol?: string;
+  base_currency?: string;
+  target_currency?: string;
   last_price?: string;
   lastPrice?: string;
 }
@@ -45,7 +50,7 @@ export async function fetchUsdAnchors(
   config: BuyBotConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<UsdAnchors> {
-  const url = `${config.nonkycApiUrl.replace(/\/$/, '')}/api/v2/ticker`;
+  const url = `${config.nonkycApiUrl.replace(/\/$/, '')}/api/v2/tickers`;
   try {
     const res = await fetchImpl(url, {
       headers: { accept: 'application/json' },
@@ -55,16 +60,30 @@ export async function fetchUsdAnchors(
     const data = (await res.json()) as NonkycTicker[] | { tickers?: NonkycTicker[] };
     const tickers: NonkycTicker[] = Array.isArray(data) ? data : (data.tickers ?? []);
 
-    const find = (symbol: string): number | null => {
-      const match = tickers.find(
-        (t) => typeof t.symbol === 'string' && t.symbol.toUpperCase() === symbol,
-      );
+    // NonKYC's CoinGecko-spec endpoint uses `ticker_id` like "ETI_USDT" and
+    // splits `base_currency` / `target_currency`. Older variants returned
+    // `symbol: "ETI/USDT"` — match either shape.
+    const find = (base: string, quote: string): number | null => {
+      const tickerId = `${base}_${quote}`;
+      const slashSym = `${base}/${quote}`;
+      const match = tickers.find((t) => {
+        const idMatch =
+          typeof t.ticker_id === 'string' && t.ticker_id.toUpperCase() === tickerId;
+        const symMatch =
+          typeof t.symbol === 'string' && t.symbol.toUpperCase() === slashSym;
+        const pairMatch =
+          typeof t.base_currency === 'string' &&
+          typeof t.target_currency === 'string' &&
+          t.base_currency.toUpperCase() === base &&
+          t.target_currency.toUpperCase() === quote;
+        return idMatch || symMatch || pairMatch;
+      });
       if (!match) return null;
       return parsePrice(match.last_price ?? match.lastPrice);
     };
     return {
-      etiUsd: find('ETI/USDT'),
-      egazUsd: find('EGAZ/USDT'),
+      etiUsd: find('ETI', 'USDT'),
+      egazUsd: find('EGAZ', 'USDT'),
     };
   } catch {
     return { etiUsd: null, egazUsd: null };
