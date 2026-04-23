@@ -8,9 +8,9 @@ export default function FarmsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">LP Farms</h1>
         <p className="mt-1 text-sm text-white/60">
-          Stake EticaSwap ETI/ETX or EGAZ/ETX LP tokens to earn a pro-rata share of the 10%
-          farms slice of every Treasury Harvester cycle. No emissions, no lockup — rewards come
-          strictly from redistributed protocol fees.
+          Stake EticaSwap stETX/ETX, EGAZ/ETX, or ETI/ETX LP tokens to earn a pro-rata share
+          of the 10% farms slice of every Treasury Harvester cycle. No emissions, no lockup —
+          rewards come strictly from redistributed protocol fees.
         </p>
       </div>
       <FarmsView />

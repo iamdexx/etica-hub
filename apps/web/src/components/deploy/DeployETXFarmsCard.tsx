@@ -155,8 +155,8 @@ export function DeployETXFarmsCard() {
         <h2 className="mb-3 text-lg font-semibold">What this deploys</h2>
         <p className="text-sm text-white/70">
           A MasterChef-style LP staking contract named{' '}
-          <span className="font-mono">ETXFarms</span>. Users stake ETI/ETX or EGAZ/ETX LP
-          tokens; the TreasuryHarvester calls{' '}
+          <span className="font-mono">ETXFarms</span>. Users stake EticaSwap LP tokens
+          (stETX/ETX, EGAZ/ETX, or ETI/ETX); the TreasuryHarvester calls{' '}
           <span className="font-mono">distributeRewards(amount)</span> on each harvest cycle,
           splitting the 10% farms slice pro-rata across staked LP positions.
         </p>
@@ -325,10 +325,14 @@ export function DeployETXFarmsCard() {
                   <span className="font-mono">DEPLOYMENTS[{chainId}].etxFarms</span>.
                 </li>
                 <li>
-                  From the owner wallet, call{' '}
-                  <span className="font-mono">addPool(ETI/ETX LP, 5000)</span> and{' '}
-                  <span className="font-mono">addPool(EGAZ/ETX LP, 5000)</span> to register the
-                  two launch pools at 50/50 weight.
+                  From the owner wallet, register the three launch pools with weighted
+                  emissions:{' '}
+                  <span className="font-mono">addPool(stETX/ETX LP, 6000)</span>,{' '}
+                  <span className="font-mono">addPool(EGAZ/ETX LP, 2500)</span>, and{' '}
+                  <span className="font-mono">addPool(ETI/ETX LP, 1500)</span> (60% / 25% /
+                  15%). stETX/ETX gets the heaviest weight to funnel yield-seekers through
+                  the staking vault; EGAZ/ETX keeps the gas-token on-ramp deep; ETI/ETX
+                  keeps the parent-chain token pair liquid.
                 </li>
                 <li>
                   From the treasury multisig, call{' '}
