@@ -57,10 +57,12 @@ function tokenShortName(
     etx,
     wegaz,
     eti,
-  }: { etx: Address; wegaz: Address; eti: Address },
+    stakedEtx,
+  }: { etx: Address; wegaz: Address; eti: Address; stakedEtx: Address },
 ): string {
   const t = token.toLowerCase();
   if (t === etx.toLowerCase()) return 'ETX';
+  if (t === stakedEtx.toLowerCase()) return 'stETX';
   if (t === wegaz.toLowerCase()) return 'EGAZ';
   if (t === eti.toLowerCase()) return 'ETI';
   return `${token.slice(0, 6)}…${token.slice(-4)}`;
@@ -97,16 +99,17 @@ export function FarmPoolCard({
   const etx = DEPLOYMENTS[chainId].etx;
   const wegaz = DEPLOYMENTS[chainId].wegaz;
   const eti = EXTERNAL_ADDRESSES[chainId].eti;
+  const stakedEtx = DEPLOYMENTS[chainId].stakedETX;
 
   const pairLabel = useMemo(() => {
     if (!token0 || !token1) return 'LP';
-    const s0 = tokenShortName(token0, { etx, wegaz, eti });
-    const s1 = tokenShortName(token1, { etx, wegaz, eti });
+    const s0 = tokenShortName(token0, { etx, wegaz, eti, stakedEtx });
+    const s1 = tokenShortName(token1, { etx, wegaz, eti, stakedEtx });
     // Put the non-ETX token first for readability (e.g. "ETI/ETX").
     if (s1 === 'ETX') return `${s0}/ETX`;
     if (s0 === 'ETX') return `${s1}/ETX`;
     return `${s0}/${s1}`;
-  }, [token0, token1, etx, wegaz, eti]);
+  }, [token0, token1, etx, wegaz, eti, stakedEtx]);
 
   const reads = useReadContracts({
     allowFailure: false,
