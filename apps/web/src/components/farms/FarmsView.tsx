@@ -30,6 +30,7 @@ export function FarmsView() {
   });
 
   const poolCount = Number((poolLengthQuery.data as bigint | undefined) ?? 0n);
+  const poolsLoading = deployed && !poolLengthQuery.isSuccess;
   const pids = useMemo(
     () => Array.from({ length: poolCount }, (_, i) => i),
     [poolCount],
@@ -87,6 +88,19 @@ export function FarmsView() {
             Once deployed, this page will light up with per-pool stake / unstake / claim
             controls, trailing APR estimates, and on-chain reward accrual.
           </p>
+        </div>
+        <FarmsHowItWorks />
+      </div>
+    );
+  }
+
+  if (poolsLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <FarmPoolSkeleton />
+          <FarmPoolSkeleton />
+          <FarmPoolSkeleton />
         </div>
         <FarmsHowItWorks />
       </div>
@@ -172,6 +186,23 @@ function FarmsSummary({ etxFarms }: { etxFarms: Address }) {
           <span className="font-mono break-all">{fallback}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function FarmPoolSkeleton() {
+  return (
+    <div className="animate-pulse rounded-xl border border-white/10 bg-white/[0.02] p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="h-5 w-32 rounded bg-white/10" />
+        <div className="h-4 w-16 rounded bg-white/10" />
+      </div>
+      <div className="space-y-2">
+        <div className="h-3 w-full rounded bg-white/5" />
+        <div className="h-3 w-5/6 rounded bg-white/5" />
+        <div className="h-3 w-2/3 rounded bg-white/5" />
+      </div>
+      <div className="mt-4 h-9 w-full rounded bg-white/5" />
     </div>
   );
 }
