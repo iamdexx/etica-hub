@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
 import { StatusPanel } from '@/components/StatusPanel';
 import { StatusAutoRefresh } from '@/components/StatusAutoRefresh';
+import {
+  StatusLiquidityFlowCard,
+  StatusRevenueCard,
+} from '@/components/StatusRevenueCards';
 
 // Always fetch fresh on each request — this is a live on-chain diagnostic
 // and we don't want the Vercel build to try (and fail) to hit an Etica RPC
@@ -25,6 +29,10 @@ export default function StatusPage() {
         </p>
       </header>
       <StatusAutoRefresh />
+      <div className="mb-6 grid gap-4 md:grid-cols-2">
+        <StatusRevenueCard />
+        <StatusLiquidityFlowCard />
+      </div>
       <StatusPanel />
     </div>
   );
