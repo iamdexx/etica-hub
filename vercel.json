@@ -2,11 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm --filter @etica-hub/web... build",
   "installCommand": "pnpm install --frozen-lockfile",
-  "framework": "nextjs",
-  "crons": [
-    {
-      "path": "/api/cron/buybot",
-      "schedule": "* * * * *"
-    }
-  ]
+  "framework": "nextjs"
 }
