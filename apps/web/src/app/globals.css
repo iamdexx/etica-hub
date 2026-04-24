@@ -11,6 +11,15 @@ body {
   height: 100%;
 }
 
+/* Prevent runaway child elements (long hex addresses, wide chart canvases,
+   sticky nav scroll areas) from extending the page's scrollable width past
+   the viewport. `clip` is stronger than `hidden` — it disables horizontal
+   scrolling entirely without creating a new scroll container. */
+html,
+body {
+  overflow-x: clip;
+}
+
 body {
   background:
     radial-gradient(60% 40% at 10% 0%, rgba(85, 194, 138, 0.15), transparent 60%),
