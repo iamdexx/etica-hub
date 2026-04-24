@@ -15,6 +15,14 @@
 
 import type { BuyBotConfig } from './config';
 
+/**
+ * Structural subset of {@link BuyBotConfig} that {@link fetchUsdAnchors}
+ * actually reads. Kept as a named type so non-buybot callers (e.g. the TVL
+ * endpoint) don't have to fabricate a full buybot config just to resolve
+ * ETI/EGAZ USDT quotes.
+ */
+export type UsdAnchorsConfig = Pick<BuyBotConfig, 'nonkycApiUrl'>;
+
 export interface UsdAnchors {
   /** 1 ETI = N USD (spot), or null if NonKYC is unreachable or untraded. */
   etiUsd: number | null;
@@ -47,7 +55,7 @@ function parsePrice(raw: unknown): number | null {
  * Kept pure (passed a fetchImpl) so tests can stub it.
  */
 export async function fetchUsdAnchors(
-  config: BuyBotConfig,
+  config: UsdAnchorsConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<UsdAnchors> {
   const url = `${config.nonkycApiUrl.replace(/\/$/, '')}/api/v2/tickers`;

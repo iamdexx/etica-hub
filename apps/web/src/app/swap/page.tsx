@@ -1,5 +1,6 @@
 import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
 import { SwapCard } from '@/components/swap/SwapCard';
+import { TvlBanner } from '@/components/TvlBanner';
 
 export const metadata = { title: 'Swap · EticaHub' };
 
@@ -13,6 +14,7 @@ export default function SwapPage() {
           trade.
         </p>
       </header>
+      <TvlBanner />
       <SwapCard />
       <MarketVolumeStrip />
     </div>
