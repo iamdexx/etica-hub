@@ -66,6 +66,11 @@ export async function GET(): Promise<Response> {
   const poolBreakdown: PoolTvl[] = [];
   for (const p of pairs) {
     const t0 = p.token0.toLowerCase();
+    const t1 = p.token1.toLowerCase();
+    // The factory lets `trustedCreators` (e.g. the launchpad) spawn pairs
+    // without ETX, so hub-and-spoke isn't universal. Skip any non-ETX pair
+    // — otherwise we'd treat an unrelated token's reserve as ETX.
+    if (t0 !== etxLc && t1 !== etxLc) continue;
     const etxWei = t0 === etxLc ? p.reserve0 : p.reserve1;
     if (etxWei === 0n) continue;
     // Every current hub-and-spoke token on Etica is 18 decimals, which is
