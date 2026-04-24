@@ -80,16 +80,26 @@ export async function GET(): Promise<Response> {
     });
   }
 
-  return jsonResponse({
-    chainId: MAINNET_CHAIN_ID,
-    chain: 'etica-mainnet',
-    asOf: new Date().toISOString(),
-    etxUsd,
-    tvl: {
-      etx: tvlEtx,
-      usd: etxUsd !== null ? tvlEtx * etxUsd : null,
+  return jsonResponse(
+    {
+      chainId: MAINNET_CHAIN_ID,
+      chain: 'etica-mainnet',
+      asOf: new Date().toISOString(),
+      etxUsd,
+      tvl: {
+        etx: tvlEtx,
+        usd: etxUsd !== null ? tvlEtx * etxUsd : null,
+      },
+      poolCount: poolBreakdown.length,
+      pools: poolBreakdown,
     },
-    poolCount: poolBreakdown.length,
-    pools: poolBreakdown,
-  });
+    {
+      // Align downstream cache-control with the route's 15s revalidate so
+      // CDNs serving aggregator polls don't outlive the ISR window and
+      // return data twice as stale as intended.
+      headers: {
+        'cache-control': `public, s-maxage=${revalidate}, stale-while-revalidate=${revalidate * 2}`,
+      },
+    },
+  );
 }
