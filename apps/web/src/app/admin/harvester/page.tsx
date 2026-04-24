@@ -1,4 +1,5 @@
 import { AdminHarvesterCard } from '@/components/admin/AdminHarvesterCard';
+import { HarvestNowCard } from '@/components/admin/HarvestNowCard';
 import { OperatorBanner } from '@/components/OperatorBanner';
 
 export const metadata = { title: 'Admin · Harvester · EticaHub' };
@@ -19,6 +20,7 @@ export default function AdminHarvesterPage() {
           allowances. Verify current state before signing.
         </p>
       </header>
+      <HarvestNowCard />
       <AdminHarvesterCard />
     </div>
   );
