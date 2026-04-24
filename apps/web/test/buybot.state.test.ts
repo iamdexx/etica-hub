@@ -129,7 +129,7 @@ describe('loadBuyBotConfig', () => {
       BUYBOT_MIN_USD_TO_POST: 'nope',
       BUYBOT_MAX_BLOCKS_PER_RUN: '-1',
     });
-    expect(bad.minUsdToPost).toBe(1);
+    expect(bad.minUsdToPost).toBe(0.1);
     expect(bad.maxBlocksPerRun).toBe(2000);
   });
 

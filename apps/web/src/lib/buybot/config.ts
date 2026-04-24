@@ -75,7 +75,7 @@ export function loadBuyBotConfig(env: NodeJS.ProcessEnv = process.env): BuyBotCo
     EXTERNAL_ADDRESSES[chainId as keyof typeof EXTERNAL_ADDRESSES] ??
     EXTERNAL_ADDRESSES[MAINNET_CHAIN_ID];
 
-  const minUsd = Number(env.BUYBOT_MIN_USD_TO_POST ?? '1');
+  const minUsd = Number(env.BUYBOT_MIN_USD_TO_POST ?? '0.1');
   const maxBlocks = Number(env.BUYBOT_MAX_BLOCKS_PER_RUN ?? '2000');
 
   // When credentials or RPC are absent the cron runs in "disabled" mode:
@@ -93,7 +93,7 @@ export function loadBuyBotConfig(env: NodeJS.ProcessEnv = process.env): BuyBotCo
     telegramBotToken: token,
     telegramChatId: chat,
     explorerBaseUrl: env.BUYBOT_EXPLORER_BASE_URL ?? 'https://eticahub.com',
-    minUsdToPost: Number.isFinite(minUsd) && minUsd >= 0 ? minUsd : 1,
+    minUsdToPost: Number.isFinite(minUsd) && minUsd >= 0 ? minUsd : 0.1,
     maxBlocksPerRun: Number.isFinite(maxBlocks) && maxBlocks > 0 ? Math.floor(maxBlocks) : 2000,
     nonkycApiUrl: env.BUYBOT_NONKYC_API_URL ?? 'https://api.nonkyc.io',
     kvRestUrl: env.KV_REST_API_URL ?? env.UPSTASH_REDIS_REST_URL ?? null,
