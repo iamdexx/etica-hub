@@ -86,6 +86,27 @@ const ENDPOINTS: EndpointRow[] = [
   },
   {
     method: 'GET',
+    pathTemplate: '/api/v1/tvl',
+    example: '/api/v1/tvl',
+    summary:
+      'Total value locked across every ETX-hub pool (ETX + USD, per-pool breakdown).',
+  },
+  {
+    method: 'GET',
+    pathTemplate: '/api/v1/revenue',
+    example: '/api/v1/revenue',
+    summary:
+      'Lifetime protocol revenue since DEX launch — volume, LP fees, accrued + realized protocol fees.',
+  },
+  {
+    method: 'GET',
+    pathTemplate: '/api/v1/liquidity-flow',
+    example: '/api/v1/liquidity-flow',
+    summary:
+      'Lifetime Mint + Burn activity per pool with net flow (negative on net outflow) and POL locked at 0xdead.',
+  },
+  {
+    method: 'GET',
     pathTemplate: '/api/v1/stats',
     example: '/api/v1/stats',
     summary: 'Status-page snapshot: head block, pair count, tracked tokens.',
