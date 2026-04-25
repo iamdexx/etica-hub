@@ -169,8 +169,8 @@ Once chain 61803 is supported by Sourcify:
 
 - [x] Chain listed in `ethereum-lists/chains` (chainId 61803)
 - [x] Chain entry JSON drafted (this doc)
-- [ ] Storage fixture contract deployed on Etica mainnet
-- [ ] `storage-contract-chain-addresses.json` entry recorded
-- [ ] PR submitted to `argotorg/sourcify`
+- [x] Storage fixture contract deployed on Etica mainnet — [`0x4e092dc78a153d3477d17915bf519b3e80f01418`](https://eticascan.org/address/0x4e092dc78a153d3477d17915bf519b3e80f01418)
+- [x] `storage-contract-chain-addresses.json` entry recorded
+- [x] PR submitted to `argotorg/sourcify` — [argotorg/sourcify#2758](https://github.com/argotorg/sourcify/pull/2758)
 - [ ] PR merged
 - [ ] `foundry.toml` + verification runbook updated to use Sourcify
