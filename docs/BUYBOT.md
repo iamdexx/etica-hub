@@ -76,7 +76,7 @@ Optional:
 | Variable | Default | Purpose |
 |---|---|---|
 | `BUYBOT_RPC_URL` | `ETICA_MAINNET_RPC_URL` | Dedicated RPC for the bot. |
-| `BUYBOT_EXPLORER_BASE_URL` | `https://eticahub.org` | Base URL for tx links. |
+| `BUYBOT_EXPLORER_BASE_URL` | `https://eticahub.com` | Base URL for tx links. |
 | `BUYBOT_MIN_USD_TO_POST` | `0.1` | Drop swaps below this USD notional. Set to `0` to post every buy. |
 | `BUYBOT_MAX_BLOCKS_PER_RUN` | `2000` | Safety cap on catch-up scans. |
 | `BUYBOT_NONKYC_API_URL` | `https://api.nonkyc.io` | USD oracle. |

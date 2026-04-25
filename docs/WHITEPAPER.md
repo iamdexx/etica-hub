@@ -139,7 +139,7 @@ This structure is chosen deliberately to minimize the set of plausible securitie
 
 ### 5.4 Vercel-hosted UI
 
-The full EticaHub frontend lives at [https://eticahub.org](https://eticahub.org), hosted on Vercel out of `apps/web`. The v1 genesis was executed via three operator-only deploy pages:
+The full EticaHub frontend lives at [https://eticahub.com](https://eticahub.com), hosted on Vercel out of `apps/web`. The v1 genesis was executed via three operator-only deploy pages:
 
 1. `/deploy/etx` — one-click MetaMask deploy of `ETXToken`. Minted 100M to the connected treasury wallet.
 2. `/deploy/swap` — three-click deploy of `WEGAZ`, `EticaSwapFactory(etx)`, `EticaSwapRouter(factory, wegaz)`.
@@ -172,7 +172,7 @@ EticaSwap's Market tab handles immediate one-shot swaps against the AMM. Everyth
 |---|---|---|---|
 | [Permit2](https://github.com/Uniswap/permit2) | OpenZeppelin, Trail of Bits, ABDK | One-time per-token approval. Signature-based allowances with per-user nonces and per-sig deadlines. | **Deployed** at `0x165F71f549415f44883e370Df12169Dd99570eE5` |
 | [UniswapX `DutchOrderReactor`](https://github.com/Uniswap/UniswapX) | Uniswap Labs audit set | Settles pre-signed Dutch orders. Pulls input via Permit2, swaps through the EticaSwap Router, pushes output to the maker. | **Deployed** at `0xE2fc7EAcEB0146560bfcf46CC5B167df60E970B8` |
-| `EticaProtocolFeeController` | — (60-line contract, deployed at 0 BPS) | Pluggable ETX-denominated protocol fee. Capped at 1% on-chain. v1 ships at **0 BPS**. | **Deployed** at `0xB9a4FbfC4cA598Be18e09bb9C0Cf19e4a1A4350a` |
+| `EticaProtocolFeeController` | — (~115-line contract, active at 10 BPS) | ETX-denominated protocol fee on UniswapX fills. Currently set to **10 BPS (0.10%)**; hard-capped at 100 BPS (1%) on-chain. | **Deployed** at `0xB9a4FbfC4cA598Be18e09bb9C0Cf19e4a1A4350a` |
 | `OrderRegistry` | — (append-only log, no fund-handling) | On-chain append-only log of posted order envelopes + batch ids. Canonical data source for `/trade/orders` and keepers when the off-chain book is offline. | **Deployed** at `0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9` |
 | Order book API + reference keeper | open source, `apps/orderbook` + `apps/keeper` | Stores signed orders (off-chain), serves them to fillers, and runs one reference filler. Anyone else can run a filler. | Live |
 
@@ -211,9 +211,18 @@ The guarantees EticaHub makes about every order type in the Trading Stack — Ma
 - Users can hard-cancel any signed order by submitting a Permit2 nonce increment on-chain from `/trade/orders`.
 - If EticaHub's order book goes offline, every signed order remains valid until its own deadline; users can submit directly to the Reactor or run their own keeper from `apps/keeper`. The on-chain `OrderRegistry` at `0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9` serves as the canonical backup data source.
 
-### 7.5 Protocol fee posture at v1
+### 7.5 Protocol fee posture
 
-The ETX-denominated fee hook is **deployed at 0 BPS**. There is no protocol take on any trade in v1. The reactor owner (currently the launch operator, rotating to the community multisig per the same schedule as `feeTo` in §4) can flip the fee on later — capped at 1% by the contract itself. When it flips on, the fee is denominated in ETX (every trade has an ETX leg thanks to hub-and-spoke), which routes all protocol revenue through an organic ETX buy rather than introducing a new fee currency.
+EticaHub charges two structurally distinct fees, on two different trade surfaces. They do **not** stack on the same trade.
+
+| Surface | Fee | Destination | Mechanism |
+|---|---|---|---|
+| **AMM direct swap** (`/swap`, `/pool`, router calls) | 0.30% to LPs + 0.05% protocol | LPs + treasury `feeTo` | Uniswap V2-style `x·y=k` fee math, hardcoded in `EticaSwapPair` |
+| **UniswapX intent fills** (`/trade`, keeper flows) | **0.10% (10 BPS) in ETX** | Treasury | `EticaProtocolFeeController` — added to the resolved order as an explicit ETX fee output before the filler callback runs |
+
+A trade sent to `/swap` pays the AMM fee. A trade sent to `/trade` pays the UniswapX fee. Both fee streams are denominated in economically sensible units: LP fees settle in the pair's native tokens (so LPs keep the mix they signed up for), and the UniswapX protocol fee settles in ETX (every pool is ETX-paired, so one leg of every trade is already ETX — no extra swap hop is needed to collect the fee).
+
+The `EticaProtocolFeeController` owner (treasury wallet, rotating to the community multisig on the same schedule as `feeToSetter` in §4) can raise or lower the fee within a hard on-chain cap of 100 BPS (1%). It cannot exceed that cap under any circumstance. There is no owner path that can drain already-collected fees — the controller only decides what future fees *are*, not where existing balances go.
 
 ### 7.6 Keeper workflow
 
@@ -518,7 +527,7 @@ Timeline is indicative, not committed.
 
 ### Shipped
 
-- **v1 — ETX genesis:** ETX deployed, EticaSwap deployed, ETI/ETX and EGAZ/ETX pools seeded, hub-and-spoke invariant active, pool-creation fee switch activated by setting `feeTo`. `eticahub.org` routes swaps through the new contracts.
+- **v1 — ETX genesis:** ETX deployed, EticaSwap deployed, ETI/ETX and EGAZ/ETX pools seeded, hub-and-spoke invariant active, pool-creation fee switch activated by setting `feeTo`. `eticahub.com` routes swaps through the new contracts.
 - **v1 — Research Hub:** `/research/proposals` reader, tipping, subscription contract.
 - **v1.1 — Trading Stack:** Permit2 + UniswapX DutchOrderReactor + EticaProtocolFeeController + OrderRegistry + off-chain order book + reference keeper. Market, Limit, Stop, DCA, bounded Grid, and Infinity Bot modes all live on `/trade/[token]`.
 - **v1.1 — Explorer:** `/explorer` with blocks, txs, addresses, ERC-20 token pages, gas tracker, Sourcify-backed verification, JSONL indexer.
@@ -623,7 +632,7 @@ Etica mainnet (chain id `61803`). Canonical source: `packages/shared/src/address
 | RPC URL | `https://eticamainnet.eticascan.org` |
 | Chain ID | 61803 |
 | Native gas token | EGAZ |
-| Block explorer (EticaHub) | `https://eticahub.org/explorer` |
+| Block explorer (EticaHub) | `https://eticahub.com/explorer` |
 | Block explorer (Etica Protocol) | `https://eticascan.org` |
 | Canonical ETI address | `0x34c61EA91bAcdA647269d4e310A86b875c09946f` |
 
