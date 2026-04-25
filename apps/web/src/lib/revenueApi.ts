@@ -26,6 +26,30 @@ import { formatUnits, parseAbiItem, type Address, type PublicClient } from 'viem
 import { BURN_ADDRESS, fetchSwapLogs, priceClient } from './priceApi';
 
 /**
+ * Block of the TreasuryHarvester deploy on Etica mainnet. Used as the
+ * `fromBlock` floor for HarvestExecuted scans. Pinned for the same
+ * reason as {@link DEX_LAUNCH_BLOCK} — fixed historical fact, scanning
+ * earlier just returns empty.
+ */
+export const HARVESTER_LAUNCH_BLOCK: bigint = 9_824_576n;
+
+/**
+ * V2 harvester `HarvestExecuted` event. Emitted once per `harvest()`
+ * call after all per-pool burn/swap/POL/transfer phases settle.
+ *
+ * Each field is the realized ETX amount that landed in the corresponding
+ * destination this run:
+ *   - `totalEtxHarvested` = sum of ETX pulled out of pools (before splits)
+ *   - `stakedSlice` = transferred to stETX vault
+ *   - `farmsSlice` = transferred to ETXFarms (or retained if unset)
+ *   - `polSlice` = ETX consumed by the POL re-pair + LP-to-DEAD step
+ *   - `treasurySlice` = transferred to the treasury wallet (net of caller tip)
+ */
+export const HARVEST_EXECUTED_EVENT = parseAbiItem(
+  'event HarvestExecuted(address indexed caller, uint256 totalEtxHarvested, uint256 stakedSlice, uint256 farmsSlice, uint256 polSlice, uint256 treasurySlice)',
+);
+
+/**
  * Block of the first EticaSwap V2 pair ever created on Etica Mainnet.
  * Used as the `fromBlock` floor for lifetime-since-launch metrics.
  *
@@ -281,6 +305,83 @@ export async function fetchPolBurnedLp(
     functionName: 'balanceOf',
     args: [BURN_ADDRESS],
   })) as bigint;
+}
+
+export interface LifetimeHarvesterStats {
+  /** Number of HarvestExecuted events since {@link HARVESTER_LAUNCH_BLOCK}. */
+  runCount: number;
+  /** Block of the most recent HarvestExecuted (or null if none). */
+  lastRunBlock: bigint | null;
+  /** Sum of `totalEtxHarvested` across all runs. */
+  totalEtxHarvestedWei: bigint;
+  /** Sum of `stakedSlice` across all runs (ETX into stETX vault). */
+  stakedSliceWei: bigint;
+  /** Sum of `farmsSlice` across all runs (ETX into ETXFarms). */
+  farmsSliceWei: bigint;
+  /** Sum of `polSlice` across all runs (ETX consumed by POL re-pair). */
+  polSliceWei: bigint;
+  /** Sum of `treasurySlice` across all runs (ETX into treasury wallet). */
+  treasurySliceWei: bigint;
+}
+
+/**
+ * Scan `HarvestExecuted` events from the TreasuryHarvester contract since
+ * {@link HARVESTER_LAUNCH_BLOCK} and return per-slice totals.
+ *
+ * Returns zeroes if the harvester address is the zero address (e.g. on
+ * testnets where the contract isn't deployed) so callers don't have to
+ * branch.
+ */
+export async function loadLifetimeHarvesterStats(
+  harvester: Address,
+  toBlock: bigint,
+  client: PublicClient = priceClient(),
+): Promise<LifetimeHarvesterStats> {
+  const empty: LifetimeHarvesterStats = {
+    runCount: 0,
+    lastRunBlock: null,
+    totalEtxHarvestedWei: 0n,
+    stakedSliceWei: 0n,
+    farmsSliceWei: 0n,
+    polSliceWei: 0n,
+    treasurySliceWei: 0n,
+  };
+  if (
+    harvester === '0x0000000000000000000000000000000000000000' ||
+    harvester.toLowerCase() === '0x0000000000000000000000000000000000000000'
+  ) {
+    return empty;
+  }
+
+  const stats: LifetimeHarvesterStats = { ...empty };
+  let pageSize = LOGS_PAGE_BLOCKS_DEFAULT;
+  let cursor = HARVESTER_LAUNCH_BLOCK;
+  while (cursor <= toBlock) {
+    const end = cursor + pageSize - 1n > toBlock ? toBlock : cursor + pageSize - 1n;
+    try {
+      const logs = await client.getLogs({
+        address: harvester,
+        event: HARVEST_EXECUTED_EVENT,
+        fromBlock: cursor,
+        toBlock: end,
+      });
+      for (const log of logs) {
+        stats.runCount += 1;
+        stats.lastRunBlock = log.blockNumber ?? stats.lastRunBlock;
+        stats.totalEtxHarvestedWei += log.args.totalEtxHarvested ?? 0n;
+        stats.stakedSliceWei += log.args.stakedSlice ?? 0n;
+        stats.farmsSliceWei += log.args.farmsSlice ?? 0n;
+        stats.polSliceWei += log.args.polSlice ?? 0n;
+        stats.treasurySliceWei += log.args.treasurySlice ?? 0n;
+      }
+      cursor = end + 1n;
+    } catch (err) {
+      if (pageSize <= LOGS_PAGE_BLOCKS_MIN) throw err;
+      pageSize = pageSize / 2n;
+      if (pageSize < LOGS_PAGE_BLOCKS_MIN) pageSize = LOGS_PAGE_BLOCKS_MIN;
+    }
+  }
+  return stats;
 }
 
 // ---- numeric helpers ------------------------------------------------------
