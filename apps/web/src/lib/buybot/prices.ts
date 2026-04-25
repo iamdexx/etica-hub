@@ -144,6 +144,21 @@ export function usdPriceOf(
 }
 
 /**
+ * Optional overrides used when a token's on-chain `totalSupply()` doesn't
+ * reflect the asset's true economic supply. Today the only entry is
+ * `wegazNativeSupply`, which is the EGAZ native gas-token supply (read
+ * from the BlockScout explorer's `coinsupply` endpoint). The WEGAZ ERC-20
+ * only counts the wrapped slice (~10% of native supply at time of
+ * writing), so MC computed off it is misleading.
+ *
+ * `bigint` raw units (i.e. 18-decimal padded), matching the raw shape of
+ * `TokenMeta.totalSupply` so the call site is symmetric.
+ */
+export interface SupplyOverrides {
+  wegazNativeSupply?: bigint | null;
+}
+
+/**
  * Format a buy + pool snapshot into reporting figures. Pure; safe to unit-test.
  */
 export function computeBuyReport(
@@ -152,6 +167,7 @@ export function computeBuyReport(
   eti: Address,
   wegaz: Address,
   pricing: UsdPricing,
+  supplyOverrides: SupplyOverrides = {},
 ): {
   amountBought: number;
   amountSpent: number;
@@ -176,14 +192,28 @@ export function computeBuyReport(
         ? amountBought * boughtUsd
         : null;
 
+  // For WEGAZ specifically, swap in the native EGAZ supply (when available)
+  // so MC reflects the chain's actual economy rather than just the wrapped
+  // ERC-20 slice. Falls back to the on-chain totalSupply if the override
+  // is missing or zero.
+  const wegazLc = getAddress(wegaz).toLowerCase();
+  const supplyFor = (token: TokenMeta): bigint => {
+    if (
+      supplyOverrides.wegazNativeSupply &&
+      supplyOverrides.wegazNativeSupply > 0n &&
+      getAddress(token.address).toLowerCase() === wegazLc
+    ) {
+      return supplyOverrides.wegazNativeSupply;
+    }
+    return token.totalSupply;
+  };
+
   const mcBoughtUsd =
     boughtUsd !== null
-      ? boughtUsd * toUnits(decoded.bought.totalSupply, decoded.bought.decimals)
+      ? boughtUsd * toUnits(supplyFor(decoded.bought), decoded.bought.decimals)
       : null;
   const mcSpentUsd =
-    spentUsd !== null
-      ? spentUsd * toUnits(decoded.spent.totalSupply, decoded.spent.decimals)
-      : null;
+    spentUsd !== null ? spentUsd * toUnits(supplyFor(decoded.spent), decoded.spent.decimals) : null;
 
   return {
     amountBought,

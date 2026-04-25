@@ -33,6 +33,14 @@ export interface BuyBotConfig {
   maxBlocksPerRun: number;
   /** NonKYC REST base URL for ETI/EGAZ USD spot quotes. */
   nonkycApiUrl: string;
+  /**
+   * BlockScout explorer base URL used to read the chain's native EGAZ
+   * total supply (`/api?module=stats&action=coinsupply`). EGAZ is the
+   * native gas token, so its economic supply isn't readable on-chain via
+   * the WEGAZ contract — `WEGAZ.totalSupply()` only counts wrapped EGAZ.
+   * Defaults to `http://explorer.etica-stats.org`.
+   */
+  eticaStatsExplorerUrl: string;
   /** Upstash Redis REST endpoint for storing `lastScannedBlock`. */
   kvRestUrl: string | null;
   kvRestToken: string | null;
@@ -96,6 +104,7 @@ export function loadBuyBotConfig(env: NodeJS.ProcessEnv = process.env): BuyBotCo
     minUsdToPost: Number.isFinite(minUsd) && minUsd >= 0 ? minUsd : 0.1,
     maxBlocksPerRun: Number.isFinite(maxBlocks) && maxBlocks > 0 ? Math.floor(maxBlocks) : 2000,
     nonkycApiUrl: env.BUYBOT_NONKYC_API_URL ?? 'https://api.nonkyc.io',
+    eticaStatsExplorerUrl: env.BUYBOT_ETICA_STATS_EXPLORER_URL ?? 'http://explorer.etica-stats.org',
     kvRestUrl: env.KV_REST_API_URL ?? env.UPSTASH_REDIS_REST_URL ?? null,
     kvRestToken: env.KV_REST_API_TOKEN ?? env.UPSTASH_REDIS_REST_TOKEN ?? null,
     redisUrl: env.REDIS_URL ?? null,

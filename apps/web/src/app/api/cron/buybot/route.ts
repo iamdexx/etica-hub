@@ -19,7 +19,7 @@ import { createPublicClient, http, type PublicClient } from 'viem';
 import { eticaMainnet } from '@etica-hub/shared';
 
 import { loadBuyBotConfig, type BuyBotConfig } from '@/lib/buybot/config';
-import { fetchUsdAnchors } from '@/lib/buybot/oracle';
+import { fetchEgazNativeSupply, fetchUsdAnchors } from '@/lib/buybot/oracle';
 import { computeBuyReport, decodeSwapAsBuy, type UsdPricing } from '@/lib/buybot/prices';
 import { formatBuy } from '@/lib/buybot/format';
 import { telegramClient } from '@/lib/buybot/telegram';
@@ -105,10 +105,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   try {
     const client = makeClient(config);
 
-    const [latestBlock, lastScanned, anchors] = await Promise.all([
+    const [latestBlock, lastScanned, anchors, wegazNativeSupply] = await Promise.all([
       client.getBlockNumber(),
       readLastScannedBlock(kv, config),
       fetchUsdAnchors(config),
+      // Pulled once per run from BlockScout's `coinsupply` endpoint so MC
+      // reflects the chain's full native EGAZ supply, not just the wrapped
+      // ERC-20 slice. A null result falls back to `WEGAZ.totalSupply()`.
+      fetchEgazNativeSupply(config),
     ]);
 
     // Resolve ETX/USD independently of which swaps happen this cycle by
@@ -184,7 +188,9 @@ export async function GET(req: NextRequest): Promise<Response> {
         bump('undecodable-swap');
         continue;
       }
-      const report = computeBuyReport(decoded, config.etx, config.eti, config.wegaz, pricing);
+      const report = computeBuyReport(decoded, config.etx, config.eti, config.wegaz, pricing, {
+        wegazNativeSupply,
+      });
       if (report.notionalUsd !== null && report.notionalUsd < config.minUsdToPost) {
         bump('below-min-usd');
         continue;
