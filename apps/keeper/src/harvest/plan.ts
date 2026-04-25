@@ -343,8 +343,21 @@ export function buildHarvestPlan(
   // 5. POL burn slice: split across pools by weighting, each pool's slice
   //    is split in half (ETX → non-ETX via swap, then pair + addLiquidity,
   //    LP to DEAD_ADDRESS).
+  //
+  //    The contract's `_distributePol` reverts with `PolAllocationInvalid`
+  //    when the sum of per-pool POL assignments exceeds the on-chain
+  //    polSlice (which is recomputed from the *actual* harvested ETX
+  //    delta on the harvester's balance). Our off-chain `polSlice` is
+  //    derived from the planner's `expectedEtxHarvested`, which is a
+  //    spot estimate that can sit a few wei above the on-chain reality —
+  //    most commonly because `_mintFee()` mints fresh LP to `feeTo`
+  //    immediately before a burn, diluting the proportional return by a
+  //    small amount we don't model off-chain. Distribute a slippage-
+  //    buffered slice instead so we under-allocate by `maxSlippageBps`;
+  //    the contract refunds any unassigned residual to the treasury.
   const polByPool: HarvestPlan['polBurnByPool'] = [];
-  if (polSlice > 0n) {
+  const polSliceForAllocation = withSlippage(polSlice, config.maxSlippageBps);
+  if (polSliceForAllocation > 0n) {
     // Use ETX-denominated weight of each pool's treasury LP (reserveEtx
     // share controlled by the treasury). This captures "where the
     // treasury is already overweight" better than raw LP token counts,
@@ -361,7 +374,8 @@ export function buildHarvestPlan(
       const n = BigInt(pairs.length || 1);
       let acc = 0n;
       for (let i = 0; i < pairs.length; i++) {
-        const share = i === pairs.length - 1 ? polSlice - acc : polSlice / n;
+        const share =
+          i === pairs.length - 1 ? polSliceForAllocation - acc : polSliceForAllocation / n;
         allocs.push(share);
         acc += share;
       }
@@ -369,9 +383,9 @@ export function buildHarvestPlan(
       let acc = 0n;
       for (let i = 0; i < pairs.length; i++) {
         if (i === pairs.length - 1) {
-          allocs.push(polSlice - acc);
+          allocs.push(polSliceForAllocation - acc);
         } else {
-          const share = (polSlice * weights[i]!) / totalWeight;
+          const share = (polSliceForAllocation * weights[i]!) / totalWeight;
           allocs.push(share);
           acc += share;
         }
