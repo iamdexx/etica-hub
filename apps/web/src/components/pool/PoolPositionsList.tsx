@@ -32,6 +32,7 @@ type Ctx = {
   factory: Address;
   wegaz: Address;
   etx: Address;
+  etxFarms: Address;
 };
 
 function useCtx(): Ctx | null {
@@ -46,6 +47,7 @@ function useCtx(): Ctx | null {
       factory: d.swapFactory,
       wegaz: d.wegaz,
       etx: d.etx,
+      etxFarms: d.etxFarms,
     };
   }, [chainId]);
 }
@@ -61,7 +63,12 @@ type PairMeta = {
   reserve0: bigint;
   reserve1: bigint;
   totalSupply: bigint;
+  /** LP tokens currently in the user's wallet (removable directly). */
   lpBalance: bigint;
+  /** LP tokens the user has staked in ETXFarms (must be unstaked first). */
+  farmLpBalance: bigint;
+  /** Pool id in ETXFarms when this pair has a registered farm pool. */
+  farmPid: number | null;
 };
 
 export function PoolPositionsList() {
@@ -170,6 +177,73 @@ export function PoolPositionsList() {
     query: { enabled: tokens.length > 0 },
   });
 
+  // ─── ETXFarms staked-LP overlay ────────────────────────────────────────
+  // When a user stakes their LP into a farm pool, the LP token leaves their
+  // wallet (the farm contract holds it). Without surfacing the farm-side
+  // balance, the position would disappear from /pool entirely. We read every
+  // farm pool's lpToken and per-user staked amount so we can fold farmed LP
+  // back into the same row as the wallet LP.
+  const farmsDeployed = Boolean(ctx) && ctx!.etxFarms !== ZERO;
+  const farmPoolsLenQ = useReadContract({
+    abi: abis.etxFarmsAbi,
+    address: ctx?.etxFarms,
+    functionName: 'poolLength',
+    query: { enabled: farmsDeployed },
+  });
+  const farmPoolCount = Number(
+    (farmPoolsLenQ.data as bigint | undefined) ?? 0n,
+  );
+
+  const farmPoolInfosQ = useReadContracts({
+    allowFailure: false,
+    contracts:
+      ctx && farmsDeployed && farmPoolCount > 0
+        ? Array.from({ length: farmPoolCount }, (_, pid) => ({
+            abi: abis.etxFarmsAbi,
+            address: ctx.etxFarms,
+            functionName: 'poolInfo' as const,
+            args: [BigInt(pid)],
+          }))
+        : [],
+    query: { enabled: farmsDeployed && farmPoolCount > 0 },
+  });
+
+  const farmUserInfosQ = useReadContracts({
+    allowFailure: false,
+    contracts:
+      ctx && address && farmsDeployed && farmPoolCount > 0
+        ? Array.from({ length: farmPoolCount }, (_, pid) => ({
+            abi: abis.etxFarmsAbi,
+            address: ctx.etxFarms,
+            functionName: 'userInfo' as const,
+            args: [BigInt(pid), address],
+          }))
+        : [],
+    query: {
+      enabled: Boolean(ctx && address) && farmsDeployed && farmPoolCount > 0,
+    },
+  });
+
+  /** Map from pair address (lowercased) -> { pid, staked }. */
+  const farmStakedByPair = useMemo(() => {
+    const m = new Map<string, { pid: number; staked: bigint }>();
+    const infos = farmPoolInfosQ.data as
+      | ReadonlyArray<readonly [Address, bigint, bigint, bigint]>
+      | undefined;
+    const users = farmUserInfosQ.data as
+      | ReadonlyArray<readonly [bigint, bigint]>
+      | undefined;
+    if (!infos) return m;
+    for (let pid = 0; pid < farmPoolCount; pid++) {
+      const info = infos[pid];
+      if (!info) continue;
+      const lpToken = info[0];
+      const staked = users?.[pid]?.[0] ?? 0n;
+      m.set(lpToken.toLowerCase(), { pid, staked });
+    }
+    return m;
+  }, [farmPoolInfosQ.data, farmUserInfosQ.data, farmPoolCount]);
+
   const tokenSymbolOverride = useMemo(() => {
     // On the DEX, WEGAZ represents pooled EGAZ. Show "EGAZ" in the UI but
     // still use WEGAZ as the on-chain address.
@@ -202,7 +276,12 @@ export function PoolPositionsList() {
     const out: PairMeta[] = [];
     for (let i = 0; i < pairAddrs.length; i++) {
       const lpBalance = pairReads.data[i * 5 + 4] as bigint;
-      if (lpBalance === 0n) continue;
+      const pairAddr = pairAddrs[i];
+      const farm = farmStakedByPair.get(pairAddr.toLowerCase());
+      const farmLpBalance = farm?.staked ?? 0n;
+      // A position is visible if the user holds LP either in their wallet OR
+      // in ETXFarms. Otherwise they have no claim on this pair.
+      if (lpBalance === 0n && farmLpBalance === 0n) continue;
       const token0 = pairReads.data[i * 5] as Address;
       const token1 = pairReads.data[i * 5 + 1] as Address;
       const reserves = pairReads.data[i * 5 + 2] as readonly [bigint, bigint, number];
@@ -210,7 +289,7 @@ export function PoolPositionsList() {
       const meta0 = tokenMeta.get(token0.toLowerCase());
       const meta1 = tokenMeta.get(token1.toLowerCase());
       out.push({
-        pair: pairAddrs[i],
+        pair: pairAddr,
         token0,
         token1,
         symbol0: meta0?.symbol ?? token0.slice(0, 6),
@@ -221,10 +300,12 @@ export function PoolPositionsList() {
         reserve1: reserves[1],
         totalSupply,
         lpBalance,
+        farmLpBalance,
+        farmPid: farm?.pid ?? null,
       });
     }
     return out;
-  }, [pairReads.data, pairAddrs, tokenMeta]);
+  }, [pairReads.data, pairAddrs, tokenMeta, farmStakedByPair]);
 
   const refetchAll = () => {
     void Promise.all([
@@ -232,6 +313,9 @@ export function PoolPositionsList() {
       pairAddrQs.refetch(),
       pairReads.refetch(),
       tokenMetaReads.refetch(),
+      farmPoolsLenQ.refetch(),
+      farmPoolInfosQ.refetch(),
+      farmUserInfosQ.refetch(),
     ]).catch(() => {
       /* best-effort */
     });
@@ -306,19 +390,25 @@ function PositionRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt.isSuccess, activeHash]);
 
+  // Combine wallet LP + farm-staked LP so the row reflects the user's full
+  // claim on the pair. Share % and underlying-token amounts use the combined
+  // total. The remove-liquidity slider below operates on wallet LP only,
+  // since farmed LP must be unstaked from /farms first.
+  const totalLp = pos.lpBalance + pos.farmLpBalance;
+
   const shareBps = useMemo(() => {
     if (pos.totalSupply === 0n) return 0n;
-    return (pos.lpBalance * 10_000n) / pos.totalSupply;
-  }, [pos.totalSupply, pos.lpBalance]);
+    return (totalLp * 10_000n) / pos.totalSupply;
+  }, [pos.totalSupply, totalLp]);
 
   const userAmount0 = useMemo(() => {
     if (pos.totalSupply === 0n) return 0n;
-    return (pos.reserve0 * pos.lpBalance) / pos.totalSupply;
-  }, [pos.reserve0, pos.lpBalance, pos.totalSupply]);
+    return (pos.reserve0 * totalLp) / pos.totalSupply;
+  }, [pos.reserve0, totalLp, pos.totalSupply]);
   const userAmount1 = useMemo(() => {
     if (pos.totalSupply === 0n) return 0n;
-    return (pos.reserve1 * pos.lpBalance) / pos.totalSupply;
-  }, [pos.reserve1, pos.lpBalance, pos.totalSupply]);
+    return (pos.reserve1 * totalLp) / pos.totalSupply;
+  }, [pos.reserve1, totalLp, pos.totalSupply]);
 
   const liquidityToRemove = useMemo(() => {
     return (pos.lpBalance * BigInt(pct)) / 100n;
@@ -429,16 +519,43 @@ function PositionRow({
         </div>
         <div className="text-right">
           <div className="text-xs text-white/60">
-            {formatTruncated(pos.lpBalance, 18, 6)} LP
+            {formatTruncated(totalLp, 18, 6)} LP
           </div>
+          {pos.farmLpBalance > 0n && (
+            <div className="text-[10px] text-white/40">
+              {formatTruncated(pos.lpBalance, 18, 4)} wallet ·{' '}
+              {formatTruncated(pos.farmLpBalance, 18, 4)} farmed
+            </div>
+          )}
           <div className="text-[10px] uppercase tracking-wider text-white/40">
             {Number(shareBps) / 100}% share
           </div>
         </div>
       </div>
 
-      {open && (
+      {open && pos.lpBalance === 0n && pos.farmLpBalance > 0n ? (
+        <div className="space-y-2 border-t border-white/5 pt-3 text-xs text-white/60">
+          <div>
+            All of this position’s LP is currently staked in ETXFarms. Unstake on{' '}
+            <a href="/farms" className="text-brand-accent hover:underline">
+              /farms
+            </a>{' '}
+            first to remove liquidity.
+          </div>
+        </div>
+      ) : open && (
         <div className="space-y-3 border-t border-white/5 pt-3">
+          {pos.farmLpBalance > 0n && (
+            <div className="text-[11px] text-white/50">
+              Slider controls the {formatTruncated(pos.lpBalance, 18, 4)} LP in
+              your wallet. To free up the{' '}
+              {formatTruncated(pos.farmLpBalance, 18, 4)} LP staked in{' '}
+              <a href="/farms" className="text-brand-accent hover:underline">
+                ETXFarms
+              </a>
+              , unstake there first.
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <input
               type="range"
