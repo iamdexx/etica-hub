@@ -15,9 +15,11 @@ import {
   useChainId,
   useReadContract,
   useReadContracts,
+  useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
+import { eticaMainnet, supportedChains } from '@etica-hub/shared/chains';
 import {
   DEPLOYMENTS,
   EXTERNAL_ADDRESSES,
@@ -85,8 +87,23 @@ function buildPath(ctx: SwapCtx, from: TokenSymbol, to: TokenSymbol): Address[] 
 }
 
 export function SwapCard() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId: walletChainId } = useAccount();
+  const dappChainId = useChainId();
   const ctx = useCtx();
+  const { switchChain, isPending: isSwitchingChain, error: switchChainError } =
+    useSwitchChain();
+  // Wallet's actual reported chain may drift from wagmi's `useChainId()`
+  // (which feeds `useCtx`) — e.g. when the user has Etica selected as the
+  // dapp's chain but their wallet is connected to Ethereum mainnet. We use
+  // the wallet-reported chain to gate the action button so the user gets a
+  // clear "Switch network" prompt instead of a confusing wallet error when
+  // viem tries to auto-switch mid-tx. We compare against the dapp's active
+  // chain (not a hardcoded mainnet id) so the gate also works when running
+  // against the local anvil fork.
+  const onWrongNetwork =
+    isConnected && walletChainId !== undefined && walletChainId !== dappChainId;
+  const dappChain = supportedChains.find((c) => c.id === dappChainId);
+  const dappChainName = dappChain?.name ?? 'Etica Mainnet';
   const [fromSymbol, setFromSymbol] = useState<TokenSymbol>('EGAZ');
   const [toSymbol, setToSymbol] = useState<TokenSymbol>('ETX');
   const [amountInStr, setAmountInStr] = useState('');
@@ -364,7 +381,26 @@ export function SwapCard() {
         approveSymbol={fromSymbol}
         onApprove={onApprove}
         onSwap={onSwap}
+        onWrongNetwork={onWrongNetwork}
+        isSwitchingChain={isSwitchingChain}
+        onSwitchChain={() => switchChain({ chainId: dappChainId })}
+        dappChainName={dappChainName}
       />
+
+      {onWrongNetwork && switchChainError && dappChainId === eticaMainnet.id && (
+        <p className="mt-3 break-words text-center text-xs text-rose-400">
+          Couldn&rsquo;t switch your wallet to Etica Mainnet. Add the network
+          manually: chain id <span className="font-mono">61803</span>, RPC{' '}
+          <span className="font-mono">https://eticamainnet.eticascan.org</span>,
+          currency symbol <span className="font-mono">EGAZ</span>.
+        </p>
+      )}
+      {onWrongNetwork && switchChainError && dappChainId !== eticaMainnet.id && (
+        <p className="mt-3 break-words text-center text-xs text-rose-400">
+          Couldn&rsquo;t switch your wallet to {dappChainName}. Approve the
+          network switch in your wallet, or add the chain manually.
+        </p>
+      )}
 
       {activeHash && receipt.isSuccess && (
         <p className="mt-3 break-all text-center text-xs text-emerald-400">
@@ -477,16 +513,34 @@ function SwapButton(props: {
   approveSymbol: TokenSymbol;
   onApprove: () => Promise<void>;
   onSwap: () => Promise<void>;
+  onWrongNetwork: boolean;
+  isSwitchingChain: boolean;
+  onSwitchChain: () => void;
+  dappChainName: string;
 }) {
   const base =
     'mt-4 w-full rounded-xl py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed';
   const active = 'bg-brand-accent text-brand-ink hover:opacity-90';
+  const warn = 'bg-amber-400 text-black hover:bg-amber-300';
   const subdued = 'bg-white/10 text-white/60';
 
   if (!props.isConnected) {
     return (
       <button disabled className={`${base} ${subdued}`}>
         Connect wallet to continue
+      </button>
+    );
+  }
+  if (props.onWrongNetwork) {
+    return (
+      <button
+        onClick={props.onSwitchChain}
+        disabled={props.isSwitchingChain}
+        className={`${base} ${warn}`}
+      >
+        {props.isSwitchingChain
+          ? 'Switching…'
+          : `Switch to ${props.dappChainName}`}
       </button>
     );
   }
