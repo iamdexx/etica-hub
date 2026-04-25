@@ -280,6 +280,16 @@ export function HarvestNowCard() {
     const treasurySlice = expectedEtxHarvested - stakedSlice - farmsSlice - polSlice;
 
     // 2. POL distribution by treasury_lp ETX-weight (same as keeper).
+    //
+    //    The contract's `_distributePol` reverts with `PolAllocationInvalid`
+    //    when assigned > on-chain polSlice. The on-chain polSlice is
+    //    derived from the *actual* harvester ETX balance delta, which can
+    //    sit a few wei below our `expectedEtxHarvested` estimate (most
+    //    commonly because `_mintFee()` mints fresh LP to `feeTo` before a
+    //    burn, slightly diluting the proportional return). Distribute a
+    //    slippage-buffered slice instead so we always under-allocate; the
+    //    contract refunds any unassigned residual to the treasury.
+    const polSliceForAllocation = withSlippage(polSlice, DEFAULT_SLIPPAGE_BPS);
     const weights = pools.map((p) =>
       p.totalSupply === 0n || p.treasuryLp === 0n
         ? 0n
@@ -287,15 +297,15 @@ export function HarvestNowCard() {
     );
     const totalWeight = weights.reduce((a, b) => a + b, 0n);
     const polAllocs: bigint[] = [];
-    if (polSlice === 0n || totalWeight === 0n) {
+    if (polSliceForAllocation === 0n || totalWeight === 0n) {
       polAllocs.push(...pools.map(() => 0n));
     } else {
       let acc = 0n;
       for (let i = 0; i < pools.length; i++) {
         if (i === pools.length - 1) {
-          polAllocs.push(polSlice - acc);
+          polAllocs.push(polSliceForAllocation - acc);
         } else {
-          const share = (polSlice * weights[i]!) / totalWeight;
+          const share = (polSliceForAllocation * weights[i]!) / totalWeight;
           polAllocs.push(share);
           acc += share;
         }
