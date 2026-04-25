@@ -23,6 +23,11 @@ import type { BuyBotConfig } from './config';
  */
 export type UsdAnchorsConfig = Pick<BuyBotConfig, 'nonkycApiUrl'>;
 
+/**
+ * Subset of {@link BuyBotConfig} consumed by {@link fetchEgazNativeSupply}.
+ */
+export type EgazNativeSupplyConfig = Pick<BuyBotConfig, 'eticaStatsExplorerUrl'>;
+
 export interface UsdAnchors {
   /** 1 ETI = N USD (spot), or null if NonKYC is unreachable or untraded. */
   etiUsd: number | null;
@@ -75,10 +80,8 @@ export async function fetchUsdAnchors(
       const tickerId = `${base}_${quote}`;
       const slashSym = `${base}/${quote}`;
       const match = tickers.find((t) => {
-        const idMatch =
-          typeof t.ticker_id === 'string' && t.ticker_id.toUpperCase() === tickerId;
-        const symMatch =
-          typeof t.symbol === 'string' && t.symbol.toUpperCase() === slashSym;
+        const idMatch = typeof t.ticker_id === 'string' && t.ticker_id.toUpperCase() === tickerId;
+        const symMatch = typeof t.symbol === 'string' && t.symbol.toUpperCase() === slashSym;
         const pairMatch =
           typeof t.base_currency === 'string' &&
           typeof t.target_currency === 'string' &&
@@ -95,5 +98,47 @@ export async function fetchUsdAnchors(
     };
   } catch {
     return { etiUsd: null, egazUsd: null };
+  }
+}
+
+/**
+ * Fetch the chain's native EGAZ total supply from the public BlockScout
+ * explorer (`/api?module=stats&action=coinsupply`). Returned as a raw
+ * 18-decimal `bigint` so callers can plug it directly into market-cap
+ * calculations that already operate in raw units.
+ *
+ * EGAZ is the native gas token of the Etica chain; the
+ * `WEGAZ.totalSupply()` ERC-20 read only counts the slice of EGAZ that's
+ * been wrapped through the WEGAZ contract (today: ~1.93M of a ~20.16M
+ * native supply). Reporting MC against the wrapped supply is misleading,
+ * so the buy bot anchors WEGAZ MC to the native supply instead.
+ *
+ * Returns `null` on any network / parse error so callers can fall back to
+ * the on-chain WEGAZ supply (or hide MC entirely) without crashing.
+ */
+export async function fetchEgazNativeSupply(
+  config: EgazNativeSupplyConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<bigint | null> {
+  const base = config.eticaStatsExplorerUrl.replace(/\/$/, '');
+  const url = `${base}/api?module=stats&action=coinsupply`;
+  try {
+    const res = await fetchImpl(url, {
+      headers: { accept: 'text/plain, application/json' },
+      cache: 'no-store',
+      redirect: 'follow',
+    });
+    if (!res.ok) return null;
+    // BlockScout's `coinsupply` returns a plain decimal number (e.g.
+    // "20155344.625"), not JSON. We parse it as a fixed-point decimal so
+    // the fractional part survives the conversion to 18-decimal raw units.
+    const raw = (await res.text()).trim();
+    if (!/^\d+(\.\d+)?$/.test(raw)) return null;
+    const [intPart, fracPart = ''] = raw.split('.');
+    const fracPadded = (fracPart + '0'.repeat(18)).slice(0, 18);
+    const supply = BigInt(intPart) * 10n ** 18n + BigInt(fracPadded || '0');
+    return supply > 0n ? supply : null;
+  } catch {
+    return null;
   }
 }

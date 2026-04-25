@@ -176,6 +176,98 @@ describe('computeBuyReport', () => {
     expect(r.notionalUsd).toBeCloseTo(0.5, 8);
   });
 
+  it('uses the WEGAZ native-supply override for MC instead of the wrapped totalSupply', () => {
+    // Pool: 1M WEGAZ paired against 1k ETX. WEGAZ totalSupply on-chain
+    // (~1.93M today) only counts the wrapped slice; the chain's native
+    // EGAZ supply is ~20.16M, which is what we want MC to reflect.
+    const wegazWrapped: TokenMeta = {
+      address: WEGAZ,
+      symbol: 'WEGAZ',
+      decimals: 18,
+      totalSupply: 1_930_000n * 10n ** 18n,
+    };
+    const p: PoolSnapshot = {
+      pair: getAddress('0x000000000000000000000000000000000000beef') as Address,
+      token0: tokenETX,
+      token1: wegazWrapped,
+      reserve0After: 1_000n * 10n ** 18n,
+      reserve1After: 1_000_000n * 10n ** 18n,
+    };
+    // ETX-in / WEGAZ-out → user buys WEGAZ.
+    const decoded = decodeSwapAsBuy(p, {
+      sender: ETX,
+      to: ETX,
+      amount0In: 1n * 10n ** 18n,
+      amount0Out: 0n,
+      amount1In: 0n,
+      amount1Out: 1_000n * 10n ** 18n,
+    })!;
+    const pricing: UsdPricing = { etxUsd: 1, etiUsd: null, egazUsd: 0.001 };
+    const nativeSupply = 20_155_344n * 10n ** 18n;
+
+    const without = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing);
+    // 1.93M * $0.001 = $1,930
+    expect(without.mcBoughtUsd).toBeCloseTo(1_930, 4);
+
+    const withOverride = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing, {
+      wegazNativeSupply: nativeSupply,
+    });
+    // 20.155M * $0.001 ≈ $20,155 — uses native supply, not wrapped slice.
+    expect(withOverride.mcBoughtUsd).toBeCloseTo(20_155.344, 2);
+
+    // Override only applies to WEGAZ; ETX-side MC must be untouched even if
+    // a (defensive) override is supplied.
+    const ethSpentReport = computeBuyReport(
+      decodeSwapAsBuy(p, {
+        sender: ETX,
+        to: ETX,
+        amount0In: 0n,
+        amount0Out: 1n * 10n ** 18n,
+        amount1In: 1_000n * 10n ** 18n,
+        amount1Out: 0n,
+      })!,
+      ETX,
+      ETI,
+      WEGAZ,
+      pricing,
+      { wegazNativeSupply: nativeSupply },
+    );
+    // ETX MC stays 100M * $1 = $100M regardless of WEGAZ override.
+    expect(ethSpentReport.mcBoughtUsd).toBeCloseTo(100_000_000, 0);
+  });
+
+  it('falls back to the on-chain totalSupply when the WEGAZ override is null/zero', () => {
+    const wegazWrapped: TokenMeta = {
+      address: WEGAZ,
+      symbol: 'WEGAZ',
+      decimals: 18,
+      totalSupply: 1_930_000n * 10n ** 18n,
+    };
+    const p: PoolSnapshot = {
+      pair: getAddress('0x000000000000000000000000000000000000beef') as Address,
+      token0: tokenETX,
+      token1: wegazWrapped,
+      reserve0After: 1_000n * 10n ** 18n,
+      reserve1After: 1_000_000n * 10n ** 18n,
+    };
+    const decoded = decodeSwapAsBuy(p, {
+      sender: ETX,
+      to: ETX,
+      amount0In: 1n * 10n ** 18n,
+      amount0Out: 0n,
+      amount1In: 0n,
+      amount1Out: 1_000n * 10n ** 18n,
+    })!;
+    const pricing: UsdPricing = { etxUsd: 1, etiUsd: null, egazUsd: 0.001 };
+
+    for (const override of [null, 0n, undefined]) {
+      const r = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing, {
+        wegazNativeSupply: override,
+      });
+      expect(r.mcBoughtUsd).toBeCloseTo(1_930, 4);
+    }
+  });
+
   it('returns null USD figures when no anchor is available for either side', () => {
     const decoded = decodeSwapAsBuy(pool(), {
       sender: ETX,
