@@ -45,6 +45,7 @@ import { fetchUsdAnchors } from '@/lib/buybot/oracle';
 import {
   DEX_LAUNCH_BLOCK,
   etxToUsd,
+  loadLifetimeHarvesterStats,
   loadLifetimeSwapStats,
   loadRealizedBurnsToRecipient,
   toUnits18,
@@ -91,6 +92,7 @@ export async function GET(): Promise<Response> {
 
   const client = priceClient();
   const etxLc = d.etx.toLowerCase();
+  const harvester = d.treasuryHarvester;
 
   // Batch the initial handshake: pairs, USD anchor, head block, factory
   // fee parameters. All independent, so a single parallel round-trip.
@@ -110,13 +112,16 @@ export async function GET(): Promise<Response> {
     }) as Promise<bigint>,
   ]);
 
-  const etxUsd = await fetchAnchorEtxUsd(client, {
-    factory: d.swapFactory,
-    etx: d.etx,
-    eti: ext.eti,
-    wegaz: d.wegaz,
-    anchors,
-  });
+  const [etxUsd, harvesterStats] = await Promise.all([
+    fetchAnchorEtxUsd(client, {
+      factory: d.swapFactory,
+      etx: d.etx,
+      eti: ext.eti,
+      wegaz: d.wegaz,
+      anchors,
+    }),
+    loadLifetimeHarvesterStats(harvester, head.number, client),
+  ]);
 
   // Only ETX-hub pairs earn protocol-relevant fees. The launchpad can spawn
   // non-ETX pairs via trustedCreators, but those are outside the hub-fee
@@ -202,6 +207,41 @@ export async function GET(): Promise<Response> {
   const totalAccruedProtocolFeeEtx =
     (totalVolumeEtx * PROTOCOL_FEE_BPS) / 10_000;
 
+  // Harvester output is the dominant realized-revenue mechanism after
+  // the daily cron flips on. We surface both the total ETX harvested
+  // and the per-slice breakdown (treasury / staked / farms / POL).
+  const harvest = {
+    address: getAddress(harvester),
+    runCount: harvesterStats.runCount,
+    lastRunBlock: harvesterStats.lastRunBlock
+      ? harvesterStats.lastRunBlock.toString()
+      : null,
+    totalEtxHarvested: toUnits18(harvesterStats.totalEtxHarvestedWei),
+    totalEtxHarvestedUsd: etxToUsd(
+      toUnits18(harvesterStats.totalEtxHarvestedWei),
+      etxUsd,
+    ),
+    stakedSliceEtx: toUnits18(harvesterStats.stakedSliceWei),
+    stakedSliceUsd: etxToUsd(toUnits18(harvesterStats.stakedSliceWei), etxUsd),
+    farmsSliceEtx: toUnits18(harvesterStats.farmsSliceWei),
+    farmsSliceUsd: etxToUsd(toUnits18(harvesterStats.farmsSliceWei), etxUsd),
+    polSliceEtx: toUnits18(harvesterStats.polSliceWei),
+    polSliceUsd: etxToUsd(toUnits18(harvesterStats.polSliceWei), etxUsd),
+    treasurySliceEtx: toUnits18(harvesterStats.treasurySliceWei),
+    treasurySliceUsd: etxToUsd(
+      toUnits18(harvesterStats.treasurySliceWei),
+      etxUsd,
+    ),
+  };
+
+  // "Realized" = ETX that has been pulled out of pools and into protocol
+  // custody, regardless of mechanism. Pre-harvester this was only
+  // `pair.burn(feeTo)` (still tracked separately above for back-compat).
+  // Post-harvester the dominant component is `HarvestExecuted.totalEtxHarvested`,
+  // which the harvester itself routes across its 4 destinations.
+  const totalRealizedIncludingHarvest =
+    totalRealizedEtx + harvest.totalEtxHarvested;
+
   return jsonResponse(
     {
       chainId: MAINNET_CHAIN_ID,
@@ -231,11 +271,21 @@ export async function GET(): Promise<Response> {
           ? etxToUsd(totalAccruedProtocolFeeEtx, etxUsd)
           : 0,
         // Realized = actual ETX underlying pulled out of pools via
-        // `pair.burn(feeTo)`. Jumps stepwise; can be 0 if the treasury
-        // hasn't redeemed yet.
-        realizedEtx: totalRealizedEtx,
-        realizedEtxUsd: etxToUsd(totalRealizedEtx, etxUsd),
+        // `pair.burn(feeTo)` *plus* `HarvestExecuted.totalEtxHarvested`
+        // from the TreasuryHarvester (the dominant mechanism post-launch).
+        // Jumps stepwise on each redemption / harvest run.
+        realizedEtx: totalRealizedIncludingHarvest,
+        realizedEtxUsd: etxToUsd(totalRealizedIncludingHarvest, etxUsd),
+        // Sub-component: legacy `pair.burn(feeTo)` realizations only,
+        // useful for distinguishing the two mechanisms.
+        realizedEtxFromFeeTo: totalRealizedEtx,
+        realizedEtxFromFeeToUsd: etxToUsd(totalRealizedEtx, etxUsd),
       },
+      // Per-mechanism breakdown of harvester output. `treasurySliceEtx`
+      // is the slice that lands in the treasury wallet; the other slices
+      // are routed to stETX yield, ETXFarms LP rewards, and the POL
+      // re-pair / DEAD burn.
+      harvest,
       poolCount: pools.length,
       pools,
     },

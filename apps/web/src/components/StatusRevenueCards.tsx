@@ -41,6 +41,21 @@ interface RevenuePool {
   realizedEtxUsd: number | null;
 }
 
+interface HarvestSummary {
+  address: string;
+  runCount: number;
+  totalEtxHarvested: number;
+  totalEtxHarvestedUsd: number | null;
+  stakedSliceEtx: number;
+  stakedSliceUsd: number | null;
+  farmsSliceEtx: number;
+  farmsSliceUsd: number | null;
+  polSliceEtx: number;
+  polSliceUsd: number | null;
+  treasurySliceEtx: number;
+  treasurySliceUsd: number | null;
+}
+
 interface RevenueResponse {
   asOf: string;
   etxUsd: number | null;
@@ -56,7 +71,10 @@ interface RevenueResponse {
     accruedProtocolFeeUsd: number | null;
     realizedEtx: number;
     realizedEtxUsd: number | null;
+    realizedEtxFromFeeTo: number;
+    realizedEtxFromFeeToUsd: number | null;
   };
+  harvest: HarvestSummary;
   poolCount: number;
   pools: RevenuePool[];
 }
@@ -243,9 +261,45 @@ export function StatusRevenueCard() {
         <Row
           label="Protocol fee realized"
           value={`${formatEtx(t.realizedEtx)} · ${formatUsd(t.realizedEtxUsd)}`}
-          hint="burned from feeTo"
+          hint="feeTo burns + harvester output"
         />
       </dl>
+
+      {data.harvest.runCount > 0 ? (
+        <div className="mt-3 border-t border-white/5 pt-3">
+          <h3 className="mb-1.5 text-[11px] uppercase tracking-wider text-white/40">
+            Harvester ({data.harvest.runCount} run
+            {data.harvest.runCount === 1 ? '' : 's'})
+          </h3>
+          <dl className="space-y-1">
+            <Row
+              label="Total harvested"
+              value={`${formatEtx(data.harvest.totalEtxHarvested)} · ${formatUsd(data.harvest.totalEtxHarvestedUsd)}`}
+              hint="sum of all runs"
+            />
+            <Row
+              label="→ Treasury"
+              value={`${formatEtx(data.harvest.treasurySliceEtx)} · ${formatUsd(data.harvest.treasurySliceUsd)}`}
+              hint="40%"
+            />
+            <Row
+              label="→ stETX yield"
+              value={`${formatEtx(data.harvest.stakedSliceEtx)} · ${formatUsd(data.harvest.stakedSliceUsd)}`}
+              hint="10%"
+            />
+            <Row
+              label="→ ETXFarms"
+              value={`${formatEtx(data.harvest.farmsSliceEtx)} · ${formatUsd(data.harvest.farmsSliceUsd)}`}
+              hint="10%"
+            />
+            <Row
+              label="→ POL burn"
+              value={`${formatEtx(data.harvest.polSliceEtx)} · ${formatUsd(data.harvest.polSliceUsd)}`}
+              hint="40% LP to 0xdead"
+            />
+          </dl>
+        </div>
+      ) : null}
 
       {data.pools.length > 0 ? (
         <div className="mt-3 border-t border-white/5 pt-3">
@@ -266,10 +320,18 @@ export function StatusRevenueCard() {
 
       {data.feeTo ? (
         <p className="mt-3 text-[11px] text-white/40">
-          feeTo: <span className="font-mono">{shortAddr(data.feeTo)}</span> ·
-          realized = ETX received via{' '}
-          <span className="font-mono">pair.burn(feeTo)</span>; drops below
-          accrued only if treasury burns beyond fee-mint LP.
+          feeTo: <span className="font-mono">{shortAddr(data.feeTo)}</span>
+          {data.harvest.runCount > 0 ? (
+            <>
+              {' '}· harvester:{' '}
+              <span className="font-mono">
+                {shortAddr(data.harvest.address)}
+              </span>
+            </>
+          ) : null}
+          . Realized = ETX redeemed via{' '}
+          <span className="font-mono">pair.burn(feeTo)</span> plus{' '}
+          <span className="font-mono">HarvestExecuted.totalEtxHarvested</span>.
         </p>
       ) : null}
     </CardShell>
