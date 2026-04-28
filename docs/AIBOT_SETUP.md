@@ -10,10 +10,8 @@ It works as either an **admin** or a **regular non-admin** member of a group.
 
 This document covers the infra setup. The PR sequence is:
 
-- **PR A** *(this PR)* — webhook scaffold, mention/reply triggers, allowlist,
-  canned response. No LLM cost.
-- **PR B** — wire OpenAI `gpt-4o-mini` + live context from
-  `/api/v1/*` + global per-chat daily cap + global daily USD cap.
+- **PR A** — webhook scaffold, mention/reply triggers, allowlist, canned response. No LLM cost.
+- **PR B** *(this PR)* — multi-provider LLM chain (Gemini primary + Groq fallback by default, OpenAI optional), live `/api/v1/*` context grounding, global per-chat daily cap, global daily USD cap.
 - **PR C** — short conversation memory + admin commands (`/stats`, `/clear`).
 
 ---
@@ -69,8 +67,20 @@ In Vercel (Project Settings → Environment Variables), add:
 | `AIBOT_ALLOWED_CHAT_IDS` | yes | comma-separated chat ids the bot may answer in |
 | `AIBOT_WEBHOOK_SECRET_TOKEN` | recommended | a long random string used to authenticate Telegram → our webhook |
 | `AIBOT_USERNAME` | optional | the bot's `@username` (without `@`); auto-detected from `getMe` if unset |
-| `AIBOT_CHAT_DAILY_CAP` | optional | max LLM-backed replies per chat per UTC day (default `1000`) — wired in PR B |
-| `AIBOT_DAILY_USD_CAP` | optional | max LLM USD spend per UTC day (default `5`) — wired in PR B |
+| `AIBOT_CHAT_DAILY_CAP` | optional | max LLM-backed replies per chat per UTC day (default `1000`, `0` = unlimited) |
+| `AIBOT_DAILY_USD_CAP` | optional | max LLM USD spend per UTC day (default `5`, `0` = unlimited) |
+| `AIBOT_LLM_PROVIDERS` | optional | comma-separated provider chain in priority order, e.g. `gemini,groq,openai`. Default `gemini,groq`. |
+| `AIBOT_LLM_GEMINI_API_KEY` | recommended | Google AI Studio key — [aistudio.google.com](https://aistudio.google.com), no card required |
+| `AIBOT_LLM_GROQ_API_KEY` | recommended | Groq key — [console.groq.com](https://console.groq.com), no card required |
+| `AIBOT_LLM_OPENAI_API_KEY` | optional | OpenAI key (paid fallback for when both free providers are down) |
+| `AIBOT_KV_REST_URL` / `AIBOT_KV_REST_TOKEN` | recommended | Vercel KV / Upstash REST URL+token for daily-cap counters. Falls back to `KV_REST_API_URL` / `KV_REST_API_TOKEN` (the buybot vars). |
+| `AIBOT_REDIS_URL` | alt | TCP redis url (`redis://...`/`rediss://...`) — used only if KV REST is unset. Falls back to `REDIS_URL`. |
+| `AIBOT_KV_NAMESPACE` | optional | KV key prefix (default `aibot:prod`) |
+| `AIBOT_API_BASE_URL` | optional | base URL for live `/api/v1/*` lookups (default: request origin) |
+
+**Provider chain failover.** The bot calls `AIBOT_LLM_PROVIDERS` in order; the first provider that returns a non-error response wins. Both Gemini and Groq run truly-free tiers (1,500 req/day and ~14,400 req/day respectively), so the default chain costs $0 unless every free provider is degraded simultaneously.
+
+**No KV configured?** Daily caps degrade to "no enforcement" — the bot still answers, but the per-chat and USD ceilings can't be applied. Always wire either `AIBOT_KV_REST_*` or `AIBOT_REDIS_URL` in production.
 
 Redeploy after setting these so the new envs are baked into the build.
 
@@ -113,11 +123,10 @@ You should see the URL you set, `pending_update_count: 0`, and no
 In the allowlisted Telegram group, post:
 
 ```
-@EticaProtocolBot hello
+@EticaProtocolBot what is the current TVL?
 ```
 
-The bot should reply (in PR A) with the canned scaffold message
-acknowledging it's wired up. If nothing happens:
+With PR B merged and `AIBOT_LLM_*_API_KEY` set, the bot should answer with a real LLM response grounded in `/api/v1/*` data. Without LLM keys it replies with an "LLM not configured" notice. If nothing happens at all:
 
 1. Check `getWebhookInfo` for `last_error_message`.
 2. Check Vercel function logs for `/api/telegram/webhook` — the response
