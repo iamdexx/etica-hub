@@ -100,7 +100,10 @@ export interface AiBotConfig {
 const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; model: string; inputPrice: number; outputPrice: number }> = {
   gemini: {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-1.5-flash',
+    // gemini-1.5-flash was retired by Google; gemini-2.5-flash is the
+    // current free-tier default and the only one ListModels returns
+    // under the OpenAI compatibility surface.
+    model: 'gemini-2.5-flash',
     inputPrice: 0,
     outputPrice: 0,
   },
