@@ -18,11 +18,37 @@ describe('aibot system prompt', () => {
 
   it('blocks operator/provider/key questions', () => {
     expect(SYSTEM_PROMPT).toMatch(/operator|API key|provider/i);
-    expect(SYSTEM_PROMPT).toMatch(/Do not name providers/);
+    expect(SYSTEM_PROMPT).toMatch(/Never name providers/);
   });
 
   it('includes prompt-injection guard', () => {
     expect(SYSTEM_PROMPT).toMatch(/ignore previous instructions/i);
+  });
+
+  it('explicitly invites brainstorming about Etica improvements', () => {
+    // PR D loosens scope: open-ended ideas about Etica must be on-topic,
+    // not refused as "off-topic chatter".
+    expect(SYSTEM_PROMPT).toMatch(/brainstorm/i);
+    expect(SYSTEM_PROMPT).toMatch(/dapp|ecosystem|DeSci/i);
+  });
+
+  it('allows fixed facts from the model knowledge while keeping live numbers grounded', () => {
+    // Live numbers MUST come from Live Context...
+    expect(SYSTEM_PROMPT).toMatch(/Live Context/);
+    expect(SYSTEM_PROMPT).toMatch(/Live numbers/);
+    // ...but fixed facts (chain id, hub-and-spoke design, harvester
+    // split, ERC-4626 staking) can be answered from the model's own
+    // knowledge — the prompt must say so explicitly.
+    expect(SYSTEM_PROMPT).toMatch(/Fixed facts/);
+    expect(SYSTEM_PROMPT).toMatch(/answer directly from your knowledge/i);
+  });
+
+  it('refuses unrelated coin shilling but does not refuse Etica brainstorming', () => {
+    expect(SYSTEM_PROMPT).toMatch(/shill/i);
+    expect(SYSTEM_PROMPT).toMatch(/other chains|other coins/i);
+    // The old prompt blocked anything described as "off-topic chatter";
+    // PR D drops that phrase so brainstorming is no longer caught by it.
+    expect(SYSTEM_PROMPT).not.toMatch(/Off-topic chatter/i);
   });
 });
 

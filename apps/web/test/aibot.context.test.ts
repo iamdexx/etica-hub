@@ -63,6 +63,24 @@ describe('aibot live-context fetcher', () => {
           },
         ],
       },
+      '/api/v1/tokens/etx': {
+        token: { id: 'etx', symbol: 'ETX', decimals: 18 },
+        supply: {
+          totalSupplyFormatted: '21,000,000',
+          circulatingSupplyFormatted: '20,950,000',
+          burnedFormatted: '50,000',
+        },
+        prices: { usd: 0.0078 },
+      },
+      '/api/v1/tokens/stetx': {
+        token: { id: 'stetx', symbol: 'stETX', decimals: 18 },
+        supply: {
+          totalSupplyFormatted: '120,000',
+          circulatingSupplyFormatted: '120,000',
+          burnedFormatted: '0',
+        },
+        prices: { etx: 1.012345, usd: 0.0079 },
+      },
     });
 
     const ctx = await fetchLiveContext({
@@ -72,7 +90,17 @@ describe('aibot live-context fetcher', () => {
     });
 
     expect(ctx.errors).toEqual([]);
-    expect(ctx.loaded).toEqual(expect.arrayContaining(['tvl', 'stats', 'revenue', 'liquidity-flow', 'pools']));
+    expect(ctx.loaded).toEqual(
+      expect.arrayContaining([
+        'tvl',
+        'stats',
+        'revenue',
+        'liquidity-flow',
+        'pools',
+        'tokens/etx',
+        'tokens/stetx',
+      ]),
+    );
     expect(ctx.text).toContain('TVL: $11.70K');
     expect(ctx.text).toContain('Lifetime swap volume:');
     expect(ctx.text).toContain('TreasuryHarvester: 7 runs');
@@ -80,6 +108,10 @@ describe('aibot live-context fetcher', () => {
     expect(ctx.text).toContain('LP retention since launch: 98.40%');
     expect(ctx.text).toContain('ETI/ETX');
     expect(ctx.text).toContain('14 swaps/24h');
+    expect(ctx.text).toContain('ETX supply:');
+    expect(ctx.text).toContain('21,000,000');
+    expect(ctx.text).toContain('stETX supply:');
+    expect(ctx.text).toContain('stETX exchange rate: 1 stETX = 1.012345 ETX');
   });
 
   it('omits failed endpoints but still renders the rest', async () => {

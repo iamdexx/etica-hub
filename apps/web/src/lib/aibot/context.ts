@@ -68,6 +68,16 @@ interface LiquidityFlowPayload {
   total_lp_burned_etx?: number;
 }
 
+interface TokenSnapshotPayload {
+  token?: { id?: string; symbol?: string; decimals?: number };
+  supply?: {
+    totalSupplyFormatted?: string;
+    circulatingSupplyFormatted?: string;
+    burnedFormatted?: string;
+  } | null;
+  prices?: Record<string, number | null>;
+}
+
 async function fetchJson<T>(
   url: string,
   fetchImpl: typeof fetch,
@@ -145,12 +155,14 @@ export async function fetchLiveContext(opts: FetchLiveContextOptions): Promise<L
   const nowUnix = opts.nowUnix ?? Math.floor(Date.now() / 1000);
   const base = opts.baseUrl.replace(/\/$/, '');
 
-  const [tvl, stats, pools, revenue, flow] = await Promise.all([
+  const [tvl, stats, pools, revenue, flow, etxToken, stetxToken] = await Promise.all([
     fetchJson<TvlPayload>(`${base}/api/v1/tvl`, fetchImpl, timeoutMs),
     fetchJson<StatsPayload>(`${base}/api/v1/stats`, fetchImpl, timeoutMs),
     fetchJson<PoolsPayload>(`${base}/api/v1/pools`, fetchImpl, timeoutMs),
     fetchJson<RevenuePayload>(`${base}/api/v1/revenue`, fetchImpl, timeoutMs),
     fetchJson<LiquidityFlowPayload>(`${base}/api/v1/liquidity-flow`, fetchImpl, timeoutMs),
+    fetchJson<TokenSnapshotPayload>(`${base}/api/v1/tokens/etx`, fetchImpl, timeoutMs),
+    fetchJson<TokenSnapshotPayload>(`${base}/api/v1/tokens/stetx`, fetchImpl, timeoutMs),
   ]);
 
   const errors: LiveContext['errors'] = [];
@@ -219,6 +231,36 @@ export async function fetchLiveContext(opts: FetchLiveContextOptions): Promise<L
     );
   } else {
     errors.push({ endpoint: '/api/v1/liquidity-flow', error: flow.error ?? 'unknown' });
+  }
+
+  if (etxToken.data?.supply) {
+    loaded.push('tokens/etx');
+    const s = etxToken.data.supply;
+    const total = s.totalSupplyFormatted;
+    const circ = s.circulatingSupplyFormatted;
+    const burned = s.burnedFormatted;
+    const parts: string[] = [];
+    if (total) parts.push(`total ${total}`);
+    if (circ) parts.push(`circulating ${circ}`);
+    if (burned && burned !== '0') parts.push(`burned ${burned}`);
+    if (parts.length > 0) lines.push(`ETX supply: ${parts.join(' · ')}`);
+  } else {
+    errors.push({ endpoint: '/api/v1/tokens/etx', error: etxToken.error ?? 'unknown' });
+  }
+
+  if (stetxToken.data) {
+    loaded.push('tokens/stetx');
+    const s = stetxToken.data.supply;
+    const totalsParts: string[] = [];
+    if (s?.totalSupplyFormatted) totalsParts.push(`total ${s.totalSupplyFormatted}`);
+    if (s?.circulatingSupplyFormatted) totalsParts.push(`circulating ${s.circulatingSupplyFormatted}`);
+    if (totalsParts.length > 0) lines.push(`stETX supply: ${totalsParts.join(' · ')}`);
+    const stetxToEtx = stetxToken.data.prices?.etx;
+    if (typeof stetxToEtx === 'number' && Number.isFinite(stetxToEtx)) {
+      lines.push(`stETX exchange rate: 1 stETX = ${stetxToEtx.toFixed(6)} ETX`);
+    }
+  } else {
+    errors.push({ endpoint: '/api/v1/tokens/stetx', error: stetxToken.error ?? 'unknown' });
   }
 
   if (pools.data?.pools) {

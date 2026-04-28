@@ -24,7 +24,8 @@ import { loadAiBotConfig, type AiBotConfig } from '@/lib/aibot/config';
 import { fetchLiveContext } from '@/lib/aibot/context';
 import { resolveBotIdentity } from '@/lib/aibot/identity';
 import { aiBotKvFor } from '@/lib/aibot/kv';
-import { runChatChain } from '@/lib/aibot/llm';
+import { runChatChain, type ChatMessage } from '@/lib/aibot/llm';
+import { MAX_TURNS, memoryStoreFor } from '@/lib/aibot/memory';
 import { buildChatMessages } from '@/lib/aibot/prompt';
 import { readQuota, recordUsage } from '@/lib/aibot/quota';
 import { telegramApi } from '@/lib/aibot/telegram';
@@ -48,7 +49,14 @@ interface WebhookResult {
   /** Set when the webhook short-circuited before reaching trigger logic. */
   skipped?: 'disabled' | 'forbidden' | 'invalid_payload' | 'no_message';
   /** What we did once triggered: replied with LLM, with a quota notice, etc. */
-  action?: 'llm' | 'quota_chat' | 'quota_usd' | 'llm_unavailable' | 'empty_question' | 'llm_failed';
+  action?:
+    | 'llm'
+    | 'quota_chat'
+    | 'quota_usd'
+    | 'llm_unavailable'
+    | 'empty_question'
+    | 'llm_failed'
+    | 'history_cleared';
   /** Provider that produced the final reply, if any. */
   provider?: string | null;
   /** Telegram-API status from `sendMessage`, useful in logs. */
@@ -75,6 +83,23 @@ const LLM_FAILED_REPLY =
 const EMPTY_QUESTION_REPLY =
   "I see the mention but no question — ask me something about Etica, EticaHub, " +
   'staking, farms, or live protocol metrics.';
+
+const HISTORY_CLEARED_REPLY =
+  'History cleared. Next reply will be a fresh thread.';
+
+const HISTORY_NOOP_REPLY =
+  "No history to clear — we haven't talked yet in this thread.";
+
+/**
+ * Recognise an explicit "clear my history" command. Accepts both
+ * `clear`-style words and the slash form so users can type whichever
+ * feels natural after the @-mention.
+ */
+function isClearCommand(question: string): boolean {
+  const q = question.trim().toLowerCase().replace(/^\/+/, '');
+  if (q.length === 0) return false;
+  return q === 'clear' || q === 'reset' || q === 'forget';
+}
 
 function ok(body: WebhookResult): Response {
   // Always 200 OK — Telegram interprets non-2xx as a delivery failure
@@ -163,6 +188,33 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const kv = aiBotKvFor(config);
+  const memory = memoryStoreFor(config);
+  const userId = message.from?.id ?? 0;
+
+  // `@bot clear` / `reset` / `forget` resets the per-user thread before
+  // any LLM cost is incurred. Quota is intentionally NOT consulted —
+  // moderation commands shouldn't be rate-limited.
+  if (isClearCommand(question)) {
+    let hadHistory = false;
+    if (memory && userId > 0) {
+      const existing = await memory.getHistory(message.chat.id, userId);
+      hadHistory = existing.length > 0;
+      await memory.clearHistory(message.chat.id, userId);
+    }
+    const send = await api.sendMessage(
+      message.chat.id,
+      hadHistory ? HISTORY_CLEARED_REPLY : HISTORY_NOOP_REPLY,
+      { replyToMessageId: message.message_id, disableWebPagePreview: true },
+    );
+    return ok({
+      ok: true,
+      triggered: true,
+      reason: decision.reason,
+      action: 'history_cleared',
+      send: { ok: send.ok, status: send.status },
+    });
+  }
+
   const quota = await readQuota({
     kv,
     namespace: config.kvNamespace,
@@ -198,9 +250,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  // Load prior turns for this (chat, user) pair so the model can answer
+  // follow-ups coherently. Missing memory store, missing user id, or
+  // KV failure all degrade silently to "no history" — the bot still
+  // responds, just without context.
+  let history: ChatMessage[] = [];
+  if (memory && userId > 0) {
+    try {
+      history = await memory.getHistory(message.chat.id, userId);
+    } catch {
+      history = [];
+    }
+  }
+
   const baseUrl = originForLiveContext(req);
   const liveContext = await fetchLiveContext({ baseUrl });
-  const messages = buildChatMessages({ question, contextText: liveContext.text });
+  const messages = buildChatMessages({ question, contextText: liveContext.text, history });
   const result = await runChatChain(config.llmProviders, { messages });
 
   if (!result.ok) {
@@ -227,6 +292,24 @@ export async function POST(req: NextRequest): Promise<Response> {
     chatId: message.chat.id,
     costUsd: result.costUsd,
   });
+
+  // Append this turn to the user's thread and persist. Storage failure
+  // is non-fatal: the bot must always reply even if the next turn won't
+  // see this exchange.
+  if (memory && userId > 0) {
+    const next: ChatMessage[] = [
+      ...history,
+      { role: 'user', content: question },
+      { role: 'assistant', content: result.text },
+    ];
+    const trimmed =
+      next.length > MAX_TURNS ? next.slice(next.length - MAX_TURNS) : next;
+    try {
+      await memory.setHistory(message.chat.id, userId, trimmed);
+    } catch {
+      // Swallow — we'd rather lose memory than fail the reply.
+    }
+  }
 
   const send = await api.sendMessage(message.chat.id, result.text, {
     replyToMessageId: message.message_id,
