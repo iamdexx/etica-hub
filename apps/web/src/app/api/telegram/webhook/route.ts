@@ -197,9 +197,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (isClearCommand(question)) {
     let hadHistory = false;
     if (memory && userId > 0) {
-      const existing = await memory.getHistory(message.chat.id, userId);
-      hadHistory = existing.length > 0;
-      await memory.clearHistory(message.chat.id, userId);
+      try {
+        const existing = await memory.getHistory(message.chat.id, userId);
+        hadHistory = existing.length > 0;
+        await memory.clearHistory(message.chat.id, userId);
+      } catch {
+        // KV failure is non-fatal — we still return 200 so Telegram
+        // doesn't retry the update; reply as if there was no history.
+        hadHistory = false;
+      }
     }
     const send = await api.sendMessage(
       message.chat.id,

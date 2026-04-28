@@ -117,9 +117,12 @@ export function restMemoryStore(
       const key = memoryKey(namespace, chatId, userId);
       const pruned = pruneTurns(history);
       const value = encodeURIComponent(JSON.stringify(pruned));
-      // Upstash REST shape: /set/<key>/<value>?EX=<seconds>
+      // Upstash REST encodes every Redis arg as a path segment, so
+      // `SET key value EX <seconds>` becomes /set/<key>/<value>/EX/<seconds>.
+      // Query parameters are silently ignored by the proxy, which would
+      // leave the key with no TTL — so it must be on the path.
       const res = await fetch(
-        `${base}/set/${encodeURIComponent(key)}/${value}?EX=${IDLE_TTL_SECONDS}`,
+        `${base}/set/${encodeURIComponent(key)}/${value}/EX/${IDLE_TTL_SECONDS}`,
         { method: 'POST', headers },
       );
       if (!res.ok) throw new Error(`aibot-memory set ${key}: ${res.status}`);
