@@ -91,6 +91,38 @@ describe('aibot system prompt', () => {
     // format them so Telegram renders the block correctly.
     expect(SYSTEM_PROMPT).toMatch(/fenced block|triple backticks/i);
   });
+
+  it('pins all three canonical Etica sites + the EticaHub page index (PR I)', () => {
+    // PR I: bot must know about etica.io (canonical explorer / dapp) and
+    // eticanomics.net (ETI scarcity charts) in addition to eticaprotocol.org,
+    // and must enumerate every routable EticaHub page so it can direct
+    // users to the right surface instead of guessing or making up URLs.
+    expect(SYSTEM_PROMPT).toContain('https://etica.io');
+    expect(SYSTEM_PROMPT).toContain('https://eticanomics.net');
+    expect(SYSTEM_PROMPT).toContain('https://eticaprotocol.org');
+    // Full EticaHub page index — every public page the site exposes.
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/whitepaper');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/swap');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/pool');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/stake');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/farms');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/trade');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/research');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/bridge');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/status');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/api');
+    expect(SYSTEM_PROMPT).toContain('https://eticahub.com/explorer');
+  });
+
+  it('encodes Etica Protocol on-chain coordinates as fixed facts (PR I)', () => {
+    // PR I: stable on-chain identifiers users routinely ask about should
+    // be answerable directly from the prompt rather than redirected.
+    expect(SYSTEM_PROMPT).toContain('0x34c61EA91bAcdA647269d4e310A86b875c09946f');
+    expect(SYSTEM_PROMPT).toMatch(/eticamainnet\.eticascan\.org/);
+    expect(SYSTEM_PROMPT).toMatch(/eticamainnet\.eticaprotocol\.org/);
+    expect(SYSTEM_PROMPT).toMatch(/17 April 2022|17th april 2022/i);
+  });
 });
 
 describe('aibot chat-message builder', () => {
