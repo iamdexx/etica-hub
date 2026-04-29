@@ -6,6 +6,24 @@ import {
   abis,
   eticaMainnet,
 } from '@etica-hub/shared';
+import { fetchEgazNativeSupply } from '@/lib/buybot/oracle';
+
+/**
+ * BlockScout-compatible explorer used to read native EGAZ total supply.
+ * EGAZ is the chain's native gas coin and has no ERC-20 totalSupply read —
+ * the wrapped ERC-20 (WEGAZ) only counts the slice that was wrapped, so we
+ * pull the chain's native economic supply from the same coinsupply endpoint
+ * the buy bot already uses for market-cap math.
+ */
+const ETICA_STATS_EXPLORER_URL =
+  process.env.ETICA_STATS_EXPLORER_URL ?? 'http://explorer.etica-stats.org';
+
+/**
+ * Burn address subtracted from totalSupply when computing circulating supply.
+ * Mirrors the value the public price API uses; kept local so this component
+ * has no hard dependency on the API helper layer.
+ */
+const BURN_ADDRESS: Address = '0x000000000000000000000000000000000000dEaD';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 
@@ -75,7 +93,14 @@ type Snapshot = {
   factoryPairCount: bigint;
   factoryPairCreationFee: bigint;
   etxTotalSupply: bigint;
+  etxBurned: bigint;
   etxTreasuryBalance: bigint;
+  etiTotalSupply: bigint;
+  etiBurned: bigint;
+  /** WEGAZ ERC-20 totalSupply — only counts wrapped EGAZ, kept for context. */
+  wegazTotalSupply: bigint;
+  /** Native EGAZ supply pulled from BlockScout, or null if unreachable. */
+  egazNativeSupply: bigint | null;
   treasuryIsTrustedCreator: boolean;
   eti_etx: { pair: Address; reserveEti: bigint; reserveEtx: bigint } | null;
   egaz_etx: { pair: Address; reserveEgaz: bigint; reserveEtx: bigint } | null;
@@ -97,10 +122,15 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
       pairCount,
       pairCreationFee,
       etxTotalSupply,
+      etxBurned,
       etxTreasuryBalance,
+      etiTotalSupply,
+      etiBurned,
+      wegazTotalSupply,
       treasuryTrusted,
       etiEtxPair,
       egazEtxPair,
+      egazNativeSupply,
     ] = await Promise.all([
       client.readContract({
         abi: abis.factoryAbi,
@@ -131,7 +161,29 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
         abi: abis.erc20Abi,
         address: d.etx,
         functionName: 'balanceOf',
+        args: [BURN_ADDRESS],
+      }) as Promise<bigint>,
+      client.readContract({
+        abi: abis.erc20Abi,
+        address: d.etx,
+        functionName: 'balanceOf',
         args: [TREASURY_ADDRESS],
+      }) as Promise<bigint>,
+      client.readContract({
+        abi: abis.erc20Abi,
+        address: e.eti,
+        functionName: 'totalSupply',
+      }) as Promise<bigint>,
+      client.readContract({
+        abi: abis.erc20Abi,
+        address: e.eti,
+        functionName: 'balanceOf',
+        args: [BURN_ADDRESS],
+      }) as Promise<bigint>,
+      client.readContract({
+        abi: abis.erc20Abi,
+        address: d.wegaz,
+        functionName: 'totalSupply',
       }) as Promise<bigint>,
       client.readContract({
         abi: abis.factoryAbi,
@@ -151,6 +203,7 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
         functionName: 'getPair',
         args: [d.wegaz, d.etx],
       }) as Promise<Address>,
+      fetchEgazNativeSupply({ eticaStatsExplorerUrl: ETICA_STATS_EXPLORER_URL }),
     ]);
 
     async function loadPool(
@@ -253,7 +306,12 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
       factoryPairCount: pairCount,
       factoryPairCreationFee: pairCreationFee,
       etxTotalSupply,
+      etxBurned,
       etxTreasuryBalance,
+      etiTotalSupply,
+      etiBurned,
+      wegazTotalSupply,
+      egazNativeSupply,
       treasuryIsTrustedCreator: treasuryTrusted,
       eti_etx: etiEtx
         ? { pair: etiEtx.pair, reserveEti: etiEtx.reserveA, reserveEtx: etiEtx.reserveB }
@@ -322,8 +380,63 @@ export async function StatusPanel() {
               v={`${Number(formatUnits(snap.etxTotalSupply, 18)).toLocaleString()} ETX`}
             />
             <KV
+              k="circulating"
+              v={`${Number(
+                formatUnits(
+                  snap.etxTotalSupply > snap.etxBurned
+                    ? snap.etxTotalSupply - snap.etxBurned
+                    : 0n,
+                  18,
+                ),
+              ).toLocaleString()} ETX`}
+            />
+            <KV
+              k="burned"
+              v={`${Number(formatUnits(snap.etxBurned, 18)).toLocaleString()} ETX`}
+            />
+            <KV
               k="treasury balance"
               v={`${Number(formatUnits(snap.etxTreasuryBalance, 18)).toLocaleString()} ETX`}
+            />
+          </Section>
+
+          <Section title="ETI token (Etica Protocol)">
+            <KV
+              k="totalSupply"
+              v={`${Number(formatUnits(snap.etiTotalSupply, 18)).toLocaleString()} ETI`}
+            />
+            <KV
+              k="circulating"
+              v={`${Number(
+                formatUnits(
+                  snap.etiTotalSupply > snap.etiBurned
+                    ? snap.etiTotalSupply - snap.etiBurned
+                    : 0n,
+                  18,
+                ),
+              ).toLocaleString()} ETI`}
+            />
+            <KV
+              k="burned"
+              v={`${Number(formatUnits(snap.etiBurned, 18)).toLocaleString()} ETI`}
+            />
+          </Section>
+
+          <Section title="EGAZ (native gas coin)">
+            {snap.egazNativeSupply !== null ? (
+              <KV
+                k="native totalSupply"
+                v={`${Number(formatUnits(snap.egazNativeSupply, 18)).toLocaleString()} EGAZ`}
+              />
+            ) : (
+              <KV
+                k="native totalSupply"
+                v="unavailable (etica-stats explorer unreachable)"
+              />
+            )}
+            <KV
+              k="WEGAZ wrapped supply"
+              v={`${Number(formatUnits(snap.wegazTotalSupply, 18)).toLocaleString()} WEGAZ`}
             />
           </Section>
 
