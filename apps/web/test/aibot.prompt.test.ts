@@ -136,6 +136,22 @@ describe('aibot system prompt', () => {
     expect(SYSTEM_PROMPT).toMatch(/never joke through|stay literal/i);
   });
 
+  it('pins ETI + EGAZ as both mineable on the PoW chain (PR K regression)', () => {
+    // PR K regression: in EticaHub TG group the bot told a user "ETI isn't
+    // mineable, only EGAZ is" — flatly wrong. Etica is a PoW chain and the
+    // block reward mints BOTH ETI and EGAZ. Pin this as a fixed fact and a
+    // routing rule so future prompt edits can't silently drop it.
+    expect(SYSTEM_PROMPT).toMatch(/Proof[- ]of[- ]Work|PoW/i);
+    expect(SYSTEM_PROMPT).toMatch(/ethash/i);
+    // Both must be explicitly named as mineable.
+    expect(SYSTEM_PROMPT).toMatch(/BOTH EGAZ and ETI are mineable|ETI.*mineable.*EGAZ|both assets are mineable/i);
+    // The OPR3-minting path for ETI must also be present (it's where most
+    // ETI actually enters circulation, separate from the block reward).
+    expect(SYSTEM_PROMPT).toMatch(/OPR3.*proposals?.*approved|approved.*OPR3|research proposals?.*approved/i);
+    // Direct anti-hallucination clause: don't say either is non-mineable.
+    expect(SYSTEM_PROMPT).toMatch(/Don't say either is non-mineable|both are mined together via PoW/i);
+  });
+
   it('mentions Google Search grounding so the model knows it can search (PR J)', () => {
     // PR J: Gemini path enables the google_search tool. The prompt must
     // tell the model when to use it (time-sensitive Qs only) and when
