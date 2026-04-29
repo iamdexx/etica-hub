@@ -180,7 +180,11 @@ describe('aibot system prompt', () => {
     // explains it to newcomers, so it's worth pinning too.
     expect(SYSTEM_PROMPT).toMatch(/RandomX/);
     expect(SYSTEM_PROMPT).toMatch(/ETI.*CPU|CPU.*ETI|RandomX.*CPU/i);
-    // EGAZ = GPU.
+    // EGAZ = Etchash (specifically — same algo as Ethereum Classic),
+    // not just generic "GPU". The Etchash framing matters because users
+    // ask about hardware compatibility (Jasminer X44-P etc., which are
+    // Etchash-specific), and saying "GPU" alone is misleading.
+    expect(SYSTEM_PROMPT).toMatch(/Etchash/);
     expect(SYSTEM_PROMPT).toMatch(/EGAZ.*GPU|GPU.*EGAZ/i);
     // Both must be explicitly named as mineable.
     expect(SYSTEM_PROMPT).toMatch(/BOTH ETI and EGAZ are mineable|both are mineable/i);
@@ -190,6 +194,27 @@ describe('aibot system prompt', () => {
     // and don't conflate the two algorithms.
     expect(SYSTEM_PROMPT).toMatch(/Don't say either is non-mineable/);
     expect(SYSTEM_PROMPT).toMatch(/don't conflate.*algorithms?|conflate the two algorithms/i);
+  });
+
+  it('pins emission / block-reward facts for ETI and EGAZ (PR M regression)', () => {
+    // PR M regression: bot returned "every model provider failed" on
+    // "what is the current emission rate for eti and egaz" because it
+    // had no facts to ground the answer and likely timed out searching.
+    // These are chain constants — pin them as fixed facts so the bot
+    // answers from the prompt directly without needing search.
+    // ETI block reward (RandomX).
+    expect(SYSTEM_PROMPT).toMatch(/31\.96.*ETI.*block|ETI.*block.*31\.96/i);
+    // ETI annual issuance and 21M cap.
+    expect(SYSTEM_PROMPT).toMatch(/2[,.]?100[,.]?000 ETI|2\.1[Mm]/);
+    expect(SYSTEM_PROMPT).toMatch(/21[,.]?000[,.]?000 ETI|21M ETI|21 [Mm]illion ETI/);
+    // ETI tail emission post-cap.
+    expect(SYSTEM_PROMPT).toMatch(/2\.61803%/);
+    expect(SYSTEM_PROMPT).toMatch(/tail emission|after the cap|mining halts/i);
+    // EGAZ block reward + block time.
+    expect(SYSTEM_PROMPT).toMatch(/2\.0 EGAZ|EGAZ.*per block.*2\.0/i);
+    expect(SYSTEM_PROMPT).toMatch(/13 second|~13s|13\.[0-9]+s/i);
+    // Anti-hallucination: don't say "I don't know" — these are pinned.
+    expect(SYSTEM_PROMPT).toMatch(/Don't say you don't know|these are pinned facts|answer from these numbers/i);
   });
 
   it('mentions Google Search grounding so the model knows it can search (PR J)', () => {
