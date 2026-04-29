@@ -50,6 +50,30 @@ describe('aibot system prompt', () => {
     // PR D drops that phrase so brainstorming is no longer caught by it.
     expect(SYSTEM_PROMPT).not.toMatch(/Off-topic chatter/i);
   });
+
+  it('explicitly authorises general non-Etica questions (PR E scope expansion)', () => {
+    // PR E: bot is Etica-first, but answers general coding / how-to /
+    // technical questions directly without redirecting. The prompt must
+    // say so explicitly so future edits can't silently re-narrow scope.
+    expect(SYSTEM_PROMPT).toMatch(/general coding|how-to|technical explanations/i);
+    expect(SYSTEM_PROMPT).toMatch(/Don't refuse, don't redirect/i);
+    expect(SYSTEM_PROMPT).toMatch(/You are a real assistant/i);
+  });
+
+  it('keeps narrow refusal list (financial advice, operator, unsafe content)', () => {
+    // Refusals are intentionally narrow in PR E. Verify the four real
+    // refusal categories are still present and named.
+    expect(SYSTEM_PROMPT).toMatch(/financial advice/i);
+    expect(SYSTEM_PROMPT).toMatch(/operator|API key|provider/i);
+    expect(SYSTEM_PROMPT).toMatch(/illegal|malicious|malware/i);
+    expect(SYSTEM_PROMPT).toMatch(/prompt[- ]injection/i);
+  });
+
+  it('mentions Telegram-friendly fenced code blocks for code answers', () => {
+    // PR E expects code answers; the prompt must tell the model how to
+    // format them so Telegram renders the block correctly.
+    expect(SYSTEM_PROMPT).toMatch(/fenced block|triple backticks/i);
+  });
 });
 
 describe('aibot chat-message builder', () => {
