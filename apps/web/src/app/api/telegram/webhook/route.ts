@@ -21,6 +21,7 @@
 import { NextRequest } from 'next/server';
 
 import { chunkForTelegram } from '@/lib/aibot/chunk';
+import { renderCitationFooter } from '@/lib/aibot/citations';
 import { loadAiBotConfig, type AiBotConfig } from '@/lib/aibot/config';
 import { fetchLiveContext } from '@/lib/aibot/context';
 import { resolveBotIdentity } from '@/lib/aibot/identity';
@@ -322,7 +323,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   // to be split. The first chunk threads onto the user's question; the
   // rest are standalone follow-ups so a wall of "in reply to" headers
   // doesn't dominate the chat.
-  const chunks = chunkForTelegram(result.text);
+  //
+  // Grounded answers (Gemini + Google Search) include cited URLs in
+  // `result.citations`. Append a compact "Sources:" footer to the
+  // visible reply so users can see where time-sensitive facts came
+  // from. The footer is NOT persisted to memory above (we wrote
+  // `result.text` only) — that keeps subsequent turns from bloating
+  // the prompt with source lists from earlier answers.
+  const visibleText = `${result.text}${renderCitationFooter(result.citations)}`;
+  const chunks = chunkForTelegram(visibleText);
   let lastSend: { ok: boolean; status: number } = { ok: true, status: 200 };
   for (let i = 0; i < chunks.length; i++) {
     const send = await api.sendMessage(message.chat.id, chunks[i], {

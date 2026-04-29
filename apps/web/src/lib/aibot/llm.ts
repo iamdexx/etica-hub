@@ -54,6 +54,24 @@ export interface ChatSuccess {
   };
   /** Estimated USD cost for this single call. */
   costUsd: number;
+  /**
+   * Sources the model cited via Google Search grounding. Empty when the
+   * call wasn't grounded or the model didn't search. Each entry is a
+   * resolvable URL paired with a human-readable title (typically the
+   * page's `<title>`); deduplicated and ordered as the model returned
+   * them.
+   */
+  citations: ChatCitation[];
+  /**
+   * Search queries the model issued to Google. Empty when the model
+   * didn't search. Useful for transparency / log inspection.
+   */
+  searchQueries: string[];
+}
+
+export interface ChatCitation {
+  url: string;
+  title: string;
 }
 
 export interface ChatFailure {
@@ -188,10 +206,200 @@ async function callProvider(
       text: text.trim(),
       usage: { inputTokens, outputTokens },
       costUsd: estimateCostUsd(provider, inputTokens, outputTokens),
+      citations: [],
+      searchQueries: [],
     },
     status: res.status,
     error: null,
   };
+}
+
+interface GeminiNativeResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+      role?: string;
+    };
+    groundingMetadata?: {
+      webSearchQueries?: string[];
+      groundingChunks?: Array<{
+        web?: { uri?: string; title?: string };
+      }>;
+    };
+    finishReason?: string;
+  }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
+  modelVersion?: string;
+  error?: { message?: string; code?: number };
+}
+
+/**
+ * Call Gemini's native `generateContent` endpoint with the built-in
+ * `google_search` tool enabled. Required because the OpenAI-compat
+ * surface (`/v1beta/openai/chat/completions`) does NOT expose Gemini's
+ * built-in tools — only this native path returns grounding metadata.
+ *
+ * The model decides per-request whether to actually search; questions
+ * the Live Context already answers (TVL, harvest counts, etc.) won't
+ * trigger a search.
+ */
+async function callGeminiGrounded(
+  provider: LlmProviderConfig,
+  request: ChatRequest,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+): Promise<{ res: ChatSuccess | null; status: number | null; error: string | null }> {
+  const extras = provider.extras;
+  if (!extras) {
+    return { res: null, status: null, error: 'gemini extras missing' };
+  }
+  const url =
+    `${extras.nativeBaseUrl}/models/${encodeURIComponent(provider.model)}:generateContent` +
+    `?key=${encodeURIComponent(provider.apiKey)}`;
+
+  // Native Gemini distinguishes systemInstruction from contents. Map the
+  // OpenAI-shape `system` role onto systemInstruction (concatenated when
+  // there are multiple); user / assistant turns become user / model
+  // turns under contents.
+  const systemParts: string[] = [];
+  const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+  for (const m of request.messages) {
+    if (m.role === 'system') {
+      systemParts.push(m.content);
+      continue;
+    }
+    contents.push({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    });
+  }
+
+  const body: Record<string, unknown> = {
+    contents,
+    tools: [{ google_search: {} }],
+    generationConfig: {
+      maxOutputTokens: request.maxOutputTokens ?? 2048,
+      temperature: request.temperature ?? 0.4,
+    },
+  };
+  if (systemParts.length > 0) {
+    body.systemInstruction = { parts: [{ text: systemParts.join('\n\n') }] };
+  }
+
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ac.signal,
+      cache: 'no-store',
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    return {
+      res: null,
+      status: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+  clearTimeout(timer);
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = (await res.json()) as GeminiNativeResponse;
+      detail = data.error?.message ?? '';
+    } catch {
+      // ignore body-parse failures
+    }
+    return {
+      res: null,
+      status: res.status,
+      error: detail.length > 0 ? detail : `http ${res.status}`,
+    };
+  }
+
+  let json: GeminiNativeResponse;
+  try {
+    json = (await res.json()) as GeminiNativeResponse;
+  } catch (err) {
+    return {
+      res: null,
+      status: res.status,
+      error: `malformed json: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  const candidate = json.candidates?.[0];
+  const text = (candidate?.content?.parts ?? [])
+    .map((p) => p.text ?? '')
+    .join('')
+    .trim();
+  if (text.length === 0) {
+    return { res: null, status: res.status, error: 'empty response' };
+  }
+
+  const inputTokens =
+    typeof json.usageMetadata?.promptTokenCount === 'number'
+      ? json.usageMetadata.promptTokenCount
+      : null;
+  const outputTokens =
+    typeof json.usageMetadata?.candidatesTokenCount === 'number'
+      ? json.usageMetadata.candidatesTokenCount
+      : null;
+
+  const citations: ChatCitation[] = [];
+  const seenUrls = new Set<string>();
+  for (const chunk of candidate?.groundingMetadata?.groundingChunks ?? []) {
+    const url = chunk.web?.uri?.trim() ?? '';
+    if (url.length === 0 || seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    const title = chunk.web?.title?.trim() ?? url;
+    citations.push({ url, title });
+  }
+  const searchQueries = (candidate?.groundingMetadata?.webSearchQueries ?? [])
+    .map((q) => q.trim())
+    .filter((q) => q.length > 0);
+
+  return {
+    res: {
+      ok: true,
+      provider: provider.id,
+      model: json.modelVersion ?? provider.model,
+      text,
+      usage: { inputTokens, outputTokens },
+      costUsd: estimateCostUsd(provider, inputTokens, outputTokens),
+      citations,
+      searchQueries,
+    },
+    status: res.status,
+    error: null,
+  };
+}
+
+/**
+ * Dispatcher: routes to the grounded Gemini path when the provider is
+ * Gemini AND grounding is enabled in extras; otherwise uses the
+ * OpenAI-compat path. Provider-agnostic from the caller's perspective.
+ */
+async function dispatchProvider(
+  provider: LlmProviderConfig,
+  request: ChatRequest,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+): Promise<{ res: ChatSuccess | null; status: number | null; error: string | null }> {
+  if (provider.id === 'gemini' && provider.extras?.useGrounding) {
+    return callGeminiGrounded(provider, request, fetchImpl, timeoutMs);
+  }
+  return callProvider(provider, request, fetchImpl, timeoutMs);
 }
 
 export interface ChatChainOptions {
@@ -217,7 +425,7 @@ export async function runChatChain(
 
   for (const provider of providers) {
     lastProvider = provider.id;
-    const { res, status, error } = await callProvider(provider, request, fetchImpl, timeoutMs);
+    const { res, status, error } = await dispatchProvider(provider, request, fetchImpl, timeoutMs);
     attempts.push({ provider: provider.id, status, error });
     if (res) return res;
   }

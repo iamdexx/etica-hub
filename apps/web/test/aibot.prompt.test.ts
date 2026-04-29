@@ -123,6 +123,27 @@ describe('aibot system prompt', () => {
     expect(SYSTEM_PROMPT).toMatch(/eticamainnet\.eticaprotocol\.org/);
     expect(SYSTEM_PROMPT).toMatch(/17 April 2022|17th april 2022/i);
   });
+
+  it('encodes the read-the-room personality rules (PR J)', () => {
+    // PR J: bot mirrors a joking user with one short quip, then answers.
+    // Default register stays dry/factual. Refusals must NEVER be joked
+    // through — pin all three rules so future edits can't soften the
+    // refusal posture or strip the personality directive.
+    expect(SYSTEM_PROMPT).toMatch(/Tone/);
+    expect(SYSTEM_PROMPT).toMatch(/read the room/i);
+    expect(SYSTEM_PROMPT).toMatch(/mirror|match their energy/i);
+    expect(SYSTEM_PROMPT).toMatch(/one quip|One quip/);
+    expect(SYSTEM_PROMPT).toMatch(/never joke through|stay literal/i);
+  });
+
+  it('mentions Google Search grounding so the model knows it can search (PR J)', () => {
+    // PR J: Gemini path enables the google_search tool. The prompt must
+    // tell the model when to use it (time-sensitive Qs only) and when
+    // NOT to (anything Live Context already covers).
+    expect(SYSTEM_PROMPT).toMatch(/Google Search/);
+    expect(SYSTEM_PROMPT).toMatch(/time[- ]sensitive|today|latest|current/i);
+    expect(SYSTEM_PROMPT).toMatch(/Live Context/);
+  });
 });
 
 describe('aibot chat-message builder', () => {
