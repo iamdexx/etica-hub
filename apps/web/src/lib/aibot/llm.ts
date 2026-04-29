@@ -278,9 +278,26 @@ async function callGeminiGrounded(
     });
   }
 
+  // Permissive safety thresholds. Defaults block far too aggressively
+  // for community chat — innocuous banter ("you must be sexy then",
+  // "are you ngmi", roasts) trips HARASSMENT or SEXUALLY_EXPLICIT and
+  // returns an empty candidate, which used to surface to users as
+  // "every model provider failed". The bot's own system prompt + the
+  // refusal list already cover the categories we actually care about
+  // (financial advice, price predictions, operator/key questions,
+  // illegal/malware/NSFW), so we let Gemini ship anything below
+  // BLOCK_ONLY_HIGH and let the prompt do the gating.
+  const safetySettings = [
+    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+  ];
+
   const body: Record<string, unknown> = {
     contents,
     tools: [{ google_search: {} }],
+    safetySettings,
     generationConfig: {
       maxOutputTokens: request.maxOutputTokens ?? 2048,
       temperature: request.temperature ?? 0.4,
@@ -344,7 +361,15 @@ async function callGeminiGrounded(
     .join('')
     .trim();
   if (text.length === 0) {
-    return { res: null, status: res.status, error: 'empty response' };
+    // Surface finishReason when present (SAFETY, RECITATION, MAX_TOKENS,
+    // OTHER) so logs make it obvious why a response was empty. Without
+    // this it just shows up as "empty response" which we can't act on.
+    const reason = candidate?.finishReason;
+    return {
+      res: null,
+      status: res.status,
+      error: reason ? `empty response (finishReason=${reason})` : 'empty response',
+    };
   }
 
   const inputTokens =
