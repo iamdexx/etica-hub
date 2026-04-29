@@ -33,6 +33,29 @@ export interface LlmProviderConfig {
   inputPriceUsdPerM: number;
   /** Output price per million tokens, in USD (free tiers default to 0). */
   outputPriceUsdPerM: number;
+  /**
+   * Provider-specific knobs. Most providers ignore this object; only the
+   * Gemini provider currently consumes it (to opt into Google Search
+   * grounding via the native generateContent endpoint).
+   */
+  extras?: GeminiExtras;
+}
+
+/**
+ * Gemini-only extras. When `useGrounding` is true the LLM client routes
+ * Gemini calls through the native `generateContent` endpoint with the
+ * built-in `google_search` tool enabled; that endpoint accepts the same
+ * API key as the OpenAI-compat surface but returns grounding metadata
+ * (cited URLs) the OpenAI shape doesn't expose.
+ */
+export interface GeminiExtras {
+  /** When true, Gemini calls use grounding (Google Search tool). */
+  useGrounding: boolean;
+  /**
+   * Native Gemini API base, used only for grounded calls. Defaults to
+   * `https://generativelanguage.googleapis.com/v1beta`.
+   */
+  nativeBaseUrl: string;
 }
 
 export interface AiBotConfig {
@@ -177,6 +200,14 @@ function envFor(env: NodeJS.ProcessEnv, providerId: string, suffix: string): str
   return env[`AIBOT_LLM_${providerId.toUpperCase()}_${suffix}`];
 }
 
+function parseBoolean(raw: string | undefined, fallback: boolean): boolean {
+  if (raw === undefined) return fallback;
+  const v = raw.trim().toLowerCase();
+  if (v === '1' || v === 'true' || v === 'yes' || v === 'on') return true;
+  if (v === '0' || v === 'false' || v === 'no' || v === 'off' || v === '') return false;
+  return fallback;
+}
+
 function buildProvider(
   env: NodeJS.ProcessEnv,
   id: string,
@@ -198,7 +229,7 @@ function buildProvider(
     );
   }
 
-  return {
+  const provider: LlmProviderConfig = {
     id,
     apiKey,
     baseUrl,
@@ -214,6 +245,22 @@ function buildProvider(
       `AIBOT_LLM_${id.toUpperCase()}_OUTPUT_PRICE_USD_PER_M`,
     ),
   };
+
+  if (id === 'gemini') {
+    provider.extras = {
+      // Default ON: real-time grounding is the whole reason we're on
+      // Gemini. Operators can flip it off by setting
+      // AIBOT_LLM_GEMINI_GROUNDING=false (e.g. to debug or stay on the
+      // OpenAI-compat code path).
+      useGrounding: parseBoolean(envFor(env, id, 'GROUNDING'), true),
+      nativeBaseUrl: (
+        envFor(env, id, 'NATIVE_BASE_URL')?.trim() ||
+        'https://generativelanguage.googleapis.com/v1beta'
+      ).replace(/\/$/, ''),
+    };
+  }
+
+  return provider;
 }
 
 /**

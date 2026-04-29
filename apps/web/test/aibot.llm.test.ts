@@ -161,4 +161,192 @@ describe('aibot llm chain', () => {
       { fetchImpl: fetchImpl as unknown as typeof fetch },
     );
   });
+
+  it('OpenAI-compat success returns empty citations + searchQueries', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(okBody('hi back')));
+    const res = await runChatChain(
+      [provider({ id: 'groq' })],
+      { messages: [{ role: 'user', content: 'hi' }] },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.citations).toEqual([]);
+      expect(res.searchQueries).toEqual([]);
+    }
+  });
+});
+
+describe('aibot llm: gemini grounded path', () => {
+  function geminiProvider(useGrounding = true): LlmProviderConfig {
+    return {
+      id: 'gemini',
+      apiKey: 'gemini-key',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      model: 'gemini-2.5-flash',
+      inputPriceUsdPerM: 0,
+      outputPriceUsdPerM: 0,
+      extras: {
+        useGrounding,
+        nativeBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      },
+    };
+  }
+
+  function geminiOk(text: string, citations: Array<{ uri: string; title: string }> = [], queries: string[] = []): Response {
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: { parts: [{ text }], role: 'model' },
+            groundingMetadata: {
+              groundingChunks: citations.map((c) => ({ web: c })),
+              webSearchQueries: queries,
+            },
+            finishReason: 'STOP',
+          },
+        ],
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50 },
+        modelVersion: 'gemini-2.5-flash-actual',
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }
+
+  it('routes to native generateContent endpoint with google_search tool when grounding is on', async () => {
+    const fetchImpl = vi.fn().mockImplementation((url, init) => {
+      const u = String(url);
+      expect(u).toContain('/v1beta/models/gemini-2.5-flash:generateContent');
+      expect(u).toContain('key=gemini-key');
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      expect(body.tools).toEqual([{ google_search: {} }]);
+      // System instruction should be lifted out of contents.
+      expect(body.systemInstruction?.parts?.[0]?.text).toContain('You are EticaBot');
+      // Only user/model turns belong in contents.
+      expect(body.contents).toHaveLength(1);
+      expect(body.contents[0].role).toBe('user');
+      return Promise.resolve(geminiOk('answer'));
+    });
+    const res = await runChatChain(
+      [geminiProvider(true)],
+      {
+        messages: [
+          { role: 'system', content: 'You are EticaBot.' },
+          { role: 'user', content: 'what was the most recent NHL game?' },
+        ],
+      },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(res.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not include the API key in the request body', async () => {
+    const fetchImpl = vi.fn().mockImplementation((_url, init) => {
+      const body = String(init?.body ?? '');
+      expect(body).not.toContain('gemini-key');
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      // Native API uses the URL-key auth scheme, not bearer.
+      expect(headers.authorization).toBeUndefined();
+      return Promise.resolve(geminiOk('ok'));
+    });
+    await runChatChain(
+      [geminiProvider(true)],
+      { messages: [{ role: 'user', content: 'q' }] },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+  });
+
+  it('extracts citations from groundingChunks (deduped, in order)', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      geminiOk(
+        'The Bruins beat the Habs 4-2 last night.',
+        [
+          { uri: 'https://nhl.com/x', title: 'NHL.com — Bruins vs Habs' },
+          { uri: 'https://espn.com/y', title: 'ESPN' },
+          // Duplicate URL with different title — should be dropped.
+          { uri: 'https://nhl.com/x', title: 'duplicate' },
+        ],
+        ['Bruins Habs result'],
+      ),
+    );
+    const res = await runChatChain(
+      [geminiProvider(true)],
+      { messages: [{ role: 'user', content: 'most recent NHL game?' }] },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.citations).toEqual([
+        { url: 'https://nhl.com/x', title: 'NHL.com — Bruins vs Habs' },
+        { url: 'https://espn.com/y', title: 'ESPN' },
+      ]);
+      expect(res.searchQueries).toEqual(['Bruins Habs result']);
+    }
+  });
+
+  it('returns empty citations when the model did not search', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(geminiOk('answer with no grounding'));
+    const res = await runChatChain(
+      [geminiProvider(true)],
+      { messages: [{ role: 'user', content: 'what is 2+2' }] },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.citations).toEqual([]);
+      expect(res.searchQueries).toEqual([]);
+      expect(res.text).toBe('answer with no grounding');
+    }
+  });
+
+  it('grounding=false stays on the OpenAI-compat path', async () => {
+    const fetchImpl = vi.fn().mockImplementation((url) => {
+      // Should hit the OpenAI-compat surface, NOT the native one.
+      expect(String(url)).toContain('/openai/chat/completions');
+      expect(String(url)).not.toContain(':generateContent');
+      return Promise.resolve(jsonResponse(okBody('plain text')));
+    });
+    const res = await runChatChain(
+      [geminiProvider(false)],
+      { messages: [{ role: 'user', content: 'hi' }] },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.citations).toEqual([]);
+    }
+  });
+
+  it('falls back to the next provider when grounded gemini errors', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'quota' } }), {
+          status: 429,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(okBody('from groq')));
+    const res = await runChatChain(
+      [
+        geminiProvider(true),
+        {
+          id: 'groq',
+          apiKey: 'k',
+          baseUrl: 'https://api.groq.com/openai/v1',
+          model: 'llama',
+          inputPriceUsdPerM: 0,
+          outputPriceUsdPerM: 0,
+        },
+      ],
+      { messages: [{ role: 'user', content: 'q' }] },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.provider).toBe('groq');
+      expect(res.citations).toEqual([]);
+    }
+  });
 });
