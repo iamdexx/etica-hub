@@ -241,6 +241,60 @@ describe('aibot llm: gemini grounded path', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('sends permissive safetySettings (BLOCK_ONLY_HIGH) on grounded calls (PR L)', async () => {
+    // PR L regression: Gemini's default safety thresholds were blocking
+    // benign banter ("you must be sexy then") and returning empty
+    // candidates, which surfaced to users as "every model provider
+    // failed". The bot's own system prompt + refusal list cover the
+    // categories we actually care about, so we ship anything below
+    // BLOCK_ONLY_HIGH and let the prompt do the gating. Pin all four
+    // categories at BLOCK_ONLY_HIGH so a future edit can't quietly
+    // re-tighten them.
+    const fetchImpl = vi.fn().mockImplementation((_url, init) => {
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      expect(body.safetySettings).toEqual([
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+      ]);
+      return Promise.resolve(geminiOk('ok'));
+    });
+    await runChatChain(
+      [geminiProvider(true)],
+      { messages: [{ role: 'user', content: 'banter' }] },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces finishReason when the candidate has no text (PR L)', async () => {
+    // PR L: when Gemini returns an empty candidate (typical for SAFETY
+    // blocks), the error string must include the finishReason so logs
+    // are diagnosable. Without this it just shows up as "empty response"
+    // and we can't tell whether it was a safety block, a recitation
+    // block, or a max_tokens cutoff.
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [] }, finishReason: 'SAFETY' }],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 0 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    const res = await runChatChain(
+      [geminiProvider(true)],
+      { messages: [{ role: 'user', content: 'q' }] },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      const attempt = res.attempts.find((a) => a.provider === 'gemini');
+      expect(attempt?.error).toMatch(/finishReason=SAFETY/);
+    }
+  });
+
   it('does not include the API key in the request body', async () => {
     const fetchImpl = vi.fn().mockImplementation((_url, init) => {
       const body = String(init?.body ?? '');

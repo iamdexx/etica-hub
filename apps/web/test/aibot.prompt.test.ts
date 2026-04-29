@@ -124,6 +124,36 @@ describe('aibot system prompt', () => {
     expect(SYSTEM_PROMPT).toMatch(/17 April 2022|17th april 2022/i);
   });
 
+  it('hard-bans corporate-LLM safety boilerplate phrases (PR L)', () => {
+    // PR L regression: bot replied to "how ugly am I?" with "I'm a large
+    // language model, I don't have personal opinions or physical
+    // descriptions of individuals. My purpose is to provide information..."
+    // — exactly the corporate-LLM voice we wanted to avoid. The PR J
+    // personality clauses said "joke back when joking" but didn't
+    // explicitly ban the LLM-disclaimer phrasings, so the model fell back
+    // to its training. Pin them as banned.
+    expect(SYSTEM_PROMPT).toMatch(/NEVER respond with corporate-LLM safety boilerplate|banned outright/i);
+    // The exact phrases the model leaned on must be enumerated as banned.
+    expect(SYSTEM_PROMPT).toMatch(/large language model/);
+    expect(SYSTEM_PROMPT).toMatch(/I don't have personal opinions/);
+    expect(SYSTEM_PROMPT).toMatch(/My purpose is to provide information/);
+    expect(SYSTEM_PROMPT).toMatch(/I'm here to help/);
+    // The "if you have any questions related to Etica, I'm here to help"
+    // redirect-lecture must be explicitly banned.
+    expect(SYSTEM_PROMPT).toMatch(/lectures? the user back into.*topics|Banned redirects/i);
+    // At least one concrete example showing the right shape (one-line
+    // dry quip, no LLM disclaimer) must be present so the model has a
+    // pattern to follow.
+    expect(SYSTEM_PROMPT).toMatch(/how ugly am I/);
+    expect(SYSTEM_PROMPT).toMatch(/are you sentient/);
+    // Persona affirmation: the bot DOES have a personality, isn't a
+    // generic ChatGPT clone.
+    expect(SYSTEM_PROMPT).toMatch(/You DO have a personality|NOT a generic ChatGPT clone/);
+    // Refusal list must still take precedence over banter — confirm the
+    // explicit clause that the banter rules don't override refusals.
+    expect(SYSTEM_PROMPT).toMatch(/banter rules.*do NOT override the refusal list|never joke through/i);
+  });
+
   it('encodes the read-the-room personality rules (PR J)', () => {
     // PR J: bot mirrors a joking user with one short quip, then answers.
     // Default register stays dry/factual. Refusals must NEVER be joked
