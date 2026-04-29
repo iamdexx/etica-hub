@@ -136,6 +136,32 @@ describe('aibot system prompt', () => {
     expect(SYSTEM_PROMPT).toMatch(/never joke through|stay literal/i);
   });
 
+  it('pins ETI + EGAZ as both mineable, dual-algo: ETI=RandomX/CPU, EGAZ=GPU (PR K regression)', () => {
+    // PR K regression: in EticaHub TG the bot told a user "ETI isn't
+    // mineable, only EGAZ is" — flatly wrong. Etica is a dual-algorithm
+    // PoW chain: ETI is mined via RandomX (CPU, same algo as Monero) and
+    // EGAZ is mined on GPUs. Pin all three facts (both mineable, the
+    // distinct algorithms, and the no-conflation rule) so future prompt
+    // edits can't silently drop them or re-introduce the hallucination.
+    expect(SYSTEM_PROMPT).toMatch(/Proof[- ]of[- ]Work|PoW/i);
+    // Dual-algorithm framing must be explicit.
+    expect(SYSTEM_PROMPT).toMatch(/dual[- ]algorithm|two algorithms?|different hardware/i);
+    // ETI = RandomX, CPU. The "like Monero" framing is how the community
+    // explains it to newcomers, so it's worth pinning too.
+    expect(SYSTEM_PROMPT).toMatch(/RandomX/);
+    expect(SYSTEM_PROMPT).toMatch(/ETI.*CPU|CPU.*ETI|RandomX.*CPU/i);
+    // EGAZ = GPU.
+    expect(SYSTEM_PROMPT).toMatch(/EGAZ.*GPU|GPU.*EGAZ/i);
+    // Both must be explicitly named as mineable.
+    expect(SYSTEM_PROMPT).toMatch(/BOTH ETI and EGAZ are mineable|both are mineable/i);
+    // The OPR3-minting path for ETI must also be present.
+    expect(SYSTEM_PROMPT).toMatch(/OPR3.*proposals?.*approved|approved.*OPR3|research proposals?.*approved/i);
+    // Direct anti-hallucination clause: don't say either is non-mineable
+    // and don't conflate the two algorithms.
+    expect(SYSTEM_PROMPT).toMatch(/Don't say either is non-mineable/);
+    expect(SYSTEM_PROMPT).toMatch(/don't conflate.*algorithms?|conflate the two algorithms/i);
+  });
+
   it('mentions Google Search grounding so the model knows it can search (PR J)', () => {
     // PR J: Gemini path enables the google_search tool. The prompt must
     // tell the model when to use it (time-sensitive Qs only) and when
