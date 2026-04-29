@@ -11,6 +11,23 @@ describe('aibot system prompt', () => {
     expect(SYSTEM_PROMPT).toContain('TreasuryHarvester');
   });
 
+  it('describes ETI, EGAZ, and ETX in their distinct roles (PR H rebalance)', () => {
+    // PR H: prompt must position ETI and EGAZ as Etica Protocol assets and
+    // ETX as EticaHub's separate token, so the bot doesn't conflate them
+    // or default to ETX-first answers about "Etica."
+    expect(SYSTEM_PROMPT).toMatch(/EGAZ.*native gas/i);
+    expect(SYSTEM_PROMPT).toMatch(/ETI.*research|research.*ETI/i);
+    expect(SYSTEM_PROMPT).toMatch(/ETX.*separate|separate.*ETX/i);
+    // Two-layer framing must be explicit so future edits don't silently
+    // collapse Etica Protocol and EticaHub back into one thing.
+    expect(SYSTEM_PROMPT).toMatch(/Etica Protocol/);
+    expect(SYSTEM_PROMPT).toMatch(/EticaHub/);
+    expect(SYSTEM_PROMPT).toMatch(/independent|third[- ]party/i);
+    // The "lead with ETI, not ETX, when asked about Etica's economy" rule
+    // is the entire point of this PR — pin it in a test.
+    expect(SYSTEM_PROMPT).toMatch(/lead with ETI/i);
+  });
+
   it('encodes the no-financial-advice + price-redirect rule', () => {
     expect(SYSTEM_PROMPT).toMatch(/Never give financial advice/i);
     expect(SYSTEM_PROMPT).toMatch(/eticahub\.com\/trade/);
