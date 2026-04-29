@@ -27,7 +27,13 @@ export interface ChatMessage {
 
 export interface ChatRequest {
   messages: ChatMessage[];
-  /** Hard ceiling on output tokens. Defaults to 512 — plenty for chat replies. */
+  /**
+   * Hard ceiling on output tokens. Defaults to 2048 — large enough for
+   * long-form answers (system explanations, code snippets, brainstorming
+   * lists) without burning quota on runaway generations. The Telegram
+   * sender chunks anything past 4096 chars across multiple messages, so
+   * the model is free to use the full budget.
+   */
   maxOutputTokens?: number;
   /** Sampling temperature, 0..2. Defaults to 0.4 (mostly factual). */
   temperature?: number;
@@ -107,7 +113,7 @@ async function callProvider(
   const body = {
     model: provider.model,
     messages: request.messages,
-    max_tokens: request.maxOutputTokens ?? 512,
+    max_tokens: request.maxOutputTokens ?? 2048,
     temperature: request.temperature ?? 0.4,
   };
 

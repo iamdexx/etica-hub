@@ -20,6 +20,7 @@
 
 import { NextRequest } from 'next/server';
 
+import { chunkForTelegram } from '@/lib/aibot/chunk';
 import { loadAiBotConfig, type AiBotConfig } from '@/lib/aibot/config';
 import { fetchLiveContext } from '@/lib/aibot/context';
 import { resolveBotIdentity } from '@/lib/aibot/identity';
@@ -317,10 +318,20 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
-  const send = await api.sendMessage(message.chat.id, result.text, {
-    replyToMessageId: message.message_id,
-    disableWebPagePreview: true,
-  });
+  // Telegram caps `sendMessage` at 4096 chars; long-form replies have
+  // to be split. The first chunk threads onto the user's question; the
+  // rest are standalone follow-ups so a wall of "in reply to" headers
+  // doesn't dominate the chat.
+  const chunks = chunkForTelegram(result.text);
+  let lastSend: { ok: boolean; status: number } = { ok: true, status: 200 };
+  for (let i = 0; i < chunks.length; i++) {
+    const send = await api.sendMessage(message.chat.id, chunks[i], {
+      replyToMessageId: i === 0 ? message.message_id : undefined,
+      disableWebPagePreview: true,
+    });
+    lastSend = { ok: send.ok, status: send.status };
+    if (!send.ok) break;
+  }
 
   return ok({
     ok: true,
@@ -328,6 +339,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     reason: decision.reason,
     action: 'llm',
     provider: result.provider,
-    send: { ok: send.ok, status: send.status },
+    send: lastSend,
   });
 }
