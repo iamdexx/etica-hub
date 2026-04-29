@@ -431,11 +431,64 @@ export interface ChatChainOptions {
   fetchImpl?: typeof fetch;
   /** Per-provider request timeout in milliseconds. */
   timeoutMs?: number;
+  /**
+   * How many full passes through the provider chain to attempt. Defaults
+   * to 2: run every provider once, and if every provider failed *and*
+   * every failure was transient (5xx, 429, network/timeout, empty), do
+   * one more pass after a short backoff. Set to 1 to disable retries
+   * entirely.
+   */
+  maxChainAttempts?: number;
+  /** Backoff between chain attempts in milliseconds. Defaults to 500ms. */
+  retryDelayMs?: number;
+  /**
+   * Sleep implementation used between retry passes. Tests inject a
+   * synchronous shim so retry tests don't burn real wall time.
+   */
+  sleepImpl?: (ms: number) => Promise<void>;
+}
+
+/**
+ * A failure is `transient` if retrying the same provider with the same
+ * payload could plausibly succeed: 5xx, 429 rate limit, network/timeout
+ * (status === null), grounding metadata weirdness (empty response with
+ * no finishReason or finishReason=OTHER/MAX_TOKENS), or a malformed
+ * JSON wire glitch. SAFETY / RECITATION refusals and 4xx auth/quota
+ * errors are *not* transient — retrying won't change the outcome.
+ */
+function isTransient(status: number | null, error: string | null): boolean {
+  // Network failure, abort, or timeout — always retryable.
+  if (status === null) return true;
+  // 5xx server errors and 429 rate limits — retryable.
+  if (status >= 500) return true;
+  if (status === 429) return true;
+  // Other 4xx (auth, payload, quota) won't fix itself with a retry.
+  if (status >= 400) return false;
+  // 2xx with deterministic refusal — don't retry.
+  if (error && /finishReason=(SAFETY|RECITATION)/.test(error)) return false;
+  // 2xx with empty body / no usable text / malformed JSON — retryable.
+  if (error && (error.startsWith('empty response') || error.startsWith('malformed json'))) {
+    return true;
+  }
+  return false;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
  * Run the provider chain. Returns the first successful response, or a
  * `ChatFailure` listing every attempt if every provider failed.
+ *
+ * Retry behaviour: if the entire chain fails *and* every failure was
+ * transient, the chain runs one more pass after a short backoff. This
+ * catches the case where both providers (Gemini + Groq) hit a
+ * coincident upstream blip — historically that surfaced to users as
+ * "every model provider failed right now" even though the question was
+ * benign. A single extra pass closes that window without burning extra
+ * budget in the common case (success on first try) and without retrying
+ * deterministic failures (auth, safety) where retrying can't help.
  */
 export async function runChatChain(
   providers: LlmProviderConfig[],
@@ -444,15 +497,37 @@ export async function runChatChain(
 ): Promise<ChatResult> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxChainAttempts = Math.max(1, opts.maxChainAttempts ?? 2);
+  const retryDelayMs = Math.max(0, opts.retryDelayMs ?? 500);
+  const sleep = opts.sleepImpl ?? defaultSleep;
 
   const attempts: ChatAttemptLog[] = [];
   let lastProvider: string | null = null;
 
-  for (const provider of providers) {
-    lastProvider = provider.id;
-    const { res, status, error } = await dispatchProvider(provider, request, fetchImpl, timeoutMs);
-    attempts.push({ provider: provider.id, status, error });
-    if (res) return res;
+  for (let chainAttempt = 0; chainAttempt < maxChainAttempts; chainAttempt++) {
+    if (chainAttempt > 0) {
+      await sleep(retryDelayMs);
+    }
+
+    const passAttempts: ChatAttemptLog[] = [];
+    for (const provider of providers) {
+      lastProvider = provider.id;
+      const { res, status, error } = await dispatchProvider(provider, request, fetchImpl, timeoutMs);
+      passAttempts.push({ provider: provider.id, status, error });
+      if (res) {
+        attempts.push(...passAttempts);
+        return res;
+      }
+    }
+    attempts.push(...passAttempts);
+
+    // Only retry if every failure in this pass looked transient. A mixed
+    // outcome (e.g. one provider 401, another 503) means at least one
+    // provider has a real config problem, so retrying won't help.
+    const everyTransient =
+      passAttempts.length > 0 &&
+      passAttempts.every((a) => isTransient(a.status, a.error));
+    if (!everyTransient) break;
   }
 
   return {

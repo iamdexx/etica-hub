@@ -175,6 +175,158 @@ describe('aibot llm chain', () => {
       expect(res.searchQueries).toEqual([]);
     }
   });
+
+  it('retries the chain once when every provider fails transiently (PR N)', async () => {
+    // PR N regression: a real Telegram user asked an emission-rate
+    // question and got "every model provider failed" because both
+    // Gemini and Groq hiccupped within the same ~2s window. Without a
+    // retry, one coincident upstream blip surfaced as a hard failure
+    // even though both providers recovered seconds later. With the
+    // chain-level retry, a single extra pass after a 500ms backoff
+    // catches that case.
+    const fetchImpl = vi
+      .fn()
+      // First pass: both transient.
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'down' } }, { status: 503 }))
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'overloaded' } }, { status: 503 }))
+      // Second pass: Gemini still down, Groq recovers.
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'down' } }, { status: 503 }))
+      .mockResolvedValueOnce(jsonResponse(okBody('back online')));
+    const sleepImpl = vi.fn().mockResolvedValue(undefined);
+    const res = await runChatChain(
+      [provider({ id: 'gemini' }), provider({ id: 'groq' })],
+      { messages: [{ role: 'user', content: 'hi' }] },
+      {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        sleepImpl: sleepImpl as unknown as (ms: number) => Promise<void>,
+      },
+    );
+    expect(res.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(sleepImpl).toHaveBeenCalledTimes(1);
+    if (res.ok) {
+      expect(res.provider).toBe('groq');
+      expect(res.text).toBe('back online');
+    }
+  });
+
+  it('does NOT retry when any failure is deterministic (auth, safety) (PR N)', async () => {
+    // 401 = auth issue, retrying with the same key won't help. The
+    // mixed outcome (one deterministic + one transient) means at least
+    // one provider has a real config problem, so retry is a waste of
+    // time and budget. Pin the existing behaviour: 2 attempts, no retry.
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'auth' } }, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'down' } }, { status: 503 }));
+    const sleepImpl = vi.fn().mockResolvedValue(undefined);
+    const res = await runChatChain(
+      [provider({ id: 'gemini' }), provider({ id: 'groq' })],
+      { messages: [{ role: 'user', content: 'hi' }] },
+      {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        sleepImpl: sleepImpl as unknown as (ms: number) => Promise<void>,
+      },
+    );
+    expect(res.ok).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleepImpl).not.toHaveBeenCalled();
+    if (!res.ok) {
+      expect(res.attempts).toHaveLength(2);
+    }
+  });
+
+  it('does NOT retry when Gemini returned a SAFETY refusal (PR N)', async () => {
+    // SAFETY refusals are deterministic — re-asking the same question
+    // gets the same refusal. Pin no-retry behaviour so we don't burn
+    // budget on a request the model has already declined.
+    const fetchImpl = vi.fn().mockImplementation((url) => {
+      const u = String(url);
+      if (u.includes('generateContent')) {
+        // Gemini grounded path: empty candidate with finishReason=SAFETY.
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              candidates: [{ content: { parts: [{ text: '' }] }, finishReason: 'SAFETY' }],
+              usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 0 },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }
+      // Groq fallback also fails (transient) — but since Gemini was
+      // deterministic, retry should still be skipped.
+      return Promise.resolve(jsonResponse({ error: { message: 'down' } }, { status: 503 }));
+    });
+    const sleepImpl = vi.fn().mockResolvedValue(undefined);
+    const geminiGrounded: LlmProviderConfig = {
+      id: 'gemini',
+      apiKey: 'k',
+      baseUrl: 'https://example.com/v1',
+      model: 'gemini-2.5-flash',
+      inputPriceUsdPerM: 0,
+      outputPriceUsdPerM: 0,
+      extras: {
+        useGrounding: true,
+        nativeBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      },
+    };
+    const res = await runChatChain(
+      [geminiGrounded, provider({ id: 'groq' })],
+      { messages: [{ role: 'user', content: 'hi' }] },
+      {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        sleepImpl: sleepImpl as unknown as (ms: number) => Promise<void>,
+      },
+    );
+    expect(res.ok).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleepImpl).not.toHaveBeenCalled();
+  });
+
+  it('caps retries at maxChainAttempts (no infinite retry) (PR N)', async () => {
+    // Defence in depth: even if every pass fails transiently, retry is
+    // capped at maxChainAttempts (default 2). With a single provider
+    // returning 503 on every call, we should see exactly 2 fetch calls
+    // and 1 sleep, then give up.
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: { message: 'down' } }, { status: 503 }));
+    const sleepImpl = vi.fn().mockResolvedValue(undefined);
+    const res = await runChatChain(
+      [provider({ id: 'gemini' })],
+      { messages: [{ role: 'user', content: 'hi' }] },
+      {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        sleepImpl: sleepImpl as unknown as (ms: number) => Promise<void>,
+      },
+    );
+    expect(res.ok).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleepImpl).toHaveBeenCalledTimes(1);
+    if (!res.ok) {
+      expect(res.attempts).toHaveLength(2);
+    }
+  });
+
+  it('honours maxChainAttempts=1 to disable retries entirely (PR N)', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: { message: 'down' } }, { status: 503 }));
+    const sleepImpl = vi.fn().mockResolvedValue(undefined);
+    const res = await runChatChain(
+      [provider({ id: 'gemini' }), provider({ id: 'groq' })],
+      { messages: [{ role: 'user', content: 'hi' }] },
+      {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        sleepImpl: sleepImpl as unknown as (ms: number) => Promise<void>,
+        maxChainAttempts: 1,
+      },
+    );
+    expect(res.ok).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleepImpl).not.toHaveBeenCalled();
+  });
 });
 
 describe('aibot llm: gemini grounded path', () => {
