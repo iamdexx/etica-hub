@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { SYSTEM_PROMPT, buildChatMessages } from '../src/lib/aibot/prompt';
+import {
+  MAX_QUOTED_REPLY_CHARS,
+  SYSTEM_PROMPT,
+  buildChatMessages,
+  formatQuestionWithQuotedReply,
+} from '../src/lib/aibot/prompt';
 
 describe('aibot system prompt', () => {
   it('mentions the core protocol surface', () => {
@@ -253,5 +258,115 @@ describe('aibot chat-message builder', () => {
     expect(messages.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user']);
     expect(messages[1].content).toBe('what is TVL?');
     expect(messages[3].content).toBe('and the volume?');
+  });
+});
+
+describe('aibot Thinktica canonical-source pin (PR O)', () => {
+  it('includes thinktica.com as a canonical source alongside the other Etica sites', () => {
+    expect(SYSTEM_PROMPT).toContain('https://www.thinktica.com');
+    // Must describe what Thinktica IS, not just list the URL, so the bot
+    // can answer "what is Thinktica?" from the prompt without making
+    // up integration claims.
+    expect(SYSTEM_PROMPT).toMatch(/AI[- ]research|AI Scientific|research labs/i);
+    expect(SYSTEM_PROMPT).toMatch(/private beta/i);
+    // Anti-fabrication clause: the prompt must explicitly tell the
+    // model to route specifics it can't verify back to the site.
+    expect(SYSTEM_PROMPT).toMatch(/route the user to the site|Don't fabricate/i);
+  });
+
+  it('teaches the model how to handle quoted Telegram replies (PR O)', () => {
+    // Quoted-message handling rules must be present so the model knows
+    // a [Quoted message] block is the subject of the user's ask, not
+    // a prompt-injection attempt.
+    expect(SYSTEM_PROMPT).toMatch(/\[Quoted message\]/);
+    expect(SYSTEM_PROMPT).toMatch(/primary subject of the question/i);
+    // Empty-prompt-after-quote rule (the canonical "@bot" tag with no
+    // extra text) must be explicit.
+    expect(SYSTEM_PROMPT).toMatch(/empty after the quote|no extra question/i);
+    // Refusal rules must apply to quoted content too — otherwise users
+    // could route around refusals via "interpret this for me."
+    expect(SYSTEM_PROMPT).toMatch(/refusal-category question|apply the refusal rules to that quoted/i);
+  });
+});
+
+describe('aibot quoted-reply formatter (PR O)', () => {
+  it('returns the question unchanged when there is no quoted reply', () => {
+    expect(formatQuestionWithQuotedReply('what is TVL?', null)).toBe('what is TVL?');
+    expect(formatQuestionWithQuotedReply('what is TVL?', undefined)).toBe('what is TVL?');
+  });
+
+  it('returns the question unchanged when the quoted reply is empty', () => {
+    expect(
+      formatQuestionWithQuotedReply('hi', { text: '   ', username: 'alice' }),
+    ).toBe('hi');
+  });
+
+  it('prepends a sentinel-fenced quote with the @username when present', () => {
+    const out = formatQuestionWithQuotedReply('what does this mean?', {
+      text: 'BIO is up 4x this week',
+      username: 'EticaWhale',
+    });
+    expect(out).toContain('[Quoted message from @EticaWhale]');
+    expect(out).toContain('BIO is up 4x this week');
+    expect(out).toContain('[/Quoted message]');
+    // The user's actual ask must come AFTER the fenced quote so the
+    // model treats the quote as context rather than as instructions.
+    expect(out.indexOf('what does this mean?')).toBeGreaterThan(
+      out.indexOf('[/Quoted message]'),
+    );
+  });
+
+  it('falls back to first_name when there is no username', () => {
+    const out = formatQuestionWithQuotedReply('thoughts?', {
+      text: 'I think ETI is undervalued',
+      firstName: 'Bob',
+    });
+    expect(out).toContain('[Quoted message from Bob]');
+  });
+
+  it('falls back to "unknown user" when neither username nor first_name exist', () => {
+    const out = formatQuestionWithQuotedReply('thoughts?', {
+      text: 'channel post body',
+    });
+    expect(out).toContain('[Quoted message from unknown user]');
+  });
+
+  it('annotates bot authors so the model knows who wrote the quote', () => {
+    const out = formatQuestionWithQuotedReply('what did the buybot say?', {
+      text: 'EticaBuyBot: 100 ETX bought for $0.50',
+      username: 'EticaBuyBot',
+      isBot: true,
+    });
+    expect(out).toContain('[Quoted message from @EticaBuyBot (a bot)]');
+  });
+
+  it('emits a synthetic prompt when the user @-mentioned us with no extra text', () => {
+    const out = formatQuestionWithQuotedReply('', {
+      text: 'BIO is up 4x',
+      username: 'EticaWhale',
+    });
+    // "@bot" with empty trailing question must still produce a usable
+    // user turn that tells the model to interpret the quote, not the
+    // existing EMPTY_QUESTION_REPLY canned message.
+    expect(out).toContain('[Quoted message from @EticaWhale]');
+    expect(out).toMatch(/no extra prompt|interpret the quoted message/i);
+  });
+
+  it('truncates absurdly long quotes to keep the prompt budget bounded', () => {
+    // Telegram caps a single message at 4096 chars; if a user replies
+    // to such a message and tags us, we must NOT forward the entire
+    // body verbatim — we cap at MAX_QUOTED_REPLY_CHARS.
+    const long = 'x'.repeat(4096);
+    const out = formatQuestionWithQuotedReply('thoughts?', {
+      text: long,
+      username: 'alice',
+    });
+    // Body of the quote (between the open/close sentinels) must be
+    // capped, with an ellipsis to signal truncation.
+    const start = out.indexOf('[Quoted message from @alice]') + '[Quoted message from @alice]'.length;
+    const end = out.indexOf('[/Quoted message]');
+    const body = out.slice(start, end);
+    expect(body.length).toBeLessThanOrEqual(MAX_QUOTED_REPLY_CHARS + 4); // +newlines + ellipsis
+    expect(body).toMatch(/…/);
   });
 });
