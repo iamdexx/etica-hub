@@ -58,8 +58,21 @@ export interface TelegramMessage {
   date: number;
   text?: string;
   entities?: MessageEntity[];
-  /** Set when the user is replying to a previous message. */
-  reply_to_message?: { from?: TelegramUser; message_id: number };
+  /**
+   * Set when the user is replying to a previous message. Carries the
+   * sender + body text so the webhook can quote the original message
+   * back to the model when the user @-mentions the bot in a reply
+   * (e.g. "@EticaAI_BOT how do you interpret this?" attached to
+   * someone else's BIO post). Telegram trims rich content into `text`
+   * for plain messages and `caption` for media; we accept either so
+   * media-with-caption replies still surface their context.
+   */
+  reply_to_message?: {
+    from?: TelegramUser;
+    message_id: number;
+    text?: string;
+    caption?: string;
+  };
 }
 
 export interface BotIdentity {

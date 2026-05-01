@@ -28,7 +28,11 @@ import { resolveBotIdentity } from '@/lib/aibot/identity';
 import { aiBotKvFor } from '@/lib/aibot/kv';
 import { runChatChain, type ChatMessage } from '@/lib/aibot/llm';
 import { MAX_TURNS, memoryStoreFor } from '@/lib/aibot/memory';
-import { buildChatMessages } from '@/lib/aibot/prompt';
+import {
+  buildChatMessages,
+  formatQuestionWithQuotedReply,
+  type QuotedReplyContext,
+} from '@/lib/aibot/prompt';
 import { readQuota, recordUsage } from '@/lib/aibot/quota';
 import { telegramApi } from '@/lib/aibot/telegram';
 import { decideTrigger, type TelegramMessage, type TriggerDecision } from '@/lib/aibot/triggers';
@@ -121,6 +125,35 @@ function pickMessage(update: TelegramUpdate): TelegramMessage | undefined {
   return update.message ?? update.channel_post ?? undefined;
 }
 
+/**
+ * Pull the replied-to message off a Telegram update so the LLM can see
+ * what the user actually wants interpreted. Returns `null` when there
+ * is no reply-to context, the quote is empty, or the user is replying
+ * to one of our own bot's prior messages (in which case the existing
+ * conversation-memory thread already carries it and re-quoting would
+ * just duplicate context).
+ */
+function extractQuotedReply(
+  message: TelegramMessage,
+  botId: number,
+): QuotedReplyContext | null {
+  const reply = message.reply_to_message;
+  if (!reply) return null;
+  // Replying to ourselves is already handled by conversation memory;
+  // re-quoting it would double the prompt without adding new info.
+  if (reply.from?.id === botId) return null;
+
+  const text = (reply.text ?? reply.caption ?? '').trim();
+  if (text.length === 0) return null;
+
+  return {
+    text,
+    username: reply.from?.username,
+    firstName: reply.from?.first_name,
+    isBot: reply.from?.is_bot,
+  };
+}
+
 function originForLiveContext(req: NextRequest): string {
   // In production Vercel sets `VERCEL_URL` to the per-deployment hostname.
   // For local dev / fallback we read the request's origin.
@@ -161,7 +194,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const question = (decision.prompt ?? '').trim();
-  if (question.length === 0) {
+  // When the @-mention is also a Telegram reply, treat the replied-to
+  // message as the subject of the question (the canonical "interpret
+  // this for me" pattern). We only fall back to EMPTY_QUESTION_REPLY
+  // when there is neither a real question nor a quoted message — i.e.
+  // the user really did just type "@bot" with nothing else.
+  const quotedReply = extractQuotedReply(message, bot.id);
+  if (question.length === 0 && !quotedReply) {
     const send = await api.sendMessage(message.chat.id, EMPTY_QUESTION_REPLY, {
       replyToMessageId: message.message_id,
       disableWebPagePreview: true,
@@ -273,7 +312,17 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const baseUrl = originForLiveContext(req);
   const liveContext = await fetchLiveContext({ baseUrl });
-  const messages = buildChatMessages({ question, contextText: liveContext.text, history });
+  // When the user @-mentioned us in reply to someone else's message,
+  // prepend that message's text to the question so the model sees what
+  // they actually want interpreted. Memory stores the *raw* question
+  // (without the quoted block) so the next turn doesn't re-litigate the
+  // quote — the user's follow-up is what should drive turn N+1.
+  const questionForModel = formatQuestionWithQuotedReply(question, quotedReply);
+  const messages = buildChatMessages({
+    question: questionForModel,
+    contextText: liveContext.text,
+    history,
+  });
   const result = await runChatChain(config.llmProviders, { messages });
 
   if (!result.ok) {

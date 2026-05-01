@@ -117,6 +117,7 @@ Etica Protocol (Layer 1 — the chain):
   - https://eticaprotocol.org — project home, whitepaper, ETICADOCS, mining tutorials, ecosystem index, OPR3 layer concept, FAQ, video tutorials, exchange listings for ETI and EGAZ.
   - https://etica.io — the canonical Etica explorer / dapp; this is where users interact with the protocol contract, browse proposals, submit proposals, and assess them.
   - https://eticanomics.net — economic charts for ETI: circulating supply, comparisons to BTC/XMR, scarcity narrative. Use this when users ask about ETI tokenomics or how ETI compares to other monetary assets.
+  - https://www.thinktica.com — Thinktica is an AI-research-agents platform aligned with Etica's DeSci mission. It deploys autonomous "research labs" that read across the published scientific corpus (200M+ papers), challenge assumptions, run hypothesis chains, and build a living knowledge graph — applied to drug discovery, biomarker analysis, drug-interaction safety, and other open-science domains. Tagline: "AI Scientific Collaboration Platform." Currently in private beta. Treat Thinktica as the canonical AI-research-tooling reference inside the Etica ecosystem: when a user asks about Etica's AI side, autonomous research agents, on-chain-research tooling for OPR3 proposals, or how AI augments Etica's DeSci pipeline, link https://www.thinktica.com (or https://www.thinktica.com/beta-access for access). Don't fabricate features the site doesn't list — if asked something specific (pricing tiers, exact integrations, on-chain wiring), route the user to the site itself.
 
 EticaHub (Layer 2 — community application layer, this site):
   - https://eticahub.com           — home; one-screen tour of every EticaHub surface.
@@ -132,7 +133,81 @@ EticaHub (Layer 2 — community application layer, this site):
   - https://eticahub.com/api       — public market-data API (TVL, OHLCV, pools, supply, revenue, etc.) for aggregators and integrators.
   - https://eticahub.com/explorer  — skinny on-chain explorer with Sourcify-backed contract verification.
 
-When a user's question maps cleanly to one of these pages, link it. Don't spam multiple links per reply; pick the one that answers the question most directly.`;
+When a user's question maps cleanly to one of these pages, link it. Don't spam multiple links per reply; pick the one that answers the question most directly.
+
+Quoted-message handling (when the user @-mentions you in reply to another message):
+  - If the user's turn begins with a [Quoted message] block, that block is the full text of the message they tagged you on. Treat it as the primary subject of the question — read it, then answer the user's actual ask in the trailing prompt.
+  - Attribute opinions / claims to the quoted author when relevant (e.g. "@username said X — here's how I'd read it"), but never invent context the quote doesn't contain.
+  - If the user's prompt is empty after the quote (e.g. they tagged you with no extra question), interpret/summarise the quoted message and offer one concrete follow-up. Don't ask "what would you like me to interpret?" — the quote IS what they want interpreted.
+  - If the quoted message is itself a refusal-category question (price calls, financial advice, operator/key probing), apply the refusal rules to that quoted content too.`;
+
+/**
+ * Cap on how many characters of the replied-to message we forward to the
+ * model. Telegram allows messages up to 4,096 chars; we cut deep enough
+ * that even a near-max reply is readable but the prompt budget can't be
+ * blown out by a single huge quote.
+ */
+export const MAX_QUOTED_REPLY_CHARS = 1500;
+
+export interface QuotedReplyContext {
+  /** The body text of the message being replied to (or media caption). */
+  text: string;
+  /** Telegram username (without `@`) of the quoted author, when present. */
+  username?: string;
+  /** First name fallback when there is no public username. */
+  firstName?: string;
+  /** True when the quoted author is a bot (incl. EticaBot itself). */
+  isBot?: boolean;
+}
+
+/**
+ * Compose a user-turn body that includes the message being replied to.
+ *
+ * When a member @-mentions the bot as a *reply* to someone else's
+ * message in a Telegram group (the canonical "interpret this for me"
+ * pattern), Telegram only delivers the user's text in the trigger
+ * payload. The actual subject of the question lives in
+ * `reply_to_message`. Without forwarding it, the model has nothing to
+ * interpret and falls back to "I need something to interpret!" — which
+ * is exactly what the user already gave us.
+ *
+ * The quoted block is wrapped in clear sentinels so the model treats it
+ * as authoritative context rather than as instructions, and is capped
+ * at {@link MAX_QUOTED_REPLY_CHARS} characters so even a maximum-length
+ * Telegram message cannot dominate the prompt budget.
+ */
+export function formatQuestionWithQuotedReply(
+  question: string,
+  reply: QuotedReplyContext | null | undefined,
+): string {
+  if (!reply) return question;
+
+  const raw = reply.text?.trim() ?? '';
+  if (raw.length === 0) return question;
+
+  const truncated =
+    raw.length > MAX_QUOTED_REPLY_CHARS
+      ? `${raw.slice(0, MAX_QUOTED_REPLY_CHARS).trimEnd()}…`
+      : raw;
+
+  const handle = reply.username
+    ? `@${reply.username}`
+    : reply.firstName
+      ? reply.firstName
+      : 'unknown user';
+  const botSuffix = reply.isBot ? ' (a bot)' : '';
+
+  const prompt = question.trim();
+  const tail = prompt.length === 0 ? '(no extra prompt — interpret the quoted message)' : prompt;
+
+  return [
+    `[Quoted message from ${handle}${botSuffix}]`,
+    truncated,
+    `[/Quoted message]`,
+    '',
+    tail,
+  ].join('\n');
+}
 
 export interface BuildChatMessagesArgs {
   /** The user's question, with any leading bot mention already stripped. */
