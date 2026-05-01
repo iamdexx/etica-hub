@@ -356,7 +356,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (memory && userId > 0) {
     const next: ChatMessage[] = [
       ...history,
-      { role: 'user', content: question },
+      // Store the *augmented* question (with the [Quoted message] block,
+      // when present) so follow-up turns don't see an empty user turn
+      // when the user @-mentioned us with no extra text but a reply
+      // context. Without this, history would show `''` followed by the
+      // assistant's interpretation of a quote that's no longer visible
+      // — coherence collapses by turn 2.
+      { role: 'user', content: questionForModel },
       { role: 'assistant', content: result.text },
     ];
     const trimmed =
