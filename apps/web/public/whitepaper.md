@@ -272,16 +272,25 @@ The `/stake` page provides:
 - `distributeRewards` is **fully permissionless**: any wallet may call it. Calling it with zero amount reverts with `ZeroAmount()`; a nonzero call requires the caller to have approved the vault for the full amount and transfers that ETX into the vault in the same transaction — shares are never minted, only the exchange rate ticks up.
 - Withdrawals are not rate-limited, not paused, not subject to any cooldown.
 
-### 8.5 Treasury seed stake (20M ETX)
+### 8.5 Treasury commitment (stETX + LP)
 
-The EticaHub treasury seeds stETX with **20,000,000 ETX** (20% of fixed supply) as a public commitment to the vault's design and to bootstrap non-zero TVL on day one. Concrete implications:
+The EticaHub treasury is the single largest committer of capital to the protocol. As of v1.2, the on-chain footprint across stETX and LP positions is approximately:
 
-- **Real floor on TVL.** The `/stake` page does not open with an empty vault. APY math and exchange-rate history have a meaningful denominator from the first block.
-- **Skin-in-the-game signal.** The treasury is the largest stETX holder. Every design decision about the vault applies to the treasury first — there is no separate "team pool" on better terms.
-- **No special privileges.** The treasury's stETX shares are identical to any other depositor's. Treasury cannot front-run distributions, cannot block withdrawals, cannot mint extra shares. The `distributeRewards` path is permissionless and capped by the fees the harvester actually collected.
-- **Dilutive to treasury by design.** As outside stakers deposit, treasury's proportional claim on the 10% harvest bucket falls. This is the intended direction: the seed stake exists to bootstrap credibility, not to lock in a permanent treasury revenue line. The 40% treasury bucket and the 40% POL burn (see §9) are unaffected by stETX participation.
-- **Companion stableswap commitment.** A further **15M ETX (15M ETX + 15M stETX, ~30M ETX-equivalent)** sits in the **EticaStableSwap pool** seeded by the treasury, with the treasury's LP shares locked for 10 years in `LiquidityTimelock10y` (see §10.2). Public LPs are unaffected by that lock.
-- **Liquid commitment, not a rug-pull vector.** The 20M is held as stETX shares in the treasury wallet and is liquid under ERC-4626. Any intent to unwind would be fully visible on-chain as a `Redeem` event. A time-locked wrapper is under consideration as a follow-up (see roadmap).
+| Position | Treasury holding | ETX-equivalent exposure |
+|---|---|---|
+| stETX shares (liquid) | ~11.0M stETX | ~11.0M ETX at NAV |
+| EticaStableSwap LP — locked 10y in `LiquidityTimelock10y` (§10.2) | 100% of seed | ~30M ETX (15M ETX + 15M stETX) |
+| EticaSwap V2 — stETX/ETX LP | ~85.8% of pool | ~7.8M ETX + ~6.95M stETX |
+| EticaSwap V2 — EGAZ/ETX LP | ~52.3% of pool | ~0.47M ETX side |
+| EticaSwap V2 — ETI/ETX LP | ~7.2% of pool | ~0.13M ETX side |
+
+These figures are read live from chain and will drift block-to-block as fees accrue, public LPs come and go, and the harvester redistributes; the structure is what is fixed, not the exact numbers. Concrete implications:
+
+- **Real floor on TVL.** The `/stake` page does not open with an empty vault, and the V2 + stableswap pools do not open with empty books. APY math, exchange-rate history, and routing depth all have a meaningful denominator from the first block.
+- **Skin-in-the-game signal.** The treasury is the largest stETX holder, the dominant LP on every ETX-paired pool, and the only LP on the stableswap. Every design decision about these venues applies to the treasury first — there is no separate "team pool" on better terms.
+- **No special privileges.** Treasury stETX shares and treasury LP tokens are identical to any other holder's. Treasury cannot front-run distributions, cannot block withdrawals, cannot mint extra shares, and cannot pull anyone else's liquidity. The `distributeRewards` path is permissionless and capped by the fees the harvester actually collected.
+- **Dilutive to treasury by design.** As outside stakers deposit and outside LPs join, treasury's proportional claim on the 10% harvest bucket and on swap fees falls. This is the intended direction: the seed exists to bootstrap credibility, not to lock in a permanent treasury revenue line. The 40% treasury bucket and the 40% POL burn (see §9) are unaffected by participation rate.
+- **Stableswap LP is locked, the rest is liquid.** Only the treasury's stableswap LP shares are locked (10 years, principal only — fees stream out continuously via `StableSwapHarvesterAdapter`; see §10.2). The stETX position and the V2 LP positions are fully liquid under ERC-4626 / ERC-20. Any intent to unwind would be fully visible on-chain as `Redeem` / `Burn` events. Public LPs are unaffected by any of these treasury decisions.
 
 ---
 
