@@ -549,13 +549,16 @@ function AddressTable(props: { rows: ReadonlyArray<readonly [string, Address]> }
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
       <h2 className="mb-3 text-sm font-medium text-white/70">Addresses (chain 61803)</h2>
-      <dl className="space-y-1 text-sm">
+      <dl className="space-y-2 text-sm sm:space-y-1">
         {props.rows.map(([label, addr]) => (
-          <div key={label} className="flex items-center justify-between gap-3">
-            <dt className="text-white/50">{label}</dt>
-            <dd>
+          <div
+            key={label}
+            className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"
+          >
+            <dt className="shrink-0 text-white/50">{label}</dt>
+            <dd className="min-w-0 sm:text-right">
               <a
-                className="font-mono text-emerald-300 underline decoration-emerald-300/30 hover:decoration-emerald-300"
+                className="break-all font-mono text-emerald-300 underline decoration-emerald-300/30 hover:decoration-emerald-300"
                 href={`https://eticascan.org/address/${addr}`}
                 target="_blank"
                 rel="noreferrer"
