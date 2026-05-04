@@ -21,7 +21,7 @@
  */
 
 import { formatUnits, getAddress, type Address } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
 import { fetchAllPairs, jsonResponse, priceClient } from '@/lib/priceApi';
 import { fetchAnchorEtxUsd } from '@/lib/buybot/scan';
 import { fetchUsdAnchors } from '@/lib/buybot/oracle';
@@ -31,11 +31,15 @@ export const revalidate = 15;
 export const dynamic = 'force-static';
 
 const MAINNET_CHAIN_ID = 61803;
+const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000';
+const PRECISION = 10n ** 18n;
 
 interface PoolTvl {
   pool: Address;
   etx: number;
   usd: number | null;
+  /** Pool category — V2 constant-product or rate-aware stableswap. */
+  kind?: 'v2' | 'stableswap';
 }
 
 export async function GET(): Promise<Response> {
@@ -82,7 +86,55 @@ export async function GET(): Promise<Response> {
       pool: getAddress(p.address),
       etx: poolEtx,
       usd: etxUsd !== null ? poolEtx * etxUsd : null,
+      kind: 'v2',
     });
+  }
+
+  // Stableswap pool isn't in the V2 factory — it's a standalone contract.
+  // Read its reserves + live NAV directly so the TVL banner reflects the
+  // ~30M ETX-equivalent seed (and any subsequent public LP additions).
+  // ETX-equivalent of stETX = reserveStEtx · rate / 1e18, where
+  //   rate = stETX.convertToAssets(1e18). Total stableswap TVL in ETX is
+  // reserveEtx + ETX-equivalent(reserveStEtx). No constant-product ×2
+  // shortcut here: the pool is not at 50/50 by reserves, the two legs are
+  // priced 1:1 in ETX-equivalent terms only after applying the live rate.
+  if (d.eticaStableSwap !== ZERO_ADDRESS) {
+    try {
+      const [reserveEtxRaw, reserveStEtxRaw, rate] = await Promise.all([
+        client.readContract({
+          abi: abis.eticaStableSwapAbi,
+          address: d.eticaStableSwap,
+          functionName: 'reserveEtx',
+        }) as Promise<bigint>,
+        client.readContract({
+          abi: abis.eticaStableSwapAbi,
+          address: d.eticaStableSwap,
+          functionName: 'reserveStEtx',
+        }) as Promise<bigint>,
+        client.readContract({
+          abi: abis.eticaStableSwapAbi,
+          address: d.eticaStableSwap,
+          functionName: 'getRate',
+        }) as Promise<bigint>,
+      ]);
+      const stEtxInEtx = (reserveStEtxRaw * rate) / PRECISION;
+      const totalEtxWei = reserveEtxRaw + stEtxInEtx;
+      const poolEtx = Number(formatUnits(totalEtxWei, 18));
+      if (poolEtx > 0) {
+        tvlEtx += poolEtx;
+        poolBreakdown.push({
+          pool: getAddress(d.eticaStableSwap),
+          etx: poolEtx,
+          usd: etxUsd !== null ? poolEtx * etxUsd : null,
+          kind: 'stableswap',
+        });
+      }
+    } catch {
+      // RPC failure on the stableswap reads should not zero out the V2
+      // half of TVL — fall through and return the V2-only number rather
+      // than 500ing the whole endpoint. Aggregator clients then see a
+      // briefly-undercount TVL instead of a hard error.
+    }
   }
 
   return jsonResponse(

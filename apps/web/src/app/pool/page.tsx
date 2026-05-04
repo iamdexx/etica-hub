@@ -1,6 +1,7 @@
 import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
 import { PoolAddCard } from '@/components/pool/PoolAddCard';
 import { PoolPositionsList } from '@/components/pool/PoolPositionsList';
+import { PoolStableSwapCard } from '@/components/pool/PoolStableSwapCard';
 
 export const metadata = { title: 'Pool · EticaHub' };
 
@@ -10,11 +11,12 @@ export default function PoolPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Liquidity pools</h1>
         <p className="mt-1 text-sm text-white/60">
-          Add and remove liquidity on EticaSwap V2 pairs. Every swap pays 0.25% to LPs; you
-          earn proportionally to your share of the pool.
+          Add and remove liquidity on EticaSwap V2 pairs (0.25% fee to LPs) or the rate-aware
+          stETX/ETX stableswap (0.04% fee, 50% to LPs). All public LP shares are fully liquid.
         </p>
       </div>
       <MarketVolumeStrip />
+      <PoolStableSwapCard />
       <PoolAddCard />
       <PoolPositionsList />
       <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-white/50">
