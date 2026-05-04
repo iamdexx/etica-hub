@@ -9,6 +9,7 @@ import {
   type Address,
   type Hex,
 } from 'viem';
+import { formatTokenBalance } from '@/lib/utils';
 import {
   useAccount,
   useReadContract,
@@ -261,31 +262,37 @@ export function FarmPoolCard({
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
       <header className="mb-4 flex items-baseline justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="text-sm uppercase tracking-wide text-white/40">Pool #{pid}</div>
-          <h2 className="text-lg font-semibold">{pairLabel} LP</h2>
+          <h2 className="truncate text-lg font-semibold">{pairLabel} LP</h2>
         </div>
-        <div className="text-right text-xs text-white/60">
+        <div className="shrink-0 text-right text-xs text-white/60">
           <div>
             Weight <span className="font-mono">{weightPct.toFixed(2)}%</span>
           </div>
           <div>
-            Staked <span className="font-mono">{formatUnits(totalStaked, 18)}</span>
+            Staked <span className="font-mono">{formatTokenBalance(totalStaked)}</span>
           </div>
         </div>
       </header>
 
       <div className="mb-3 grid grid-cols-2 gap-3 text-xs">
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="min-w-0 rounded-lg border border-white/10 bg-black/20 p-3">
           <div className="text-white/40">Your stake</div>
-          <div className="mt-1 font-mono text-sm text-white">
-            {formatUnits(stakedAmount, 18)} LP
+          <div
+            className="mt-1 truncate font-mono text-sm text-white"
+            title={`${formatUnits(stakedAmount, 18)} LP`}
+          >
+            {formatTokenBalance(stakedAmount)} LP
           </div>
         </div>
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="min-w-0 rounded-lg border border-white/10 bg-black/20 p-3">
           <div className="text-white/40">Pending</div>
-          <div className="mt-1 font-mono text-sm text-emerald-300">
-            {formatUnits(pending, 18)} ETX
+          <div
+            className="mt-1 truncate font-mono text-sm text-emerald-300"
+            title={`${formatUnits(pending, 18)} ETX`}
+          >
+            {formatTokenBalance(pending)} ETX
           </div>
         </div>
       </div>
@@ -321,11 +328,18 @@ export function FarmPoolCard({
           Max
         </button>
       </div>
-      <div className="mt-1 text-[11px] text-white/40">
+      <div
+        className="mt-1 truncate text-[11px] text-white/40"
+        title={
+          tab === 'stake'
+            ? `${formatUnits(lpBalance, 18)} LP`
+            : `${formatUnits(stakedAmount, 18)} LP`
+        }
+      >
         {tab === 'stake' ? (
-          <>Wallet LP: {formatUnits(lpBalance, 18)}</>
+          <>Wallet LP: {formatTokenBalance(lpBalance)}</>
         ) : (
-          <>Staked LP: {formatUnits(stakedAmount, 18)}</>
+          <>Staked LP: {formatTokenBalance(stakedAmount)}</>
         )}
       </div>
 
