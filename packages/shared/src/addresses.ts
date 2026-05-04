@@ -98,6 +98,27 @@ export const DEPLOYMENTS: Record<
      * lands on-chain.
      */
     etxFarms: Address;
+    /**
+     * EticaStableSwap — rate-aware Curve-style AMM specialised for the
+     * stETX/ETX pair. Reads `stETX.convertToAssets(1e18)` live so the peg
+     * permanently tracks NAV. ERC-20 LP shares ("esLP"). Zero until deploy
+     * lands on-chain.
+     */
+    eticaStableSwap: Address;
+    /**
+     * LiquidityTimelock10y — 10-year lock for the treasury's seed esLP
+     * shares ONLY. Public LPs hold their shares directly and are not locked.
+     * Fees never enter this contract; rescue lets the owner sweep
+     * non-locked tokens at any time. Zero until deploy lands on-chain.
+     */
+    liquidityTimelock10y: Address;
+    /**
+     * StableSwapHarvesterAdapter — permissionless harvest crank that pulls
+     * admin fees from EticaStableSwap, redeems the stETX leg into ETX, and
+     * splits the resulting ETX 10/10/40/40 (staked / farms / POL / treasury).
+     * Zero until deploy lands on-chain.
+     */
+    stableSwapHarvesterAdapter: Address;
   }
 > = {
   61803: {
@@ -113,6 +134,9 @@ export const DEPLOYMENTS: Record<
     stakedETX: '0x75d81d03a98CD9195593b8963aF17E13fAa70334',
     treasuryHarvester: '0x5d8B1138559fADc3Bb90e8317eB16922eAa076f5',
     etxFarms: '0xEBAfdd24ABF8290f0B433E689631466ABD13c6aD',
+    eticaStableSwap: '0x0000000000000000000000000000000000000000',
+    liquidityTimelock10y: '0x0000000000000000000000000000000000000000',
+    stableSwapHarvesterAdapter: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -127,6 +151,9 @@ export const DEPLOYMENTS: Record<
     stakedETX: '0x0000000000000000000000000000000000000000',
     treasuryHarvester: '0x0000000000000000000000000000000000000000',
     etxFarms: '0x0000000000000000000000000000000000000000',
+    eticaStableSwap: '0x0000000000000000000000000000000000000000',
+    liquidityTimelock10y: '0x0000000000000000000000000000000000000000',
+    stableSwapHarvesterAdapter: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -142,6 +169,9 @@ export const DEPLOYMENTS: Record<
     stakedETX: '0x0000000000000000000000000000000000000000',
     treasuryHarvester: '0x0000000000000000000000000000000000000000',
     etxFarms: '0x0000000000000000000000000000000000000000',
+    eticaStableSwap: '0x0000000000000000000000000000000000000000',
+    liquidityTimelock10y: '0x0000000000000000000000000000000000000000',
+    stableSwapHarvesterAdapter: '0x0000000000000000000000000000000000000000',
   },
 };
 

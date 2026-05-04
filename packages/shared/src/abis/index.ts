@@ -9,3 +9,6 @@ export { permit2Abi } from './permit2';
 export { stakedEtxAbi } from './stakedEtx';
 export { treasuryHarvesterAbi } from './treasuryHarvester';
 export { etxFarmsAbi } from './etxFarms';
+export { eticaStableSwapAbi } from './eticaStableSwap';
+export { liquidityTimelock10yAbi } from './liquidityTimelock10y';
+export { stableSwapHarvesterAdapterAbi } from './stableSwapHarvesterAdapter';

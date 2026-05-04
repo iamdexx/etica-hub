@@ -43,6 +43,11 @@ type SwapCtx = {
   // Zero address on chains where the liquid-staking vault is not deployed
   // yet; the token picker hides the stETX option in that case.
   stetx: Address;
+  // Zero address until the rate-aware stETX/ETX stableswap pool is
+  // deployed; while zero the swap card falls through to the V2 router
+  // for stETX/ETX (which has no pair, so the swap will simply fail to
+  // quote — this matches today's behaviour).
+  stableSwapPool: Address;
 };
 
 function useCtx(): SwapCtx | null {
@@ -60,6 +65,7 @@ function useCtx(): SwapCtx | null {
       eti: e.eti,
       etx: d.etx,
       stetx: d.stakedETX,
+      stableSwapPool: d.eticaStableSwap,
     };
   }, [chainId]);
 }
@@ -126,6 +132,28 @@ export function SwapCard() {
     return tokenAddress(ctx, fromSymbol);
   }, [ctx, fromSymbol]);
 
+  // Direct stETX ↔ ETX swaps route through the rate-aware stableswap pool
+  // when it's deployed. Everything else (multi-hop, EGAZ, ETI) stays on V2.
+  const useStableSwap = useMemo(() => {
+    if (!ctx || ctx.stableSwapPool === ZERO || ctx.stetx === ZERO) return false;
+    const pair = new Set([fromSymbol, toSymbol]);
+    return pair.size === 2 && pair.has('ETX') && pair.has('stETX');
+  }, [ctx, fromSymbol, toSymbol]);
+
+  // Index in the pool: 0 = ETX, 1 = stETX. Matches EticaStableSwap layout.
+  // Encoded as bigint to match the pool's uint128 ABI types.
+  const ssIndices = useMemo<{ i: bigint; j: bigint } | null>(() => {
+    if (!useStableSwap) return null;
+    return fromSymbol === 'ETX' ? { i: 0n, j: 1n } : { i: 1n, j: 0n };
+  }, [useStableSwap, fromSymbol]);
+
+  // For stableswap routes, approval target is the pool itself; for V2 it's the router.
+  const spenderForApproval = useMemo<Address | null>(() => {
+    if (!ctx) return null;
+    if (useStableSwap) return ctx.stableSwapPool;
+    return ctx.router;
+  }, [ctx, useStableSwap]);
+
   // Balances
   const nativeBal = useBalance({
     address,
@@ -162,13 +190,18 @@ export function SwapCard() {
     return (etxBal.data as bigint | undefined) ?? 0n;
   }
 
-  // Allowance of input token -> router (only if non-native input)
+  // Allowance of input token -> approval spender (router for V2 routes,
+  // stableswap pool for direct stETX/ETX routes). Only applies when input
+  // is an ERC20 (i.e. not native EGAZ).
   const allowance = useReadContract({
     abi: abis.erc20Abi,
     address: inputTokenAddr ?? undefined,
     functionName: 'allowance',
-    args: address && ctx && inputTokenAddr ? [address, ctx.router] : undefined,
-    query: { enabled: Boolean(address && ctx && inputTokenAddr) },
+    args:
+      address && ctx && inputTokenAddr && spenderForApproval
+        ? [address, spenderForApproval]
+        : undefined,
+    query: { enabled: Boolean(address && ctx && inputTokenAddr && spenderForApproval) },
   });
 
   const path = useMemo<Address[] | null>(
@@ -176,19 +209,30 @@ export function SwapCard() {
     [ctx, fromSymbol, toSymbol],
   );
 
-  const quote = useReadContract({
+  const v2Quote = useReadContract({
     abi: abis.routerAbi,
     address: ctx?.router,
     functionName: 'getAmountsOut',
     args: path && amountIn > 0n ? [amountIn, path] : undefined,
-    query: { enabled: Boolean(ctx && path && amountIn > 0n) },
+    query: { enabled: Boolean(ctx && path && amountIn > 0n && !useStableSwap) },
+  });
+
+  const ssQuote = useReadContract({
+    abi: abis.eticaStableSwapAbi,
+    address: useStableSwap ? ctx?.stableSwapPool : undefined,
+    functionName: 'getDy',
+    args: useStableSwap && ssIndices && amountIn > 0n ? [ssIndices.i, ssIndices.j, amountIn] : undefined,
+    query: { enabled: Boolean(useStableSwap && ssIndices && amountIn > 0n) },
   });
 
   const amountOut = useMemo<bigint>(() => {
-    const data = quote.data as bigint[] | undefined;
+    if (useStableSwap) {
+      return (ssQuote.data as bigint | undefined) ?? 0n;
+    }
+    const data = v2Quote.data as bigint[] | undefined;
     if (!data || data.length < 2) return 0n;
     return data[data.length - 1];
-  }, [quote.data]);
+  }, [useStableSwap, ssQuote.data, v2Quote.data]);
 
   const amountOutMin = useMemo<bigint>(() => {
     if (amountOut === 0n) return 0n;
@@ -214,7 +258,7 @@ export function SwapCard() {
   });
 
   async function onApprove() {
-    if (!ctx || !address || !inputTokenAddr) return;
+    if (!ctx || !address || !inputTokenAddr || !spenderForApproval) return;
     setSubmitError(undefined);
     setPendingTxHash(undefined);
     resetWrite();
@@ -223,7 +267,7 @@ export function SwapCard() {
         abi: abis.erc20Abi,
         address: inputTokenAddr,
         functionName: 'approve',
-        args: [ctx.router, MAX_UINT256],
+        args: [spenderForApproval, MAX_UINT256],
       });
       setPendingTxHash(hash);
     } catch (err) {
@@ -232,36 +276,47 @@ export function SwapCard() {
   }
 
   async function onSwap() {
-    if (!ctx || !address || !path || amountIn === 0n) return;
+    if (!ctx || !address || amountIn === 0n) return;
     setSubmitError(undefined);
     setPendingTxHash(undefined);
     resetWrite();
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
 
     try {
       let hash: Hex;
-      if (fromIsNative) {
+      if (useStableSwap && ssIndices) {
         hash = await writeContractAsync({
-          abi: abis.routerAbi,
-          address: ctx.router,
-          functionName: 'swapExactEGAZForTokens',
-          args: [amountOutMin, path, address, deadline],
-          value: amountIn,
+          abi: abis.eticaStableSwapAbi,
+          address: ctx.stableSwapPool,
+          functionName: 'swap',
+          args: [ssIndices.i, ssIndices.j, amountIn, amountOutMin, address],
         });
-      } else if (toIsNative) {
-        hash = await writeContractAsync({
-          abi: abis.routerAbi,
-          address: ctx.router,
-          functionName: 'swapExactTokensForEGAZ',
-          args: [amountIn, amountOutMin, path, address, deadline],
-        });
+      } else if (path) {
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+        if (fromIsNative) {
+          hash = await writeContractAsync({
+            abi: abis.routerAbi,
+            address: ctx.router,
+            functionName: 'swapExactEGAZForTokens',
+            args: [amountOutMin, path, address, deadline],
+            value: amountIn,
+          });
+        } else if (toIsNative) {
+          hash = await writeContractAsync({
+            abi: abis.routerAbi,
+            address: ctx.router,
+            functionName: 'swapExactTokensForEGAZ',
+            args: [amountIn, amountOutMin, path, address, deadline],
+          });
+        } else {
+          hash = await writeContractAsync({
+            abi: abis.routerAbi,
+            address: ctx.router,
+            functionName: 'swapExactTokensForTokens',
+            args: [amountIn, amountOutMin, path, address, deadline],
+          });
+        }
       } else {
-        hash = await writeContractAsync({
-          abi: abis.routerAbi,
-          address: ctx.router,
-          functionName: 'swapExactTokensForTokens',
-          args: [amountIn, amountOutMin, path, address, deadline],
-        });
+        return;
       }
       setPendingTxHash(hash);
     } catch (err) {
@@ -278,7 +333,8 @@ export function SwapCard() {
       etxBal.refetch(),
       stetxBal.refetch(),
       allowance.refetch(),
-      quote.refetch(),
+      v2Quote.refetch(),
+      ssQuote.refetch(),
     ]).catch(() => {
       // best-effort
     });
@@ -315,15 +371,18 @@ export function SwapCard() {
     resetWrite();
   }
 
-  const priceImpactText = usePriceImpact(ctx, path, amountIn, amountOut);
-  const routeText = describePath(path, ctx);
+  const priceImpactText = usePriceImpact(ctx, useStableSwap ? null : path, amountIn, amountOut);
+  const routeText = useStableSwap
+    ? `${fromSymbol} → ${toSymbol} · stableswap`
+    : describePath(path, ctx);
   const pickerOptions = tokenOptions(ctx);
+  const venueText = useStableSwap ? 'stableswap · 0.04% fee · rate-aware' : 'v2 · 0.30% fee · ETX hub';
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-white/70">Swap</h2>
-        <span className="text-xs text-white/40">v2 · 0.30% fee · ETX hub</span>
+        <span className="text-xs text-white/40">{venueText}</span>
       </div>
 
       <div className="mt-4 space-y-2">
