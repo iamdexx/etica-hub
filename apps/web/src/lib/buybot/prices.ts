@@ -145,17 +145,33 @@ export function usdPriceOf(
 
 /**
  * Optional overrides used when a token's on-chain `totalSupply()` doesn't
- * reflect the asset's true economic supply. Today the only entry is
- * `wegazNativeSupply`, which is the EGAZ native gas-token supply (read
- * from the BlockScout explorer's `coinsupply` endpoint). The WEGAZ ERC-20
- * only counts the wrapped slice (~10% of native supply at time of
- * writing), so MC computed off it is misleading.
+ * reflect the asset's true economic supply.
  *
- * `bigint` raw units (i.e. 18-decimal padded), matching the raw shape of
- * `TokenMeta.totalSupply` so the call site is symmetric.
+ * `wegazNativeSupply` swaps in the chain's native EGAZ supply (read from
+ * the BlockScout `coinsupply` endpoint) because the WEGAZ ERC-20 only
+ * counts the wrapped slice (~10% of native supply at time of writing).
+ *
+ * `excludedSupplyByToken` removes non-circulating balances from MC math
+ * to match the convention aggregators use: subtract the sum of treasury
+ * wallet, fee splitter, timelock, and bridge-vault balances from
+ * `totalSupply()` before multiplying by price. Keys are checksummed
+ * addresses (`getAddress`); values are pre-summed raw 18-decimal-padded
+ * `bigint`s so the math at the call site stays symmetric with
+ * {@link TokenMeta.totalSupply}.
+ *
+ * Tokens not present in the map fall through to fully diluted MC, which
+ * is the safe default for assets without a defined treasury.
  */
 export interface SupplyOverrides {
   wegazNativeSupply?: bigint | null;
+  excludedSupplyByToken?: Map<Address, bigint>;
+  /**
+   * Tokens whose MC line should be hidden entirely. Used for ERC-4626
+   * shares (e.g. stETX), where price × supply just reproduces the
+   * underlying asset's market cap and would double-count it on
+   * cross-token totals. Keys are checksummed addresses.
+   */
+  hideMcForTokens?: Set<Address>;
 }
 
 /**
@@ -198,22 +214,38 @@ export function computeBuyReport(
   // is missing or zero.
   const wegazLc = getAddress(wegaz).toLowerCase();
   const supplyFor = (token: TokenMeta): bigint => {
+    let supply: bigint;
     if (
       supplyOverrides.wegazNativeSupply &&
       supplyOverrides.wegazNativeSupply > 0n &&
       getAddress(token.address).toLowerCase() === wegazLc
     ) {
-      return supplyOverrides.wegazNativeSupply;
+      supply = supplyOverrides.wegazNativeSupply;
+    } else {
+      supply = token.totalSupply;
     }
-    return token.totalSupply;
+    // Subtract pre-summed non-circulating balances (treasury, harvester,
+    // timelocks, bridge vaults). Clamps at 0 so a registry that
+    // momentarily over-counts (e.g. snapshot lag during a transfer) can
+    // never produce a negative MC.
+    const excluded = supplyOverrides.excludedSupplyByToken?.get(getAddress(token.address));
+    if (excluded && excluded > 0n) {
+      return supply > excluded ? supply - excluded : 0n;
+    }
+    return supply;
   };
 
+  const hideMc = supplyOverrides.hideMcForTokens;
+  const isHidden = (token: TokenMeta) => hideMc?.has(getAddress(token.address)) ?? false;
+
   const mcBoughtUsd =
-    boughtUsd !== null
+    boughtUsd !== null && !isHidden(decoded.bought)
       ? boughtUsd * toUnits(supplyFor(decoded.bought), decoded.bought.decimals)
       : null;
   const mcSpentUsd =
-    spentUsd !== null ? spentUsd * toUnits(supplyFor(decoded.spent), decoded.spent.decimals) : null;
+    spentUsd !== null && !isHidden(decoded.spent)
+      ? spentUsd * toUnits(supplyFor(decoded.spent), decoded.spent.decimals)
+      : null;
 
   return {
     amountBought,

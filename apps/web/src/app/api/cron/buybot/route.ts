@@ -15,11 +15,16 @@
  */
 
 import { NextRequest } from 'next/server';
-import { createPublicClient, http, type PublicClient } from 'viem';
-import { eticaMainnet } from '@etica-hub/shared';
+import { createPublicClient, getAddress, http, type Address, type PublicClient } from 'viem';
+import { DEPLOYMENTS, TREASURY_ADDRESS, eticaMainnet } from '@etica-hub/shared';
 
 import { loadBuyBotConfig, type BuyBotConfig } from '@/lib/buybot/config';
-import { fetchEgazNativeSupply, fetchUsdAnchors } from '@/lib/buybot/oracle';
+import {
+  fetchCirculatingExcludes,
+  fetchEgazNativeSupply,
+  fetchUsdAnchors,
+  type CirculatingExclusionEntry,
+} from '@/lib/buybot/oracle';
 import { computeBuyReport, decodeSwapAsBuy, type UsdPricing } from '@/lib/buybot/prices';
 import { formatBuy } from '@/lib/buybot/format';
 import { telegramClient } from '@/lib/buybot/telegram';
@@ -105,15 +110,29 @@ export async function GET(req: NextRequest): Promise<Response> {
   try {
     const client = makeClient(config);
 
-    const [latestBlock, lastScanned, anchors, wegazNativeSupply] = await Promise.all([
-      client.getBlockNumber(),
-      readLastScannedBlock(kv, config),
-      fetchUsdAnchors(config),
-      // Pulled once per run from BlockScout's `coinsupply` endpoint so MC
-      // reflects the chain's full native EGAZ supply, not just the wrapped
-      // ERC-20 slice. A null result falls back to `WEGAZ.totalSupply()`.
-      fetchEgazNativeSupply(config),
-    ]);
+    // Sourced from `DEPLOYMENTS[chainId]` so MC math always reflects the
+    // currently-wired protocol contracts; missing deployments (zero
+    // addresses on testnet / fresh chain) drop out of the registry
+    // automatically without changing the call shape.
+    const exclusionRegistry = buildExclusionRegistry(config);
+
+    const [latestBlock, lastScanned, anchors, wegazNativeSupply, excludedSupplyByToken] =
+      await Promise.all([
+        client.getBlockNumber(),
+        readLastScannedBlock(kv, config),
+        fetchUsdAnchors(config),
+        // Pulled once per run from BlockScout's `coinsupply` endpoint so MC
+        // reflects the chain's full native EGAZ supply, not just the wrapped
+        // ERC-20 slice. A null result falls back to `WEGAZ.totalSupply()`.
+        fetchEgazNativeSupply(config),
+        // One `balanceOf` per (token, holder) pair, summed per token. Used
+        // by `computeBuyReport` to quote circulating-supply MC instead of
+        // fully-diluted MC; aligns the buybot with CoinGecko/CMC/DEX
+        // Screener convention.
+        fetchCirculatingExcludes(client, exclusionRegistry),
+      ]);
+
+    const hideMcForTokens = buildHideMcSet(config);
 
     // Resolve ETX/USD independently of which swaps happen this cycle by
     // reading reserves on the ETX/EGAZ (preferred) or ETX/ETI anchor pool
@@ -190,6 +209,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       }
       const report = computeBuyReport(decoded, config.etx, config.eti, config.wegaz, pricing, {
         wegazNativeSupply,
+        excludedSupplyByToken,
+        hideMcForTokens,
       });
       if (report.notionalUsd !== null && report.notionalUsd < config.minUsdToPost) {
         bump('below-min-usd');
@@ -307,4 +328,75 @@ function deriveEtxUsd(args: {
     }
   }
   return { etxUsd: null, etiUsd: anchors.etiUsd, egazUsd: anchors.egazUsd };
+}
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+
+/**
+ * Resolve which DEPLOYMENTS entry (and thus which set of treasury / fee
+ * splitter / timelock addresses) to use for circulating-supply math on
+ * the chain the bot is currently scanning.
+ */
+function deploymentsFor(config: BuyBotConfig): (typeof DEPLOYMENTS)[keyof typeof DEPLOYMENTS] {
+  return DEPLOYMENTS[config.chainId as keyof typeof DEPLOYMENTS] ?? DEPLOYMENTS[61803];
+}
+
+/**
+ * Build the per-token list of non-circulating holders to subtract from
+ * `totalSupply()` before MC math. Pool reserves are intentionally NOT
+ * included — they're swappable by anyone, which the standard
+ * "circulating supply" convention treats as in-circulation.
+ *
+ * For ETX, that means: treasury wallet (where harvest proceeds and any
+ * future LP unlock would land), TreasuryHarvester (transient harvest
+ * balance), the stableswap fee-splitter adapter (also transient), and
+ * the LiquidityTimelock10y. The timelock holds LP shares not ETX
+ * directly today, but listing it here is forward-safe: if any future
+ * mechanism routes ETX through it, the registry already accounts for it.
+ *
+ * Zero-address entries (testnet / undeployed) are filtered out.
+ */
+function buildExclusionRegistry(config: BuyBotConfig): CirculatingExclusionEntry[] {
+  const d = deploymentsFor(config);
+  const dedupe = (addrs: Address[]): Address[] => {
+    const seen = new Set<string>();
+    const out: Address[] = [];
+    for (const a of addrs) {
+      if (a === ZERO_ADDRESS) continue;
+      const k = getAddress(a);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(k);
+    }
+    return out;
+  };
+
+  const etxHolders = dedupe([
+    TREASURY_ADDRESS,
+    d.treasuryHarvester,
+    d.stableSwapHarvesterAdapter,
+    d.liquidityTimelock10y,
+  ]);
+
+  const entries: CirculatingExclusionEntry[] = [];
+  if (config.etx !== ZERO_ADDRESS && etxHolders.length > 0) {
+    entries.push({ token: getAddress(config.etx), holders: etxHolders });
+  }
+  return entries;
+}
+
+/**
+ * Tokens whose MC line should be hidden in buy-bot posts because their
+ * `price × totalSupply` simply reproduces the underlying asset's MC.
+ *
+ * Today only stETX qualifies: every stETX share is 1 ETX-at-NAV that
+ * `ETX.totalSupply()` already accounts for. Showing it would
+ * double-count on cross-token totals and confuse readers tallying
+ * protocol-wide MC.
+ */
+function buildHideMcSet(config: BuyBotConfig): Set<Address> {
+  const d = deploymentsFor(config);
+  const out = new Set<Address>();
+  if (d.stakedETX !== ZERO_ADDRESS) out.add(getAddress(d.stakedETX));
+  return out;
 }

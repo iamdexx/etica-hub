@@ -268,6 +268,85 @@ describe('computeBuyReport', () => {
     }
   });
 
+  it('subtracts excluded balances from totalSupply before MC math', () => {
+    // 100M ETX totalSupply, but 30M sit in treasury / harvester / timelock.
+    // Aggregator-style circulating MC should be 70M * price, not 100M.
+    const decoded = decodeSwapAsBuy(pool(), {
+      sender: ETX,
+      to: ETX,
+      amount0In: 0n,
+      amount0Out: 2_500n * 10n ** 18n,
+      amount1In: 100n * 10n ** 18n,
+      amount1Out: 0n,
+    })!;
+    const pricing: UsdPricing = { etxUsd: 0.001, etiUsd: 0.025, egazUsd: null };
+    const excluded = new Map<Address, bigint>([[ETX, 30_000_000n * 10n ** 18n]]);
+
+    const r = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing, {
+      excludedSupplyByToken: excluded,
+    });
+    // (100M - 30M) * $0.001 = $70k circulating MC
+    expect(r.mcBoughtUsd).toBeCloseTo(70_000, 4);
+    // ETI is unaffected because no exclusion entry was provided for it.
+    expect(r.mcSpentUsd).toBeCloseTo(525_000, 4);
+  });
+
+  it('clamps excluded supply at 0 if it ever exceeds totalSupply', () => {
+    // Defensive: a stale snapshot or registry over-count must never produce
+    // a negative MC. Subtracting more than totalSupply collapses to 0.
+    const decoded = decodeSwapAsBuy(pool(), {
+      sender: ETX,
+      to: ETX,
+      amount0In: 0n,
+      amount0Out: 2_500n * 10n ** 18n,
+      amount1In: 100n * 10n ** 18n,
+      amount1Out: 0n,
+    })!;
+    const pricing: UsdPricing = { etxUsd: 0.001, etiUsd: 0.025, egazUsd: null };
+    const excluded = new Map<Address, bigint>([[ETX, 200_000_000n * 10n ** 18n]]);
+
+    const r = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing, {
+      excludedSupplyByToken: excluded,
+    });
+    expect(r.mcBoughtUsd).toBe(0);
+  });
+
+  it('hides MC for tokens listed in hideMcForTokens (e.g. stETX)', () => {
+    // stETX shares represent ETX-at-NAV; price * stETX-supply re-counts
+    // ETX MC. The buy bot should set the stETX MC line to null so the
+    // formatter can omit it entirely.
+    const stETX: TokenMeta = {
+      address: getAddress('0x75d81d03a98CD9195593b8963aF17E13fAa70334') as Address,
+      symbol: 'stETX',
+      decimals: 18,
+      totalSupply: 15_000_000n * 10n ** 18n,
+    };
+    const p: PoolSnapshot = {
+      pair: getAddress('0x000000000000000000000000000000000000cafe') as Address,
+      token0: tokenETX,
+      token1: stETX,
+      reserve0After: 15_000_000n * 10n ** 18n,
+      reserve1After: 15_000_000n * 10n ** 18n,
+    };
+    // ETX-in / stETX-out → user bought stETX.
+    const decoded = decodeSwapAsBuy(p, {
+      sender: ETX,
+      to: ETX,
+      amount0In: 1n * 10n ** 18n,
+      amount0Out: 0n,
+      amount1In: 0n,
+      amount1Out: 1n * 10n ** 18n,
+    })!;
+    const pricing: UsdPricing = { etxUsd: 0.001, etiUsd: null, egazUsd: null };
+
+    const r = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing, {
+      hideMcForTokens: new Set([stETX.address]),
+    });
+    // Bought side (stETX) MC suppressed; spent side (ETX) MC still rendered.
+    expect(r.mcBoughtUsd).toBeNull();
+    expect(r.mcSpentUsd).not.toBeNull();
+  });
+
   it('returns null USD figures when no anchor is available for either side', () => {
     const decoded = decodeSwapAsBuy(pool(), {
       sender: ETX,

@@ -13,6 +13,8 @@
  * place to add a median / weighted-average.
  */
 
+import { erc20Abi, getAddress, type Address, type PublicClient } from 'viem';
+
 import type { BuyBotConfig } from './config';
 
 /**
@@ -116,6 +118,76 @@ export async function fetchUsdAnchors(
  * Returns `null` on any network / parse error so callers can fall back to
  * the on-chain WEGAZ supply (or hide MC entirely) without crashing.
  */
+/**
+ * A registry entry telling the buy bot which addresses are non-circulating
+ * holders of a given token (treasury wallet, fee splitters, timelocks,
+ * bridge vaults). The bot reads each address's balance once per run and
+ * subtracts the sum from `totalSupply()` before computing market cap.
+ *
+ * Aggregator-style "circulating supply" is the convention almost every
+ * external pricing source publishes (CoinGecko, CMC, DEX Screener), so
+ * matching it here keeps the buy-bot post in line with what users would
+ * see anywhere else.
+ *
+ * Pool reserves are intentionally NOT excluded — once tokens sit in a
+ * public LP they're swappable by anyone, which the standard convention
+ * still considers circulating. The 10y-locked treasury LP shares are
+ * captured indirectly by excluding the treasury wallet itself, which is
+ * where any LP withdrawal would land in 2036.
+ */
+export interface CirculatingExclusionEntry {
+  /** Token whose balance gets subtracted at each `holders` address. */
+  token: Address;
+  /** Non-circulating addresses (treasury, harvester, timelock, etc). */
+  holders: Address[];
+}
+
+/**
+ * Fetch the per-token sum of balances at non-circulating addresses, ready
+ * for {@link SupplyOverrides.excludedSupplyByToken}.
+ *
+ * Multi-call semantics: every (token, holder) pair becomes a single
+ * `balanceOf` read, and a failure on any one read collapses to `0n` for
+ * that pair so a flaky RPC can't zero out an entire token's exclusion.
+ *
+ * Returns a `Map<Address, bigint>` keyed by `getAddress(token)` so the
+ * pure pricing module can look up by checksummed address without
+ * re-normalising.
+ */
+export async function fetchCirculatingExcludes(
+  client: PublicClient,
+  registry: CirculatingExclusionEntry[],
+): Promise<Map<Address, bigint>> {
+  const out = new Map<Address, bigint>();
+  if (registry.length === 0) return out;
+
+  // Flatten to (token, holder) pairs and read balances in parallel; one
+  // round of Promise.all keeps cron latency flat regardless of how many
+  // entries the registry grows to.
+  const reads = registry.flatMap((entry) =>
+    entry.holders.map(async (holder) => {
+      try {
+        const bal = (await client.readContract({
+          abi: erc20Abi,
+          address: entry.token,
+          functionName: 'balanceOf',
+          args: [holder],
+        })) as bigint;
+        return { token: entry.token, balance: bal };
+      } catch {
+        return { token: entry.token, balance: 0n };
+      }
+    }),
+  );
+
+  const results = await Promise.all(reads);
+  for (const r of results) {
+    const key = getAddress(r.token);
+    out.set(key, (out.get(key) ?? 0n) + r.balance);
+  }
+  return out;
+}
+
 export async function fetchEgazNativeSupply(
   config: EgazNativeSupplyConfig,
   fetchImpl: typeof fetch = fetch,

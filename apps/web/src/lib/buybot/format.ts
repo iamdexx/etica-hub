@@ -118,15 +118,25 @@ export function formatBuy({
   const txUrl = `${base}/explorer/tx/${txHash}`;
   const blockUrl = `${base}/explorer/block/${blockNumber.toString()}`;
 
+  // MC lines are omitted entirely when null. Suppression happens upstream
+  // in `computeBuyReport` (e.g. `hideMcForTokens` for stETX, where price ×
+  // share supply just reproduces the underlying ETX MC and would
+  // double-count it). A `—` placeholder would invite confusion.
+  const mcLines: string[] = [];
+  if (report.mcBoughtUsd !== null) {
+    mcLines.push(`🧢 <b>MC ${sym.bought}</b>  ${formatUsd(report.mcBoughtUsd)}`);
+  }
+  if (report.mcSpentUsd !== null) {
+    mcLines.push(`🧢 <b>MC ${sym.spent}</b>   ${formatUsd(report.mcSpentUsd)}`);
+  }
+
   const lines = [
     `${emoji} <b>${sym.bought} Buy</b> on EticaHub`,
     '',
     `💸 <b>Swap</b>   ${formatAmount(report.amountSpent)} ${sym.spent} → ${formatAmount(report.amountBought)} ${sym.bought}`,
     `💵 <b>Value</b>  ${formatUsd(report.notionalUsd)}`,
     `📊 <b>Price</b>  1 ${sym.bought} = ${formatPriceUnit(report.pricePerBoughtInSpent)} ${sym.spent}${priceLineUsd}`,
-    '',
-    `🧢 <b>MC ${sym.bought}</b>  ${formatUsd(report.mcBoughtUsd)}`,
-    `🧢 <b>MC ${sym.spent}</b>   ${formatUsd(report.mcSpentUsd)}`,
+    ...(mcLines.length > 0 ? ['', ...mcLines] : []),
     '',
     `🔗 <a href="${escapeHtml(txUrl)}">view tx</a>  ·  <a href="${escapeHtml(blockUrl)}">block ${blockNumber.toString()}</a>`,
   ];
