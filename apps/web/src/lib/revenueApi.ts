@@ -74,6 +74,32 @@ export const BURN_EVENT = parseAbiItem(
   'event Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to)',
 );
 
+/**
+ * EticaStableSwap `AddLiquidity` — symmetric (or single-sided) deposit
+ * minting LP shares. Emitted by both treasury seed and public LPs.
+ */
+export const STABLESWAP_ADD_LIQUIDITY_EVENT = parseAbiItem(
+  'event AddLiquidity(address indexed provider, uint256 amountEtx, uint256 amountStEtx, uint256 lpMinted)',
+);
+
+/**
+ * EticaStableSwap `RemoveLiquidity` — pro-rata redemption returning
+ * both ETX and stETX legs in current ratio.
+ */
+export const STABLESWAP_REMOVE_LIQUIDITY_EVENT = parseAbiItem(
+  'event RemoveLiquidity(address indexed provider, uint256 amountEtx, uint256 amountStEtx, uint256 lpBurned)',
+);
+
+/**
+ * EticaStableSwap `RemoveLiquidityOne` — single-asset withdraw. Counted
+ * as a removal but only the bought leg is recorded; the other leg is
+ * implicitly swapped out via the curve.
+ *   boughtId: 0 = ETX, 1 = stETX.
+ */
+export const STABLESWAP_REMOVE_LIQUIDITY_ONE_EVENT = parseAbiItem(
+  'event RemoveLiquidityOne(address indexed provider, uint256 lpBurned, uint128 boughtId, uint256 amountReceived)',
+);
+
 /** Upper bound on blocks per getLogs page — same as the priceApi pager. */
 const LOGS_PAGE_BLOCKS_DEFAULT = 10_000n;
 const LOGS_PAGE_BLOCKS_MIN = 500n;
@@ -277,6 +303,95 @@ export async function loadLifetimeLiquidityStats(
     burnAmount0Wei: burns.amount0,
     burnAmount1Wei: burns.amount1,
   };
+}
+
+export interface LifetimeStableswapLiquidityStats {
+  /** Count of `AddLiquidity` events (treasury seed + public LP deposits). */
+  addCount: number;
+  /** Sum of `amountEtx` across every AddLiquidity. */
+  addedEtxWei: bigint;
+  /** Sum of `amountStEtx` across every AddLiquidity. */
+  addedStEtxWei: bigint;
+  /** Count of `RemoveLiquidity` + `RemoveLiquidityOne` events. */
+  removeCount: number;
+  /** Sum of ETX side returned across all removals (boughtId=0 for one-sided). */
+  removedEtxWei: bigint;
+  /** Sum of stETX side returned across all removals (boughtId=1 for one-sided). */
+  removedStEtxWei: bigint;
+}
+
+/**
+ * Scan AddLiquidity / RemoveLiquidity / RemoveLiquidityOne for the
+ * EticaStableSwap pool since {@link DEX_LAUNCH_BLOCK} (safe lower bound;
+ * the contract was deployed later but scanning empty earlier blocks is
+ * harmless).
+ *
+ * Returns zeroes if `pool` is the zero address (testnet).
+ */
+export async function loadLifetimeStableswapLiquidityStats(
+  pool: Address,
+  toBlock: bigint,
+  client: PublicClient = priceClient(),
+): Promise<LifetimeStableswapLiquidityStats> {
+  const empty: LifetimeStableswapLiquidityStats = {
+    addCount: 0,
+    addedEtxWei: 0n,
+    addedStEtxWei: 0n,
+    removeCount: 0,
+    removedEtxWei: 0n,
+    removedStEtxWei: 0n,
+  };
+  if (pool.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+    return empty;
+  }
+
+  const stats: LifetimeStableswapLiquidityStats = { ...empty };
+  const events = [
+    STABLESWAP_ADD_LIQUIDITY_EVENT,
+    STABLESWAP_REMOVE_LIQUIDITY_EVENT,
+    STABLESWAP_REMOVE_LIQUIDITY_ONE_EVENT,
+  ] as const;
+
+  for (const event of events) {
+    let pageSize = LOGS_PAGE_BLOCKS_DEFAULT;
+    let cursor = DEX_LAUNCH_BLOCK;
+    while (cursor <= toBlock) {
+      const end = cursor + pageSize - 1n > toBlock ? toBlock : cursor + pageSize - 1n;
+      try {
+        const logs = await client.getLogs({
+          address: pool,
+          event,
+          fromBlock: cursor,
+          toBlock: end,
+        });
+        for (const log of logs) {
+          if (event === STABLESWAP_ADD_LIQUIDITY_EVENT) {
+            const args = log.args as { amountEtx?: bigint; amountStEtx?: bigint };
+            stats.addCount += 1;
+            stats.addedEtxWei += args.amountEtx ?? 0n;
+            stats.addedStEtxWei += args.amountStEtx ?? 0n;
+          } else if (event === STABLESWAP_REMOVE_LIQUIDITY_EVENT) {
+            const args = log.args as { amountEtx?: bigint; amountStEtx?: bigint };
+            stats.removeCount += 1;
+            stats.removedEtxWei += args.amountEtx ?? 0n;
+            stats.removedStEtxWei += args.amountStEtx ?? 0n;
+          } else {
+            const args = log.args as { boughtId?: bigint; amountReceived?: bigint };
+            const amount = args.amountReceived ?? 0n;
+            stats.removeCount += 1;
+            if ((args.boughtId ?? 0n) === 0n) stats.removedEtxWei += amount;
+            else stats.removedStEtxWei += amount;
+          }
+        }
+        cursor = end + 1n;
+      } catch (err) {
+        if (pageSize <= LOGS_PAGE_BLOCKS_MIN) throw err;
+        pageSize = pageSize / 2n;
+        if (pageSize < LOGS_PAGE_BLOCKS_MIN) pageSize = LOGS_PAGE_BLOCKS_MIN;
+      }
+    }
+  }
+  return stats;
 }
 
 /**
