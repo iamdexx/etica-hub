@@ -1,0 +1,35 @@
+# Etica chain metadata for the Hyperlane registry.
+#
+# This is the file that gets submitted to
+# https://github.com/hyperlane-xyz/hyperlane-registry as
+# `chains/etica/metadata.yaml` once `hyperlane core deploy` succeeds.
+#
+# Etica is a permissionless EVM-compatible PoW chain. The protocol
+# token is ETI (research/governance), and gas is paid in EGAZ — both
+# are mineable on the same chain (see whitepaper §1).
+
+# yaml-language-server: $schema=../schema.json
+
+blockExplorers:
+  - apiUrl: https://eticascan.org/api
+    family: blockscout
+    name: EticaScan
+    url: https://eticascan.org
+blocks:
+  # Etica targets ~14s blocks (ethash). 12 confirmations = ~3 min,
+  # well past any plausible reorg window for a chain of this size.
+  confirmations: 12
+  estimateBlockTime: 14
+  reorgPeriod: 12
+chainId: 61803
+displayName: Etica
+domainId: 61803
+isTestnet: false
+name: etica
+nativeToken:
+  decimals: 18
+  name: EGAZ
+  symbol: EGAZ
+protocol: ethereum
+rpcUrls:
+  - http: https://eticamainnet.eticascan.org

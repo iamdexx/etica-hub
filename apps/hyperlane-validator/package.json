@@ -1,0 +1,26 @@
+{
+  "name": "@etica-hub/hyperlane-validator",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Infrastructure-as-code bundle for deploying Hyperlane on Etica + running a validator + relayer.",
+  "type": "module",
+  "scripts": {
+    "provision": "./scripts/provision-hetzner.sh",
+    "setup-r2": "./scripts/setup-r2.sh",
+    "deploy-core": "./scripts/deploy-core.sh",
+    "install": "./scripts/install-on-vps.sh",
+    "smoke-test": "./scripts/smoke-test.sh",
+    "submit-registry-pr": "./scripts/submit-registry-pr.sh",
+    "lint": "command -v shellcheck >/dev/null && shellcheck scripts/*.sh scripts/_common.sh || echo 'shellcheck not installed, skipping'",
+    "typecheck": "echo 'no TS in this bundle (shell scripts + JSON/YAML configs)'",
+    "test": "echo 'no automated tests — bundle is exercised end-to-end by scripts/smoke-test.sh'"
+  },
+  "dependencies": {
+    "viem": "^2.21.44",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "typescript": "^5.6.3"
+  }
+}

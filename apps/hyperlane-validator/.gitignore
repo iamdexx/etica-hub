@@ -1,0 +1,6 @@
+.env
+*.local.env
+generated/
+configs/etica-deploy.yaml
+*.pem
+*.key

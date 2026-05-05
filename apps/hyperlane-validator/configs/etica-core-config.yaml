@@ -1,0 +1,36 @@
+# Pre-filled `hyperlane core init` output for Etica.
+#
+# `scripts/deploy-core.sh` reads this directly instead of running
+# `hyperlane core init` interactively, so the deploy is reproducible.
+#
+# Two values are templated and substituted at runtime from `.env`:
+#   - ${BRIDGE_OWNER_ADDRESS} — owns the deployed contracts
+#   - ${HYP_RELAYER_ADDRESS}  — the relayer EOA (derived from
+#     HYP_RELAYER_KEY at deploy time)
+
+owner: ${BRIDGE_OWNER_ADDRESS}
+
+defaultIsm:
+  # `trustedRelayerIsm` lets our relayer deliver inbound messages on
+  # Etica without external validator commitments. The bridge's custom
+  # ISM stack (HeartbeatISM + TVLCapISM + RateLimitISM, deployed in
+  # `BRIDGE_DEPLOY_WALKTHROUGH.md` Phase 0) wraps this for inbound
+  # ETX claims, so the trusted-relayer assumption is bounded to the
+  # 48h challenge window.
+  type: trustedRelayerIsm
+  relayer: ${HYP_RELAYER_ADDRESS}
+
+defaultHook:
+  # Standard merkle-tree hook accumulates outbound message hashes for
+  # destination-side validation.
+  type: merkleTreeHook
+
+requiredHook:
+  owner: ${BRIDGE_OWNER_ADDRESS}
+  # Protocol fee is set to 0 at launch — bridge already collects its
+  # own 0.1% fee via `FeeRouter`. Ceiling is non-zero so the operator
+  # can raise it later (24h timelock per Hyperlane's standard).
+  type: protocolFee
+  beneficiary: ${BRIDGE_OWNER_ADDRESS}
+  maxProtocolFee: '100000000000000000'  # 0.1 EGAZ ceiling
+  protocolFee: '0'

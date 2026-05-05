@@ -1,0 +1,89 @@
+{
+  "_comment": "Multi-chain agent config consumed by both validator and relayer. The `addresses` blocks for `etica` are filled in by scripts/deploy-core.sh after `hyperlane core deploy` succeeds. `ethereum` + `bsc` are populated from the canonical hyperlane-registry — values below are the current production deployments.",
+  "chains": {
+    "etica": {
+      "name": "etica",
+      "domainId": 61803,
+      "chainId": 61803,
+      "protocol": "ethereum",
+      "rpcUrls": [
+        {
+          "http": "https://eticamainnet.eticascan.org"
+        }
+      ],
+      "blocks": {
+        "confirmations": 12,
+        "estimateBlockTime": 14,
+        "reorgPeriod": 12
+      },
+      "nativeToken": {
+        "name": "EGAZ",
+        "symbol": "EGAZ",
+        "decimals": 18
+      },
+      "addresses": {
+        "_comment": "Filled in by scripts/deploy-core.sh after `hyperlane core deploy` succeeds.",
+        "mailbox": "0x0000000000000000000000000000000000000000",
+        "interchainGasPaymaster": "0x0000000000000000000000000000000000000000",
+        "validatorAnnounce": "0x0000000000000000000000000000000000000000",
+        "merkleTreeHook": "0x0000000000000000000000000000000000000000"
+      }
+    },
+    "ethereum": {
+      "name": "ethereum",
+      "domainId": 1,
+      "chainId": 1,
+      "protocol": "ethereum",
+      "rpcUrls": [
+        {
+          "http": "https://ethereum-rpc.publicnode.com"
+        }
+      ],
+      "blocks": {
+        "confirmations": 12,
+        "estimateBlockTime": 12,
+        "reorgPeriod": 14
+      },
+      "nativeToken": {
+        "name": "Ether",
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "addresses": {
+        "_comment": "Canonical Hyperlane V3 deployment on Ethereum mainnet — sourced from hyperlane-registry @ tag 7.0+.",
+        "mailbox": "0xc005dc82818d67AF737725bD4bf75435d065D239",
+        "interchainGasPaymaster": "0x9e6B1022bE9BBF5aFd152483DAD9b88911bC8611",
+        "validatorAnnounce": "0xc4F7d650Ed576F2A93D8d7caEcE2eB7a9D04F09a",
+        "merkleTreeHook": "0x48e6c30B97748d1e2e03bf3e9FbE3890ca5f8CCA"
+      }
+    },
+    "bsc": {
+      "name": "bsc",
+      "domainId": 56,
+      "chainId": 56,
+      "protocol": "ethereum",
+      "rpcUrls": [
+        {
+          "http": "https://bsc-rpc.publicnode.com"
+        }
+      ],
+      "blocks": {
+        "confirmations": 1,
+        "estimateBlockTime": 3,
+        "reorgPeriod": 1
+      },
+      "nativeToken": {
+        "name": "BNB",
+        "symbol": "BNB",
+        "decimals": 18
+      },
+      "addresses": {
+        "_comment": "Canonical Hyperlane V3 deployment on BNB Chain — sourced from hyperlane-registry @ tag 7.0+.",
+        "mailbox": "0x2971b9Aec44bE4eb673DF1B88cDB57b96eefe8a4",
+        "interchainGasPaymaster": "0x78E25e7f84416e69b9339B0A6336EB6EFfF6b451",
+        "validatorAnnounce": "0x7024078130D9c2100fEA474DAD009C2d1703aCcd",
+        "merkleTreeHook": "0xFDb9Cd5f9daAA2E4474019405A328a88E7484f26"
+      }
+    }
+  }
+}

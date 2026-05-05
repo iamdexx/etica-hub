@@ -15,6 +15,25 @@ first if you have not.
 
 ---
 
+## Phase H — Hyperlane on Etica (prerequisite)
+
+Etica is **not** in the canonical Hyperlane registry today. Before
+Phase −1, Hyperlane has to be deployed on Etica and a validator +
+relayer have to be running. This is a multi-day mini-project on its
+own — the runbook is at [`HYPERLANE_ON_ETICA.md`](HYPERLANE_ON_ETICA.md)
+and the automation lives at [`apps/hyperlane-validator/`](../apps/hyperlane-validator/).
+
+You should not start Phase −1 until:
+
+- [ ] Etica `Mailbox` is deployed (address recorded in
+      `apps/hyperlane-validator/configs/etica-deploy.yaml`).
+- [ ] Validator + relayer daemons have run cleanly for ≥48h on the
+      VPS (no Telegram alerts from `monitor.sh`).
+- [ ] `apps/hyperlane-validator/scripts/smoke-test.sh` has succeeded
+      for both `etica → ethereum` and `etica → bsc`.
+
+---
+
 ## Phase −1 — Pre-deploy checklist
 
 Block out a half-day window. Have all of this ready **before** you

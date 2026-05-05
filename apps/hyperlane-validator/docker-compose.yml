@@ -1,0 +1,91 @@
+# Hyperlane validator + relayer daemons for Etica.
+#
+# Co-locates both processes on a single VPS for cost. Validator signs
+# Etica `Mailbox` merkle roots; relayer reads checkpoints from R2 and
+# delivers inbound messages to Etica + Eth + BNB.
+#
+# Both restart unless-stopped so a crash is self-healing. Compose
+# project name is fixed so `install-on-vps.sh` can target it
+# idempotently.
+
+name: etica-hyperlane
+
+services:
+  validator:
+    image: ghcr.io/hyperlane-xyz/hyperlane-agent:agents-v2.1.0
+    container_name: etica-hyperlane-validator
+    restart: unless-stopped
+    command:
+      - ./validator
+      - --db
+      - /data/validator-db
+      - --originChainName
+      - etica
+      - --chains.etica.signer.type
+      - hexKey
+      - --chains.etica.signer.key
+      - ${HYP_VALIDATOR_TX_KEY}
+      - --validator.type
+      - hexKey
+      - --validator.key
+      - ${HYP_VALIDATOR_KEY}
+      - --checkpointSyncer.type
+      - s3
+      - --checkpointSyncer.bucket
+      - ${R2_BUCKET_NAME}
+      - --checkpointSyncer.region
+      - ${R2_REGION}
+      - --checkpointSyncer.folder
+      - etica
+    environment:
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      AWS_ENDPOINT_URL: ${R2_ENDPOINT_URL}
+      CONFIG_FILES: /config/agent-config.json
+    volumes:
+      - validator-db:/data/validator-db
+      - ./configs/agent-config.json:/config/agent-config.json:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+
+  relayer:
+    image: ghcr.io/hyperlane-xyz/hyperlane-agent:agents-v2.1.0
+    container_name: etica-hyperlane-relayer
+    restart: unless-stopped
+    command:
+      - ./relayer
+      - --db
+      - /data/relayer-db
+      - --relayChains
+      - etica,ethereum,bsc
+      - --allowLocalCheckpointSyncers
+      - 'false'
+      - --chains.etica.signer.type
+      - hexKey
+      - --chains.etica.signer.key
+      - ${HYP_RELAYER_KEY}
+      - --chains.ethereum.signer.type
+      - hexKey
+      - --chains.ethereum.signer.key
+      - ${HYP_RELAYER_KEY}
+      - --chains.bsc.signer.type
+      - hexKey
+      - --chains.bsc.signer.key
+      - ${HYP_RELAYER_KEY}
+    environment:
+      CONFIG_FILES: /config/agent-config.json
+    volumes:
+      - relayer-db:/data/relayer-db
+      - ./configs/agent-config.json:/config/agent-config.json:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+
+volumes:
+  validator-db:
+  relayer-db:
