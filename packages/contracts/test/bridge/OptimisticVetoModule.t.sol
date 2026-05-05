@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {OptimisticVetoModule} from "../../src/bridge/OptimisticVetoModule.sol";
-import {IBridgeMinter, VetoReason} from "../../src/bridge/IBridgeMinter.sol";
+import {BridgeMessage, IBridgeMinter, VetoReason} from "../../src/bridge/IBridgeMinter.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
@@ -24,6 +24,10 @@ contract MockBridgeMinter is IBridgeMinter {
         lastNonce = nonce;
         lastReason = reason;
         callCount += 1;
+    }
+
+    function vetoClaimWithProof(bytes32, BridgeMessage calldata, address) external pure override {
+        revert("not used in OVM tests");
     }
 }
 
