@@ -177,3 +177,73 @@ export const DEPLOYMENTS: Record<
 
 /** Treasury / admin wallet — owner of factory and fee recipient. */
 export const TREASURY_ADDRESS: Address = '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D';
+
+/**
+ * Phase 3 ETX bridge — deployed addresses per chain.
+ *
+ * Source-of-truth contracts live on Etica ({@link BRIDGE_ETICA_DEPLOYMENT}) and
+ * are mirrored on each remote chain (Ethereum mainnet, BNB Smart Chain) via
+ * {@link BRIDGE_REMOTE_DEPLOYMENTS}. Until each address is filled in here,
+ * the bridge UI renders read-only "launching soon" cards and skip-cleans
+ * any write attempt. After the live deploy lands, replace each
+ * `0x000…000` with the broadcast address — no UI code changes needed.
+ *
+ * See `docs/BRIDGE_DEPLOY_WALKTHROUGH.md` for the deploy ordering.
+ */
+export const BRIDGE_ETICA_DEPLOYMENT = {
+  bridgeVault: '0x0000000000000000000000000000000000000000' as Address,
+  bridgeInsuranceFund: '0x0000000000000000000000000000000000000000' as Address,
+  feeRouter: '0x0000000000000000000000000000000000000000' as Address,
+  insuranceTopUpReceiver: '0x0000000000000000000000000000000000000000' as Address,
+} as const;
+
+/**
+ * One entry per remote chain that the bridge mints wETX on. Chain ID
+ * matches the Hyperlane domain ID (Ethereum=1, BNB=56) so a single key
+ * covers both wagmi/viem and Hyperlane addressing.
+ */
+export const BRIDGE_REMOTE_DEPLOYMENTS = {
+  /** Ethereum mainnet — Hyperlane domain 1. */
+  1: {
+    chainName: 'Ethereum',
+    bridgeMinter: '0x0000000000000000000000000000000000000000' as Address,
+    wrappedEtx: '0x0000000000000000000000000000000000000000' as Address,
+    optimisticVetoModule: '0x0000000000000000000000000000000000000000' as Address,
+    fraudProverModule: '0x0000000000000000000000000000000000000000' as Address,
+    heartbeatIsm: '0x0000000000000000000000000000000000000000' as Address,
+    tvlCapIsm: '0x0000000000000000000000000000000000000000' as Address,
+    rateLimitIsm: '0x0000000000000000000000000000000000000000' as Address,
+    explorerUrl: 'https://etherscan.io',
+  },
+  /** BNB Smart Chain — Hyperlane domain 56. */
+  56: {
+    chainName: 'BNB Smart Chain',
+    bridgeMinter: '0x0000000000000000000000000000000000000000' as Address,
+    wrappedEtx: '0x0000000000000000000000000000000000000000' as Address,
+    optimisticVetoModule: '0x0000000000000000000000000000000000000000' as Address,
+    fraudProverModule: '0x0000000000000000000000000000000000000000' as Address,
+    heartbeatIsm: '0x0000000000000000000000000000000000000000' as Address,
+    tvlCapIsm: '0x0000000000000000000000000000000000000000' as Address,
+    rateLimitIsm: '0x0000000000000000000000000000000000000000' as Address,
+    explorerUrl: 'https://bscscan.com',
+  },
+} as const;
+
+export type BridgeRemoteDomain = keyof typeof BRIDGE_REMOTE_DEPLOYMENTS;
+
+/**
+ * @returns true once any Etica-side core address has been filled in. The
+ * bridge UI uses this as the master "is this live?" toggle.
+ */
+export function isBridgeLive(): boolean {
+  const z = '0x0000000000000000000000000000000000000000';
+  return BRIDGE_ETICA_DEPLOYMENT.bridgeVault !== z;
+}
+
+/**
+ * @returns true if the given remote chain's minter has been deployed.
+ */
+export function isBridgeRemoteLive(domain: BridgeRemoteDomain): boolean {
+  const z = '0x0000000000000000000000000000000000000000';
+  return BRIDGE_REMOTE_DEPLOYMENTS[domain].bridgeMinter !== z;
+}
