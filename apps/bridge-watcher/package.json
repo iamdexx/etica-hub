@@ -1,0 +1,26 @@
+{
+  "name": "@etica-hub/bridge-watcher",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "heartbeat": "tsx src/heartbeat.ts",
+    "monitor": "tsx src/monitor.ts",
+    "execute": "tsx src/execute.ts",
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo 'no lint'",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@etica-hub/shared": "workspace:*",
+    "viem": "^2.21.44"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
