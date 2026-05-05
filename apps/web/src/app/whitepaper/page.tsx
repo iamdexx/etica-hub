@@ -2,8 +2,31 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+const markdownComponents: Components = {
+  table: ({ node: _node, ...props }) => (
+    <div className="not-prose -mx-4 my-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+      <table
+        {...props}
+        className="w-full min-w-[640px] border-collapse text-sm [&_td]:border [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_th]:border [&_th]:border-white/10 [&_th]:bg-white/5 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left"
+      />
+    </div>
+  ),
+  pre: ({ node: _node, ...props }) => (
+    <pre
+      {...props}
+      className="overflow-x-auto rounded-lg border border-white/10 bg-white/5 p-3 text-xs"
+    />
+  ),
+  code: ({ node: _node, className, ...props }) => (
+    <code
+      {...props}
+      className={`${className ?? ''} break-all rounded bg-white/10 px-1 py-0.5 text-[0.85em]`}
+    />
+  ),
+};
 
 export const metadata: Metadata = {
   title: 'Whitepaper — EticaHub',
@@ -24,7 +47,7 @@ export default function WhitepaperPage() {
       <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-wider text-white/70">
-            Launch edition · v1.0
+            Stableswap edition · v1.2
           </p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">
             EticaHub Whitepaper
@@ -53,8 +76,10 @@ export default function WhitepaperPage() {
         </div>
       </section>
 
-      <article className="prose prose-invert prose-sm max-w-none prose-headings:scroll-mt-24 prose-headings:tracking-tight prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-a:text-brand-accent prose-a:no-underline hover:prose-a:underline prose-code:rounded prose-code:bg-white/10 prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-table:text-sm prose-th:border prose-th:border-white/10 prose-th:bg-white/5 prose-th:px-3 prose-th:py-2 prose-td:border prose-td:border-white/10 prose-td:px-3 prose-td:py-2 md:prose-base">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+      <article className="prose prose-invert prose-sm max-w-none break-words prose-headings:scroll-mt-24 prose-headings:tracking-tight prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-a:break-all prose-a:text-brand-accent prose-a:no-underline hover:prose-a:underline prose-code:rounded prose-code:bg-white/10 prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none md:prose-base">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {md}
+        </ReactMarkdown>
       </article>
     </div>
   );
