@@ -12,3 +12,10 @@ export { etxFarmsAbi } from './etxFarms';
 export { eticaStableSwapAbi } from './eticaStableSwap';
 export { liquidityTimelock10yAbi } from './liquidityTimelock10y';
 export { stableSwapHarvesterAdapterAbi } from './stableSwapHarvesterAdapter';
+export {
+  bridgeVaultAbi,
+  bridgeMinterAbi,
+  bridgeInsuranceFundAbi,
+  BRIDGE_CLAIM_STATE,
+  type BridgeClaimState,
+} from './bridge';
