@@ -943,4 +943,276 @@ contract BridgeMinterTest is Test {
         minter.acceptOwnership();
         assertEq(minter.owner(), newOwner);
     }
+
+    /* -------------------------------------------------------------------- */
+    /*                       HEARTBEAT / SUCCESSOR                          */
+    /* -------------------------------------------------------------------- */
+
+    address internal constant HB_SIGNER = address(0xB07B07);
+    address internal constant SUCCESSOR = address(0x5C0EE);
+
+    /// @dev Drives the heartbeat-signer + successor-key timelocked ops to
+    ///      completion so individual tests can focus on the post-config
+    ///      behavior (heartbeat, checkHeartbeat, activateSuccessor).
+    function _wireHeartbeatAndSuccessor() internal {
+        uint256[] memory ids = new uint256[](2);
+        vm.startPrank(OWNER);
+        ids[0] = minter.requestSetHeartbeatSigner(HB_SIGNER);
+        ids[1] = minter.requestSetSuccessorKey(SUCCESSOR);
+        vm.stopPrank();
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.startPrank(OWNER);
+        minter.executeOp(ids[0]);
+        minter.executeOp(ids[1]);
+        vm.stopPrank();
+    }
+
+    function test_constructor_initializesHeartbeatAndSuccessorDefaults() public view {
+        assertEq(minter.heartbeatSigner(), address(0));
+        assertEq(minter.successorKey(), address(0));
+        assertEq(uint256(minter.heartbeatTimeoutSeconds()), 4 hours);
+        assertEq(uint256(minter.successorTimelockSeconds()), 90 days);
+        // The launch-defaults helper warps OP_TIMELOCK forward, so
+        // `lastHeartbeatAt` is the deploy timestamp (= block.timestamp - OP_TIMELOCK).
+        assertEq(uint256(minter.lastHeartbeatAt()), block.timestamp - OP_TIMELOCK);
+    }
+
+    function test_heartbeat_signerCanPing() public {
+        _wireHeartbeatAndSuccessor();
+        uint64 before = minter.lastHeartbeatAt();
+        vm.warp(block.timestamp + 1 hours);
+        vm.expectEmit(true, false, false, true);
+        emit BridgeMinter.Heartbeat(HB_SIGNER, uint64(block.timestamp));
+        vm.prank(HB_SIGNER);
+        minter.heartbeat();
+        assertGt(uint256(minter.lastHeartbeatAt()), uint256(before));
+        assertEq(uint256(minter.lastHeartbeatAt()), block.timestamp);
+    }
+
+    function test_heartbeat_ownerCanPingWithoutSigner() public {
+        // Signer is unset by default; owner must still be able to heartbeat.
+        vm.warp(block.timestamp + 1 hours);
+        vm.prank(OWNER);
+        minter.heartbeat();
+        assertEq(uint256(minter.lastHeartbeatAt()), block.timestamp);
+    }
+
+    function test_heartbeat_strangerReverts() public {
+        _wireHeartbeatAndSuccessor();
+        vm.prank(ATTACKER);
+        vm.expectRevert(
+            abi.encodeWithSelector(BridgeMinter.BridgeMinter_OnlyHeartbeatSigner.selector, ATTACKER)
+        );
+        minter.heartbeat();
+    }
+
+    function test_checkHeartbeat_freshIsHealthy() public {
+        // Owner pings, then we observe the view returns true while still inside
+        // the timeout window.
+        vm.prank(OWNER);
+        minter.heartbeat();
+        assertTrue(minter.checkHeartbeat());
+    }
+
+    function test_checkHeartbeat_stalePastTimeoutIsUnhealthy() public {
+        vm.prank(OWNER);
+        minter.heartbeat();
+        // 4h is the default timeout; one second past returns false.
+        vm.warp(block.timestamp + 4 hours + 1);
+        assertFalse(minter.checkHeartbeat());
+    }
+
+    function test_checkHeartbeat_atExactBoundaryIsUnhealthy() public {
+        vm.prank(OWNER);
+        minter.heartbeat();
+        // Strict less-than comparison: hitting the boundary is already stale.
+        vm.warp(block.timestamp + 4 hours);
+        assertFalse(minter.checkHeartbeat());
+    }
+
+    function test_activateSuccessor_unsetReverts() public {
+        // No successor wired; even after a long silence the call reverts.
+        vm.warp(block.timestamp + 365 days);
+        vm.expectRevert(BridgeMinter.BridgeMinter_SuccessorUnset.selector);
+        minter.activateSuccessor();
+    }
+
+    function test_activateSuccessor_notReadyReverts() public {
+        _wireHeartbeatAndSuccessor();
+        // Operator just heartbeated; successor cannot fire for 90 days.
+        vm.prank(OWNER);
+        minter.heartbeat();
+        uint64 readyAt = minter.lastHeartbeatAt() + minter.successorTimelockSeconds();
+
+        vm.warp(block.timestamp + 89 days);
+        vm.expectRevert(
+            abi.encodeWithSelector(BridgeMinter.BridgeMinter_SuccessorNotReady.selector, readyAt)
+        );
+        minter.activateSuccessor();
+    }
+
+    function test_activateSuccessor_transfersOwnerAfterTimeout() public {
+        _wireHeartbeatAndSuccessor();
+        address prevOwner = minter.owner();
+
+        // Roll well past the 90d window.
+        vm.warp(minter.lastHeartbeatAt() + minter.successorTimelockSeconds() + 1);
+
+        vm.expectEmit(true, true, false, false);
+        emit BridgeMinter.SuccessorActivated(prevOwner, SUCCESSOR);
+
+        // Permissionless: a stranger drives the transfer.
+        vm.prank(ATTACKER);
+        minter.activateSuccessor();
+
+        assertEq(minter.owner(), SUCCESSOR);
+        // Heartbeat clock resets to the activation block.
+        assertEq(uint256(minter.lastHeartbeatAt()), block.timestamp);
+    }
+
+    function test_activateSuccessor_ownerCanRecoverWithFreshHeartbeat() public {
+        _wireHeartbeatAndSuccessor();
+        // Roll close to the brink, but a fresh heartbeat resets the clock and
+        // reverts an attempted activation.
+        vm.warp(minter.lastHeartbeatAt() + minter.successorTimelockSeconds() - 1 hours);
+        vm.prank(OWNER);
+        minter.heartbeat();
+
+        // Try to activate using the new (fresh) anchor: must revert NotReady.
+        uint64 newReadyAt = minter.lastHeartbeatAt() + minter.successorTimelockSeconds();
+        vm.expectRevert(
+            abi.encodeWithSelector(BridgeMinter.BridgeMinter_SuccessorNotReady.selector, newReadyAt)
+        );
+        minter.activateSuccessor();
+
+        // Owner unchanged.
+        assertEq(minter.owner(), OWNER);
+    }
+
+    function test_op_setHeartbeatSignerApplies() public {
+        vm.prank(OWNER);
+        uint256 id = minter.requestSetHeartbeatSigner(HB_SIGNER);
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id);
+        assertEq(minter.heartbeatSigner(), HB_SIGNER);
+    }
+
+    function test_op_setHeartbeatSignerCanZero() public {
+        // Wire then unwire; zero is allowed, lets the owner disarm the bot path.
+        vm.startPrank(OWNER);
+        uint256 id1 = minter.requestSetHeartbeatSigner(HB_SIGNER);
+        vm.stopPrank();
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id1);
+        assertEq(minter.heartbeatSigner(), HB_SIGNER);
+
+        vm.prank(OWNER);
+        uint256 id2 = minter.requestSetHeartbeatSigner(address(0));
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id2);
+        assertEq(minter.heartbeatSigner(), address(0));
+    }
+
+    function test_op_setHeartbeatTimeoutApplies() public {
+        vm.prank(OWNER);
+        uint256 id = minter.requestSetHeartbeatTimeout(2 hours);
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id);
+        assertEq(uint256(minter.heartbeatTimeoutSeconds()), 2 hours);
+    }
+
+    function test_op_setHeartbeatTimeoutOutOfRangeReverts() public {
+        vm.startPrank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                BridgeMinter.BridgeMinter_BadHeartbeatTimeout.selector, uint64(30 minutes)
+            )
+        );
+        minter.requestSetHeartbeatTimeout(30 minutes);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                BridgeMinter.BridgeMinter_BadHeartbeatTimeout.selector, uint64(48 hours)
+            )
+        );
+        minter.requestSetHeartbeatTimeout(48 hours);
+        vm.stopPrank();
+    }
+
+    function test_op_setSuccessorKeyApplies() public {
+        vm.prank(OWNER);
+        uint256 id = minter.requestSetSuccessorKey(SUCCESSOR);
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id);
+        assertEq(minter.successorKey(), SUCCESSOR);
+    }
+
+    function test_op_setSuccessorKeyCanZero() public {
+        // Disarm by setting back to zero — useful before rotating to a new
+        // successor without leaving an old key live during the gap.
+        vm.startPrank(OWNER);
+        uint256 id1 = minter.requestSetSuccessorKey(SUCCESSOR);
+        vm.stopPrank();
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id1);
+
+        vm.prank(OWNER);
+        uint256 id2 = minter.requestSetSuccessorKey(address(0));
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id2);
+        assertEq(minter.successorKey(), address(0));
+    }
+
+    function test_op_setSuccessorTimelockApplies() public {
+        vm.prank(OWNER);
+        uint256 id = minter.requestSetSuccessorTimelock(180 days);
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id);
+        assertEq(uint256(minter.successorTimelockSeconds()), 180 days);
+    }
+
+    function test_op_setSuccessorTimelockOutOfRangeReverts() public {
+        vm.startPrank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                BridgeMinter.BridgeMinter_BadSuccessorTimelock.selector, uint64(7 days)
+            )
+        );
+        minter.requestSetSuccessorTimelock(7 days);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                BridgeMinter.BridgeMinter_BadSuccessorTimelock.selector, uint64(400 days)
+            )
+        );
+        minter.requestSetSuccessorTimelock(400 days);
+        vm.stopPrank();
+    }
+
+    function test_op_heartbeatSettersOnlyOwner() public {
+        vm.startPrank(ATTACKER);
+        bytes memory expected =
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ATTACKER);
+
+        vm.expectRevert(expected);
+        minter.requestSetHeartbeatSigner(HB_SIGNER);
+
+        vm.expectRevert(expected);
+        minter.requestSetHeartbeatTimeout(2 hours);
+
+        vm.expectRevert(expected);
+        minter.requestSetSuccessorKey(SUCCESSOR);
+
+        vm.expectRevert(expected);
+        minter.requestSetSuccessorTimelock(120 days);
+        vm.stopPrank();
+    }
 }
