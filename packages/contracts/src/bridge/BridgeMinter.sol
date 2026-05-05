@@ -7,15 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 
 import {WrappedETX} from "./WrappedETX.sol";
 import {BridgeMessage, IBridgeMinter, VetoReason} from "./IBridgeMinter.sol";
-
-/// @notice Minimal Hyperlane mailbox interface used for outbound dispatches
-/// (burn-side flow back to Etica's `BridgeVault`).
-interface IMailbox {
-    function dispatch(uint32 destinationDomain, bytes32 recipientAddress, bytes calldata body)
-        external
-        payable
-        returns (bytes32 messageId);
-}
+import {IMailbox} from "./IHyperlane.sol";
 
 /// @title BridgeMinter
 /// @notice Mint authority for `WrappedETX` on Ethereum + BNB Chain. Manages

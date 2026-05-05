@@ -6,14 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {BridgeInsuranceFund} from "./BridgeInsuranceFund.sol";
 import {FeeRouter} from "./FeeRouter.sol";
-
-/// @notice Minimal Hyperlane mailbox interface used for outbound dispatches.
-interface IMailbox {
-    function dispatch(uint32 destinationDomain, bytes32 recipientAddress, bytes calldata body)
-        external
-        payable
-        returns (bytes32 messageId);
-}
+import {IMailbox} from "./IHyperlane.sol";
 
 /// @title BridgeVault
 /// @notice Asset-locking custodian for the Phase 3 ETX bridge on Etica.
