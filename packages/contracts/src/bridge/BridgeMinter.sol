@@ -161,6 +161,21 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     /// awaiting cross-chain sweep.
     uint128 public pendingInsuranceShareWei;
 
+    /// @notice Hyperlane domain ID of the home chain (Etica) hosting the
+    /// `InsuranceTopUpReceiver`. Zero disables cross-chain audit dispatch:
+    /// `sweepInsuranceShare` then drains locally only. Set post-deploy via
+    /// timelocked op (paired with `insuranceTopUpReceiver`).
+    uint32 public insuranceTopUpDomain;
+
+    /// @notice Address of the `InsuranceTopUpReceiver` on `insuranceTopUpDomain`,
+    /// stored as bytes32 for Hyperlane recipient encoding. Zero alongside a
+    /// non-zero domain reverts the dispatch — the pair is configured atomically.
+    bytes32 public insuranceTopUpReceiver;
+
+    /// @notice Monotonic counter for outbound insurance top-up notices.
+    /// Used to derive a unique `noticeId` per dispatch.
+    uint96 public insuranceTopUpCounter;
+
     /// @notice Outbound bridge fees accrued from `burn` (in wETX units), awaiting
     /// cross-chain sweep / settlement at the Etica side.
     uint128 public totalFeesAccruedEtx;
@@ -258,7 +273,8 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
         SET_HEARTBEAT_SIGNER,
         SET_HEARTBEAT_TIMEOUT,
         SET_SUCCESSOR_KEY,
-        SET_SUCCESSOR_TIMELOCK
+        SET_SUCCESSOR_TIMELOCK,
+        SET_INSURANCE_TOPUP_TARGET
     }
 
     struct PendingOp {
@@ -306,6 +322,10 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
         uint128 fee
     );
     event InsuranceShareSwept(address indexed recipient, uint128 amount);
+    event InsuranceTopUpTargetChanged(uint32 indexed destDomain, bytes32 indexed receiver);
+    event InsuranceTopUpNoticeDispatched(
+        bytes32 indexed noticeId, uint32 indexed destDomain, uint128 amountNativeWei
+    );
 
     event EmergencyPaused(address indexed pauser);
     event Unpaused();
@@ -372,6 +392,9 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     error BridgeMinter_SuccessorNotReady(uint64 readyAt);
     error BridgeMinter_BadHeartbeatTimeout(uint64 value);
     error BridgeMinter_BadSuccessorTimelock(uint64 value);
+    error BridgeMinter_InsuranceTopUpUnconfigured();
+    error BridgeMinter_UnexpectedValue(uint256 value);
+    error BridgeMinter_BadInsuranceTopUpTarget();
 
     /* -------------------------------------------------------------------- */
     /*                              CONSTRUCTOR                             */
@@ -732,18 +755,42 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     /*                          INSURANCE SWEEP                             */
     /* -------------------------------------------------------------------- */
 
-    /// @notice Forwards `pendingInsuranceShareWei` to the configured
-    /// `insuranceSweepRecipient`. Until the cross-chain sweep is wired up
-    /// in the integration PR, this is the only path that drains the
-    /// accumulator.
-    function sweepInsuranceShare() external nonReentrant {
+    /// @notice Forwards `pendingInsuranceShareWei` to the configured local
+    /// `insuranceSweepRecipient` (operator hot wallet that performs the
+    /// off-chain swap from native gas to ETX), and — when configured —
+    /// dispatches a Hyperlane notice to the home-chain `InsuranceTopUpReceiver`
+    /// recording the amount the operator now owes to `BridgeInsuranceFund`.
+    ///
+    /// `msg.value` is the Hyperlane gas budget for the cross-chain dispatch.
+    /// When the cross-chain target is unconfigured, callers MUST send zero
+    /// value — any extra is rejected to surface miswired automations early.
+    function sweepInsuranceShare() external payable nonReentrant {
         address dest = insuranceSweepRecipient;
         if (dest == address(0)) revert BridgeMinter_ZeroAddress();
         uint128 amount = pendingInsuranceShareWei;
         if (amount == 0) revert BridgeMinter_ZeroAmount();
         pendingInsuranceShareWei = 0;
+
         (bool ok,) = payable(dest).call{value: amount}("");
         if (!ok) revert BridgeMinter_BondRefundFailed();
+
+        uint32 destDomain = insuranceTopUpDomain;
+        bytes32 receiver = insuranceTopUpReceiver;
+        if (destDomain != 0) {
+            if (receiver == bytes32(0)) revert BridgeMinter_InsuranceTopUpUnconfigured();
+            unchecked {
+                insuranceTopUpCounter += 1;
+            }
+            bytes32 noticeId = keccak256(
+                abi.encode(selfDomain, address(this), insuranceTopUpCounter, amount, block.number)
+            );
+            bytes memory body = abi.encode(noticeId, selfDomain, amount, uint64(block.timestamp));
+            IMailbox(hyperlaneMailbox).dispatch{value: msg.value}(destDomain, receiver, body);
+            emit InsuranceTopUpNoticeDispatched(noticeId, destDomain, amount);
+        } else if (msg.value != 0) {
+            revert BridgeMinter_UnexpectedValue(msg.value);
+        }
+
         emit InsuranceShareSwept(dest, amount);
     }
 
@@ -944,6 +991,21 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
         return _request(OpKind.SET_SUCCESSOR_TIMELOCK, abi.encode(newSeconds));
     }
 
+    /// @notice Configures the Hyperlane destination for cross-chain insurance
+    /// top-up audit dispatches. `destDomain == 0` disables the dispatch path
+    /// (and `receiver` MUST also be zero in that case); otherwise both must
+    /// be non-zero and they're applied atomically by `executeOp`.
+    function requestSetInsuranceTopUpTarget(uint32 destDomain, bytes32 receiver)
+        external
+        onlyOwner
+        returns (uint256 id)
+    {
+        if ((destDomain == 0) != (receiver == bytes32(0))) {
+            revert BridgeMinter_BadInsuranceTopUpTarget();
+        }
+        return _request(OpKind.SET_INSURANCE_TOPUP_TARGET, abi.encode(destDomain, receiver));
+    }
+
     function executeOp(uint256 id) external onlyOwner {
         PendingOp storage op = pendingOps[id];
         if (op.kind == OpKind.NONE) revert BridgeMinter_InvalidOpId(id);
@@ -1024,6 +1086,11 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
             uint64 newSeconds = abi.decode(op.payload, (uint64));
             successorTimelockSeconds = newSeconds;
             emit SuccessorTimelockChanged(newSeconds);
+        } else if (kind == OpKind.SET_INSURANCE_TOPUP_TARGET) {
+            (uint32 destDomain, bytes32 receiver) = abi.decode(op.payload, (uint32, bytes32));
+            insuranceTopUpDomain = destDomain;
+            insuranceTopUpReceiver = receiver;
+            emit InsuranceTopUpTargetChanged(destDomain, receiver);
         }
 
         emit OpExecuted(id, kind);
