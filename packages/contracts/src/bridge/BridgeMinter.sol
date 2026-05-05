@@ -79,6 +79,17 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     uint64 public constant MAX_CHALLENGE_WINDOW = 14 days;
     uint64 public constant SECONDS_PER_DAY = 86_400;
 
+    /// @notice Bounds for the heartbeat staleness threshold. Tracks the
+    /// design-doc envelope (1h–24h) used to gate optional auto-pause logic
+    /// downstream of this contract (e.g. `HeartbeatISM`).
+    uint64 public constant MIN_HEARTBEAT_TIMEOUT = 1 hours;
+    uint64 public constant MAX_HEARTBEAT_TIMEOUT = 24 hours;
+
+    /// @notice Bounds for the successor-key activation timelock. 30d–365d
+    /// per the design doc; default of 90d is set in the constructor.
+    uint64 public constant MIN_SUCCESSOR_TIMELOCK = 30 days;
+    uint64 public constant MAX_SUCCESSOR_TIMELOCK = 365 days;
+
     /* -------------------------------------------------------------------- */
     /*                             IMMUTABLES                               */
     /* -------------------------------------------------------------------- */
@@ -163,6 +174,33 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     uint96 public burnCounter;
 
     /* -------------------------------------------------------------------- */
+    /*                       HEARTBEAT / SUCCESSOR STATE                    */
+    /* -------------------------------------------------------------------- */
+
+    /// @notice Bot key authorized to ping `heartbeat()`. Set post-deploy via
+    /// timelocked op. The owner may always heartbeat without this being set;
+    /// this exists so the daily watcher EOA never needs the master key.
+    address public heartbeatSigner;
+
+    /// @notice Most-recent heartbeat timestamp. Initialized to `block.timestamp`
+    /// at deploy so successor activation cannot fire immediately.
+    uint64 public lastHeartbeatAt;
+
+    /// @notice Staleness threshold consulted by `checkHeartbeat`. Owner-tunable
+    /// via timelocked op within `[MIN_HEARTBEAT_TIMEOUT, MAX_HEARTBEAT_TIMEOUT]`.
+    uint64 public heartbeatTimeoutSeconds;
+
+    /// @notice Address that can claim ownership via `activateSuccessor` once
+    /// the operator has been silent for `successorTimelockSeconds`. Set
+    /// post-deploy via timelocked op. Until set, recovery is impossible.
+    address public successorKey;
+
+    /// @notice Time without a heartbeat before `activateSuccessor` may be
+    /// called. Owner-tunable via timelocked op within
+    /// `[MIN_SUCCESSOR_TIMELOCK, MAX_SUCCESSOR_TIMELOCK]`.
+    uint64 public successorTimelockSeconds;
+
+    /* -------------------------------------------------------------------- */
     /*                            ROUTING WIRING                            */
     /* -------------------------------------------------------------------- */
 
@@ -216,7 +254,11 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
         SET_CHALLENGE_WINDOW,
         SET_ALLOWED_DEST_DOMAIN,
         SET_TRUSTED_VAULT,
-        UNPAUSE
+        UNPAUSE,
+        SET_HEARTBEAT_SIGNER,
+        SET_HEARTBEAT_TIMEOUT,
+        SET_SUCCESSOR_KEY,
+        SET_SUCCESSOR_TIMELOCK
     }
 
     struct PendingOp {
@@ -280,6 +322,12 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     event ChallengeWindowChanged(uint64 newSeconds);
     event AllowedDestDomainChanged(uint32 indexed domain, bool allowed);
     event TrustedVaultChanged(uint32 indexed domain, bytes32 trustedVault);
+    event HeartbeatSignerChanged(address indexed newSigner);
+    event HeartbeatTimeoutChanged(uint64 newTimeout);
+    event SuccessorKeyChanged(address indexed newSuccessor);
+    event SuccessorTimelockChanged(uint64 newTimelock);
+    event Heartbeat(address indexed signer, uint64 timestamp);
+    event SuccessorActivated(address indexed previousOwner, address indexed newOwner);
 
     event OpRequested(uint256 indexed id, OpKind indexed kind, uint64 executableAt, bytes payload);
     event OpExecuted(uint256 indexed id, OpKind indexed kind);
@@ -318,6 +366,12 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     error BridgeMinter_OpAlreadyCancelled(uint256 id);
     error BridgeMinter_OpTimelockNotElapsed(uint64 executableAt, uint64 nowTs);
     error BridgeMinter_MalformedBody();
+    error BridgeMinter_OnlyHeartbeatSigner(address caller);
+    error BridgeMinter_HeartbeatStale(uint64 lastBeat, uint64 timeout);
+    error BridgeMinter_SuccessorUnset();
+    error BridgeMinter_SuccessorNotReady(uint64 readyAt);
+    error BridgeMinter_BadHeartbeatTimeout(uint64 value);
+    error BridgeMinter_BadSuccessorTimelock(uint64 value);
 
     /* -------------------------------------------------------------------- */
     /*                              CONSTRUCTOR                             */
@@ -378,6 +432,15 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
         dailyMintCapBps = dailyMintCapBps_;
         perClaimCapBps = perClaimCapBps_;
         currentDayUtc = uint64(block.timestamp / SECONDS_PER_DAY);
+
+        // Heartbeat / successor recovery defaults. The signer + successor key
+        // are intentionally left zero — wired post-deploy via timelocked op.
+        // `lastHeartbeatAt` is anchored to the deploy block so successor
+        // activation cannot fire immediately even if a successor is later
+        // configured to a non-zero address.
+        heartbeatTimeoutSeconds = 4 hours;
+        successorTimelockSeconds = 90 days;
+        lastHeartbeatAt = uint64(block.timestamp);
 
         // Sanity-check the canonical share split against the constants. This is a
         // pure assertion — exists so reviewers reading the bond-split math can
@@ -695,6 +758,57 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     }
 
     /* -------------------------------------------------------------------- */
+    /*                       HEARTBEAT / SUCCESSOR RECOVERY                 */
+    /* -------------------------------------------------------------------- */
+
+    /// @notice Records a fresh liveness ping. Callable by either the
+    /// configured `heartbeatSigner` (a hot bot key) or the contract
+    /// owner. The owner path is the failsafe so a missing/rotated signer
+    /// never bricks recovery posture.
+    function heartbeat() external {
+        if (msg.sender != heartbeatSigner && msg.sender != owner()) {
+            revert BridgeMinter_OnlyHeartbeatSigner(msg.sender);
+        }
+        uint64 ts = uint64(block.timestamp);
+        lastHeartbeatAt = ts;
+        emit Heartbeat(msg.sender, ts);
+    }
+
+    /// @notice True iff the latest heartbeat is within `heartbeatTimeoutSeconds`.
+    /// External monitors and downstream gating contracts (e.g. `HeartbeatISM`)
+    /// call this view; this contract intentionally does not gate any of its
+    /// own actions on the result — that policy lives one layer up so it can
+    /// be tuned independently of the mint engine.
+    function checkHeartbeat() external view returns (bool isHealthy) {
+        return block.timestamp - lastHeartbeatAt < heartbeatTimeoutSeconds;
+    }
+
+    /// @notice Permissionless. Transfers ownership to the configured
+    /// `successorKey` once the operator has been silent for at least
+    /// `successorTimelockSeconds`. The transfer skips Ownable2Step's
+    /// pending-acceptance handshake — the whole point of this path is that
+    /// the prior owner is unreachable.
+    ///
+    /// Reverts with `SuccessorUnset` if no successor was configured, and
+    /// with `SuccessorNotReady` if the silence window has not yet elapsed.
+    function activateSuccessor() external {
+        address newOwner = successorKey;
+        if (newOwner == address(0)) revert BridgeMinter_SuccessorUnset();
+
+        uint64 readyAt = lastHeartbeatAt + successorTimelockSeconds;
+        if (block.timestamp < readyAt) {
+            revert BridgeMinter_SuccessorNotReady(readyAt);
+        }
+
+        address prevOwner = owner();
+        _transferOwnership(newOwner);
+        // Reset the heartbeat anchor so the successor begins their own
+        // liveness window from scratch rather than inheriting a stale clock.
+        lastHeartbeatAt = uint64(block.timestamp);
+        emit SuccessorActivated(prevOwner, newOwner);
+    }
+
+    /* -------------------------------------------------------------------- */
     /*                       OWNER TIMELOCKED OPS                           */
     /* -------------------------------------------------------------------- */
 
@@ -800,6 +914,36 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
         return _request(OpKind.UNPAUSE, "");
     }
 
+    function requestSetHeartbeatSigner(address newSigner) external onlyOwner returns (uint256 id) {
+        // The zero address is permitted here so the owner can disable the
+        // bot path entirely (heartbeats then come from owner only).
+        return _request(OpKind.SET_HEARTBEAT_SIGNER, abi.encode(newSigner));
+    }
+
+    function requestSetHeartbeatTimeout(uint64 newSeconds) external onlyOwner returns (uint256 id) {
+        if (newSeconds < MIN_HEARTBEAT_TIMEOUT || newSeconds > MAX_HEARTBEAT_TIMEOUT) {
+            revert BridgeMinter_BadHeartbeatTimeout(newSeconds);
+        }
+        return _request(OpKind.SET_HEARTBEAT_TIMEOUT, abi.encode(newSeconds));
+    }
+
+    function requestSetSuccessorKey(address newSuccessor) external onlyOwner returns (uint256 id) {
+        // Zero is permitted: lets the owner explicitly disarm successor
+        // recovery (e.g. before rotating away from a compromised successor).
+        return _request(OpKind.SET_SUCCESSOR_KEY, abi.encode(newSuccessor));
+    }
+
+    function requestSetSuccessorTimelock(uint64 newSeconds)
+        external
+        onlyOwner
+        returns (uint256 id)
+    {
+        if (newSeconds < MIN_SUCCESSOR_TIMELOCK || newSeconds > MAX_SUCCESSOR_TIMELOCK) {
+            revert BridgeMinter_BadSuccessorTimelock(newSeconds);
+        }
+        return _request(OpKind.SET_SUCCESSOR_TIMELOCK, abi.encode(newSeconds));
+    }
+
     function executeOp(uint256 id) external onlyOwner {
         PendingOp storage op = pendingOps[id];
         if (op.kind == OpKind.NONE) revert BridgeMinter_InvalidOpId(id);
@@ -864,6 +1008,22 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
         } else if (kind == OpKind.UNPAUSE) {
             paused = false;
             emit Unpaused();
+        } else if (kind == OpKind.SET_HEARTBEAT_SIGNER) {
+            address newSigner = abi.decode(op.payload, (address));
+            heartbeatSigner = newSigner;
+            emit HeartbeatSignerChanged(newSigner);
+        } else if (kind == OpKind.SET_HEARTBEAT_TIMEOUT) {
+            uint64 newSeconds = abi.decode(op.payload, (uint64));
+            heartbeatTimeoutSeconds = newSeconds;
+            emit HeartbeatTimeoutChanged(newSeconds);
+        } else if (kind == OpKind.SET_SUCCESSOR_KEY) {
+            address newSuccessor = abi.decode(op.payload, (address));
+            successorKey = newSuccessor;
+            emit SuccessorKeyChanged(newSuccessor);
+        } else if (kind == OpKind.SET_SUCCESSOR_TIMELOCK) {
+            uint64 newSeconds = abi.decode(op.payload, (uint64));
+            successorTimelockSeconds = newSeconds;
+            emit SuccessorTimelockChanged(newSeconds);
         }
 
         emit OpExecuted(id, kind);
