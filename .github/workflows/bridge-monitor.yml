@@ -1,0 +1,52 @@
+name: Bridge monitor (live)
+
+# Sanity-check pending claims on each remote BridgeMinter against the
+# source-of-truth Deposit events on Etica. Fires Telegram alerts on any
+# mismatch — does NOT auto-veto. The 48h challenge window gives the
+# operator ample time to push `vetoClaimManual` from a hardware wallet
+# after an alert.
+#
+# Skip-clean semantics: if BRIDGE_VAULT_ADDRESS is unset (bridge not
+# deployed yet) the script logs and exits 0.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monitor:
+    name: Sanity-check pending claims
+    runs-on: ubuntu-latest
+    environment: bridge-watcher
+    env:
+      BRIDGE_ETICA_RPC_URL: ${{ vars.BRIDGE_ETICA_RPC_URL || 'https://eticamainnet.eticascan.org' }}
+      BRIDGE_ETICA_CHAIN_ID: ${{ vars.BRIDGE_ETICA_CHAIN_ID || '61803' }}
+      BRIDGE_VAULT_ADDRESS: ${{ vars.BRIDGE_VAULT_ADDRESS }}
+      BRIDGE_MINTER_ETH_ADDRESS: ${{ vars.BRIDGE_MINTER_ETH_ADDRESS }}
+      BRIDGE_ETH_RPC_URL: ${{ vars.BRIDGE_ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com' }}
+      BRIDGE_ETH_DOMAIN: ${{ vars.BRIDGE_ETH_DOMAIN || '1' }}
+      BRIDGE_MINTER_BNB_ADDRESS: ${{ vars.BRIDGE_MINTER_BNB_ADDRESS }}
+      BRIDGE_BNB_RPC_URL: ${{ vars.BRIDGE_BNB_RPC_URL || 'https://bsc-rpc.publicnode.com' }}
+      BRIDGE_BNB_DOMAIN: ${{ vars.BRIDGE_BNB_DOMAIN || '56' }}
+      BRIDGE_SCAN_LOOKBACK_BLOCKS: ${{ vars.BRIDGE_SCAN_LOOKBACK_BLOCKS || '5000' }}
+      BRIDGE_TELEGRAM_BOT_TOKEN: ${{ secrets.BRIDGE_TELEGRAM_BOT_TOKEN }}
+      BRIDGE_TELEGRAM_CHAT_ID: ${{ secrets.BRIDGE_TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Monitor pending claims
+        run: pnpm --filter @etica-hub/bridge-watcher run monitor
