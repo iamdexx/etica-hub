@@ -807,6 +807,152 @@ contract BridgeMinterTest is Test {
         minter.sweepInsuranceShare();
     }
 
+    function test_sweepInsuranceShare_unconfiguredRejectsValue() public {
+        // Fill the accumulator and confirm sending value reverts when no
+        // cross-chain target is wired up.
+        bytes32 nonce = bytes32(uint256(0x21));
+        _record(nonce, RECIPIENT, uint128(1_000 * ONE));
+        _submit(nonce, SUBMITTER, uint128(1_000 * ONE));
+        vm.prank(VETO_AUTH);
+        minter.vetoClaimManual(nonce, VetoReason.OPERATOR_MANUAL);
+
+        vm.deal(address(this), 1 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(BridgeMinter.BridgeMinter_UnexpectedValue.selector, 1 ether)
+        );
+        minter.sweepInsuranceShare{value: 1 ether}();
+    }
+
+    function test_sweepInsuranceShare_dispatchesCrossChainNoticeWhenConfigured() public {
+        bytes32 receiver = bytes32(uint256(uint160(0xABCDEF)));
+        _wireInsuranceTopUpTarget(ETICA_DOMAIN, receiver);
+
+        // Generate a slash to populate `pendingInsuranceShareWei`.
+        bytes32 nonce = bytes32(uint256(0x22));
+        uint128 amount = uint128(1_000 * ONE);
+        _record(nonce, RECIPIENT, amount);
+        _submit(nonce, SUBMITTER, amount);
+        vm.prank(VETO_AUTH);
+        minter.vetoClaimManual(nonce, VetoReason.OPERATOR_MANUAL);
+
+        uint128 pending = minter.pendingInsuranceShareWei();
+        assertGt(uint256(pending), 0);
+
+        uint256 sweepBalBefore = INSURANCE_SWEEP.balance;
+        uint256 dispatchesBefore = mailbox.dispatchCount();
+
+        vm.deal(address(this), 0.05 ether);
+        minter.sweepInsuranceShare{value: 0.05 ether}();
+
+        // Local sweep happened.
+        assertEq(uint256(minter.pendingInsuranceShareWei()), 0);
+        assertEq(INSURANCE_SWEEP.balance - sweepBalBefore, pending);
+
+        // Cross-chain dispatch happened with full msg.value forwarded.
+        assertEq(mailbox.dispatchCount(), dispatchesBefore + 1);
+        assertEq(uint256(mailbox.lastDestDomain()), uint256(ETICA_DOMAIN));
+        assertEq(mailbox.lastRecipient(), receiver);
+        assertEq(mailbox.lastValue(), 0.05 ether);
+        assertEq(uint256(minter.insuranceTopUpCounter()), 1);
+
+        // Body decodes back to the right notice payload.
+        (bytes32 nid, uint32 src, uint128 amt, uint64 ts) =
+            abi.decode(mailbox.lastBody(), (bytes32, uint32, uint128, uint64));
+        assertEq(uint256(src), uint256(SELF_DOMAIN));
+        assertEq(uint256(amt), uint256(pending));
+        assertEq(uint256(ts), uint256(uint64(block.timestamp)));
+        assertTrue(nid != bytes32(0));
+    }
+
+    function test_sweepInsuranceShare_dispatchAcceptsZeroValue() public {
+        // Mailbox dispatch is `payable`; zero msg.value is legal even with
+        // a configured target (e.g. when the operator pre-funds gas via IGP).
+        bytes32 receiver = bytes32(uint256(uint160(0xABCDEF)));
+        _wireInsuranceTopUpTarget(ETICA_DOMAIN, receiver);
+
+        bytes32 nonce = bytes32(uint256(0x23));
+        _record(nonce, RECIPIENT, uint128(1_000 * ONE));
+        _submit(nonce, SUBMITTER, uint128(1_000 * ONE));
+        vm.prank(VETO_AUTH);
+        minter.vetoClaimManual(nonce, VetoReason.OPERATOR_MANUAL);
+
+        uint256 dispatchesBefore = mailbox.dispatchCount();
+        minter.sweepInsuranceShare();
+        assertEq(mailbox.dispatchCount(), dispatchesBefore + 1);
+        assertEq(mailbox.lastValue(), 0);
+    }
+
+    function test_sweepInsuranceShare_distinctNoticeIdsAcrossSweeps() public {
+        bytes32 receiver = bytes32(uint256(uint160(0xABCDEF)));
+        _wireInsuranceTopUpTarget(ETICA_DOMAIN, receiver);
+
+        bytes32 nonceA = bytes32(uint256(0x24));
+        _record(nonceA, RECIPIENT, uint128(1_000 * ONE));
+        _submit(nonceA, SUBMITTER, uint128(1_000 * ONE));
+        vm.prank(VETO_AUTH);
+        minter.vetoClaimManual(nonceA, VetoReason.OPERATOR_MANUAL);
+        minter.sweepInsuranceShare();
+        (bytes32 nidA,,,) = abi.decode(mailbox.lastBody(), (bytes32, uint32, uint128, uint64));
+
+        bytes32 nonceB = bytes32(uint256(0x25));
+        _record(nonceB, RECIPIENT, uint128(2_000 * ONE));
+        _submit(nonceB, SUBMITTER, uint128(2_000 * ONE));
+        vm.prank(VETO_AUTH);
+        minter.vetoClaimManual(nonceB, VetoReason.OPERATOR_MANUAL);
+        minter.sweepInsuranceShare();
+        (bytes32 nidB,,,) = abi.decode(mailbox.lastBody(), (bytes32, uint32, uint128, uint64));
+
+        assertTrue(nidA != nidB);
+        assertEq(uint256(minter.insuranceTopUpCounter()), 2);
+    }
+
+    /* ----- Timelocked op for the cross-chain target ----- */
+
+    function test_setInsuranceTopUpTarget_storesAtomically() public {
+        bytes32 receiver = bytes32(uint256(uint160(0xDEADBEEF)));
+        _wireInsuranceTopUpTarget(ETICA_DOMAIN, receiver);
+        assertEq(uint256(minter.insuranceTopUpDomain()), uint256(ETICA_DOMAIN));
+        assertEq(minter.insuranceTopUpReceiver(), receiver);
+    }
+
+    function test_setInsuranceTopUpTarget_clearsBack() public {
+        _wireInsuranceTopUpTarget(ETICA_DOMAIN, bytes32(uint256(uint160(0xDEADBEEF))));
+        // Now clear: domain=0 + receiver=bytes32(0) atomically.
+        vm.prank(OWNER);
+        uint256 id = minter.requestSetInsuranceTopUpTarget(0, bytes32(0));
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id);
+        assertEq(uint256(minter.insuranceTopUpDomain()), 0);
+        assertEq(minter.insuranceTopUpReceiver(), bytes32(0));
+    }
+
+    function test_setInsuranceTopUpTarget_partialReverts() public {
+        vm.startPrank(OWNER);
+        vm.expectRevert(BridgeMinter.BridgeMinter_BadInsuranceTopUpTarget.selector);
+        minter.requestSetInsuranceTopUpTarget(ETICA_DOMAIN, bytes32(0));
+
+        vm.expectRevert(BridgeMinter.BridgeMinter_BadInsuranceTopUpTarget.selector);
+        minter.requestSetInsuranceTopUpTarget(0, bytes32(uint256(1)));
+        vm.stopPrank();
+    }
+
+    function test_setInsuranceTopUpTarget_onlyOwner() public {
+        vm.prank(ATTACKER);
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ATTACKER)
+        );
+        minter.requestSetInsuranceTopUpTarget(ETICA_DOMAIN, bytes32(uint256(1)));
+    }
+
+    function _wireInsuranceTopUpTarget(uint32 destDomain, bytes32 receiver) internal {
+        vm.prank(OWNER);
+        uint256 id = minter.requestSetInsuranceTopUpTarget(destDomain, receiver);
+        vm.warp(block.timestamp + OP_TIMELOCK);
+        vm.prank(OWNER);
+        minter.executeOp(id);
+    }
+
     /* -------------------------------------------------------------------- */
     /*                                PAUSE                                 */
     /* -------------------------------------------------------------------- */
