@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import {
+  formatPriceRatio,
+  invertPrice,
+  priceHeadline,
+} from '@/lib/trading/priceLabel';
 
 /**
  * Candle shape returned by the indexer's `/prices/:pairId/candles` endpoint.
@@ -26,13 +31,6 @@ function pxFromString18(s: string): number {
   return Number(s) / 1e18;
 }
 
-function formatPrice(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '—';
-  if (n >= 100) return n.toFixed(2);
-  if (n >= 1) return n.toFixed(4);
-  return n.toFixed(6);
-}
-
 function fmtTime(ts: number, interval: IntervalKey): string {
   const d = new Date(ts * 1000);
   if (interval === '1d' || interval === '4h') {
@@ -50,6 +48,7 @@ interface PriceChartProps {
 
 export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: PriceChartProps) {
   const [interval, setIntervalState] = useState<IntervalKey>('1h');
+  const [inverted, setInverted] = useState(false);
   const [candles, setCandles] = useState<Candle[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -94,7 +93,8 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
       first: 0,
     };
     if (!candles || candles.length === 0) return empty;
-    const closes = candles.map((c) => pxFromString18(c.close));
+    const rawCloses = candles.map((c) => pxFromString18(c.close));
+    const closes = inverted ? rawCloses.map(invertPrice) : rawCloses;
     const min = Math.min(...closes);
     const max = Math.max(...closes);
     const span = max - min || max || 1;
@@ -126,7 +126,7 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
       latest: closes[closes.length - 1] ?? 0,
       first: closes[0] ?? 0,
     };
-  }, [candles]);
+  }, [candles, inverted]);
 
   const change = latest - first;
   const changePct = first > 0 ? (change / first) * 100 : 0;
@@ -135,17 +135,32 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-white/50">
-            {baseSymbol} / {quoteSymbol}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-white/50">
+            <span>
+              {inverted
+                ? `${quoteSymbol} priced in ${baseSymbol}`
+                : `${baseSymbol} priced in ${quoteSymbol}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setInverted((v) => !v)}
+              className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] tracking-normal text-white/70 hover:bg-white/10 hover:text-white"
+              title="Flip the price quote between base and quote tokens"
+              aria-label="Invert price quote"
+            >
+              ⇄ invert
+            </button>
           </div>
-          <div className="flex items-baseline gap-3">
-            <div className="text-2xl font-semibold tabular-nums">{formatPrice(latest)}</div>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <div className="text-2xl font-semibold tabular-nums">
+              {priceHeadline({ base: baseSymbol, quote: quoteSymbol, latest, inverted })}
+            </div>
             <div
               className={`text-sm tabular-nums ${positive ? 'text-emerald-300' : 'text-rose-300'}`}
             >
               {positive ? '+' : ''}
-              {changePct.toFixed(2)}% · {interval}
+              {changePct.toFixed(2)}% <span className="text-white/40">· {interval}</span>
             </div>
           </div>
         </div>
@@ -213,7 +228,7 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
       </div>
 
       <div className="mt-3 flex justify-between text-xs tabular-nums text-white/50">
-        <span>Low {formatPrice(minP)}</span>
+        <span>Low {formatPriceRatio(minP)}</span>
         <span>
           {candles && candles.length > 0
             ? `${fmtTime(candles[0]!.bucketStart, interval)} → ${fmtTime(
@@ -222,7 +237,7 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
               )}`
             : ''}
         </span>
-        <span>High {formatPrice(maxP)}</span>
+        <span>High {formatPriceRatio(maxP)}</span>
       </div>
     </div>
   );
