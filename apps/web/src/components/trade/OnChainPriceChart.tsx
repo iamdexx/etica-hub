@@ -5,6 +5,15 @@ import { formatUnits, parseAbiItem, type Address, type PublicClient } from 'viem
 import { useChainId, usePublicClient, useReadContract } from 'wagmi';
 import { DEPLOYMENTS, abis } from '@etica-hub/shared';
 import { resolveBaseTokenAddress, type TradeBaseSymbol } from '@/lib/trading/baseSymbol';
+import {
+  filterSamplesToWindow,
+  formatPriceRatio,
+  invertPrice,
+  priceHeadline,
+  TIME_WINDOW_LABELS,
+  TIME_WINDOWS,
+  type TimeWindow,
+} from '@/lib/trading/priceLabel';
 
 /**
  * Client-side price chart fallback.
@@ -50,6 +59,11 @@ interface OnChainPriceChartProps {
 }
 
 export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChartProps) {
+  // Visualization-only state. The full sample buffer is preserved in
+  // localStorage so toggling these never throws away on-chain history.
+  const [windowKey, setWindowKey] = useState<TimeWindow>('7d');
+  const [inverted, setInverted] = useState(false);
+
   const chainId = useChainId();
   const deployment = DEPLOYMENTS[chainId as keyof typeof DEPLOYMENTS];
 
@@ -255,10 +269,30 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
     });
   }, [reservesQuery.data, reservesQuery.dataUpdatedAt, baseIsToken0, cacheKey]);
 
-  const { pathD, areaD, minP, maxP, latest, first } = useMemo(
-    () => buildSvg(samples.map((s) => s.price)),
-    [samples],
-  );
+  // Filter the raw rolling buffer to the user-selected visualization window
+  // (24h / 7d / 30d / all), then invert if requested. Both transforms run on
+  // the visible slice — the underlying `samples` array is never mutated.
+  const {
+    pathD,
+    areaD,
+    minP,
+    maxP,
+    latest,
+    first,
+    visibleCount,
+    visibleFirstTs,
+    visibleLastTs,
+  } = useMemo(() => {
+    const visible = filterSamplesToWindow(samples, windowKey, (s) => s.ts);
+    const closes = visible.map((s) => (inverted ? invertPrice(s.price) : s.price));
+    const built = buildSvg(closes);
+    return {
+      ...built,
+      visibleCount: visible.length,
+      visibleFirstTs: visible[0]?.ts ?? null,
+      visibleLastTs: visible[visible.length - 1]?.ts ?? null,
+    };
+  }, [samples, windowKey, inverted]);
 
   const change = latest - first;
   const changePct = first > 0 ? (change / first) * 100 : 0;
@@ -275,25 +309,58 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
       ? 'Reserve read failed — RPC unreachable'
       : null;
 
+  const headline = priceHeadline({ base: baseSymbol, quote: quoteSymbol, latest, inverted });
+  const windowLabel = TIME_WINDOW_LABELS[windowKey];
+  const changeSuffix = windowKey === 'all' ? 'all-time' : `vs ${windowLabel} ago`;
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-white/50">
-            {baseSymbol} / {quoteSymbol}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-white/50">
+            <span>
+              {inverted ? `${quoteSymbol} priced in ${baseSymbol}` : `${baseSymbol} priced in ${quoteSymbol}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setInverted((v) => !v)}
+              className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] tracking-normal text-white/70 hover:bg-white/10 hover:text-white"
+              title="Flip the price quote between base and quote tokens"
+              aria-label="Invert price quote"
+            >
+              ⇄ invert
+            </button>
           </div>
-          <div className="flex items-baseline gap-3">
-            <div className="text-2xl font-semibold tabular-nums">{formatPrice(latest)}</div>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <div className="text-2xl font-semibold tabular-nums">{headline}</div>
             <div
               className={`text-sm tabular-nums ${positive ? 'text-emerald-300' : 'text-rose-300'}`}
             >
-              {samples.length > 1 ? `${positive ? '+' : ''}${changePct.toFixed(2)}%` : '—'} ·
-              on-chain live
+              {visibleCount > 1 ? `${positive ? '+' : ''}${changePct.toFixed(2)}%` : '—'}{' '}
+              <span className="text-white/40">· {changeSuffix} · on-chain live</span>
             </div>
           </div>
         </div>
-        <div className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-wider text-white/50">
-          {samples.length} sample{samples.length === 1 ? '' : 's'}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+            {TIME_WINDOWS.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setWindowKey(k)}
+                className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
+                  windowKey === k
+                    ? 'bg-brand-accent text-brand-ink'
+                    : 'text-white/70 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                {TIME_WINDOW_LABELS[k]}
+              </button>
+            ))}
+          </div>
+          <div className="hidden rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-wider text-white/50 sm:block">
+            {visibleCount} pt{visibleCount === 1 ? '' : 's'}
+          </div>
         </div>
       </div>
 
@@ -339,13 +406,13 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
       </div>
 
       <div className="mt-3 flex justify-between text-xs tabular-nums text-white/50">
-        <span>Low {formatPrice(minP)}</span>
+        <span>Low {formatPriceRatio(minP)}</span>
         <span>
-          {samples.length > 0
-            ? `${fmtClock(samples[0]!.ts)} → ${fmtClock(samples[samples.length - 1]!.ts)}`
+          {visibleFirstTs !== null && visibleLastTs !== null
+            ? `${fmtClock(visibleFirstTs)} → ${fmtClock(visibleLastTs)}`
             : ''}
         </span>
-        <span>High {formatPrice(maxP)}</span>
+        <span>High {formatPriceRatio(maxP)}</span>
       </div>
     </div>
   );
@@ -385,13 +452,6 @@ function buildSvg(closes: number[]) {
     latest: closes[closes.length - 1] ?? 0,
     first: closes[0] ?? 0,
   };
-}
-
-function formatPrice(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '—';
-  if (n >= 100) return n.toFixed(2);
-  if (n >= 1) return n.toFixed(4);
-  return n.toFixed(6);
 }
 
 function fmtClock(ts: number): string {
