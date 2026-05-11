@@ -47,7 +47,7 @@ export default function WhitepaperPage() {
       <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-wider text-white/70">
-            Stableswap edition · v1.2
+            Bridge Stack edition · v1.3
           </p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-4xl">
             EticaHub Whitepaper
