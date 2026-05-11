@@ -1,6 +1,6 @@
 # EticaHub Whitepaper
 
-**Version 1.2 — Stableswap Edition**
+**Version 1.3 — Bridge Stack Edition**
 
 ---
 
@@ -8,7 +8,7 @@
 
 EticaHub is a community-built application layer on the Etica blockchain. It introduces **ETX** (ticker `ETX`, name `EticaHub`, supply 100,000,000, fixed), a hub-and-spoke decentralized exchange where every pair shares ETX as its reserve asset, a research subscription and tipping layer that reads Etica's native proposal contract, and a pre-designed (but not yet deployed) proposal-gated token launchpad that, when activated, will require every new token to open both a `token/ETX` and a `token/ETI` pool — structurally funnelling demand to both assets.
 
-Since the v1 genesis launch, EticaHub has shipped several additional surfaces — all of them non-custodial, non-dilutive to the fixed ETX supply, and built on the same hub-and-spoke invariant: a UniswapX-style **Trading Stack** (limit, stop, DCA, bounded grid, Infinity Bot), an **ERC-4626 liquid staking vault (stETX)**, a **rate-aware stableswap pool (Phase 0)** for stETX↔ETX with a 10-year-locked treasury seed, an on-chain **Treasury Harvester** that redistributes treasury LP-fee accruals via a deterministic 10/10/40/40 split with a permanent Protocol-Owned-Liquidity (POL) burn, an **ETXFarms** non-emissive LP-staking surface, a skinny **on-chain explorer** with Sourcify-backed contract verification, a public **market-data API**, and a **community buy bot** that posts DEX swaps to Telegram.
+Since the v1 genesis launch, EticaHub has shipped several additional surfaces — all of them non-custodial, non-dilutive to the fixed ETX supply, and built on the same hub-and-spoke invariant: a UniswapX-style **Trading Stack** (limit, stop, DCA, bounded grid, Infinity Bot), an **ERC-4626 liquid staking vault (stETX)**, the **EticaStableSwap V3 pool** — a rate-aware Curve-style AMM (Phase 0) for stETX↔ETX with a 10-year-locked treasury seed and a live admin-fee adapter that flows back into the harvester, an on-chain **Treasury Harvester** that redistributes treasury LP-fee accruals via a deterministic 10/10/40/40 split with a permanent Protocol-Owned-Liquidity (POL) burn, an **ETXFarms** non-emissive LP-staking surface, a skinny **on-chain explorer** with Sourcify-backed contract verification, a public **market-data API**, and a **community buy bot** that posts DEX swaps to Telegram. The **Phase 3 cross-chain bridge** stack — twelve audited-pattern contracts implementing an optimistic-veto design on Hyperlane rails, a 10M ETX insurance backstop, three custom ISMs, a free GitHub-Actions watcher, and the `/bridge` UI — is contract-complete in the repo and pending the live deploy of Hyperlane on Etica (Phase H). A frontend-only good-faith **jurisdictional gate** on `/stake` and `/farms` mirrors the same posture adopted by Uniswap and Aave; the underlying contracts remain permissionless.
 
 This document describes what EticaHub is, what it is not, how the v1 mainnet launch works, what has shipped since, and what remains explicitly deferred to later phases.
 
@@ -368,7 +368,9 @@ Weights are `allocPoint` values (sum = 10,000 by convention). The owner can `add
 
 ---
 
-## 10. EticaStableSwap (Phase 0)
+## 10. EticaStableSwap (Phase 0 — the V3 pool)
+
+> Naming note: EticaSwap V1 was the original Etica-side AMM; EticaSwap V2 is the hub-and-spoke constant-product DEX described in §4 (still the venue for ETI/ETX, EGAZ/ETX, etc.); **EticaStableSwap is the protocol's V3 pool** — a separate, rate-aware Curve-style AMM dedicated to correlated assets (today stETX↔ETX, Phase 1 adds wETI/ETX). Where this paper says "V3 pool," it means EticaStableSwap.
 
 `EticaStableSwap` is a rate-aware, Curve-style AMM purpose-built for stETX↔ETX. It exists because a constant-product V2 pool quotes the wrong price the moment stETX's NAV drifts above 1.0 ETX, and a naïve Curve pool would drift out of range as the vault accrues yield. EticaStableSwap **reads `stETX.convertToAssets(1e18)` directly on every swap** so the curve auto-tracks NAV forever — no manual rebalancing, no LP rotation, no stale parameters.
 
@@ -553,11 +555,79 @@ All of the above are deferred. When activated, a separate announcement and docum
 
 ---
 
-## 15. Bridge (Phase 3, Contracts Ready, Launch Separate)
+## 15. Bridge (Phase 3 — Contract-Complete, Deploy Gated on Hyperlane-on-Etica)
 
-A production-grade bridge stack (`EticaBridgeVault`, `EticaBridgeMinter`, `MultisigVerifier`, and a Node relayer with per-validator signers and a coordinator) exists in the repo. It is designed to move ETI/ERC-20 assets between Etica mainnet and external chains via a k-of-n multisig of independent validators.
+The Phase 3 cross-chain bridge is **contract-complete in the repo** (PRs #157–#173, twelve contracts plus the supporting Hyperlane-on-Etica infrastructure-as-code bundle) and **pending only the live deploy of Hyperlane on the Etica L1** (Phase H — community-funded validator + relayer on a small VPS, see [`docs/HYPERLANE_ON_ETICA.md`](./HYPERLANE_ON_ETICA.md)). Once the Hyperlane mailbox is live on Etica, deploys follow [`docs/BRIDGE_DEPLOY_WALKTHROUGH.md`](./BRIDGE_DEPLOY_WALKTHROUGH.md).
 
-The bridge has its own audit scope and operational requirements (validator recruitment, key custody, monitoring) that are orthogonal to the DEX launch. It is **not activated as part of ETX + EticaSwap v1** and will be announced on its own timeline.
+The bridge supersedes the earlier multisig-validator design (PR #5) entirely. The new architecture replaces a trusted k-of-n validator set with an **optimistic-veto model** on Hyperlane's already-deployed validator/relayer rails: any honest party can submit a claim, the protocol operator (or any community member with a Merkle proof) has a 48-hour challenge window to veto a fraudulent claim before it mints, and a 10M ETX insurance fund underwrites the worst case.
+
+### 15.1 Architecture
+
+Messages move on Hyperlane (industry-standard interchain message protocol). Asset custody and minting live in EticaHub-authored contracts that consume Hyperlane as transport:
+
+| Contract | Side | Role |
+|---|---|---|
+| `BridgeVault` | Etica | Custodies deposited ETX. Emits `Deposit` events that Hyperlane relays. Authorizes withdrawals only on validated burn-receipts from the destination chain. |
+| `BridgeMinter` | Eth + BSC (one per chain) | Receives Hyperlane messages from the Etica vault, opens a claim, runs the 48h challenge window, then mints `WrappedETX` on success. Also accepts user-initiated burns to round-trip back to Etica. |
+| `WrappedETX` | Eth + BSC | Restricted-mint ERC-20Permit. Only `BridgeMinter` can mint or burn. Standard `permit` for gasless approvals on the destination side. |
+| `BridgeInsuranceFund` | Etica | 10M ETX backstop with timelocked withdrawals. Pays out on a validated successful veto or on operator-acknowledged shortfall. Funded from the FeeRouter's 20% insurance slice. |
+| `FeeRouter` | Etica | Splits bridge fees 20/80 between the insurance fund and the existing `TreasuryHarvester` (§9). Split changes are 24h-timelocked. |
+| `OptimisticVetoModule` | Eth + BSC | Operator veto authority wrapper. Holds the operator's veto key and rate-limits veto submissions so a compromised key can't grief liveness. |
+| `FraudProverModule` | Eth + BSC | Community Merkle-proof veto path. Anyone with a valid proof of the Etica state at the disputed block can independently veto a fraudulent claim. The operator is not the only line of defence. |
+| `InsuranceTopUpReceiver` | Etica | Closes the cross-chain audit trail when an Eth/BSC-side veto needs an Etica-side insurance payout. Records each notice; operator settles the ETX leg off-chain and calls `markSettled`. |
+| `HeartbeatISM` | Eth + BSC | Custom Hyperlane Interchain Security Module. Requires a recent operator heartbeat (≤4h) before any message validates. Auto-pauses the bridge if the operator goes dark. |
+| `TVLCapISM` | Eth + BSC | Caps the total per-chain wrapped supply against a configurable ceiling. Refuses messages that would breach the cap (defence against runaway minting). |
+| `RateLimitISM` | Eth + BSC | Per-day mint throughput cap with a 1h–7d timelock on cap changes. Bounds the worst-case loss from a successful exploit to one day's cap. |
+| `IHyperlane` interface | shared | Single source of truth for `IMailbox` + `IMessageRecipient`, byte-for-byte mirroring the Hyperlane V3 stdlib. |
+
+### 15.2 Optimistic-veto flow
+
+1. **Deposit.** A user calls `BridgeVault.deposit(amount, destinationChain, recipient)` on Etica. The vault locks the ETX, computes a `claimId`, and dispatches a Hyperlane message to the destination `BridgeMinter`.
+2. **Claim open.** Hyperlane relays the message. `BridgeMinter.submitClaim()` opens a claim with a 48-hour `challengeEnd` timestamp.
+3. **Challenge window.** During the 48h window, anyone can submit a veto via `OptimisticVetoModule.veto()` (operator key) or `FraudProverModule.veto()` (community Merkle proof against Etica state at the deposit block).
+4. **Execute.** After the window passes with no veto, anyone (including the recipient) calls `BridgeMinter.executeClaim()` to mint `WrappedETX` to the recipient. Up to that moment, the funds remain locked on Etica and recoverable.
+5. **Round-trip.** To return, the user burns `WrappedETX` on Eth/BSC via `BridgeMinter.burn()`. The minter dispatches a Hyperlane message back to Etica, the vault validates it, and the user (or any keeper) calls `executeWithdraw()` after the symmetric 48h window.
+
+### 15.3 Bond, fees, and insurance
+
+- **Submitter bond:** 25% of the claim notional, in ETX. Slashed on a successful veto (50% goes to the veto submitter, 25% goes to the insurance fund, 25% is burned). Returned on successful execution.
+- **Bridge fee:** 0.1% of the claim notional, in ETX, routed through `FeeRouter` (20% insurance, 80% harvester).
+- **Per-day cap:** `RateLimitISM` defaults to 1M ETX/chain/day, ramped from 100k → 1M → 10M over a 30/60/90-day post-launch schedule.
+- **Insurance fund:** seeded with 10M ETX from the treasury, top-able via `BridgeInsuranceFund.deposit()` or via the FeeRouter's 20% slice. Per-veto payout cap = 5% of fund balance; per-day payout cap = 1% of fund balance.
+- **Heartbeat cadence:** operator signs an on-chain heartbeat every 15min (free GitHub Actions cron in `apps/bridge-watcher`). After 4h of silence the bridge auto-pauses; after 90 days of continuous silence the heartbeat key can be rotated via the successor-key recovery path.
+
+### 15.4 Watcher (free, runs on GitHub Actions)
+
+`apps/bridge-watcher/` ships three independent GitHub Actions workflows that together replace the paid "$20/mo VPS bot" most bridges run:
+
+- **Heartbeat (15min cadence)** — signs the on-chain heartbeat on each remote chain.
+- **Monitor (5min cadence)** — pulls fresh `ClaimSubmitted` events, runs sanity checks against the Etica RPC, posts to Telegram on any suspicious claim. **Alert-only.** Manual veto stays on the operator's hardware wallet — the bot never holds the veto key.
+- **Auto-execute (30min cadence)** — calls `executeClaim()` on matured legitimate claims so recipients don't have to pay destination-chain gas.
+
+All three workflows skip cleanly when bridge contract addresses are unset, so CI is green from day-zero through deploy day. Operational cost: $0/mo.
+
+### 15.5 Custom ISMs
+
+Hyperlane lets each recipient contract specify its own Interchain Security Module. The bridge stacks three custom ISMs in AGGREGATION mode on top of the standard `MultisigISM`:
+
+- `HeartbeatISM` — blocks message validation if the operator hasn't pinged in 4h.
+- `TVLCapISM` — blocks message validation if executing the claim would exceed the per-chain wrapped supply cap.
+- `RateLimitISM` — blocks message validation if today's running total + this claim would exceed the per-day cap.
+
+All three are stateless to the relayer (they read on-chain state, sign nothing) and ship with timelocked parameter knobs so a compromised admin can't widen caps without warning.
+
+### 15.6 `/bridge` UI
+
+`apps/web/src/app/bridge/page.tsx` ships a read-only baseline today (status banner, address book, locked parameters, the "how a deposit moves" explainer) and the same components automatically light up with live TVL, pending claims, and heartbeat status the moment addresses populate in `packages/shared/src/addresses.ts`. The page is non-custodial — no signing flows are wired until the contracts are live, and even then every flow routes through the user's wallet (Permit2 on Etica, `WrappedETX.permit` on Eth/BSC).
+
+### 15.7 Status
+
+Contracts are deployment-ready. Operational dependencies for the live deploy:
+
+- **Hyperlane mailbox on Etica** — requires Phase H (validator + relayer on a community-funded VPS). Plan in [`docs/HYPERLANE_ON_ETICA.md`](./HYPERLANE_ON_ETICA.md). Estimated cost ~$5-10/mo recurring, ~$5-10 one-time gas. Funded from the harvester's 80% treasury slice once live.
+- **Bond + insurance seed** — 10M ETX from treasury to `BridgeInsuranceFund` at deploy time.
+- **Operator hardware wallet** — owns `BridgeMinter` on each remote chain, owns `OptimisticVetoModule`. Multisig migration is a post-launch task.
+- **Audit.** Sherlock contest scoped after Phase H lands. Estimated 3–4 weeks of lead time.
 
 ---
 
@@ -581,8 +651,14 @@ The EticaHub treasury is an EOA at `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`.
 | `DutchOrderReactor` — `owner` | Treasury wallet | Can change the protocol fee controller; fee itself capped at 1% by the controller |
 | `EticaProtocolFeeController` — `owner` | Treasury wallet | Can flip the ETX-denominated protocol fee between 0 and 100 BPS |
 | `StakedETX` | **no owner** | Contract has no `Ownable` inheritance; `distributeRewards` is permissionless; **cannot** seize deposits, pause, or mint shares |
-| `TreasuryHarvester` — `owner` | Treasury wallet | Can rotate the keeper EOA, emergency-sweep to treasury, and tune the 10/10/40/40 split within contract-enforced caps |
-| `TreasuryHarvester` — `keeper` | Hot keeper EOA | Can call `harvest()` only — cannot change parameters, cannot drain funds |
+| `TreasuryHarvester` — `owner` | Treasury wallet | Can emergency-sweep to treasury and tune the 10/10/40/40 split within contract-enforced caps. The keeper role was retired in v2 (PR #109); `harvest()` is now fully permissionless with a 1-day cooldown and a small caller-tip incentive. |
+| `EticaStableSwap` — `owner` | Treasury wallet | Parameter knobs only: `rampA`, `setSwapFee`, `setAdminFee`, `setAdminFeeRecipient`, `lockedWithdraw` (only fires post-2036 timelock unlock). Cannot mint shares, cannot seize LP, cannot redirect existing reserves. |
+| `LiquidityTimelock10y` — `owner` | Treasury wallet | Can withdraw the locked LP only after the 2036-05-01 unlock timestamp; the contract has no early-unlock path. |
+| `StableSwapHarvesterAdapter` | **no owner** | Permissionless `harvest()`. Anyone can poke it; output is fixed by the on-chain 50/50 admin-fee math. |
+| `ETXFarms` — `owner` | Treasury wallet | Can register new pools, retune weights, set fallback recipient. `rescueToken` is guarded against registered LP tokens and the reward token (ETX). Cannot pause withdrawals, cannot retroactively change reward semantics. |
+| `BridgeVault` — `owner` (post-deploy) | Hardware wallet → multisig | Configures `BridgeMinter` addresses per remote chain, sets the per-chain cap. Cannot bypass the 48h challenge window. |
+| `BridgeMinter` — `owner` (post-deploy) | Hardware wallet → multisig | Wires up ISMs, configures the FeeRouter and InsuranceFund addresses, and holds the operator veto authority via `OptimisticVetoModule`. Cannot mint outside the validated-claim path. |
+| `BridgeInsuranceFund` — `owner` (post-deploy) | Hardware wallet → multisig | Approves payouts within the on-chain 5%/1% per-veto/per-day caps. Cannot mint, cannot drain — only routes already-deposited funds. |
 
 The `feeToSetter` key is intentionally low-ceremony at launch (EOA) to minimize operational risk during the first few weeks. It will be migrated to a multi-signature wallet as a follow-up, announced separately.
 
@@ -594,7 +670,7 @@ ETX itself has no admin — no pause, no mint, no blacklist, no upgrade. Governa
 
 ## 17. Security
 
-- **Foundry test coverage:** 70+ tests across swap, research, launchpad, UniswapX reactor wiring, stETX, and TreasuryHarvester contracts, all passing in CI.
+- **Foundry test coverage:** 500+ tests across swap, research, launchpad, UniswapX reactor wiring, stETX, TreasuryHarvester, ETXFarms, EticaStableSwap, and the full Phase 3 bridge stack (vault, minter, insurance fund, fee router, optimistic-veto, fraud-prover, custom ISMs, cross-chain top-up). All passing in CI; aggregated across `packages/contracts` and `packages/trading-contracts`.
 - **Pinned dependencies:** OpenZeppelin v5.1.0 (pinned specifically to avoid Cancun-only `mcopy` on Etica's Paris-EVM).
 - **No upgradeability / no proxies:** Every contract is deployed at its final implementation. There is no upgrade path that could silently change logic.
 - **No admin mints:** ETX supply is fixed at deploy. stETX shares can only be minted in exchange for ETX deposits.
@@ -631,8 +707,8 @@ Timeline is indicative, not committed.
 ### Mid-term
 
 - **Launchpad activation (v2):** `ProposalTokenFactory` deployed to mainnet, `factory.setTrustedCreator(launchpad, true)` wired, `/launch/token` UI shipped. Dependent on ETX establishing meaningful depth and community signal.
-- **Bridge activation (v3):** validator recruitment, audit, relayer deployment, `/bridge` flipped live.
-- **External audits:** to be scoped and announced as the protocol matures.
+- **Bridge activation (v3 — contract-complete, see §15):** the twelve-contract optimistic-veto bridge stack is repo-complete and CI-green. The remaining work is operational, not architectural: Phase H (deploy Hyperlane on Etica — community-funded validator + relayer on a small VPS), then the bridge deploy walkthrough proper, then a Sherlock contest before the per-chain rate-limit ramp. `/bridge` UI is already shipped in read-only mode and lights up the moment addresses are wired.
+- **External audits:** Sherlock contest scoped for the bridge stack post-Phase-H. Earlier surfaces (stETX, harvester, farms, stableswap) audited next as TVL justifies it.
 
 ---
 
@@ -642,7 +718,7 @@ This section is non-exhaustive. ETX and EticaHub are **experimental software** a
 
 - **Liquidity risk.** The launch pools were intentionally small (~$6 total at NonKYC reference prices). Trades of even a few dollars move price substantially. Depth grows only as organic volume, LPs, and (future) POL-burn harvests arrive.
 - **Smart-contract risk.** v1 ships without a third-party audit. Every surface (DEX, Trading Stack, stETX, Harvester, ETXFarms, EticaStableSwap + Timelock + adapter) is tested but unaudited.
-- **Regulatory risk.** Despite the fair-launch structure (no sale, no allocation, no vesting, no promises), any token that has a market value is subject to interpretation by various regulators in various jurisdictions. ETX is not offered for sale anywhere; users who acquire it on EticaSwap do so at their own risk and on their own legal assessment. stETX is likewise not sold; it is minted 1:1 against deposited ETX.
+- **Regulatory risk.** Despite the fair-launch structure (no sale, no allocation, no vesting, no promises), any token that has a market value is subject to interpretation by various regulators in various jurisdictions. ETX is not offered for sale anywhere; users who acquire it on EticaSwap do so at their own risk and on their own legal assessment. stETX is likewise not sold; it is minted 1:1 against deposited ETX. As a frontend good-faith gesture mirroring the posture adopted by Uniswap, Aave, and similar US-aware DeFi frontends, the EticaHub website surfaces a compliance notice on `/stake` and `/farms` for visitors whose IP geolocates to the United States (see [`apps/web/src/lib/geoBlock.ts`](../apps/web/src/lib/geoBlock.ts) and [`apps/web/src/middleware.ts`](../apps/web/src/middleware.ts)). This is a frontend-only access notice, not a protocol-level restriction: the smart contracts remain permissionless, open-source, and directly reachable by any wallet on Etica; the gate is trivially bypassed by a VPN. It exists to make EticaHub's good-faith posture explicit, not to enforce any jurisdictional rule on-chain.
 - **Operator risk.** The keeper EOAs (Trading Stack reference keeper, future Harvester keeper) are hot and can be compromised. The system is designed so that a compromise of any keeper cannot drain user funds — the worst case is failed or delayed redistribution — but operational degradation is possible.
 - **Oracle risk.** USD prices in the UI and the buy bot are derived from NonKYC's public API for ETI/USDT and EGAZ/USDT. A NonKYC outage or a manipulated quote would surface as wrong USD labels, not as wrong on-chain math (which is always denominated in the asset itself).
 - **Chain risk.** The Etica blockchain itself is an independent L1 with its own validator set, its own client software, and its own operational history. EticaHub inherits all of Etica L1's risks (consensus, liveness, RPC availability, chain reorgs).
@@ -672,6 +748,12 @@ Every Harvester cycle permanently locks 40% of the harvested fee tranche (paired
 
 **When does the launchpad open?**
 Not v1. See §14 and §18. No date committed.
+
+**When does the bridge open?**
+The twelve-contract bridge stack is feature-complete in the repo and CI-green. What remains is operational: deploy Hyperlane on Etica (Phase H — a small community-funded validator + relayer VPS), then the bridge deploy walkthrough, then a Sherlock contest before raising the per-chain rate-limit caps. See §15 and [`docs/BRIDGE_DEPLOY_WALKTHROUGH.md`](./BRIDGE_DEPLOY_WALKTHROUGH.md).
+
+**Why does `/stake` and `/farms` show a notice if I'm in the US?**
+Frontend good-faith gesture. Same posture as Uniswap and Aave. The contracts are permissionless and directly reachable from any wallet; the gate is a website-only notice on the two yield-bearing surfaces. See §19 (Risks → Regulatory).
 
 **Is the buy bot official? Is it custodial?**
 Yes, operated by EticaHub. Non-custodial: the bot reads on-chain `Swap` logs and posts messages. It holds no funds, signs no transactions, and has no privileged access. See §13.
@@ -706,6 +788,15 @@ Etica mainnet (chain id `61803`). Canonical source: `packages/shared/src/address
 | `EticaStableSwap` (stETX/ETX) | `0xbbf5814C1EA0531Cb07541b80c547ee7878C036E` |
 | `LiquidityTimelock10y` | `0xFdf919673570Cea9c513461604450D003716d739` (unlocks 2036-05-01) |
 | `StableSwapHarvesterAdapter` | `0x9Adc6298EFDcc1604CB95DaaB33331f866DDBe76` |
+| `BridgeVault` (Etica) | *pending Phase H deploy* |
+| `BridgeInsuranceFund` (Etica) | *pending Phase H deploy* |
+| `FeeRouter` (Etica) | *pending Phase H deploy* |
+| `InsuranceTopUpReceiver` (Etica) | *pending Phase H deploy* |
+| `BridgeMinter` (Ethereum mainnet) | *pending Phase H deploy* |
+| `BridgeMinter` (BNB Chain) | *pending Phase H deploy* |
+| `WrappedETX` (Ethereum mainnet) | *pending Phase H deploy* |
+| `WrappedETX` (BNB Chain) | *pending Phase H deploy* |
+| Hyperlane mailbox (Etica) | *pending Phase H deploy* |
 | `ResearchSubscription` | *pending deploy* |
 | ETI (Etica protocol, external) | `0x34c61EA91bAcdA647269d4e310A86b875c09946f` |
 | Treasury wallet | `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D` |
