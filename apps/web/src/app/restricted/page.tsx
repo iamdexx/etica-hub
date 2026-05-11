@@ -6,20 +6,50 @@ export const metadata = {
 };
 
 /**
- * Compliance notice surfaced when the edge middleware detects a request
- * from a restricted jurisdiction (currently: United States) hitting one of
- * the gated surfaces (`/stake`, `/farms`). The same geo signal is read by
- * `/swap` and `/pool` to hide stETX from token pickers, hide the stETX/ETX
- * stableswap LP card, and filter stETX-containing positions out of the
- * positions list. There is no "exit only" affordance — the entire stETX
- * surface is suppressed from the frontend for visitors in restricted
- * regions.
+ * Compliance notice surfaced by the edge middleware. Two variants:
+ *
+ * - **`reason=sanctioned`** — visitor's IP geolocates to a comprehensively
+ *   sanctioned country (KP / SY / CU / IR). Every path on the frontend is
+ *   rewritten here; the page is the entire site for this visitor.
+ * - **default (US stETX gate)** — visitor's IP geolocates to the United
+ *   States and they hit `/stake` or `/farms`. The rest of the site
+ *   functions, but stETX-related surfaces are filtered out by the
+ *   `/swap` and `/pool` page components.
  *
  * The page is intentionally information-only: no wallet wiring, no chain
  * RPC calls, no contract reads. The smart contracts themselves remain
  * permissionless on-chain; this is a frontend access policy.
  */
-export default function RestrictedPage() {
+export default function RestrictedPage({
+  searchParams,
+}: {
+  searchParams?: { reason?: string };
+}) {
+  const sanctioned = searchParams?.reason === 'sanctioned';
+
+  if (sanctioned) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6 py-10">
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-500/[0.06] p-6">
+          <h1 className="text-2xl font-semibold tracking-tight text-amber-200">
+            Not available in your region
+          </h1>
+          <p className="mt-3 text-sm leading-relaxed text-white/70">
+            Based on your IP address, you appear to be visiting from a
+            jurisdiction subject to comprehensive economic sanctions
+            (currently: North Korea, Syria, Cuba, Iran). The EticaHub
+            frontend is not available in these regions.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-white/70">
+            The underlying EticaHub smart contracts are open-source and
+            permissionless on the Etica network; this restriction is a
+            frontend access policy, not a protocol-level rule.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-6 py-10">
       <div className="rounded-2xl border border-amber-400/30 bg-amber-500/[0.06] p-6">
