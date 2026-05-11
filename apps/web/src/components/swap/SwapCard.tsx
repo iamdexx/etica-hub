@@ -92,7 +92,7 @@ function buildPath(ctx: SwapCtx, from: TokenSymbol, to: TokenSymbol): Address[] 
   return [tokenAddress(ctx, from), ctx.etx, tokenAddress(ctx, to)];
 }
 
-export function SwapCard() {
+export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } = {}) {
   const { address, isConnected, chainId: walletChainId } = useAccount();
   const dappChainId = useChainId();
   const ctx = useCtx();
@@ -375,7 +375,18 @@ export function SwapCard() {
   const routeText = useStableSwap
     ? `${fromSymbol} → ${toSymbol} · stableswap`
     : describePath(path, ctx);
-  const pickerOptions = tokenOptions(ctx);
+  const pickerOptions = tokenOptions(ctx, geoRestricted);
+
+  // Defense in depth: if a stale URL or a prior session left stETX selected
+  // while the visitor is now geo-gated, force-reset to the default pair so
+  // the picker doesn't display an option it just removed and so no submit
+  // path can be primed against stETX.
+  useEffect(() => {
+    if (!geoRestricted) return;
+    if (fromSymbol === 'stETX') setFromSymbol('EGAZ');
+    if (toSymbol === 'stETX') setToSymbol('ETX');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geoRestricted, fromSymbol, toSymbol]);
   const venueText = useStableSwap ? 'stableswap · 0.04% fee · rate-aware' : 'v2 · 0.30% fee · ETX hub';
 
   return (
@@ -490,7 +501,11 @@ function describePath(path: Address[] | null, ctx: SwapCtx | null): string {
 
 const BASE_TOKEN_OPTIONS: TokenSymbol[] = ['EGAZ', 'ETI', 'ETX'];
 
-function tokenOptions(ctx: SwapCtx | null): TokenSymbol[] {
+function tokenOptions(
+  ctx: SwapCtx | null,
+  geoRestricted: boolean,
+): TokenSymbol[] {
+  if (geoRestricted) return BASE_TOKEN_OPTIONS;
   if (!ctx || ctx.stetx === ZERO) return BASE_TOKEN_OPTIONS;
   return [...BASE_TOKEN_OPTIONS, 'stETX'];
 }

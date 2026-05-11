@@ -41,6 +41,7 @@ type Ctx = {
   wegaz: Address;
   eti: Address;
   etx: Address;
+  stetx: Address;
 };
 
 function useCtx(): Ctx | null {
@@ -57,6 +58,7 @@ function useCtx(): Ctx | null {
       wegaz: d.wegaz,
       eti: e.eti,
       etx: d.etx,
+      stetx: d.stakedETX,
     };
   }, [chainId]);
 }
@@ -65,7 +67,9 @@ function resolveAddr(ctx: Ctx, sym: KnownSymbol): Address {
   return sym === 'EGAZ' ? ctx.wegaz : sym === 'ETI' ? ctx.eti : ctx.etx;
 }
 
-export function PoolAddCard() {
+export function PoolAddCard({
+  geoRestricted = false,
+}: { geoRestricted?: boolean } = {}) {
   const { address, isConnected } = useAccount();
   const ctx = useCtx();
 
@@ -77,15 +81,27 @@ export function PoolAddCard() {
   const [amountBStr, setAmountBStr] = useState('');
   const [lastEdited, setLastEdited] = useState<'A' | 'B'>('A');
 
+  // Geo-gated visitors cannot pair against stETX. If a custom address
+  // resolves to the canonical stETX, treat the input as invalid so the
+  // submit path stays disabled and the user sees an inline notice.
+  const customBIsStEtx = useMemo(() => {
+    if (!geoRestricted || !ctx || ctx.stetx === ZERO) return false;
+    if (bSymbol !== 'CUSTOM') return false;
+    const trimmed = customB.trim();
+    if (!isAddress(trimmed)) return false;
+    return trimmed.toLowerCase() === ctx.stetx.toLowerCase();
+  }, [geoRestricted, ctx, bSymbol, customB]);
+
   const tokenB: Address | null = useMemo(() => {
     if (!ctx) return null;
     if (bSymbol === 'CUSTOM') {
       const trimmed = customB.trim();
       if (!isAddress(trimmed)) return null;
+      if (customBIsStEtx) return null;
       return trimmed as Address;
     }
     return resolveAddr(ctx, bSymbol);
-  }, [ctx, bSymbol, customB]);
+  }, [ctx, bSymbol, customB, customBIsStEtx]);
 
   const tokenA: Address | null = ctx ? ctx.etx : null;
   const bIsNative = bSymbol === 'EGAZ';
@@ -481,6 +497,11 @@ export function PoolAddCard() {
             className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
             placeholder="0x… (ERC20 contract address)"
           />
+        )}
+        {customBIsStEtx && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            This token is not available in your region. Pick a different token.
+          </div>
         )}
         <TokenAmountInput
           label=""

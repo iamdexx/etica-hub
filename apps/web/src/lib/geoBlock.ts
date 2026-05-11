@@ -30,3 +30,16 @@ export function isGeoRestricted(pathname: string, country: string | null): boole
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
 }
+
+/**
+ * Country-only check. Used by server-component page wrappers to decide
+ * whether the rendered tree should hide stETX-related surfaces (stETX
+ * token picker on `/swap`, stETX pair in `/pool` add card, stableswap LP
+ * card, stETX-containing positions in the `/pool` positions list). The
+ * `/stake` and `/farms` full-page rewrites still go through `isGeoRestricted`
+ * + the middleware matcher.
+ */
+export function isGeoRestrictedCountry(country: string | null): boolean {
+  if (!country) return false;
+  return RESTRICTED_COUNTRIES.has(country.toUpperCase());
+}
