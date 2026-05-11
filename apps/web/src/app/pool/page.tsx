@@ -2,23 +2,26 @@ import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
 import { PoolAddCard } from '@/components/pool/PoolAddCard';
 import { PoolPositionsList } from '@/components/pool/PoolPositionsList';
 import { PoolStableSwapCard } from '@/components/pool/PoolStableSwapCard';
+import { getServerGeoRestricted } from '@/lib/geoBlockServer';
 
 export const metadata = { title: 'Pool · EticaHub' };
 
 export default function PoolPage() {
+  const geoRestricted = getServerGeoRestricted();
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Liquidity pools</h1>
         <p className="mt-1 text-sm text-white/60">
-          Add and remove liquidity on EticaSwap V2 pairs (0.25% fee to LPs) or the rate-aware
-          stETX/ETX stableswap (0.04% fee, 50% to LPs). All public LP shares are fully liquid.
+          {geoRestricted
+            ? 'Add and remove liquidity on EticaSwap V2 pairs (0.25% fee to LPs). All public LP shares are fully liquid.'
+            : 'Add and remove liquidity on EticaSwap V2 pairs (0.25% fee to LPs) or the rate-aware stETX/ETX stableswap (0.04% fee, 50% to LPs). All public LP shares are fully liquid.'}
         </p>
       </div>
       <MarketVolumeStrip />
-      <PoolStableSwapCard />
-      <PoolAddCard />
-      <PoolPositionsList />
+      {!geoRestricted && <PoolStableSwapCard />}
+      <PoolAddCard geoRestricted={geoRestricted} />
+      <PoolPositionsList geoRestricted={geoRestricted} />
       <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-white/50">
         <div className="font-medium text-white/70">How it works</div>
         <ul className="mt-1 list-disc pl-5 space-y-1">

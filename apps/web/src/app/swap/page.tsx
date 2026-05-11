@@ -1,10 +1,12 @@
 import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
 import { SwapCard } from '@/components/swap/SwapCard';
 import { TvlBanner } from '@/components/TvlBanner';
+import { getServerGeoRestricted } from '@/lib/geoBlockServer';
 
 export const metadata = { title: 'Swap · EticaHub' };
 
 export default function SwapPage() {
+  const geoRestricted = getServerGeoRestricted();
   return (
     <div className="mx-auto max-w-md space-y-6">
       <header className="space-y-1">
@@ -15,7 +17,7 @@ export default function SwapPage() {
         </p>
       </header>
       <TvlBanner />
-      <SwapCard />
+      <SwapCard geoRestricted={geoRestricted} />
       <MarketVolumeStrip />
     </div>
   );

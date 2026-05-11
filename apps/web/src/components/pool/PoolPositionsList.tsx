@@ -33,6 +33,7 @@ type Ctx = {
   wegaz: Address;
   etx: Address;
   etxFarms: Address;
+  stetx: Address;
 };
 
 function useCtx(): Ctx | null {
@@ -48,6 +49,7 @@ function useCtx(): Ctx | null {
       wegaz: d.wegaz,
       etx: d.etx,
       etxFarms: d.etxFarms,
+      stetx: d.stakedETX,
     };
   }, [chainId]);
 }
@@ -71,7 +73,9 @@ type PairMeta = {
   farmPid: number | null;
 };
 
-export function PoolPositionsList() {
+export function PoolPositionsList({
+  geoRestricted = false,
+}: { geoRestricted?: boolean } = {}) {
   const { address, isConnected } = useAccount();
   const ctx = useCtx();
 
@@ -271,6 +275,8 @@ export function PoolPositionsList() {
     return m;
   }, [tokens, tokenMetaReads.data, tokenSymbolOverride]);
 
+  const stetxLower = ctx && ctx.stetx !== ZERO ? ctx.stetx.toLowerCase() : null;
+
   const positions = useMemo<PairMeta[]>(() => {
     if (!pairReads.data || pairAddrs.length === 0) return [];
     const out: PairMeta[] = [];
@@ -284,6 +290,16 @@ export function PoolPositionsList() {
       if (lpBalance === 0n && farmLpBalance === 0n) continue;
       const token0 = pairReads.data[i * 5] as Address;
       const token1 = pairReads.data[i * 5 + 1] as Address;
+      // Hard-block stETX surfaces for geo-restricted visitors: a pair that
+      // contains the canonical stETX is suppressed from the positions list
+      // entirely (no exit affordance is rendered).
+      if (
+        geoRestricted &&
+        stetxLower &&
+        (token0.toLowerCase() === stetxLower || token1.toLowerCase() === stetxLower)
+      ) {
+        continue;
+      }
       const reserves = pairReads.data[i * 5 + 2] as readonly [bigint, bigint, number];
       const totalSupply = pairReads.data[i * 5 + 3] as bigint;
       const meta0 = tokenMeta.get(token0.toLowerCase());
@@ -305,7 +321,7 @@ export function PoolPositionsList() {
       });
     }
     return out;
-  }, [pairReads.data, pairAddrs, tokenMeta, farmStakedByPair]);
+  }, [pairReads.data, pairAddrs, tokenMeta, farmStakedByPair, geoRestricted, stetxLower]);
 
   const refetchAll = () => {
     void Promise.all([
