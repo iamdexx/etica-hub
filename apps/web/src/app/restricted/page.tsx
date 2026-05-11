@@ -25,10 +25,22 @@ export default function RestrictedPage() {
         <p className="mt-3 text-sm leading-relaxed text-white/70">
           Based on your IP address, you appear to be visiting from a region
           where EticaHub does not currently offer access to yield-bearing
-          surfaces (staking, liquidity mining). This restriction applies to
-          the <code className="rounded bg-white/5 px-1.5 py-0.5">/stake</code>{' '}
-          and <code className="rounded bg-white/5 px-1.5 py-0.5">/farms</code>{' '}
-          pages of this frontend only.
+          staking surfaces. This notice applies to the{' '}
+          <code className="rounded bg-white/5 px-1.5 py-0.5">/stake</code>{' '}
+          page (stETX liquid staking) and the{' '}
+          <code className="rounded bg-white/5 px-1.5 py-0.5">/farms</code>{' '}
+          page (staking LP tokens to earn redistributed protocol fees) only.
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-white/70">
+          <strong className="text-white/90">Supplying liquidity is not gated.</strong>{' '}
+          Adding or removing liquidity on{' '}
+          <Link href="/pool" className="text-brand-accent hover:underline">
+            /pool
+          </Link>{' '}
+          (V2 pairs and the stableswap LP card) remains available. What is
+          gated is the optional yield-bearing staking flow that consumes LP
+          tokens once you already have them, not the act of supplying
+          liquidity itself.
         </p>
         <p className="mt-3 text-sm leading-relaxed text-white/70">
           The underlying EticaHub contracts are open-source, permissionless,
@@ -47,6 +59,13 @@ export default function RestrictedPage() {
               /swap
             </Link>{' '}
             — trade tokens through EticaSwap.
+          </li>
+          <li>
+            <Link href="/pool" className="text-brand-accent hover:underline">
+              /pool
+            </Link>{' '}
+            — supply or withdraw liquidity on EticaSwap V2 pairs and the
+            EticaStableSwap (V3) pool.
           </li>
           <li>
             <Link href="/trade" className="text-brand-accent hover:underline">
