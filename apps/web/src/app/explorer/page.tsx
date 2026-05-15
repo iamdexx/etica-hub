@@ -83,15 +83,20 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
         </p>
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Explorer</h1>
         <p className="max-w-2xl text-sm text-white/70">
-          Blocks, transactions, and accounts on Etica Mainnet. This is a read-only view
-          straight from RPC — no indexer, no database, and no paywall. Known contracts
-          are labeled for you.
+          Blocks, transactions, accounts, contracts, and deployment tools on Etica Mainnet.
+          This is a public-RPC-safe view with Sourcify verification and wallet-native contract creation.
         </p>
         <div className="flex flex-wrap gap-2 pt-1 text-xs">
-          <Link
-            href="/explorer/gas"
-            className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/70 hover:bg-white/10 hover:text-white"
-          >
+          <Link href="/explorer/deploy" className="rounded-full border border-brand-accent/40 bg-brand-accent/10 px-3 py-1 text-brand-accent hover:bg-brand-accent/20">
+            Deploy contract →
+          </Link>
+          <Link href="/explorer/verify" className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/70 hover:bg-white/10 hover:text-white">
+            Verify contract →
+          </Link>
+          <Link href="/explorer/contracts" className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/70 hover:bg-white/10 hover:text-white">
+            Contracts →
+          </Link>
+          <Link href="/explorer/gas" className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/70 hover:bg-white/10 hover:text-white">
             Gas tracker →
           </Link>
         </div>
