@@ -2,7 +2,12 @@ import { SourcifyVerifyForm } from '@/components/explorer/SourcifyVerifyForm';
 
 export const dynamic = 'force-dynamic';
 
-export default function VerifyContractPage() {
+interface VerifyContractPageProps {
+  searchParams?: Promise<{ address?: string }>;
+}
+
+export default async function VerifyContractPage({ searchParams }: VerifyContractPageProps) {
+  const params = (await searchParams) ?? {};
   return (
     <div className="space-y-6">
       <nav className="text-xs text-white/50">
@@ -24,37 +29,12 @@ export default function VerifyContractPage() {
 
           <p className="text-sm leading-6 text-white/70 md:text-base">
             Submit standard-json compiler input directly to Sourcify from the Explorer.
-            Once verified, contracts render with verified source tabs, ABI decoding, and
-            explorer-native interaction panels.
+            Once matched, contract pages can show source tabs, ABI decoding, and interaction panels.
           </p>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <Feature
-              title="Full source rendering"
-              body="Verified Solidity source becomes visible directly inside explorer contract pages."
-            />
-            <Feature
-              title="Decoded calls and logs"
-              body="ABI-aware decoding activates automatically across transaction and event views."
-            />
-            <Feature
-              title="Public reproducibility"
-              body="Verification remains independently reproducible through Sourcify bytecode matching."
-            />
-          </div>
         </div>
       </section>
 
-      <SourcifyVerifyForm />
-    </div>
-  );
-}
-
-function Feature({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-      <div className="text-sm font-semibold text-white">{title}</div>
-      <p className="mt-2 text-xs leading-5 text-white/55">{body}</p>
+      <SourcifyVerifyForm defaultAddress={params.address ?? ''} />
     </div>
   );
 }
