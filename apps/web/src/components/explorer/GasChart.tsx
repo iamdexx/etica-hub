@@ -1,3 +1,4 @@
+import { MarketChartShell, MarketPill, TimeframePills } from '@/components/MarketChartShell';
 import { formatGwei, type GasBlockStat } from '@/lib/gas';
 
 /**
@@ -66,17 +67,18 @@ export function GasChart({
   const minIndex = fees.indexOf(minFee);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#06110e]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.025] px-4 py-3">
-        <div>
-          <div className="text-[11px] uppercase tracking-wider text-emerald-300/70">Base fee / network load</div>
-          <div className="mt-1 text-sm font-semibold text-white">Etica Gas Market</div>
-        </div>
-        <div className="flex gap-2 text-[11px] text-white/50">
-          <span className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-emerald-200">max {formatGwei(BigInt(Math.trunc(maxFee)))} gwei</span>
-          <span className="rounded-md border border-white/10 bg-white/5 px-2 py-1">min {formatGwei(BigInt(Math.trunc(minFee)))} gwei</span>
-        </div>
-      </div>
+    <MarketChartShell
+      eyebrow="Base fee / network load"
+      title="Etica Gas Market"
+      subtitle={`Latest ${blocks.length} block sample from public RPC.`}
+      actions={
+        <>
+          <TimeframePills active="24H" />
+          <MarketPill tone="green">max {formatGwei(BigInt(Math.trunc(maxFee)))} gwei</MarketPill>
+          <MarketPill>min {formatGwei(BigInt(Math.trunc(minFee)))} gwei</MarketPill>
+        </>
+      }
+    >
       <svg
         viewBox={`0 0 ${width} ${height}`}
         width="100%"
@@ -140,6 +142,6 @@ export function GasChart({
         <text x={padL} y={barTop - 5} fill="rgba(255,255,255,0.38)" fontSize="10">gas used / limit</text>
         <text x={width - padR} y={padT - 8} textAnchor="end" fill="rgba(52,211,153,0.82)" fontSize="10">base fee gwei</text>
       </svg>
-    </div>
+    </MarketChartShell>
   );
 }
