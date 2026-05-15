@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { href: '/explorer/txs', label: 'Transactions' },
   { href: '/explorer/contracts', label: 'Contracts' },
   { href: '/explorer/tokens', label: 'Tokens' },
+  { href: '/explorer/pairs', label: 'Pairs' },
   { href: '/explorer/verify', label: 'Verify Contract' },
   { href: '/explorer/deploy', label: 'Deploy Contract' },
   { href: '/explorer/gas', label: 'Gas Tracker' },
@@ -92,10 +93,11 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
                 EticaHub <span className="text-brand-accent">Scan</span>
               </h1>
               <p className="max-w-3xl text-xs leading-5 text-white/60 md:text-sm">
-                Etherscan-style explorer and EticaHub terminal for blocks, transactions, accounts, tokens, contracts, deployment, verification, and live network analytics.
+                Etherscan-style explorer and EticaHub terminal for blocks, transactions, accounts, tokens, pairs, contracts, deployment, verification, and live network analytics.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
+              <Link href="/explorer/pairs" className="rounded-md border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-emerald-200 hover:bg-emerald-400/15">Pairs</Link>
               <Link href="/explorer/deploy" className="rounded-md bg-brand-accent px-3 py-2 font-medium text-brand-ink hover:opacity-90">Deploy Contract</Link>
               <Link href="/explorer/verify" className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white/80 hover:bg-white/10">Verify Contract</Link>
             </div>
@@ -126,7 +128,7 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
           <Metric label="Latest Block" value={`#${head.toString()}`} sub="public RPC live" href={`/explorer/block/${head.toString()}`} />
           <Metric label="Txs in Window" value={totalTxs.toString()} sub={`last ${HOME_BLOCKS} blocks`} href="/explorer/txs" />
           <Metric label="Avg Gas Used" value={avgGasUsed.toString()} sub="recent block avg" href="/explorer/gas" />
-          <Metric label="Native Gas" value="EGAZ" sub="Etica mainnet" href="/explorer/tokens" />
+          <Metric label="Markets" value="Pairs" sub="ETX-routed markets" href="/explorer/pairs" />
         </div>
       </section>
 
@@ -196,8 +198,9 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-5">
         <Action href="/explorer/tokens" title="Tokens" body="ETX, ETI, WEGAZ and known EticaHub asset surfaces." />
+        <Action href="/explorer/pairs" title="Pairs" body="OHLC, volume, and liquidity-depth market analytics." />
         <Action href="/explorer/contracts" title="Contracts" body="Known EticaHub contracts, labels, code status, and source verification paths." />
         <Action href="/explorer/deploy" title="Deploy Contract" body="Wallet-native contract deployment and advanced bytecode mode." />
         <Action href="/explorer/verify" title="Verify Contract" body="Sourcify-backed verification flow for Etica contracts." />
