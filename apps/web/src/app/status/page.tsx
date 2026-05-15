@@ -5,6 +5,7 @@ import {
   StatusLiquidityFlowCard,
   StatusRevenueCard,
 } from '@/components/StatusRevenueCards';
+import { StatusMarketCharts } from '@/components/StatusMarketCharts';
 
 // Always fetch fresh on each request — this is a live on-chain diagnostic
 // and we don't want the Vercel build to try (and fail) to hit an Etica RPC
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
 
 export default function StatusPage() {
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <header className="mb-6 space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Mainnet status</h1>
         <p className="text-sm text-white/60">
@@ -32,6 +33,9 @@ export default function StatusPage() {
       <div className="mb-6 grid gap-4 md:grid-cols-2">
         <StatusRevenueCard />
         <StatusLiquidityFlowCard />
+      </div>
+      <div className="mb-6">
+        <StatusMarketCharts />
       </div>
       <StatusPanel />
     </div>
