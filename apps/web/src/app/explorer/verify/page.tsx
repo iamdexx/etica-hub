@@ -1,0 +1,99 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+
+export default function VerifyContractPage() {
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSubmit(formData: FormData) {
+    setSubmitting(true);
+    setResult(null);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/explorer/sourcify/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: formData.get('address'),
+          chainId: Number(formData.get('chainId') || 61803),
+          compilerVersion: formData.get('compilerVersion'),
+          contractIdentifier: formData.get('contractIdentifier'),
+          creationTransactionHash: formData.get('creationTransactionHash'),
+          stdJsonInput: JSON.parse(String(formData.get('stdJsonInput') || '{}')),
+        }),
+      });
+
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error(json.error || 'Verification failed');
+      setResult('Contract submitted to Sourcify.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-6">
+      <section className="rounded-xl border border-white/10 bg-[#07120f] p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-emerald-300/70">EticaHub Scan</div>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Verify Contract</h1>
+            <p className="mt-2 max-w-3xl text-sm text-white/55">
+              Verify Etica contracts through Sourcify without leaving the Explorer UI.
+            </p>
+          </div>
+          <div className="flex gap-2 text-xs">
+            <Link href="/explorer/contracts" className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white/75 hover:bg-white/10">Contracts</Link>
+            <Link href="/explorer/deploy" className="rounded-md bg-brand-accent px-3 py-2 font-medium text-brand-ink hover:opacity-90">Deploy Contract</Link>
+          </div>
+        </div>
+      </section>
+
+      <form action={onSubmit} className="space-y-5 rounded-xl border border-white/10 bg-[#07120f] p-6">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Contract Address" name="address" placeholder="0x..." required />
+          <Field label="Chain ID" name="chainId" defaultValue="61803" required />
+          <Field label="Compiler Version" name="compilerVersion" placeholder="v0.8.24+commit.e11b9ed9" required />
+          <Field label="Contract Identifier" name="contractIdentifier" placeholder="contracts/MyToken.sol:MyToken" required />
+        </div>
+
+        <Field label="Creation Transaction Hash" name="creationTransactionHash" placeholder="0x..." />
+
+        <div>
+          <label className="mb-2 block text-xs uppercase tracking-wider text-white/45">Standard JSON Input</label>
+          <textarea
+            name="stdJsonInput"
+            rows={16}
+            required
+            placeholder='{"language":"Solidity","sources":{},"settings":{}}'
+            className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 font-mono text-xs text-white outline-none focus:border-brand-accent"
+          />
+        </div>
+
+        {result ? <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{result}</div> : null}
+        {error ? <div className="rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</div> : null}
+
+        <div className="flex justify-end">
+          <button type="submit" disabled={submitting} className="rounded-md bg-brand-accent px-5 py-3 text-sm font-semibold text-brand-ink hover:opacity-90 disabled:opacity-50">
+            {submitting ? 'Submitting...' : 'Verify Contract'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+  return (
+    <div>
+      <label className="mb-2 block text-xs uppercase tracking-wider text-white/45">{label}</label>
+      <input {...props} className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-brand-accent" />
+    </div>
+  );
+}
