@@ -2,6 +2,22 @@ import Link from 'next/link';
 
 const MODULES = [
   {
+    href: '/explorer',
+    title: 'EticaHub Scan',
+    subtitle: 'Explorer · charts · contracts',
+    body: 'Etherscan-style Etica explorer with live blocks, transactions, tokens, pairs, candlestick charts, deploy tools, and contract verification in one scanner-grade terminal.',
+    cta: 'Open explorer',
+    accent: 'from-emerald-400/35 to-cyan-700/10',
+  },
+  {
+    href: '/explorer/pairs',
+    title: 'Pair Analytics',
+    subtitle: 'Markets · OHLC · liquidity',
+    body: 'Real market panels for Etica pairs with OHLC candles, volume bars, spread/depth cards, and terminal-style chart controls surfaced from the Explorer.',
+    cta: 'View pairs',
+    accent: 'from-lime-500/30 to-emerald-700/10',
+  },
+  {
     href: '/swap',
     title: 'EticaSwap',
     subtitle: 'On-chain DEX · live',
@@ -51,46 +67,90 @@ const MODULES = [
   },
 ];
 
+const SCAN_METRICS = [
+  ['Scanner', 'Blocks · txs · accounts'],
+  ['Markets', 'Tokens · pairs · OHLC'],
+  ['Contracts', 'Deploy · verify · inspect'],
+];
+
 export default function Home() {
   return (
     <div className="space-y-14">
-      <section className="space-y-4">
-        <p className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs uppercase tracking-wider text-emerald-300">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
-          Live on Etica Mainnet · chain 61803
-        </p>
-        <h1 className="text-4xl font-semibold tracking-tight md:text-6xl">
-          The on-chain home of the <span className="text-brand-accent">Etica ecosystem.</span>
-        </h1>
-        <p className="max-w-2xl text-lg text-white/70">
-          EticaHub is the on-chain home of the Etica ecosystem — swap EGAZ, ETI, ETX, and stETX
-          through a shared ETX hub, stake for auto-compounding yield, farm LP emissions, run
-          non-custodial limit orders and grid bots, read every research proposal, and bridge to
-          Ethereum. One site, one wallet.
-        </p>
-        <div className="flex flex-wrap gap-3 pt-2">
-          <Link
-            href="/swap"
-            className="rounded-full bg-brand-accent px-5 py-2 text-sm font-medium text-brand-ink hover:opacity-90"
-          >
-            Open swap →
-          </Link>
-          <Link
-            href="/whitepaper"
-            className="rounded-full border border-white/15 bg-white/5 px-5 py-2 text-sm font-medium text-white/90 hover:border-white/30 hover:text-white"
-          >
-            Read whitepaper
-          </Link>
-          <Link
-            href="/status"
-            className="rounded-full border border-white/15 bg-white/5 px-5 py-2 text-sm font-medium text-white/80 hover:border-white/30 hover:text-white"
-          >
-            Live mainnet status
-          </Link>
+      <section className="grid gap-6 lg:grid-cols-[1fr_0.8fr] lg:items-center">
+        <div className="space-y-4">
+          <p className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs uppercase tracking-wider text-emerald-300">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
+            Live on Etica Mainnet · chain 61803
+          </p>
+          <h1 className="text-4xl font-semibold tracking-tight md:text-6xl">
+            EticaHub is now a <span className="text-brand-accent">scanner-grade trading terminal.</span>
+          </h1>
+          <p className="max-w-2xl text-lg text-white/70">
+            Swap, stake, farm, bridge, research, and explore Etica from one interface. The new EticaHub Scan brings Etherscan-style chain data, market charts, token and pair analytics, contract deployment, and verification directly into the product UI.
+          </p>
+          <div className="flex flex-wrap gap-3 pt-2">
+            <Link
+              href="/explorer"
+              className="rounded-full bg-brand-accent px-5 py-2 text-sm font-medium text-brand-ink hover:opacity-90"
+            >
+              Open EticaHub Scan →
+            </Link>
+            <Link
+              href="/explorer/pairs"
+              className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-5 py-2 text-sm font-medium text-emerald-200 hover:border-emerald-300/50 hover:text-white"
+            >
+              View pair charts
+            </Link>
+            <Link
+              href="/swap"
+              className="rounded-full border border-white/15 bg-white/5 px-5 py-2 text-sm font-medium text-white/90 hover:border-white/30 hover:text-white"
+            >
+              Open swap
+            </Link>
+          </div>
         </div>
+
+        <Link href="/explorer" className="group overflow-hidden rounded-3xl border border-emerald-400/20 bg-[#06110e] shadow-2xl shadow-emerald-950/20 transition-colors hover:border-emerald-300/40">
+          <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(52,211,153,0.22),transparent_42%)] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-wider text-emerald-300/70">EticaHub Scan</div>
+                <div className="mt-1 text-2xl font-semibold text-white">Explorer Terminal</div>
+              </div>
+              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">Live</span>
+            </div>
+            <div className="mt-5 grid gap-2 sm:grid-cols-3">
+              {SCAN_METRICS.map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-white/10 bg-black/25 p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
+                  <div className="mt-1 text-xs text-white/75">{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="p-5">
+            <div className="h-36 rounded-xl border border-white/10 bg-black/30 p-4">
+              <div className="flex h-full items-end gap-2">
+                {[42, 68, 54, 80, 62, 92, 75, 98, 84, 110, 91, 124].map((height, index) => (
+                  <div key={index} className="flex flex-1 flex-col items-center justify-end gap-1">
+                    <span className="w-full rounded-t bg-emerald-300/70" style={{ height: `${height}px` }} />
+                    <span className="h-1 w-full rounded bg-white/15" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/55">
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Candles</span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Tokens</span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Pairs</span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Verify</span>
+            </div>
+            <div className="mt-4 text-sm text-brand-accent group-hover:underline">Open terminal →</div>
+          </div>
+        </Link>
       </section>
 
-      <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {MODULES.map((m) => (
           <Link
             key={m.href}
