@@ -1,10 +1,18 @@
 'use client';
 
-import { useMemo, useState, type InputHTMLAttributes } from 'react';
+import { Suspense, useMemo, useState, type InputHTMLAttributes } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
 export default function VerifyContractPage() {
+  return (
+    <Suspense fallback={<VerifySkeleton />}>
+      <VerifyContractForm />
+    </Suspense>
+  );
+}
+
+function VerifyContractForm() {
   const searchParams = useSearchParams();
   const defaults = useMemo(() => ({
     address: searchParams.get('address') ?? '',
@@ -47,21 +55,7 @@ export default function VerifyContractPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <section className="rounded-xl border border-white/10 bg-[#07120f] p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-emerald-300/70">EticaHub Scan</div>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Verify Contract</h1>
-            <p className="mt-2 max-w-3xl text-sm text-white/55">
-              Verify Etica contracts through Sourcify without leaving the Explorer UI.
-            </p>
-          </div>
-          <div className="flex gap-2 text-xs">
-            <Link href="/explorer/contracts" className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white/75 hover:bg-white/10">Contracts</Link>
-            <Link href="/explorer/deploy" className="rounded-md bg-brand-accent px-3 py-2 font-medium text-brand-ink hover:opacity-90">Deploy Contract</Link>
-          </div>
-        </div>
-      </section>
+      <VerifyHeader />
 
       <form action={onSubmit} className="space-y-5 rounded-xl border border-white/10 bg-[#07120f] p-6">
         <div className="grid gap-4 md:grid-cols-2">
@@ -96,6 +90,39 @@ export default function VerifyContractPage() {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function VerifyHeader() {
+  return (
+    <section className="rounded-xl border border-white/10 bg-[#07120f] p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-emerald-300/70">EticaHub Scan</div>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Verify Contract</h1>
+          <p className="mt-2 max-w-3xl text-sm text-white/55">
+            Verify Etica contracts through Sourcify without leaving the Explorer UI.
+          </p>
+        </div>
+        <div className="flex gap-2 text-xs">
+          <Link href="/explorer/contracts" className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white/75 hover:bg-white/10">Contracts</Link>
+          <Link href="/explorer/deploy" className="rounded-md bg-brand-accent px-3 py-2 font-medium text-brand-ink hover:opacity-90">Deploy Contract</Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VerifySkeleton() {
+  return (
+    <div className="mx-auto max-w-5xl space-y-6">
+      <VerifyHeader />
+      <div className="space-y-4 rounded-xl border border-white/10 bg-[#07120f] p-6">
+        <div className="h-10 animate-pulse rounded-lg bg-white/[0.04]" />
+        <div className="h-10 animate-pulse rounded-lg bg-white/[0.04]" />
+        <div className="h-64 animate-pulse rounded-lg bg-white/[0.04]" />
+      </div>
     </div>
   );
 }
