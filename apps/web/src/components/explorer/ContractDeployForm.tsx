@@ -5,6 +5,26 @@ import { useAccount, useDeployContract, useWaitForTransactionReceipt } from 'wag
 import { isAddress, type Abi, type Hex } from 'viem';
 import Link from 'next/link';
 
+type DeployMode = 'compiler' | 'advanced';
+
+type CompileResult = {
+  abi: Abi;
+  bytecode: Hex;
+  compilerVersion: string;
+  stdJsonInput: unknown;
+};
+
+const DEFAULT_SOURCE = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract MyEticaContract {
+    string public name;
+
+    constructor(string memory _name) {
+        name = _name;
+    }
+}`;
+
 function parseJsonAbi(value: string): Abi | null {
   try {
     const parsed = JSON.parse(value);
@@ -33,11 +53,22 @@ function normalizeBytecode(value: string): Hex | null {
 
 export function ContractDeployForm() {
   const { isConnected } = useAccount();
+  const [mode, setMode] = useState<DeployMode>('compiler');
+
+  const [source, setSource] = useState(DEFAULT_SOURCE);
+  const [contractName, setContractName] = useState('MyEticaContract');
+  const [optimizer, setOptimizer] = useState(true);
+  const [optimizerRuns, setOptimizerRuns] = useState('200');
+  const [compiled, setCompiled] = useState<CompileResult | null>(null);
+  const [compileError, setCompileError] = useState<string | null>(null);
+  const [isCompiling, setIsCompiling] = useState(false);
+
   const [bytecode, setBytecode] = useState('');
   const [abiInput, setAbiInput] = useState('[]');
-  const [argsInput, setArgsInput] = useState('[]');
+  const [argsInput, setArgsInput] = useState('["My Etica Contract"]');
   const [valueInput, setValueInput] = useState('');
   const [deployedAddress, setDeployedAddress] = useState<string | null>(null);
+
   const { deployContract, data: hash, error, isPending } = useDeployContract();
   const { data: receipt, isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
@@ -45,14 +76,46 @@ export function ContractDeployForm() {
   const args = useMemo(() => parseConstructorArgs(argsInput), [argsInput]);
   const normalizedBytecode = useMemo(() => normalizeBytecode(bytecode), [bytecode]);
 
-  const canDeploy = isConnected && normalizedBytecode && abi && args && !isPending && !isConfirming;
+  const activeAbi = mode === 'compiler' ? compiled?.abi ?? null : abi;
+  const activeBytecode = mode === 'compiler' ? compiled?.bytecode ?? null : normalizedBytecode;
+  const canDeploy = isConnected && activeBytecode && activeAbi && args && !isPending && !isConfirming;
+
+  async function onCompile() {
+    setIsCompiling(true);
+    setCompileError(null);
+    setCompiled(null);
+    try {
+      const response = await fetch('/api/explorer/solc/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source,
+          contractName,
+          optimizer,
+          optimizerRuns: Number(optimizerRuns || 200),
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error(json.error || 'Compilation failed');
+      setCompiled({
+        abi: json.abi,
+        bytecode: json.bytecode,
+        compilerVersion: json.compilerVersion,
+        stdJsonInput: json.stdJsonInput,
+      });
+    } catch (err) {
+      setCompileError(err instanceof Error ? err.message : 'Compilation failed');
+    } finally {
+      setIsCompiling(false);
+    }
+  }
 
   function onDeploy() {
-    if (!normalizedBytecode || !abi || !args) return;
+    if (!activeBytecode || !activeAbi || !args) return;
     setDeployedAddress(null);
     deployContract({
-      abi,
-      bytecode: normalizedBytecode,
+      abi: activeAbi,
+      bytecode: activeBytecode,
       args,
       value: valueInput.trim() ? BigInt(valueInput.trim()) : undefined,
     });
@@ -64,93 +127,117 @@ export function ContractDeployForm() {
   }, [receipt]);
 
   return (
-    <div className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-      <div>
-        <h2 className="text-xl font-semibold">Deploy contract</h2>
-        <p className="mt-1 text-sm text-white/60">
-          Paste compiled bytecode, ABI, and constructor args. EticaHub sends the deployment transaction from your connected wallet and links directly to the new contract address.
-        </p>
+    <div className="space-y-5 rounded-xl border border-white/10 bg-[#07120f] p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-emerald-300/70">EticaHub Scan</div>
+          <h2 className="mt-1 text-xl font-semibold">Deploy Contract</h2>
+          <p className="mt-1 max-w-3xl text-sm text-white/60">
+            Compile Solidity source, deploy from your connected wallet, then verify through Sourcify. Raw bytecode deployment is still available under Advanced.
+          </p>
+        </div>
+        <div className="flex rounded-lg border border-white/10 bg-black/30 p-1 text-xs">
+          <button type="button" onClick={() => setMode('compiler')} className={`rounded-md px-3 py-2 ${mode === 'compiler' ? 'bg-brand-accent text-brand-ink' : 'text-white/65 hover:text-white'}`}>
+            Compiler
+          </button>
+          <button type="button" onClick={() => setMode('advanced')} className={`rounded-md px-3 py-2 ${mode === 'advanced' ? 'bg-brand-accent text-brand-ink' : 'text-white/65 hover:text-white'}`}>
+            Advanced
+          </button>
+        </div>
       </div>
 
-      <label className="block space-y-2">
-        <span className="text-xs uppercase tracking-wider text-white/50">Bytecode</span>
-        <textarea
-          value={bytecode}
-          onChange={(e) => setBytecode(e.target.value)}
-          placeholder="0x6080604052..."
-          className="min-h-36 w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-white placeholder-white/30 focus:border-brand-accent focus:outline-none"
-        />
-        {bytecode && !normalizedBytecode ? <span className="text-xs text-red-300">Bytecode must be 0x-prefixed hex.</span> : null}
-      </label>
+      {mode === 'compiler' ? (
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-[1fr_0.6fr_0.4fr]">
+            <label className="block space-y-2">
+              <span className="text-xs uppercase tracking-wider text-white/50">Contract Name</span>
+              <input value={contractName} onChange={(e) => setContractName(e.target.value)} className="w-full rounded-lg border border-white/10 bg-black/30 p-3 font-mono text-xs text-white focus:border-brand-accent focus:outline-none" />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-xs uppercase tracking-wider text-white/50">Optimizer</span>
+              <select value={optimizer ? 'on' : 'off'} onChange={(e) => setOptimizer(e.target.value === 'on')} className="w-full rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-white focus:border-brand-accent focus:outline-none">
+                <option value="on">Enabled</option>
+                <option value="off">Disabled</option>
+              </select>
+            </label>
+            <label className="block space-y-2">
+              <span className="text-xs uppercase tracking-wider text-white/50">Runs</span>
+              <input value={optimizerRuns} onChange={(e) => setOptimizerRuns(e.target.value.replace(/[^0-9]/g, ''))} className="w-full rounded-lg border border-white/10 bg-black/30 p-3 font-mono text-xs text-white focus:border-brand-accent focus:outline-none" />
+            </label>
+          </div>
 
-      <label className="block space-y-2">
-        <span className="text-xs uppercase tracking-wider text-white/50">ABI JSON</span>
-        <textarea
-          value={abiInput}
-          onChange={(e) => setAbiInput(e.target.value)}
-          className="min-h-28 w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-white placeholder-white/30 focus:border-brand-accent focus:outline-none"
-        />
-        {abiInput && !abi ? <span className="text-xs text-red-300">ABI must be a JSON array.</span> : null}
-      </label>
+          <label className="block space-y-2">
+            <span className="text-xs uppercase tracking-wider text-white/50">Solidity Source</span>
+            <textarea value={source} onChange={(e) => setSource(e.target.value)} className="min-h-[24rem] w-full rounded-lg border border-white/10 bg-black/30 p-3 font-mono text-xs leading-relaxed text-white placeholder-white/30 focus:border-brand-accent focus:outline-none" />
+          </label>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="text-xs text-white/50">Compiles with the bundled Solidity compiler on the EticaHub serverless runtime.</div>
+            <button type="button" onClick={onCompile} disabled={isCompiling} className="rounded-md bg-brand-accent px-4 py-2 text-xs font-semibold text-brand-ink hover:opacity-90 disabled:opacity-50">
+              {isCompiling ? 'Compiling...' : 'Compile'}
+            </button>
+          </div>
+
+          {compileError ? <p className="rounded-lg border border-red-400/30 bg-red-400/10 p-3 text-xs text-red-200">{compileError}</p> : null}
+          {compiled ? (
+            <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-3 text-xs text-emerald-100">
+              Compiled with solc {compiled.compilerVersion}. Bytecode ready for wallet deployment.
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="space-y-4 rounded-lg border border-white/10 bg-black/20 p-4">
+          <label className="block space-y-2">
+            <span className="text-xs uppercase tracking-wider text-white/50">Bytecode</span>
+            <textarea value={bytecode} onChange={(e) => setBytecode(e.target.value)} placeholder="0x6080604052..." className="min-h-36 w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-white placeholder-white/30 focus:border-brand-accent focus:outline-none" />
+            {bytecode && !normalizedBytecode ? <span className="text-xs text-red-300">Bytecode must be 0x-prefixed hex.</span> : null}
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-xs uppercase tracking-wider text-white/50">ABI JSON</span>
+            <textarea value={abiInput} onChange={(e) => setAbiInput(e.target.value)} className="min-h-28 w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-white placeholder-white/30 focus:border-brand-accent focus:outline-none" />
+            {abiInput && !abi ? <span className="text-xs text-red-300">ABI must be a JSON array.</span> : null}
+          </label>
+        </div>
+      )}
 
       <label className="block space-y-2">
         <span className="text-xs uppercase tracking-wider text-white/50">Constructor args JSON array</span>
-        <input
-          value={argsInput}
-          onChange={(e) => setArgsInput(e.target.value)}
-          placeholder='["arg1", 123, "0x..."]'
-          className="w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-white placeholder-white/30 focus:border-brand-accent focus:outline-none"
-        />
+        <input value={argsInput} onChange={(e) => setArgsInput(e.target.value)} placeholder='["arg1", 123, "0x..."]' className="w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-white placeholder-white/30 focus:border-brand-accent focus:outline-none" />
         {argsInput && !args ? <span className="text-xs text-red-300">Constructor args must be a JSON array.</span> : null}
       </label>
 
       <label className="block space-y-2">
         <span className="text-xs uppercase tracking-wider text-white/50">Optional native value in wei</span>
-        <input
-          value={valueInput}
-          onChange={(e) => setValueInput(e.target.value.replace(/[^0-9]/g, ''))}
-          placeholder="0"
-          className="w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-white placeholder-white/30 focus:border-brand-accent focus:outline-none"
-        />
+        <input value={valueInput} onChange={(e) => setValueInput(e.target.value.replace(/[^0-9]/g, ''))} placeholder="0" className="w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-white placeholder-white/30 focus:border-brand-accent focus:outline-none" />
       </label>
 
-      {!isConnected ? (
-        <p className="rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-3 text-sm text-yellow-200">
-          Connect your wallet from the header to deploy contracts.
-        </p>
-      ) : null}
+      {!isConnected ? <p className="rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-3 text-sm text-yellow-200">Connect your wallet from the header to deploy contracts.</p> : null}
 
-      <button
-        onClick={onDeploy}
-        disabled={!canDeploy}
-        className="w-full rounded-xl bg-brand-accent px-5 py-3 text-sm font-semibold text-brand-ink hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {isPending ? 'Confirm in wallet…' : isConfirming ? 'Deploying…' : 'Deploy contract'}
+      <button onClick={onDeploy} disabled={!canDeploy} className="w-full rounded-xl bg-brand-accent px-5 py-3 text-sm font-semibold text-brand-ink hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+        {isPending ? 'Confirm in wallet...' : isConfirming ? 'Deploying...' : mode === 'compiler' && !compiled ? 'Compile before deploy' : 'Deploy contract'}
       </button>
 
-      {hash ? (
-        <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-sm">
-          <div className="text-white/50">Transaction</div>
-          <Link href={`/explorer/tx/${hash}`} className="break-all font-mono text-brand-accent hover:underline">
-            {hash}
-          </Link>
-        </div>
-      ) : null}
-
+      {hash ? <Result label="Transaction" href={`/explorer/tx/${hash}`} value={hash} /> : null}
       {isSuccess && deployedAddress ? (
         <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-100">
           Contract deployed:{' '}
-          <Link href={`/explorer/address/${deployedAddress}`} className="break-all font-mono text-brand-accent hover:underline">
-            {deployedAddress}
-          </Link>
+          <Link href={`/explorer/address/${deployedAddress}`} className="break-all font-mono text-brand-accent hover:underline">{deployedAddress}</Link>
+          <div className="mt-2">
+            <Link href={`/explorer/verify?address=${deployedAddress}`} className="text-xs text-brand-accent hover:underline">Verify this contract →</Link>
+          </div>
         </div>
       ) : null}
+      {error ? <p className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">{error.message.slice(0, 500)}</p> : null}
+    </div>
+  );
+}
 
-      {error ? (
-        <p className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
-          {error.message.slice(0, 500)}
-        </p>
-      ) : null}
+function Result({ label, href, value }: { label: string; href: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-sm">
+      <div className="text-white/50">{label}</div>
+      <Link href={href} className="break-all font-mono text-brand-accent hover:underline">{value}</Link>
     </div>
   );
 }
