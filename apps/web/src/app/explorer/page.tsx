@@ -20,6 +20,8 @@ const NAV_ITEMS = [
   { href: '/explorer/blocks', label: 'Blocks' },
   { href: '/explorer/txs', label: 'Transactions' },
   { href: '/explorer/contracts', label: 'Contracts' },
+  { href: '/explorer/tokens', label: 'Tokens' },
+  { href: '/explorer/pairs', label: 'Pairs' },
   { href: '/explorer/verify', label: 'Verify Contract' },
   { href: '/explorer/deploy', label: 'Deploy Contract' },
   { href: '/explorer/gas', label: 'Gas Tracker' },
@@ -47,7 +49,13 @@ async function loadHomeData() {
 
   const totalTxs = blocks.reduce((sum, block) => sum + block.transactions.length, 0);
   const avgGasUsed = blocks.length ? blocks.reduce((sum, block) => sum + block.gasUsed, 0n) / BigInt(blocks.length) : 0n;
-  return { head, blocks, latestTxs, totalTxs, avgGasUsed };
+  const avgTxsPerBlock = blocks.length ? totalTxs / blocks.length : 0;
+  const latestBlock = blocks[0];
+  const oldestBlock = blocks[blocks.length - 1];
+  const seconds = latestBlock && oldestBlock ? Number(latestBlock.timestamp - oldestBlock.timestamp) || 1 : 1;
+  const tps = totalTxs / seconds;
+  const utilization = latestBlock?.gasLimit ? Number((avgGasUsed * 10000n) / latestBlock.gasLimit) / 100 : 0;
+  return { head, blocks, latestTxs, totalTxs, avgGasUsed, avgTxsPerBlock, tps, utilization };
 }
 
 async function handleSearch(formData: FormData): Promise<void> {
@@ -65,7 +73,7 @@ interface ExplorerHomeProps {
 
 export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) {
   const params = (await searchParams) ?? {};
-  const { head, blocks, latestTxs, totalTxs, avgGasUsed } = await loadHomeData();
+  const { head, blocks, latestTxs, totalTxs, avgGasUsed, avgTxsPerBlock, tps, utilization } = await loadHomeData();
 
   return (
     <div className="space-y-5 text-sm">
@@ -85,10 +93,11 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
                 EticaHub <span className="text-brand-accent">Scan</span>
               </h1>
               <p className="max-w-3xl text-xs leading-5 text-white/60 md:text-sm">
-                Etherscan-style explorer for Etica: blocks, transactions, accounts, contracts, deployment, and Sourcify verification in the EticaHub interface.
+                Etherscan-style explorer and EticaHub terminal for blocks, transactions, accounts, tokens, pairs, contracts, deployment, verification, and live network analytics.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
+              <Link href="/explorer/pairs" className="rounded-md border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-emerald-200 hover:bg-emerald-400/15">Pairs</Link>
               <Link href="/explorer/deploy" className="rounded-md bg-brand-accent px-3 py-2 font-medium text-brand-ink hover:opacity-90">Deploy Contract</Link>
               <Link href="/explorer/verify" className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white/80 hover:bg-white/10">Verify Contract</Link>
             </div>
@@ -119,8 +128,15 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
           <Metric label="Latest Block" value={`#${head.toString()}`} sub="public RPC live" href={`/explorer/block/${head.toString()}`} />
           <Metric label="Txs in Window" value={totalTxs.toString()} sub={`last ${HOME_BLOCKS} blocks`} href="/explorer/txs" />
           <Metric label="Avg Gas Used" value={avgGasUsed.toString()} sub="recent block avg" href="/explorer/gas" />
-          <Metric label="Native Gas" value="EGAZ" sub="Etica mainnet" href="/explorer/contracts" />
+          <Metric label="Markets" value="Pairs" sub="ETX-routed markets" href="/explorer/pairs" />
         </div>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-4">
+        <TerminalMetric title="TPS" value={tps.toFixed(3)} hint="bounded live window" />
+        <TerminalMetric title="Avg tx / block" value={avgTxsPerBlock.toFixed(1)} hint={`${HOME_BLOCKS} block sample`} />
+        <TerminalMetric title="Utilization" value={`${utilization.toFixed(1)}%`} hint="avg gas used / limit" />
+        <TerminalMetric title="Tooling" value="Deploy + Verify" hint="in-app contract flow" />
       </section>
 
       <section className="grid gap-5 lg:grid-cols-2">
@@ -182,9 +198,11 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-3">
+      <section className="grid gap-3 md:grid-cols-5">
+        <Action href="/explorer/tokens" title="Tokens" body="ETX, ETI, WEGAZ and known EticaHub asset surfaces." />
+        <Action href="/explorer/pairs" title="Pairs" body="OHLC, volume, and liquidity-depth market analytics." />
         <Action href="/explorer/contracts" title="Contracts" body="Known EticaHub contracts, labels, code status, and source verification paths." />
-        <Action href="/explorer/deploy" title="Deploy Contract" body="Wallet-native creation bytecode deployment on Etica Mainnet." />
+        <Action href="/explorer/deploy" title="Deploy Contract" body="Wallet-native contract deployment and advanced bytecode mode." />
         <Action href="/explorer/verify" title="Verify Contract" body="Sourcify-backed verification flow for Etica contracts." />
       </section>
     </div>
@@ -198,6 +216,16 @@ function Metric({ label, value, sub, href }: { label: string; value: string; sub
       <div className="mt-1 truncate font-mono text-lg font-semibold text-white">{value}</div>
       <div className="mt-1 text-[11px] text-white/35">{sub}</div>
     </Link>
+  );
+}
+
+function TerminalMetric({ title, value, hint }: { title: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-[#07120f] p-4">
+      <div className="text-[10px] uppercase tracking-wider text-white/40">{title}</div>
+      <div className="mt-2 font-mono text-xl font-semibold text-white">{value}</div>
+      <div className="mt-1 text-[11px] text-white/35">{hint}</div>
+    </div>
   );
 }
 
