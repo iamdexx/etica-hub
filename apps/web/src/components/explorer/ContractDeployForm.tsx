@@ -69,6 +69,7 @@ export function ContractDeployForm() {
   const [selectedContract, setSelectedContract] = useState('');
   const [optimizer, setOptimizer] = useState(true);
   const [optimizerRuns, setOptimizerRuns] = useState('200');
+  const [license, setLicense] = useState('MIT');
   const [compiled, setCompiled] = useState<CompileResult | null>(null);
   const [compileError, setCompileError] = useState<string | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
@@ -99,6 +100,21 @@ export function ContractDeployForm() {
   const activeArgs = mode === 'compiler' ? compilerArgs : advancedArgs;
   const canDeploy = isConnected && activeBytecode && activeAbi && activeArgs && !isPending && !isConfirming;
 
+  const verifyHref = useMemo(() => {
+    if (!deployedAddress) return '/explorer/verify';
+    const params = new URLSearchParams({ address: deployedAddress });
+    if (compiled?.compilerVersion) params.set('compilerVersion', compiled.compilerVersion);
+    if (activeContract?.name) params.set('contractIdentifier', `Contract.sol:${activeContract.name}`);
+    if (license) params.set('license', license);
+    return `/explorer/verify?${params.toString()}`;
+  }, [activeContract?.name, compiled?.compilerVersion, deployedAddress, license]);
+
+  function selectCompiledContract(name: string) {
+    setSelectedContract(name);
+    const contract = compiled?.contracts.find((item) => item.name === name) ?? null;
+    setConstructorValues(constructorInputs(contract?.abi ?? null).map(() => ''));
+  }
+
   async function onCompile() {
     setIsCompiling(true);
     setCompileError(null);
@@ -119,8 +135,7 @@ export function ContractDeployForm() {
       const first = contracts[0];
       setCompiled({ contracts, compilerVersion: json.compilerVersion, stdJsonInput: json.stdJsonInput });
       setSelectedContract(first?.name ?? '');
-      const inputs = constructorInputs(first?.abi ?? null);
-      setConstructorValues(inputs.map(() => ''));
+      setConstructorValues(constructorInputs(first?.abi ?? null).map(() => ''));
     } catch (err) {
       setCompileError(err instanceof Error ? err.message : 'Compilation failed');
     } finally {
@@ -165,7 +180,7 @@ export function ContractDeployForm() {
           <div className="grid gap-4 md:grid-cols-[1fr_0.6fr_0.4fr]">
             <label className="block space-y-2">
               <span className="text-xs uppercase tracking-wider text-white/50">Compiled Contract</span>
-              <select value={selectedContract} onChange={(e) => setSelectedContract(e.target.value)} disabled={!compiled?.contracts.length} className="w-full rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-white focus:border-brand-accent focus:outline-none">
+              <select value={selectedContract} onChange={(e) => selectCompiledContract(e.target.value)} disabled={!compiled?.contracts.length} className="w-full rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-white focus:border-brand-accent focus:outline-none">
                 {compiled?.contracts.length ? compiled.contracts.map((contract) => <option key={contract.name} value={contract.name}>{contract.name}</option>) : <option>Compile source first</option>}
               </select>
             </label>
@@ -180,6 +195,18 @@ export function ContractDeployForm() {
               <input value={optimizerRuns} onChange={(e) => setOptimizerRuns(e.target.value.replace(/[^0-9]/g, ''))} className="w-full rounded-lg border border-white/10 bg-black/30 p-3 font-mono text-xs text-white focus:border-brand-accent focus:outline-none" />
             </label>
           </div>
+
+          <label className="block space-y-2">
+            <span className="text-xs uppercase tracking-wider text-white/50">License</span>
+            <select value={license} onChange={(e) => setLicense(e.target.value)} className="w-full rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-white focus:border-brand-accent focus:outline-none">
+              <option value="MIT">MIT</option>
+              <option value="GPL-3.0">GPL-3.0</option>
+              <option value="LGPL-3.0">LGPL-3.0</option>
+              <option value="Apache-2.0">Apache-2.0</option>
+              <option value="BSD-3-Clause">BSD-3-Clause</option>
+              <option value="UNLICENSED">UNLICENSED</option>
+            </select>
+          </label>
 
           <label className="block space-y-2">
             <span className="text-xs uppercase tracking-wider text-white/50">Solidity Source</span>
@@ -219,7 +246,7 @@ export function ContractDeployForm() {
       {!isConnected ? <p className="rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-3 text-sm text-yellow-200">Connect your wallet from the header to deploy contracts.</p> : null}
       <button onClick={onDeploy} disabled={!canDeploy} className="w-full rounded-xl bg-brand-accent px-5 py-3 text-sm font-semibold text-brand-ink hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">{isPending ? 'Confirm in wallet...' : isConfirming ? 'Deploying...' : mode === 'compiler' && !compiled ? 'Compile before deploy' : 'Deploy contract'}</button>
       {hash ? <Result label="Transaction" href={`/explorer/tx/${hash}`} value={hash} /> : null}
-      {isSuccess && deployedAddress ? <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-100">Contract deployed: <Link href={`/explorer/address/${deployedAddress}`} className="break-all font-mono text-brand-accent hover:underline">{deployedAddress}</Link><div className="mt-2"><Link href={`/explorer/verify?address=${deployedAddress}`} className="text-xs text-brand-accent hover:underline">Verify this contract →</Link></div></div> : null}
+      {isSuccess && deployedAddress ? <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-100">Contract deployed: <Link href={`/explorer/address/${deployedAddress}`} className="break-all font-mono text-brand-accent hover:underline">{deployedAddress}</Link><div className="mt-2"><Link href={verifyHref} className="text-xs text-brand-accent hover:underline">Verify this contract →</Link></div></div> : null}
       {error ? <p className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">{error.message.slice(0, 500)}</p> : null}
     </div>
   );
