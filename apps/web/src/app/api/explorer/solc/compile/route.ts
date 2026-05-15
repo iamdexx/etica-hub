@@ -7,7 +7,6 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const source = typeof body.source === 'string' ? body.source : '';
-    const contractName = typeof body.contractName === 'string' ? body.contractName : 'Contract';
     const optimizer = Boolean(body.optimizer);
     const optimizerRuns = Number(body.optimizerRuns || 200);
 
@@ -44,22 +43,23 @@ export async function POST(request: Request) {
       }
     }
 
-    const contracts = output.contracts?.['Contract.sol'];
-    if (!contracts) {
+    const compiled = output.contracts?.['Contract.sol'];
+    if (!compiled) {
       return NextResponse.json({ ok: false, error: 'No contracts compiled' }, { status: 400 });
     }
 
-    const selected = contracts[contractName] || Object.values(contracts)[0];
-    if (!selected) {
-      return NextResponse.json({ ok: false, error: 'Unable to select compiled contract' }, { status: 400 });
-    }
+    const contracts = Object.entries(compiled).map(([name, artifact]: [string, any]) => ({
+      name,
+      abi: artifact.abi,
+      bytecode: `0x${artifact.evm.bytecode.object}`,
+    }));
 
     return NextResponse.json({
       ok: true,
-      abi: selected.abi,
-      bytecode: `0x${selected.evm.bytecode.object}`,
+      contracts,
       compilerVersion: solc.version(),
       stdJsonInput: input,
+      warnings: output.errors?.filter((e: any) => e.severity !== 'error') ?? [],
     });
   } catch (error) {
     return NextResponse.json({
