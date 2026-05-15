@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { MarketChartShell, MarketPill, TimeframePills } from '@/components/MarketChartShell';
 
 interface RevenuePool {
   pool: string;
@@ -88,13 +89,12 @@ export function StatusMarketCharts() {
 
   if (revenue.status === 'loading' || liquidity.status === 'loading') {
     return (
-      <section className="rounded-xl border border-white/10 bg-[#06110e] p-5">
-        <div className="mb-4 h-4 w-44 animate-pulse rounded bg-white/10" />
-        <div className="grid gap-4 md:grid-cols-2">
+      <MarketChartShell eyebrow="Market analytics" title="EticaHub liquidity and revenue charts" actions={<TimeframePills active="24H" />}>
+        <div className="grid gap-4 p-4 md:grid-cols-2">
           <div className="h-56 animate-pulse rounded-lg bg-white/[0.04]" />
           <div className="h-56 animate-pulse rounded-lg bg-white/[0.04]" />
         </div>
-      </section>
+      </MarketChartShell>
     );
   }
 
@@ -107,23 +107,23 @@ export function StatusMarketCharts() {
   }
 
   return (
-    <section className="overflow-hidden rounded-xl border border-white/10 bg-[#06110e]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.025] px-4 py-3">
-        <div>
-          <div className="text-[11px] uppercase tracking-wider text-emerald-300/70">Market analytics</div>
-          <h2 className="mt-1 text-sm font-semibold text-white">EticaHub liquidity and revenue charts</h2>
-        </div>
-        <div className="flex gap-2 text-[11px] text-white/50">
-          <span className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-emerald-200">Volume {usd(revenue.data.totals.volumeUsd)}</span>
-          <span className="rounded-md border border-white/10 bg-white/5 px-2 py-1">TVL {usd(liquidity.data.totals.currentTvlUsd)}</span>
-        </div>
-      </div>
-
+    <MarketChartShell
+      eyebrow="Market analytics"
+      title="EticaHub liquidity and revenue charts"
+      subtitle="Live on-chain fee, volume, TVL, and LP-flow distribution."
+      actions={
+        <>
+          <TimeframePills active="24H" />
+          <MarketPill tone="green">Volume {usd(revenue.data.totals.volumeUsd)}</MarketPill>
+          <MarketPill>TVL {usd(liquidity.data.totals.currentTvlUsd)}</MarketPill>
+        </>
+      }
+    >
       <div className="grid gap-0 md:grid-cols-2">
         <RevenueBars pools={revenue.data.pools} totals={revenue.data.totals} />
         <LiquidityBars pools={liquidity.data.pools} totals={liquidity.data.totals} />
       </div>
-    </section>
+    </MarketChartShell>
   );
 }
 
@@ -200,7 +200,6 @@ function LiquidityBars({ pools, totals }: { pools: LiquidityFlowPool[]; totals: 
           <div>Removed {usd(totals.removedUsd)}</div>
         </div>
       </div>
-
       <div className="space-y-3">
         {rows.map((row) => {
           const positive = row.net >= 0;
@@ -212,10 +211,7 @@ function LiquidityBars({ pools, totals }: { pools: LiquidityFlowPool[]; totals: 
               </div>
               <div className="relative h-4 rounded-full bg-white/[0.055]">
                 <div className="absolute left-1/2 top-0 h-full w-px bg-white/20" />
-                <div
-                  className={`absolute top-1/2 h-2 -translate-y-1/2 rounded-full ${positive ? 'left-1/2 bg-emerald-300/75' : 'right-1/2 bg-rose-300/75'}`}
-                  style={{ width: `${Math.max(2, row.pct)}%` }}
-                />
+                <div className={`absolute top-1/2 h-2 -translate-y-1/2 rounded-full ${positive ? 'left-1/2 bg-emerald-300/75' : 'right-1/2 bg-rose-300/75'}`} style={{ width: `${Math.max(2, row.pct)}%` }} />
               </div>
               <div className="mt-1 flex justify-between text-[10px] text-white/35">
                 <span>added {usd(row.added)}</span>
