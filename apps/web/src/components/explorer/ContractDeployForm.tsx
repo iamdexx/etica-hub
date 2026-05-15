@@ -2,10 +2,15 @@
 
 import { useMemo, useState } from 'react';
 import { useAccount, useDeployContract, useWaitForTransactionReceipt } from 'wagmi';
-import { isAddress, type Abi, type AbiConstructor, type Hex } from 'viem';
+import { isAddress, type Abi, type AbiParameter, type Hex } from 'viem';
 import Link from 'next/link';
 
 type DeployMode = 'compiler' | 'advanced';
+
+type ConstructorAbiItem = {
+  type: 'constructor';
+  inputs?: readonly AbiParameter[];
+};
 
 type CompiledContract = {
   name: string;
@@ -56,8 +61,8 @@ function normalizeBytecode(value: string): Hex | null {
   return trimmed as Hex;
 }
 
-function constructorInputs(abi: Abi | null): AbiConstructor['inputs'] {
-  const ctor = abi?.find((item) => item.type === 'constructor') as AbiConstructor | undefined;
+function constructorInputs(abi: Abi | null): readonly AbiParameter[] {
+  const ctor = abi?.find((item) => item.type === 'constructor') as ConstructorAbiItem | undefined;
   return ctor?.inputs ?? [];
 }
 
