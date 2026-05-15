@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
 import { PoolAddCard } from '@/components/pool/PoolAddCard';
 import { PoolPositionsList } from '@/components/pool/PoolPositionsList';
@@ -6,43 +7,104 @@ import { getServerGeoRestricted } from '@/lib/geoBlockServer';
 
 export const metadata = { title: 'Pool · EticaHub' };
 
+const POOL_STATS = [
+  ['Factory rule', 'ETX hub pairs'],
+  ['V2 LP fee', '0.25% to LPs'],
+  ['Stable fee', '0.04%'],
+  ['New pool cost', '10,000 ETX'],
+];
+
+const LIQUIDITY_BARS = [54, 88, 66, 104, 78, 126, 94, 138, 112, 86, 122, 101];
+
 export default function PoolPage() {
   const geoRestricted = getServerGeoRestricted();
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Liquidity pools</h1>
-        <p className="mt-1 text-sm text-white/60">
-          {geoRestricted
-            ? 'Add and remove liquidity on EticaSwap V2 pairs (0.25% fee to LPs). All public LP shares are fully liquid.'
-            : 'Add and remove liquidity on EticaSwap V2 pairs (0.25% fee to LPs) or the rate-aware stETX/ETX stableswap (0.04% fee, 50% to LPs). All public LP shares are fully liquid.'}
-        </p>
-      </div>
-      <MarketVolumeStrip />
-      {!geoRestricted && <PoolStableSwapCard />}
-      <PoolAddCard geoRestricted={geoRestricted} />
-      <PoolPositionsList geoRestricted={geoRestricted} />
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-white/50">
-        <div className="font-medium text-white/70">How it works</div>
-        <ul className="mt-1 list-disc pl-5 space-y-1">
-          <li>
-            Pools pair ETX with any ERC20 (ETI, EGAZ, or a custom token). ETX is the hub
-            token — non-ETX pairs are rejected at the factory.
-          </li>
-          <li>
-            Creating a new pool costs <strong>10,000 ETX</strong>, paid to the EticaHub
-            treasury. Adding to an existing pool is free (just gas).
-          </li>
-          <li>
-            Deposits must match the current pool ratio. For new pools the ratio you set becomes
-            the initial price.
-          </li>
-          <li>
-            LP positions are ERC20 tokens. You can withdraw your share any time by removing
-            liquidity below.
-          </li>
-        </ul>
-      </div>
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-2xl border border-cyan-400/20 bg-[#051014] shadow-2xl shadow-cyan-950/20">
+        <div className="grid gap-6 border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.01))] p-5 lg:grid-cols-[1fr_0.82fr] lg:p-6">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-cyan-200">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" />
+              Liquidity Terminal
+            </div>
+            <div>
+              <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Pool liquidity with market context.</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
+                Add, manage, and monitor EticaSwap liquidity from a terminal surface that keeps pool rules, fee paths, positions, pair analytics, and market volume visible in one workflow.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Link href="/explorer/pairs" className="rounded-md border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-cyan-100 hover:bg-cyan-400/15">Pair analytics</Link>
+              <Link href="/farms" className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white/75 hover:bg-white/10">LP farms</Link>
+              <Link href="/swap" className="rounded-md bg-brand-accent px-3 py-2 font-medium text-brand-ink hover:opacity-90">Swap</Link>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="flex items-center justify-between text-xs">
+              <span className="uppercase tracking-wider text-white/40">Liquidity depth</span>
+              <span className="text-cyan-200">LP monitor</span>
+            </div>
+            <div className="mt-4 flex h-36 items-end gap-2 rounded-xl border border-white/10 bg-black/30 p-3">
+              {LIQUIDITY_BARS.map((height, index) => (
+                <div key={index} className="flex flex-1 flex-col items-center justify-end gap-1">
+                  <span className="w-full rounded-t bg-cyan-300/70" style={{ height }} />
+                  <span className="h-1 w-full rounded bg-white/15" />
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {POOL_STATS.map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
+                  <div className="mt-1 text-xs font-medium text-white/80">{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[0.7fr_1fr] lg:items-start">
+        <aside className="space-y-4">
+          <MarketVolumeStrip />
+          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-5">
+            <div className="text-xs uppercase tracking-wider text-white/40">Pool rules</div>
+            <div className="mt-4 space-y-3">
+              <InfoCard title="ETX hub pairs" body="Pools pair ETX with ETI, EGAZ, or another ERC20. Non-ETX public pairs are rejected at the factory." />
+              <InfoCard title="Initial price" body="For new pools, the first deposit ratio becomes the initial market price." />
+              <InfoCard title="Liquid LP shares" body="LP positions are ERC20 tokens and can be withdrawn by removing liquidity from the position manager." />
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs leading-5 text-white/50">
+            <div className="font-medium text-white/70">Creation fee</div>
+            <p className="mt-1">Creating a new public pool costs <strong>10,000 ETX</strong>, paid to the EticaHub treasury. Adding to an existing pool is free except gas.</p>
+          </div>
+        </aside>
+
+        <div className="space-y-6">
+          {!geoRestricted && (
+            <div className="rounded-2xl border border-cyan-400/20 bg-white/[0.03] p-3 shadow-xl shadow-cyan-950/20">
+              <PoolStableSwapCard />
+            </div>
+          )}
+          <div className="rounded-2xl border border-cyan-400/20 bg-white/[0.03] p-3 shadow-xl shadow-cyan-950/20">
+            <PoolAddCard geoRestricted={geoRestricted} />
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
+            <PoolPositionsList geoRestricted={geoRestricted} />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function InfoCard({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+      <div className="text-sm font-semibold text-white">{title}</div>
+      <p className="mt-2 text-xs leading-5 text-white/55">{body}</p>
     </div>
   );
 }
