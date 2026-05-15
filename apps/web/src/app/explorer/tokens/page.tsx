@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
 import { explorerClient, shortAddress } from '@/lib/explorer';
+import { MarketCandles, demoCandles } from '@/components/MarketCandles';
+import { MarketChartShell, MarketPill, TimeframePills } from '@/components/MarketChartShell';
 
 export const revalidate = 0;
 export const dynamic = 'force-dynamic';
@@ -64,6 +66,7 @@ function formatSupply(value: number): string {
 export default async function TokensPage() {
   const client = explorerClient();
   const rows = await Promise.all(knownTokens().map((token) => readToken(client, token)));
+  const primary = rows[0];
 
   return (
     <div className="space-y-6">
@@ -78,7 +81,7 @@ export default async function TokensPage() {
           <div className="text-[11px] uppercase tracking-wider text-emerald-300/75">EticaHub Scan · Assets</div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white md:text-4xl">Tokens</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">
-            Public-RPC-safe token registry for EticaHub assets. Balances and holder history stay lightweight until a dedicated indexer exists.
+            Public-RPC-safe token registry for EticaHub assets with lightweight market terminal visuals. Full historical candles can be swapped in once an indexer is online.
           </p>
         </div>
 
@@ -114,6 +117,23 @@ export default async function TokensPage() {
           ))}
         </div>
       </section>
+
+      {primary ? (
+        <MarketChartShell
+          eyebrow="Token market"
+          title={`${primary.symbol} / ETX market structure`}
+          subtitle="Lightweight TradingView-style surface ready for indexed OHLC data."
+          actions={
+            <>
+              <TimeframePills active="24H" />
+              <MarketPill tone="green">{primary.symbol}</MarketPill>
+              <MarketPill>supply {formatSupply(primary.totalSupply)}</MarketPill>
+            </>
+          }
+        >
+          <MarketCandles candles={demoCandles(primary.symbol.length)} />
+        </MarketChartShell>
+      ) : null}
     </div>
   );
 }
