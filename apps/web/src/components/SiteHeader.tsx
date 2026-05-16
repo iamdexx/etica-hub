@@ -6,6 +6,7 @@ import { ConnectButton } from './ConnectButton';
 import { cn } from '@/lib/utils';
 
 const NAV = [
+  { href: '/labs', label: 'Labs' },
   { href: '/swap', label: 'Swap' },
   { href: '/trade', label: 'Trade' },
   { href: '/pool', label: 'Pool' },
