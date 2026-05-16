@@ -13,13 +13,11 @@ const BRIDGE_STATS = [
   ['Bridge fee', '0.1%'],
 ];
 
-const FLOW_BARS = [46, 62, 58, 88, 72, 116, 84, 132, 102, 118, 86, 124];
-
 export default function BridgePage() {
   return (
     <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl border border-fuchsia-400/20 bg-[#120613] shadow-2xl shadow-fuchsia-950/20">
-        <div className="grid gap-6 border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(217,70,239,0.2),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.01))] p-5 lg:grid-cols-[1fr_0.82fr] lg:p-6">
+        <div className="grid gap-5 border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(217,70,239,0.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.01))] p-5 lg:grid-cols-[1fr_0.9fr] lg:p-6">
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-fuchsia-400/30 bg-fuchsia-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-fuchsia-200">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fuchsia-300" />
@@ -28,7 +26,7 @@ export default function BridgePage() {
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Bridge ETX across execution domains.</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Lock ETX on Etica and mint wrapped ETX on Ethereum or BNB through Hyperlane rails with an optimistic-veto security layer. Monitor bridge state, challenge windows, route flows, and address mappings from one terminal surface.
+                Lock ETX on Etica and mint wrapped ETX on Ethereum or BNB through Hyperlane rails with an optimistic-veto security layer.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
@@ -39,19 +37,11 @@ export default function BridgePage() {
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-            <div className="flex items-center justify-between text-xs">
-              <span className="uppercase tracking-wider text-white/40">Bridge flow monitor</span>
-              <span className="text-fuchsia-200">live relay</span>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs uppercase tracking-wider text-white/40">Bridge summary</div>
+              <span className="rounded-full border border-fuchsia-400/25 bg-fuchsia-400/10 px-2.5 py-1 text-xs text-fuchsia-100">cross-chain</span>
             </div>
-            <div className="mt-4 flex h-36 items-end gap-2 rounded-xl border border-white/10 bg-black/30 p-3">
-              {FLOW_BARS.map((height, index) => (
-                <div key={index} className="flex flex-1 flex-col items-center justify-end gap-1">
-                  <span className="w-full rounded-t bg-fuchsia-300/70" style={{ height }} />
-                  <span className="h-1 w-full rounded bg-white/15" />
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
               {BRIDGE_STATS.map(([label, value]) => (
                 <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
                   <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
@@ -59,6 +49,9 @@ export default function BridgePage() {
                 </div>
               ))}
             </div>
+            <p className="mt-3 text-xs leading-5 text-white/45">
+              These are bridge mechanics and protocol parameters. Live bridge state is shown in the bridge status and flow modules below.
+            </p>
           </div>
         </div>
       </section>
