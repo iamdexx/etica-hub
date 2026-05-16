@@ -6,6 +6,7 @@ import {
   shortAddress,
   type ProposalSummary,
 } from '@/lib/research';
+import { SourceBadge, TelemetrySection } from '@/components/telemetry/TelemetryCards';
 
 export const metadata = { title: 'Research Hub · EticaHub' };
 export const revalidate = 60;
@@ -15,13 +16,6 @@ const STATUS_FILTERS: Array<{ label: string; value: 'all' | ProposalStatus }> = 
   { label: 'Pending', value: ProposalStatus.Pending },
   { label: 'Accepted', value: ProposalStatus.Accepted },
   { label: 'Rejected', value: ProposalStatus.Rejected },
-];
-
-const TERMINAL_STATS = [
-  ['Source', 'Etica core'],
-  ['Content', 'IPFS rendered'],
-  ['Tipping', 'ETI enabled'],
-  ['Refresh', '60s cache'],
 ];
 
 type SearchParams = { status?: string; q?: string };
@@ -63,6 +57,7 @@ export default async function ResearchPage({
   const chainId = resolveChainId();
   let proposals: ProposalSummary[] = [];
   let error: string | undefined;
+
   try {
     proposals = await listRecentProposals(30, chainId);
   } catch (e) {
@@ -73,6 +68,30 @@ export default async function ResearchPage({
   const pendingCount = proposals.filter((p) => p.status === ProposalStatus.Pending).length;
   const acceptedCount = proposals.filter((p) => p.status === ProposalStatus.Accepted).length;
   const rejectedCount = proposals.filter((p) => p.status === ProposalStatus.Rejected).length;
+
+  const telemetry = [
+    {
+      label: 'Indexed proposals',
+      value: String(proposals.length),
+      detail: 'Live governance feed',
+      tone: 'sky' as const,
+    },
+    {
+      label: 'Pending',
+      value: String(pendingCount),
+      detail: 'Awaiting governance resolution',
+    },
+    {
+      label: 'Accepted',
+      value: String(acceptedCount),
+      detail: 'Approved proposals',
+    },
+    {
+      label: 'Rejected',
+      value: String(rejectedCount),
+      detail: 'Rejected proposals',
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -86,7 +105,7 @@ export default async function ResearchPage({
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Research Hub with proposal intelligence.</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Every research proposal submitted to the Etica core contract, pulled live from chain {chainId}, rendered from IPFS, searchable by disease, proposer, status, and title.
+                Live governance proposals rendered from Etica core + IPFS with proposal status, proposer identity, disease context, and search controls integrated into one research workflow.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
@@ -96,33 +115,17 @@ export default async function ResearchPage({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs uppercase tracking-wider text-white/40">Research summary</div>
-              <span className="rounded-full border border-sky-400/25 bg-sky-400/10 px-2.5 py-1 text-xs text-sky-100">{proposals.length} indexed</span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
-              {TERMINAL_STATS.map(([label, value]) => (
-                <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
-                  <div className="mt-1 text-xs font-medium text-white/80">{value}</div>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-xs leading-5 text-white/45">
-              Counts and proposal cards below are loaded from the research source. Decorative activity bars were removed so the real proposal feed stays primary.
-            </p>
-          </div>
+          <TelemetrySection
+            title="Research telemetry"
+            badge={<SourceBadge tone="sky">live governance feed</SourceBadge>}
+            metrics={telemetry}
+            description="Proposal counts and statuses are loaded from the live governance feed. Decorative fake activity charts were intentionally removed in favor of direct proposal telemetry."
+          />
         </div>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[0.72fr_1fr] lg:items-start">
         <aside className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <MetricCard label="Pending" value={String(pendingCount)} tone="amber" />
-            <MetricCard label="Accepted" value={String(acceptedCount)} tone="emerald" />
-            <MetricCard label="Rejected" value={String(rejectedCount)} tone="rose" />
-          </div>
           <div className="rounded-2xl border border-white/10 bg-[#07120f] p-5">
             <div className="text-xs uppercase tracking-wider text-white/40">Research controls</div>
             <form className="mt-4 space-y-4" role="search">
@@ -138,6 +141,7 @@ export default async function ResearchPage({
                       : q
                         ? `/research?status=${f.value}&q=${encodeURIComponent(q)}`
                         : `/research?status=${f.value}`;
+
                   return (
                     <Link
                       key={f.label}
@@ -153,6 +157,7 @@ export default async function ResearchPage({
                   );
                 })}
               </div>
+
               <input
                 type="search"
                 name="q"
@@ -160,14 +165,17 @@ export default async function ResearchPage({
                 placeholder="Search title, disease, or proposer..."
                 className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-sky-300/50 focus:outline-none"
               />
+
               {statusFilter !== 'all' && (
                 <input type="hidden" name="status" value={String(statusFilter)} />
               )}
+
               <button className="w-full rounded-lg bg-brand-accent px-3 py-2 text-sm font-medium text-brand-ink hover:opacity-90">
                 Search proposals
               </button>
             </form>
           </div>
+
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs leading-5 text-white/50">
             <div className="font-medium text-white/70">Proposal workflow</div>
             <p className="mt-1">Open proposals to inspect IPFS content, voter status, proposer identity, and tipping paths without leaving the Research Hub.</p>
@@ -205,9 +213,7 @@ export default async function ResearchPage({
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/50">
                       <span>
                         Disease:{' '}
-                        <span className="text-white/70">
-                          {p.diseaseName || `#${p.chunkId.toString()}`}
-                        </span>
+                        <span className="text-white/70">{p.diseaseName || `#${p.chunkId.toString()}`}</span>
                       </span>
                       <span>
                         Proposer: <span className="text-white/70">{shortAddress(p.proposer)}</span>
@@ -231,16 +237,6 @@ export default async function ResearchPage({
   );
 }
 
-function MetricCard({ label, value, tone }: { label: string; value: string; tone: 'amber' | 'emerald' | 'rose' }) {
-  const color = tone === 'amber' ? 'text-amber-200' : tone === 'emerald' ? 'text-emerald-200' : 'text-rose-200';
-  return (
-    <div className="rounded-xl border border-white/10 bg-[#07120f] p-4">
-      <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
-      <div className={`mt-2 font-mono text-xl font-semibold ${color}`}>{value}</div>
-    </div>
-  );
-}
-
 function StatusPill({ status, label }: { status: ProposalStatus; label: string }) {
   const color =
     status === ProposalStatus.Accepted
@@ -248,10 +244,9 @@ function StatusPill({ status, label }: { status: ProposalStatus; label: string }
       : status === ProposalStatus.Rejected
         ? 'border-rose-400/30 bg-rose-400/10 text-rose-200'
         : 'border-amber-400/30 bg-amber-400/10 text-amber-200';
+
   return (
-    <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${color}`}
-    >
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${color}`}>
       {label}
     </span>
   );
