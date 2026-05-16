@@ -24,8 +24,6 @@ const TERMINAL_STATS = [
   ['Refresh', '60s cache'],
 ];
 
-const RESEARCH_BARS = [38, 58, 44, 82, 64, 104, 74, 118, 96, 86, 126, 108];
-
 type SearchParams = { status?: string; q?: string };
 
 function parseStatus(raw: string | undefined): 'all' | ProposalStatus {
@@ -79,7 +77,7 @@ export default async function ResearchPage({
   return (
     <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl border border-sky-400/20 bg-[#061018] shadow-2xl shadow-sky-950/20">
-        <div className="grid gap-6 border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.2),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.01))] p-5 lg:grid-cols-[1fr_0.82fr] lg:p-6">
+        <div className="grid gap-5 border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.01))] p-5 lg:grid-cols-[1fr_0.9fr] lg:p-6">
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-sky-200">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-300" />
@@ -99,19 +97,11 @@ export default async function ResearchPage({
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-            <div className="flex items-center justify-between text-xs">
-              <span className="uppercase tracking-wider text-white/40">Proposal activity</span>
-              <span className="text-sky-200">{proposals.length} indexed</span>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs uppercase tracking-wider text-white/40">Research summary</div>
+              <span className="rounded-full border border-sky-400/25 bg-sky-400/10 px-2.5 py-1 text-xs text-sky-100">{proposals.length} indexed</span>
             </div>
-            <div className="mt-4 flex h-36 items-end gap-2 rounded-xl border border-white/10 bg-black/30 p-3">
-              {RESEARCH_BARS.map((height, index) => (
-                <div key={index} className="flex flex-1 flex-col items-center justify-end gap-1">
-                  <span className="w-full rounded-t bg-sky-300/70" style={{ height }} />
-                  <span className="h-1 w-full rounded bg-white/15" />
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
               {TERMINAL_STATS.map(([label, value]) => (
                 <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
                   <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
@@ -119,6 +109,9 @@ export default async function ResearchPage({
                 </div>
               ))}
             </div>
+            <p className="mt-3 text-xs leading-5 text-white/45">
+              Counts and proposal cards below are loaded from the research source. Decorative activity bars were removed so the real proposal feed stays primary.
+            </p>
           </div>
         </div>
       </section>
