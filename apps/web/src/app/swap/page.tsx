@@ -1,16 +1,17 @@
 import Link from 'next/link';
 import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
 import { SwapCard } from '@/components/swap/SwapCard';
+import { TelemetrySection, SourceBadge } from '@/components/telemetry/TelemetryCards';
 import { TvlBanner } from '@/components/TvlBanner';
 import { getServerGeoRestricted } from '@/lib/geoBlockServer';
 
 export const metadata = { title: 'Swap · EticaHub' };
 
 const ROUTE_STATS = [
-  ['Hub route', 'ETX routed'],
-  ['LP fee', '0.30%'],
-  ['Protection', 'Slippage guarded'],
-  ['Markets', 'EGAZ · ETI · ETX'],
+  { label: 'Hub route', value: 'ETX routed', detail: 'Shared routing asset', tone: 'emerald' as const },
+  { label: 'LP fee', value: '0.30%', detail: 'AMM swap fee', tone: 'emerald' as const },
+  { label: 'Protection', value: 'Slippage guarded', detail: 'User-defined max impact' },
+  { label: 'Markets', value: 'EGAZ · ETI · ETX', detail: 'Configured swap assets' },
 ];
 
 export default function SwapPage() {
@@ -37,20 +38,12 @@ export default function SwapPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-            <div className="text-xs uppercase tracking-wider text-white/40">Route summary</div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
-              {ROUTE_STATS.map(([label, value]) => (
-                <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
-                  <div className="mt-1 text-xs font-medium text-white/80">{value}</div>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-xs leading-5 text-white/45">
-              These are protocol rules and route labels, not a live chart. Real swap telemetry is shown in the TVL and volume modules below.
-            </p>
-          </div>
+          <TelemetrySection
+            title="Route telemetry"
+            badge={<SourceBadge tone="emerald">config + live modules</SourceBadge>}
+            metrics={ROUTE_STATS}
+            description="Protocol route configuration is shown here. Live TVL and pool volume come from the polling modules below."
+          />
         </div>
       </section>
 
