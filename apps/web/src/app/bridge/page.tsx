@@ -3,14 +3,32 @@ import { BridgeStatusBoard } from '@/components/bridge/BridgeStatusBoard';
 import { BridgeFlowsCard } from '@/components/bridge/BridgeFlowsCard';
 import { BridgeParamsTable } from '@/components/bridge/BridgeParamsTable';
 import { BridgeAddressBook } from '@/components/bridge/BridgeAddressBook';
+import { SourceBadge, TelemetrySection, UnavailableMetric } from '@/components/telemetry/TelemetryCards';
 
 export const metadata = { title: 'Bridge · EticaHub' };
 
 const BRIDGE_STATS = [
-  ['Transport', 'Hyperlane'],
-  ['Security', 'Optimistic veto'],
-  ['Challenge', '48h'],
-  ['Bridge fee', '0.1%'],
+  {
+    label: 'Transport',
+    value: 'Hyperlane',
+    detail: 'Cross-chain messaging layer',
+    tone: 'fuchsia' as const,
+  },
+  {
+    label: 'Security',
+    value: 'Optimistic veto',
+    detail: 'Fraud-challenge protection',
+  },
+  {
+    label: 'Challenge',
+    value: '48h',
+    detail: 'Claim dispute window',
+  },
+  {
+    label: 'Bridge volume',
+    value: <UnavailableMetric reason="requires relay indexer" />,
+    detail: 'Cross-chain analytics pending',
+  },
 ];
 
 export default function BridgePage() {
@@ -26,7 +44,7 @@ export default function BridgePage() {
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Bridge ETX across execution domains.</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Lock ETX on Etica and mint wrapped ETX on Ethereum or BNB through Hyperlane rails with an optimistic-veto security layer.
+                Lock ETX on Etica and mint wrapped ETX on Ethereum or BNB through Hyperlane rails with optimistic-veto security and visible bridge flow telemetry.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
@@ -36,23 +54,12 @@ export default function BridgePage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs uppercase tracking-wider text-white/40">Bridge summary</div>
-              <span className="rounded-full border border-fuchsia-400/25 bg-fuchsia-400/10 px-2.5 py-1 text-xs text-fuchsia-100">cross-chain</span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
-              {BRIDGE_STATS.map(([label, value]) => (
-                <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
-                  <div className="mt-1 text-xs font-medium text-white/80">{value}</div>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-xs leading-5 text-white/45">
-              These are bridge mechanics and protocol parameters. Live bridge state is shown in the bridge status and flow modules below.
-            </p>
-          </div>
+          <TelemetrySection
+            title="Bridge telemetry"
+            badge={<SourceBadge tone="fuchsia">bridge config + status</SourceBadge>}
+            metrics={BRIDGE_STATS}
+            description="Bridge mechanics and dispute parameters are available now. Live relay throughput, transfer counts, and historical bridge analytics require dedicated relay indexing before accurate telemetry can be shown."
+          />
         </div>
       </section>
 
