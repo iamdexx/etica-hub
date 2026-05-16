@@ -1,13 +1,31 @@
 import Link from 'next/link';
 import { FarmsView } from '@/components/farms/FarmsView';
+import { SourceBadge, TelemetrySection, UnavailableMetric } from '@/components/telemetry/TelemetryCards';
 
 export const metadata = { title: 'Farms · EticaHub' };
 
 const FARM_STATS = [
-  ['Reward source', 'Protocol fees'],
-  ['Farms slice', '10% harvest'],
-  ['Lockup', 'None'],
-  ['Top weight', 'stETX/ETX'],
+  {
+    label: 'Reward source',
+    value: 'Protocol fees',
+    detail: 'Harvest-backed emissions',
+    tone: 'lime' as const,
+  },
+  {
+    label: 'Farms slice',
+    value: '10% harvest',
+    detail: 'Treasury distribution rule',
+  },
+  {
+    label: 'APR telemetry',
+    value: <UnavailableMetric reason="requires farm indexer" />,
+    detail: 'APR aggregation pending',
+  },
+  {
+    label: 'Active LPs',
+    value: <UnavailableMetric reason="requires wallet analytics" />,
+    detail: 'Farm participant telemetry pending',
+  },
 ];
 
 export default function FarmsPage() {
@@ -23,7 +41,7 @@ export default function FarmsPage() {
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Farm LP yield from protocol flow.</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Stake EticaSwap stETX/ETX, EGAZ/ETX, or ETI/ETX LP tokens with rewards, farm weights, liquidity routes, and pair analytics nearby.
+                Stake EticaSwap LP positions with protocol-backed emissions, route visibility, pair analytics, and liquidity management connected into one farming workflow.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
@@ -33,20 +51,12 @@ export default function FarmsPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-            <div className="text-xs uppercase tracking-wider text-white/40">Farm summary</div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
-              {FARM_STATS.map(([label, value]) => (
-                <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
-                  <div className="mt-1 text-xs font-medium text-white/80">{value}</div>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-xs leading-5 text-white/45">
-              These are farm mechanics and reward-allocation rules. Live wallet/farm state is shown in the farm panel below.
-            </p>
-          </div>
+          <TelemetrySection
+            title="Farm telemetry"
+            badge={<SourceBadge tone="lime">config + live farm engine</SourceBadge>}
+            metrics={FARM_STATS}
+            description="Reward-allocation mechanics are active now. APR, participant counts, and historical farm analytics require dedicated farm indexing before reliable live telemetry can be displayed."
+          />
         </div>
       </section>
 
