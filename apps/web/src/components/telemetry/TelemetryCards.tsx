@@ -109,6 +109,14 @@ export function SourceBadge({
   );
 }
 
-export function UnavailableMetric({ reason = 'requires indexer' }: { reason?: string }) {
-  return <span className="text-white/45">{reason}</span>;
+export function UnavailableMetric({
+  reason = 'backend analytics coming soon',
+}: {
+  reason?: string;
+}) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[11px] font-medium text-white/55">
+      Coming soon
+    </span>
+  );
 }
