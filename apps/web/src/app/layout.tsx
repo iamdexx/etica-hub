@@ -16,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen overflow-x-hidden antialiased">
         <Providers>
           <SiteHeader />
-          <main className="mx-auto w-full max-w-6xl px-4 py-10">{children}</main>
+          <main className="mx-auto w-full max-w-6xl px-4 py-6 md:py-10">{children}</main>
           <SiteFooter />
         </Providers>
       </body>
