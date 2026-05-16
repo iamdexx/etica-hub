@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { BridgeStatusBoard } from '@/components/bridge/BridgeStatusBoard';
 import { BridgeFlowsCard } from '@/components/bridge/BridgeFlowsCard';
 import { BridgeParamsTable } from '@/components/bridge/BridgeParamsTable';
@@ -5,52 +6,109 @@ import { BridgeAddressBook } from '@/components/bridge/BridgeAddressBook';
 
 export const metadata = { title: 'Bridge · EticaHub' };
 
+const BRIDGE_STATS = [
+  ['Transport', 'Hyperlane'],
+  ['Security', 'Optimistic veto'],
+  ['Challenge', '48h'],
+  ['Bridge fee', '0.1%'],
+];
+
+const FLOW_BARS = [46, 62, 58, 88, 72, 116, 84, 132, 102, 118, 86, 124];
+
 export default function BridgePage() {
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">ETX bridge</h1>
-        <p className="mt-1 text-sm text-white/60">
-          Move ETX between Etica and external chains. Deposits lock ETX on Etica and mint{' '}
-          <strong>wETX</strong> on Ethereum or BNB after a 48 h challenge window. Burning wETX on a
-          remote chain unlocks the underlying ETX back on Etica. The bridge runs on Hyperlane rails
-          with an optimistic-veto layer — no liquidity provider, no validator multisig, no permission
-          to bridge.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-2xl border border-fuchsia-400/20 bg-[#120613] shadow-2xl shadow-fuchsia-950/20">
+        <div className="grid gap-6 border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(217,70,239,0.2),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.01))] p-5 lg:grid-cols-[1fr_0.82fr] lg:p-6">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-fuchsia-400/30 bg-fuchsia-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-fuchsia-200">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fuchsia-300" />
+              Cross-chain Bridge Terminal
+            </div>
+            <div>
+              <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Bridge ETX across execution domains.</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
+                Lock ETX on Etica and mint wrapped ETX on Ethereum or BNB through Hyperlane rails with an optimistic-veto security layer. Monitor bridge state, challenge windows, route flows, and address mappings from one terminal surface.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Link href="/explorer" className="rounded-md border border-fuchsia-400/25 bg-fuchsia-400/10 px-3 py-2 text-fuchsia-100 hover:bg-fuchsia-400/15">Explorer</Link>
+              <Link href="/swap" className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white/75 hover:bg-white/10">Swap</Link>
+              <Link href="/status" className="rounded-md bg-brand-accent px-3 py-2 font-medium text-brand-ink hover:opacity-90">System status</Link>
+            </div>
+          </div>
 
-      <BridgeStatusBoard />
-      <BridgeFlowsCard />
-      <BridgeParamsTable />
-      <BridgeAddressBook />
-
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-white/50">
-        <div className="font-medium text-white/70">How a deposit moves</div>
-        <ol className="mt-1 list-decimal pl-5 space-y-1">
-          <li>
-            You call <code className="font-mono">deposit(destination, recipient, amount)</code> on{' '}
-            <code className="font-mono">BridgeVault</code> on Etica. The contract takes a 0.1% fee
-            and emits a Hyperlane message to the destination chain.
-          </li>
-          <li>
-            A relayer posts the message on the destination minter. A bonded submitter calls{' '}
-            <code className="font-mono">submitClaim</code> with 25% of the amount as a refundable
-            bond — the claim is now in a 48 h challenge window.
-          </li>
-          <li>
-            During those 48 h the operator can veto fraudulent claims. Anyone can also veto by
-            submitting a Merkle proof against an Etica state root (community fraud-prover layer).
-          </li>
-          <li>
-            After 48 h pass without a veto the claim auto-executes — the watcher bot pays the gas so
-            recipients receive wETX without any extra steps. Submitter bond is refunded.
-          </li>
-        </ol>
-        <div className="mt-2 text-white/40">
-          Burning wETX on a remote chain is the same flow in reverse — burn message goes back to
-          Etica, the same 48 h window applies, and ETX is released from the vault to the recipient.
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="flex items-center justify-between text-xs">
+              <span className="uppercase tracking-wider text-white/40">Bridge flow monitor</span>
+              <span className="text-fuchsia-200">live relay</span>
+            </div>
+            <div className="mt-4 flex h-36 items-end gap-2 rounded-xl border border-white/10 bg-black/30 p-3">
+              {FLOW_BARS.map((height, index) => (
+                <div key={index} className="flex flex-1 flex-col items-center justify-end gap-1">
+                  <span className="w-full rounded-t bg-fuchsia-300/70" style={{ height }} />
+                  <span className="h-1 w-full rounded bg-white/15" />
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {BRIDGE_STATS.map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
+                  <div className="mt-1 text-xs font-medium text-white/80">{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[0.7fr_1fr] lg:items-start">
+        <aside className="space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-5">
+            <div className="text-xs uppercase tracking-wider text-white/40">Bridge mechanics</div>
+            <div className="mt-4 space-y-3">
+              <InfoCard title="No LP model" body="Bridge flow locks native ETX and mints wrapped ETX instead of depending on external liquidity providers." />
+              <InfoCard title="Optimistic veto" body="Claims enter a 48h challenge window where operator or community fraud proofs can veto invalid bridge execution." />
+              <InfoCard title="Automatic completion" body="After the challenge period expires without veto, watcher bots finalize the claim and refund submitter bonds." />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-white/50">
+            <div className="font-medium text-white/70">Deposit flow</div>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 leading-5">
+              <li>Deposit ETX into BridgeVault on Etica.</li>
+              <li>Hyperlane relays the bridge message cross-chain.</li>
+              <li>Submitter posts claim bond and enters challenge period.</li>
+              <li>Claim auto-executes after the veto window expires.</li>
+            </ol>
+          </div>
+        </aside>
+
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-fuchsia-400/20 bg-white/[0.03] p-3 shadow-xl shadow-fuchsia-950/20">
+            <BridgeStatusBoard />
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
+            <BridgeFlowsCard />
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
+            <BridgeParamsTable />
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
+            <BridgeAddressBook />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function InfoCard({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+      <div className="text-sm font-semibold text-white">{title}</div>
+      <p className="mt-2 text-xs leading-5 text-white/55">{body}</p>
     </div>
   );
 }
