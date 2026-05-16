@@ -14,41 +14,22 @@ import {
   TREASURY_ADDRESS,
   eticaMainnet,
 } from '@etica-hub/shared';
+import treasuryAutoBuyerArtifact from '@/lib/treasury-autobuyer-artifact.json';
 
 const BURN_WALLET = '0x000000000000000000000000000000000000dEaD' as Address;
 const ADMIN_ADDRESS = (
   process.env.NEXT_PUBLIC_TREASURY_DEPLOYER_ADMIN_ADDRESS ?? TREASURY_ADDRESS
 ) as Address;
 
-const DEFAULT_ABI = `[
-  {
-    "inputs": [
-      {"internalType":"address","name":"treasury_","type":"address"},
-      {"internalType":"address","name":"burnWallet_","type":"address"},
-      {"internalType":"address","name":"router_","type":"address"},
-      {"internalType":"address","name":"stetxVault_","type":"address"},
-      {"internalType":"address","name":"eti_","type":"address"},
-      {"internalType":"address","name":"egaz_","type":"address"},
-      {"internalType":"address","name":"stetx_","type":"address"},
-      {"internalType":"uint256","name":"intervalSeconds_","type":"uint256"},
-      {"internalType":"uint256","name":"maxSlippageBps_","type":"uint256"}
-    ],
-    "stateMutability":"nonpayable",
-    "type":"constructor"
-  }
-]`;
-
 const prefill = {
+  owner: ADMIN_ADDRESS,
   treasury: TREASURY_ADDRESS,
   burnWallet: BURN_WALLET,
   router: DEPLOYMENTS[61803].swapRouter,
-  stetxVault: DEPLOYMENTS[61803].stakedETX,
   etx: DEPLOYMENTS[61803].etx,
   eti: EXTERNAL_ADDRESSES[61803].eti,
   egaz: DEPLOYMENTS[61803].wegaz,
   stetx: DEPLOYMENTS[61803].stakedETX,
-  intervalSeconds: '2700',
-  slippageBps: '300',
 };
 
 function HiddenLanding() {
@@ -68,15 +49,22 @@ function HiddenLanding() {
 export default function TreasuryDeployerPage() {
   const [connected, setConnected] = useState('');
   const [status, setStatus] = useState('Ready.');
-  const [abiText, setAbiText] = useState(DEFAULT_ABI);
-  const [bytecode, setBytecode] = useState('');
   const [form, setForm] = useState(prefill);
+  const [deployedAddress, setDeployedAddress] = useState('');
 
   const isUnlocked = useMemo(() => {
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
     return params.get('deployer') === '1' || window.location.hash === '#deployer';
   }, []);
+
+  const artifactReady =
+    typeof treasuryAutoBuyerArtifact.bytecode === 'string' &&
+    treasuryAutoBuyerArtifact.bytecode.startsWith('0x') &&
+    treasuryAutoBuyerArtifact.bytecode.length > 10;
+
+  const gelatoAddress = deployedAddress || '0x_DEPLOYED_TREASURY_AUTOBUYER_ADDRESS';
+  const gelatoConfig = `Gelato Automate task\n\nNetwork: Etica Mainnet\nChain ID: 61803\nTask type: Resolver / checker task\nTarget contract: ${gelatoAddress}\nResolver contract: ${gelatoAddress}\nResolver function: checker()\nExecution function: executeCycle((uint256,uint256,uint256,uint256,uint256))\nExecution calldata source: returned by checker()\nInterval: resolver-driven; contract enforces 45 minutes\n\nBefore activating:\n1. Treasury approves ETX to ${gelatoAddress}\n2. Owner calls unpause()\n3. Run canExecute() and confirm true`;
 
   function log(message: string) {
     setStatus((current) => `${current}\n${message}`);
@@ -89,6 +77,11 @@ export default function TreasuryDeployerPage() {
   function assertAddress(value: string, label: string): Address {
     if (!isAddress(value)) throw new Error(`${label} is not a valid address.`);
     return value as Address;
+  }
+
+  async function copyGelatoConfig() {
+    await navigator.clipboard.writeText(gelatoConfig);
+    log('Copied Gelato task config.');
   }
 
   async function getWalletClient() {
@@ -152,33 +145,32 @@ export default function TreasuryDeployerPage() {
       setStatus('Starting deploy checks...');
       const client = await getWalletClient();
 
+      if (!artifactReady) {
+        throw new Error(
+          'TreasuryAutoBuyer artifact is not built yet. Run the GitHub Actions artifact workflow or wait for it to commit real bytecode.',
+        );
+      }
+
+      const owner = assertAddress(form.owner, 'Owner/admin wallet');
       const treasury = assertAddress(form.treasury, 'Treasury wallet');
       const burnWallet = assertAddress(form.burnWallet, 'Burn wallet');
-      const router = assertAddress(form.router, 'Router');
-      const stetxVault = assertAddress(form.stetxVault, 'stETX vault');
+      const etx = assertAddress(form.etx, 'ETX token');
       const eti = assertAddress(form.eti, 'ETI token');
       const egaz = assertAddress(form.egaz, 'Wrapped EGAZ');
       const stetx = assertAddress(form.stetx, 'stETX token');
+      const router = assertAddress(form.router, 'Router');
 
-      const interval = BigInt(form.intervalSeconds);
-      const slippageBps = BigInt(form.slippageBps);
-      if (interval !== 2700n) throw new Error('Interval must be 2700 seconds.');
-      if (slippageBps > 1000n) throw new Error('Slippage over 10% is blocked.');
-      if (!bytecode.startsWith('0x') || bytecode.length < 10) {
-        throw new Error('Paste the compiled contract bytecode first.');
-      }
-
-      const abi = JSON.parse(abiText);
       log('Submitting deployment transaction...');
 
       const hash: Hash = await client.deployContract({
-        abi,
-        bytecode: bytecode as `0x${string}`,
-        args: [treasury, burnWallet, router, stetxVault, eti, egaz, stetx, interval, slippageBps],
+        abi: treasuryAutoBuyerArtifact.abi,
+        bytecode: treasuryAutoBuyerArtifact.bytecode as `0x${string}`,
+        args: [owner, treasury, burnWallet, etx, eti, egaz, stetx, router],
       });
 
       log(`Deploy transaction sent: ${hash}`);
-      log('Open the transaction in your Etica explorer and wait for confirmation.');
+      log('Waiting for transaction receipt in wallet/provider...');
+      log('After confirmation, paste the deployed address below if the wallet does not auto-fill it.');
     } catch (error: any) {
       log(`ERROR: ${error?.message ?? String(error)}`);
     }
@@ -196,7 +188,7 @@ export default function TreasuryDeployerPage() {
               Treasury AutoBuyer Deploy
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-              Prefilled from EticaHub status constants. Only the configured admin wallet can deploy from this UI.
+              Deploys the Gelato-ready TreasuryAutoBuyer using the compiled artifact in the EticaHub repo.
             </p>
           </div>
           <button
@@ -207,40 +199,30 @@ export default function TreasuryDeployerPage() {
           </button>
         </div>
 
+        {!artifactReady ? (
+          <div className="mt-6 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
+            TreasuryAutoBuyer artifact is not built yet. The GitHub Actions workflow must replace the artifact shell with real bytecode before deployment.
+          </div>
+        ) : null}
+
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <Field label="Connected wallet" value={connected || 'Not connected'} readOnly />
-          <Field label="Admin wallet" value={ADMIN_ADDRESS} readOnly />
+          <Field label="Owner/admin wallet" value={form.owner} onChange={(v) => setField('owner', v)} />
           <Field label="ETX treasury wallet" value={form.treasury} onChange={(v) => setField('treasury', v)} />
           <Field label="Burn wallet" value={form.burnWallet} onChange={(v) => setField('burnWallet', v)} />
           <Field label="Router" value={form.router} onChange={(v) => setField('router', v)} />
-          <Field label="stETX vault / v3" value={form.stetxVault} onChange={(v) => setField('stetxVault', v)} />
           <Field label="ETX token" value={form.etx} onChange={(v) => setField('etx', v)} />
           <Field label="ETI token" value={form.eti} onChange={(v) => setField('eti', v)} />
           <Field label="Wrapped EGAZ" value={form.egaz} onChange={(v) => setField('egaz', v)} />
-          <Field label="stETX token" value={form.stetx} onChange={(v) => setField('stetx', v)} />
-          <Field label="Cycle interval seconds" value={form.intervalSeconds} onChange={(v) => setField('intervalSeconds', v)} />
-          <Field label="Max slippage bps" value={form.slippageBps} onChange={(v) => setField('slippageBps', v)} />
+          <Field label="stETX token / v3" value={form.stetx} onChange={(v) => setField('stetx', v)} />
+          <Field label="Artifact" value={artifactReady ? 'Ready: ABI + bytecode loaded' : 'Missing bytecode'} readOnly />
         </div>
-
-        <label className="mt-6 block text-sm font-bold text-slate-200">Contract ABI JSON</label>
-        <textarea
-          value={abiText}
-          onChange={(event) => setAbiText(event.target.value)}
-          className="mt-2 h-44 w-full rounded-2xl border border-white/10 bg-slate-950 p-4 font-mono text-xs text-slate-100 outline-none focus:border-emerald-300"
-        />
-
-        <label className="mt-6 block text-sm font-bold text-slate-200">Compiled contract bytecode</label>
-        <textarea
-          value={bytecode}
-          onChange={(event) => setBytecode(event.target.value)}
-          placeholder="0x..."
-          className="mt-2 h-32 w-full rounded-2xl border border-white/10 bg-slate-950 p-4 font-mono text-xs text-slate-100 outline-none focus:border-emerald-300"
-        />
 
         <div className="mt-6 flex flex-wrap gap-3">
           <button
             onClick={deploy}
-            className="rounded-xl bg-blue-500 px-5 py-3 text-sm font-black text-white hover:bg-blue-400"
+            disabled={!artifactReady}
+            className="rounded-xl bg-blue-500 px-5 py-3 text-sm font-black text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Deploy contract
           </button>
@@ -251,6 +233,45 @@ export default function TreasuryDeployerPage() {
             Clear status
           </button>
         </div>
+
+        <section className="mt-8 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-emerald-200">Gelato</p>
+              <h2 className="mt-2 text-2xl font-black">Register automation task</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-emerald-50/80">
+                After deployment, approve ETX from treasury, unpause the contract, then create a Gelato resolver task using the values below.
+              </p>
+            </div>
+            <a
+              href="https://app.gelato.network/"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-xl bg-emerald-400 px-5 py-3 text-center text-sm font-black text-slate-950 hover:bg-emerald-300"
+            >
+              Open Gelato
+            </a>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <Field label="Deployed TreasuryAutoBuyer" value={deployedAddress} onChange={setDeployedAddress} />
+            <Field label="Chain ID" value="61803" readOnly />
+            <Field label="Target contract" value={gelatoAddress} readOnly />
+            <Field label="Resolver contract" value={gelatoAddress} readOnly />
+            <Field label="Resolver function" value="checker()" readOnly />
+            <Field label="Execution source" value="execPayload returned by checker()" readOnly />
+          </div>
+
+          <pre className="mt-5 whitespace-pre-wrap rounded-2xl bg-black/70 p-4 text-xs leading-5 text-emerald-100">
+            {gelatoConfig}
+          </pre>
+          <button
+            onClick={copyGelatoConfig}
+            className="mt-4 rounded-xl bg-white/10 px-5 py-3 text-sm font-black text-white hover:bg-white/15"
+          >
+            Copy Gelato config
+          </button>
+        </section>
 
         <pre className="mt-6 min-h-28 whitespace-pre-wrap rounded-2xl bg-black p-4 text-xs leading-5 text-emerald-200">
           {status}
