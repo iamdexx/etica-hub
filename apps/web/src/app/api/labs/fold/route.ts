@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const HF_URL = 'https://api-inference.huggingface.co/models/facebook/esmfold_v1';
+const HF_URL = 'https://router.huggingface.co/hf-inference/models/facebook/esmfold_v1';
 const AMINO_ACIDS = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
 const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
 
@@ -15,6 +15,10 @@ function json(data: unknown, init?: ResponseInit): Response {
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function looksLikePdb(payload: string): boolean {
+  return payload.includes('ATOM') || payload.includes('HEADER') || payload.includes('MODEL');
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -28,6 +32,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   let body: { sequence?: unknown };
+
   try {
     body = (await req.json()) as { sequence?: unknown };
   } catch {
@@ -75,23 +80,22 @@ export async function POST(req: NextRequest): Promise<Response> {
       cache: 'no-store',
     });
 
-    if (response.ok) {
-      const pdb = await response.text();
+    const text = await response.text();
 
+    if (response.ok && looksLikePdb(text)) {
       return json(
         {
-          pdb,
+          pdb: text,
           sequence,
-          provider: 'huggingface-esmfold',
+          provider: 'huggingface-esmfold-router',
         },
         { headers: limit.headers },
       );
     }
 
-    const text = await response.text();
-    lastError = text.slice(0, 500);
+    lastError = text.slice(0, 1200);
 
-    if (RETRYABLE_STATUS.has(response.status)) {
+    if (RETRYABLE_STATUS.has(response.status) || !looksLikePdb(text)) {
       const delay = Math.min(20000, 2500 * (attempt + 1));
       await sleep(delay);
       continue;
