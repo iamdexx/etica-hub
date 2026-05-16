@@ -24,13 +24,18 @@ export interface TelemetrySnapshot {
       voters: number | null;
       state: string;
     };
+    network: {
+      latestBlock: number | null;
+      rpcHealthy: boolean;
+      state: string;
+    };
   };
 }
 
 const PUBLIC_RPC =
   process.env.NEXT_PUBLIC_ETICA_RPC_URL ?? 'https://eticamainnet.eticascan.org';
 
-async function rpcHealthcheck(): Promise<boolean> {
+async function fetchLatestBlock(): Promise<number | null> {
   try {
     const response = await fetch(PUBLIC_RPC, {
       method: 'POST',
@@ -46,14 +51,25 @@ async function rpcHealthcheck(): Promise<boolean> {
       cache: 'no-store',
     });
 
-    return response.ok;
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json();
+
+    if (!payload?.result) {
+      return null;
+    }
+
+    return parseInt(payload.result, 16);
   } catch {
-    return false;
+    return null;
   }
 }
 
 export async function buildTelemetrySnapshot(): Promise<TelemetrySnapshot> {
-  const rpcHealthy = await rpcHealthcheck();
+  const latestBlock = await fetchLatestBlock();
+  const rpcHealthy = latestBlock !== null;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -80,6 +96,11 @@ export async function buildTelemetrySnapshot(): Promise<TelemetrySnapshot> {
         proposals: null,
         voters: null,
         state: rpcHealthy ? 'rpc-connected' : 'coming-soon',
+      },
+      network: {
+        latestBlock,
+        rpcHealthy,
+        state: rpcHealthy ? 'live' : 'offline',
       },
     },
   };
