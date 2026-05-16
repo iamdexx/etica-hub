@@ -1,0 +1,80 @@
+import type { ReactNode } from 'react';
+import { cn } from '@/lib/utils';
+
+type Tone = 'default' | 'emerald' | 'amber' | 'sky' | 'cyan' | 'indigo' | 'lime' | 'fuchsia' | 'rose';
+
+const toneClasses: Record<Tone, string> = {
+  default: 'border-white/10 bg-white/[0.03]',
+  emerald: 'border-emerald-400/20 bg-emerald-400/[0.06]',
+  amber: 'border-amber-400/20 bg-amber-400/[0.06]',
+  sky: 'border-sky-400/20 bg-sky-400/[0.06]',
+  cyan: 'border-cyan-400/20 bg-cyan-400/[0.06]',
+  indigo: 'border-indigo-400/20 bg-indigo-400/[0.06]',
+  lime: 'border-lime-400/20 bg-lime-400/[0.06]',
+  fuchsia: 'border-fuchsia-400/20 bg-fuchsia-400/[0.06]',
+  rose: 'border-rose-400/20 bg-rose-400/[0.06]',
+};
+
+export interface TelemetryMetric {
+  label: string;
+  value: ReactNode;
+  detail?: ReactNode;
+  tone?: Tone;
+}
+
+export function MetricCard({ label, value, detail, tone = 'default' }: TelemetryMetric) {
+  return (
+    <div className={cn('rounded-xl border p-3', toneClasses[tone])}>
+      <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-white/85">{value}</div>
+      {detail ? <div className="mt-1 text-[11px] leading-4 text-white/45">{detail}</div> : null}
+    </div>
+  );
+}
+
+export function MetricGrid({ metrics, className }: { metrics: TelemetryMetric[]; className?: string }) {
+  return (
+    <div className={cn('grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2', className)}>
+      {metrics.map((metric) => (
+        <MetricCard key={metric.label} {...metric} />
+      ))}
+    </div>
+  );
+}
+
+export function TelemetrySection({
+  title,
+  badge,
+  description,
+  metrics,
+  className,
+}: {
+  title: string;
+  badge?: ReactNode;
+  description?: ReactNode;
+  metrics: TelemetryMetric[];
+  className?: string;
+}) {
+  return (
+    <div className={cn('rounded-2xl border border-white/10 bg-black/25 p-4', className)}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs uppercase tracking-wider text-white/40">{title}</div>
+        {badge ? <div>{badge}</div> : null}
+      </div>
+      <MetricGrid metrics={metrics} className="mt-3" />
+      {description ? <p className="mt-3 text-xs leading-5 text-white/45">{description}</p> : null}
+    </div>
+  );
+}
+
+export function SourceBadge({ children, tone = 'default' }: { children: ReactNode; tone?: Tone }) {
+  return (
+    <span className={cn('rounded-full border px-2.5 py-1 text-xs text-white/75', toneClasses[tone])}>
+      {children}
+    </span>
+  );
+}
+
+export function UnavailableMetric({ reason = 'requires indexer' }: { reason?: string }) {
+  return <span className="text-white/45">{reason}</span>;
+}
