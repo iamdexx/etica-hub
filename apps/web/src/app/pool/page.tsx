@@ -3,15 +3,16 @@ import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
 import { PoolAddCard } from '@/components/pool/PoolAddCard';
 import { PoolPositionsList } from '@/components/pool/PoolPositionsList';
 import { PoolStableSwapCard } from '@/components/pool/PoolStableSwapCard';
+import { TelemetrySection, SourceBadge } from '@/components/telemetry/TelemetryCards';
 import { getServerGeoRestricted } from '@/lib/geoBlockServer';
 
 export const metadata = { title: 'Pool · EticaHub' };
 
 const POOL_STATS = [
-  ['Factory rule', 'ETX hub pairs'],
-  ['V2 LP fee', '0.25% to LPs'],
-  ['Stable fee', '0.04%'],
-  ['New pool cost', '10,000 ETX'],
+  { label: 'Factory rule', value: 'ETX hub pairs', detail: 'Non-ETX public pairs rejected', tone: 'cyan' as const },
+  { label: 'V2 LP fee', value: '0.25% to LPs', detail: 'Protocol fee model' },
+  { label: 'Stable fee', value: '0.04%', detail: 'stETX/ETX stable path' },
+  { label: 'New pool cost', value: '10,000 ETX', detail: 'Treasury creation fee' },
 ];
 
 export default function PoolPage() {
@@ -38,20 +39,12 @@ export default function PoolPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-            <div className="text-xs uppercase tracking-wider text-white/40">Pool summary</div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
-              {POOL_STATS.map(([label, value]) => (
-                <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
-                  <div className="mt-1 text-xs font-medium text-white/80">{value}</div>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-xs leading-5 text-white/45">
-              These are protocol rules and fee parameters. Live pool activity is shown in the volume module and position panels below.
-            </p>
-          </div>
+          <TelemetrySection
+            title="Pool telemetry"
+            badge={<SourceBadge tone="cyan">config + live volume</SourceBadge>}
+            metrics={POOL_STATS}
+            description="Protocol configuration is shown here. Live pool turnover and swap counts come from the 24h market volume module below."
+          />
         </div>
       </section>
 
