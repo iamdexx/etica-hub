@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from './ConnectButton';
@@ -50,9 +51,20 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-[#020806]/88 backdrop-blur-md supports-[backdrop-filter]:bg-[#020806]/72">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-2 px-3 py-2.5 sm:px-4 md:gap-3 md:px-5 md:py-3">
-        <Link href="/" className="flex min-w-0 items-center gap-2">
-          <span className="inline-block h-5 w-5 shrink-0 rounded-full bg-brand-accent" />
+        <Link href="/" className="flex min-w-0 items-center gap-3">
+          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-cyan-300/20 bg-[#0a2940] shadow-[0_0_20px_rgba(103,232,249,0.12)]">
+            <Image
+              src="/etica-logo-circle.png"
+              alt="EticaHub logo"
+              fill
+              sizes="40px"
+              className="object-cover"
+              priority
+            />
+          </div>
+
           <span className="truncate text-base font-semibold tracking-tight sm:text-lg">EticaHub</span>
+
           <span className="hidden rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300 sm:inline">
             live · mainnet
           </span>
