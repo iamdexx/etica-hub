@@ -1,0 +1,54 @@
+name: Build TreasuryAutoBuyer Artifact
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/contracts/src/etx/TreasuryAutoBuyer.sol'
+      - '.github/workflows/build-treasury-autobuyer-artifact.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Build contracts
+        working-directory: packages/contracts
+        run: forge build
+
+      - name: Export TreasuryAutoBuyer artifact for web deployer
+        run: |
+          jq '{
+            contractName: .contractName,
+            version: "0.8.26",
+            abi: .abi,
+            bytecode: .bytecode.object
+          }' \
+            packages/contracts/out/TreasuryAutoBuyer.sol/TreasuryAutoBuyer.json \
+            > apps/web/src/lib/treasury-autobuyer-artifact.json
+
+      - name: Commit artifact if changed
+        run: |
+          if git diff --quiet -- apps/web/src/lib/treasury-autobuyer-artifact.json; then
+            echo "No artifact changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/src/lib/treasury-autobuyer-artifact.json
+          git commit -m "Build TreasuryAutoBuyer deploy artifact"
+          git push
