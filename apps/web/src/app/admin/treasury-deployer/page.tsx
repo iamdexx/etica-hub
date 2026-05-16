@@ -17,6 +17,7 @@ import {
 import treasuryAutoBuyerArtifact from '@/lib/treasury-autobuyer-artifact.json';
 
 const BURN_WALLET = '0x000000000000000000000000000000000000dEaD' as Address;
+const TREASURY_KEEPER_ADDRESS = '0x195D37D2Aad52D63AcC4C6Ee22B9893f6CdACc2f' as Address;
 const ADMIN_ADDRESS = (
   process.env.NEXT_PUBLIC_TREASURY_DEPLOYER_ADMIN_ADDRESS ?? TREASURY_ADDRESS
 ) as Address;
@@ -24,6 +25,7 @@ const ADMIN_ADDRESS = (
 const prefill = {
   owner: ADMIN_ADDRESS,
   treasury: TREASURY_ADDRESS,
+  keeper: TREASURY_KEEPER_ADDRESS,
   burnWallet: BURN_WALLET,
   router: DEPLOYMENTS[61803].swapRouter,
   etx: DEPLOYMENTS[61803].etx,
@@ -63,8 +65,8 @@ export default function TreasuryDeployerPage() {
     treasuryAutoBuyerArtifact.bytecode.startsWith('0x') &&
     treasuryAutoBuyerArtifact.bytecode.length > 10;
 
-  const gelatoAddress = deployedAddress || '0x_DEPLOYED_TREASURY_AUTOBUYER_ADDRESS';
-  const gelatoConfig = `Gelato Automate task\n\nNetwork: Etica Mainnet\nChain ID: 61803\nTask type: Resolver / checker task\nTarget contract: ${gelatoAddress}\nResolver contract: ${gelatoAddress}\nResolver function: checker()\nExecution function: executeCycle((uint256,uint256,uint256,uint256,uint256))\nExecution calldata source: returned by checker()\nInterval: resolver-driven; contract enforces 45 minutes\n\nBefore activating:\n1. Treasury approves ETX to ${gelatoAddress}\n2. Owner calls unpause()\n3. Run canExecute() and confirm true`;
+  const autobuyerAddress = deployedAddress || '0x_DEPLOYED_TREASURY_AUTOBUYER_ADDRESS';
+  const cronConfig = `Treasury AutoBuyer cron setup\n\nNetwork: Etica Mainnet\nChain ID: 61803\nAutoBuyer contract: ${autobuyerAddress}\nKeeper wallet: ${form.keeper}\nKeeper role: calls executeCycle() only\nKeeper reimbursement: native EGAZ only\nGas behavior: keeper reward is intentionally above expected gas so the keeper EGAZ balance should slowly increase over time\nDefault keeper reward: 0.05% of each cycle budget\nMax keeper reward cap: 0.5% of each cycle budget\n\nCron env values to set after deployment:\nAUTOBUYER_ADDRESS=${autobuyerAddress}\nAUTOBUYER_KEEPER_ADDRESS=${form.keeper}\nAUTOBUYER_RPC_URL=https://eticamainnet.eticascan.org\nAUTOBUYER_DRY_RUN=false\n\nSecret value you add yourself, never in chat:\nAUTOBUYER_PRIVATE_KEY=<private key for ${form.keeper}>\n\nTreasury safety:\n- never use the treasury private key for cron\n- keeper receives only native EGAZ reimbursement\n- all ETX, ETI, WEGAZ, and stETX dust returns to treasury\n- LP is minted directly to the burn wallet`;
 
   function log(message: string) {
     setStatus((current) => `${current}\n${message}`);
@@ -79,9 +81,9 @@ export default function TreasuryDeployerPage() {
     return value as Address;
   }
 
-  async function copyGelatoConfig() {
-    await navigator.clipboard.writeText(gelatoConfig);
-    log('Copied Gelato task config.');
+  async function copyCronConfig() {
+    await navigator.clipboard.writeText(cronConfig);
+    log('Copied keeper cron setup.');
   }
 
   async function getWalletClient() {
@@ -147,7 +149,7 @@ export default function TreasuryDeployerPage() {
 
       if (!artifactReady) {
         throw new Error(
-          'TreasuryAutoBuyer artifact is not built yet. Run the GitHub Actions artifact workflow or wait for it to commit real bytecode.',
+          'TreasuryAutoBuyer artifact is not built yet. The artifact workflow must commit real bytecode before deployment.',
         );
       }
 
@@ -159,6 +161,7 @@ export default function TreasuryDeployerPage() {
       const egaz = assertAddress(form.egaz, 'Wrapped EGAZ');
       const stetx = assertAddress(form.stetx, 'stETX token');
       const router = assertAddress(form.router, 'Router');
+      assertAddress(form.keeper, 'Keeper wallet');
 
       log('Submitting deployment transaction...');
 
@@ -169,8 +172,7 @@ export default function TreasuryDeployerPage() {
       });
 
       log(`Deploy transaction sent: ${hash}`);
-      log('Waiting for transaction receipt in wallet/provider...');
-      log('After confirmation, paste the deployed address below if the wallet does not auto-fill it.');
+      log('After confirmation, paste the deployed contract address into the AutoBuyer field below.');
     } catch (error: any) {
       log(`ERROR: ${error?.message ?? String(error)}`);
     }
@@ -188,7 +190,7 @@ export default function TreasuryDeployerPage() {
               Treasury AutoBuyer Deploy
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-              Deploys the Gelato-ready TreasuryAutoBuyer using the compiled artifact in the EticaHub repo.
+              Deploys the cron-ready TreasuryAutoBuyer. The keeper wallet is prefilled and receives only native EGAZ gas reimbursement.
             </p>
           </div>
           <button
@@ -201,7 +203,7 @@ export default function TreasuryDeployerPage() {
 
         {!artifactReady ? (
           <div className="mt-6 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
-            TreasuryAutoBuyer artifact is not built yet. The GitHub Actions workflow must replace the artifact shell with real bytecode before deployment.
+            TreasuryAutoBuyer artifact is not built yet. The artifact workflow must replace the artifact shell with real bytecode before deployment.
           </div>
         ) : null}
 
@@ -209,6 +211,7 @@ export default function TreasuryDeployerPage() {
           <Field label="Connected wallet" value={connected || 'Not connected'} readOnly />
           <Field label="Owner/admin wallet" value={form.owner} onChange={(v) => setField('owner', v)} />
           <Field label="ETX treasury wallet" value={form.treasury} onChange={(v) => setField('treasury', v)} />
+          <Field label="Keeper wallet" value={form.keeper} onChange={(v) => setField('keeper', v)} />
           <Field label="Burn wallet" value={form.burnWallet} onChange={(v) => setField('burnWallet', v)} />
           <Field label="Router" value={form.router} onChange={(v) => setField('router', v)} />
           <Field label="ETX token" value={form.etx} onChange={(v) => setField('etx', v)} />
@@ -237,39 +240,29 @@ export default function TreasuryDeployerPage() {
         <section className="mt-8 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-emerald-200">Gelato</p>
-              <h2 className="mt-2 text-2xl font-black">Register automation task</h2>
+              <p className="text-xs uppercase tracking-[0.35em] text-emerald-200">Keeper cron</p>
+              <h2 className="mt-2 text-2xl font-black">Automation setup</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-emerald-50/80">
-                After deployment, approve ETX from treasury, unpause the contract, then create a Gelato resolver task using the values below.
+                The keeper address is prefilled. The contract reimburses successful calls in native EGAZ, with the reward set to slowly increase the keeper gas balance over time.
               </p>
             </div>
-            <a
-              href="https://app.gelato.network/"
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-xl bg-emerald-400 px-5 py-3 text-center text-sm font-black text-slate-950 hover:bg-emerald-300"
-            >
-              Open Gelato
-            </a>
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <Field label="Deployed TreasuryAutoBuyer" value={deployedAddress} onChange={setDeployedAddress} />
+            <Field label="Deployed AutoBuyer" value={deployedAddress} onChange={setDeployedAddress} />
             <Field label="Chain ID" value="61803" readOnly />
-            <Field label="Target contract" value={gelatoAddress} readOnly />
-            <Field label="Resolver contract" value={gelatoAddress} readOnly />
-            <Field label="Resolver function" value="checker()" readOnly />
-            <Field label="Execution source" value="execPayload returned by checker()" readOnly />
+            <Field label="Keeper wallet" value={form.keeper} readOnly />
+            <Field label="Keeper reward" value="Native EGAZ, slowly gas-positive" readOnly />
           </div>
 
           <pre className="mt-5 whitespace-pre-wrap rounded-2xl bg-black/70 p-4 text-xs leading-5 text-emerald-100">
-            {gelatoConfig}
+            {cronConfig}
           </pre>
           <button
-            onClick={copyGelatoConfig}
+            onClick={copyCronConfig}
             className="mt-4 rounded-xl bg-white/10 px-5 py-3 text-sm font-black text-white hover:bg-white/15"
           >
-            Copy Gelato config
+            Copy keeper cron setup
           </button>
         </section>
 
