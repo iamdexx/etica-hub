@@ -6,6 +6,7 @@ import {
   StatusLiquidityFlowCard,
   StatusRevenueCard,
 } from '@/components/StatusRevenueCards';
+import { SourceBadge, TelemetrySection } from '@/components/telemetry/TelemetryCards';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -17,10 +18,27 @@ export const metadata: Metadata = {
 };
 
 const STATUS_STATS = [
-  ['Network', 'Etica 61803'],
-  ['Mode', 'Live RPC'],
-  ['Scope', 'Core v1'],
-  ['Cache', 'No build cache'],
+  {
+    label: 'Network',
+    value: 'Etica 61803',
+    detail: 'Primary execution chain',
+    tone: 'emerald' as const,
+  },
+  {
+    label: 'Mode',
+    value: 'Live RPC',
+    detail: 'Direct on-chain reads',
+  },
+  {
+    label: 'Scope',
+    value: 'Core v1',
+    detail: 'Mainnet deployment diagnostics',
+  },
+  {
+    label: 'Cache',
+    value: 'No build cache',
+    detail: 'force-dynamic + revalidate=0',
+  },
 ];
 
 export default function StatusPage() {
@@ -36,7 +54,7 @@ export default function StatusPage() {
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">EticaHub health, live from chain.</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Live, wallet-less diagnostics for EticaHub v1 contracts, pools, reserves, revenue flow, and liquidity routing on Etica Mainnet.
+                Live wallet-less diagnostics for EticaHub v1 contracts, reserves, pools, liquidity routes, revenue flow, and runtime health across the Etica execution layer.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
@@ -46,23 +64,12 @@ export default function StatusPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs uppercase tracking-wider text-white/40">System summary</div>
-              <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-xs text-emerald-100">force dynamic</span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
-              {STATUS_STATS.map(([label, value]) => (
-                <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
-                  <div className="mt-1 text-xs font-medium text-white/80">{value}</div>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-xs leading-5 text-white/45">
-              These are runtime and deployment properties. Live RPC diagnostics and liquidity state are shown in the modules below.
-            </p>
-          </div>
+          <TelemetrySection
+            title="System telemetry"
+            badge={<SourceBadge tone="emerald">live diagnostics</SourceBadge>}
+            metrics={STATUS_STATS}
+            description="Status diagnostics are intentionally force-dynamic to prevent stale build-time telemetry. Revenue, reserve, and liquidity diagnostics are rendered live in the modules below."
+          />
         </div>
       </section>
 
@@ -89,6 +96,7 @@ export default function StatusPage() {
               <StatusLiquidityFlowCard />
             </div>
           </div>
+
           <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
             <StatusPanel />
           </div>
