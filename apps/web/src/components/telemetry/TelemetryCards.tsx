@@ -1,7 +1,16 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-type Tone = 'default' | 'emerald' | 'amber' | 'sky' | 'cyan' | 'indigo' | 'lime' | 'fuchsia' | 'rose';
+type Tone =
+  | 'default'
+  | 'emerald'
+  | 'amber'
+  | 'sky'
+  | 'cyan'
+  | 'indigo'
+  | 'lime'
+  | 'fuchsia'
+  | 'rose';
 
 const toneClasses: Record<Tone, string> = {
   default: 'border-white/10 bg-white/[0.03]',
@@ -24,17 +33,27 @@ export interface TelemetryMetric {
 
 export function MetricCard({ label, value, detail, tone = 'default' }: TelemetryMetric) {
   return (
-    <div className={cn('rounded-xl border p-3', toneClasses[tone])}>
-      <div className="text-[10px] uppercase tracking-wider text-white/35">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-white/85">{value}</div>
-      {detail ? <div className="mt-1 text-[11px] leading-4 text-white/45">{detail}</div> : null}
+    <div className={cn('rounded-xl border p-3 transition-colors', toneClasses[tone])}>
+      <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">{label}</div>
+      <div className="mt-1.5 text-sm font-semibold leading-5 text-white/90 sm:text-[15px]">
+        {value}
+      </div>
+      {detail ? (
+        <div className="mt-1 text-[11px] leading-4 text-white/45">{detail}</div>
+      ) : null}
     </div>
   );
 }
 
-export function MetricGrid({ metrics, className }: { metrics: TelemetryMetric[]; className?: string }) {
+export function MetricGrid({
+  metrics,
+  className,
+}: {
+  metrics: TelemetryMetric[];
+  className?: string;
+}) {
   return (
-    <div className={cn('grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2', className)}>
+    <div className={cn('grid grid-cols-2 gap-2 lg:grid-cols-2 xl:grid-cols-4', className)}>
       {metrics.map((metric) => (
         <MetricCard key={metric.label} {...metric} />
       ))}
@@ -58,18 +77,33 @@ export function TelemetrySection({
   return (
     <div className={cn('rounded-2xl border border-white/10 bg-black/25 p-4', className)}>
       <div className="flex items-center justify-between gap-3">
-        <div className="text-xs uppercase tracking-wider text-white/40">{title}</div>
+        <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">{title}</div>
         {badge ? <div>{badge}</div> : null}
       </div>
+
       <MetricGrid metrics={metrics} className="mt-3" />
-      {description ? <p className="mt-3 text-xs leading-5 text-white/45">{description}</p> : null}
+
+      {description ? (
+        <p className="mt-3 text-xs leading-5 text-white/45">{description}</p>
+      ) : null}
     </div>
   );
 }
 
-export function SourceBadge({ children, tone = 'default' }: { children: ReactNode; tone?: Tone }) {
+export function SourceBadge({
+  children,
+  tone = 'default',
+}: {
+  children: ReactNode;
+  tone?: Tone;
+}) {
   return (
-    <span className={cn('rounded-full border px-2.5 py-1 text-xs text-white/75', toneClasses[tone])}>
+    <span
+      className={cn(
+        'rounded-full border px-2.5 py-1 text-[11px] tracking-wide text-white/75',
+        toneClasses[tone],
+      )}
+    >
       {children}
     </span>
   );
