@@ -35,6 +35,14 @@ interface IERC4626Like is IERC20 {
 /// @title TreasuryAutoBuyer
 /// @notice Gelato-ready ETX treasury autobuyer.
 ///
+/// Two-signature launch flow:
+///   1. Deploy this contract.
+///   2. Treasury approves this contract for ETX.
+///
+/// The contract is unpaused at deploy so the ETX approval is the activation gate.
+/// Before approval, {canExecute} and {checker} return false, so Gelato cannot run it.
+/// The owner can still pause at any time.
+///
 /// Flow per cycle:
 ///   - Pull 1% of the treasury's current ETX balance via allowance.
 ///   - Split it equally across ETI, WEGAZ, and stETX.
@@ -48,10 +56,6 @@ interface IERC4626Like is IERC20 {
 ///   - {checker} returns the standard canExec + execPayload tuple for resolver tasks.
 ///   - The function remains permissionless; cooldown, allowance, balance checks, pause, and
 ///     slippage limits protect treasury funds regardless of caller.
-///
-/// Required treasury setup:
-///   - Treasury must approve this contract for ETX before cycles can run.
-///   - Owner should keep the contract paused until approvals and Gelato task config are verified.
 contract TreasuryAutoBuyer is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -132,8 +136,6 @@ contract TreasuryAutoBuyer is Ownable, Pausable, ReentrancyGuard {
         intervalSeconds = DEFAULT_INTERVAL;
         spendBps = DEFAULT_SPEND_BPS;
         stEtxRedeemBps = DEFAULT_STETX_REDEEM_BPS;
-
-        _pause();
     }
 
     function canExecute() public view returns (bool) {
