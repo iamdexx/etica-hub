@@ -1,0 +1,37 @@
+{
+  "contractName": "TreasuryAutoBuyer",
+  "version": "0.8.26",
+  "bytecode": "0x",
+  "abi": [
+    {
+      "type": "constructor",
+      "inputs": [
+        { "name": "owner_", "type": "address", "internalType": "address" },
+        { "name": "treasury_", "type": "address", "internalType": "address" },
+        { "name": "burnWallet_", "type": "address", "internalType": "address" },
+        { "name": "etx_", "type": "address", "internalType": "address" },
+        { "name": "eti_", "type": "address", "internalType": "address" },
+        { "name": "egaz_", "type": "address", "internalType": "address" },
+        { "name": "stEtx_", "type": "address", "internalType": "address" },
+        { "name": "router_", "type": "address", "internalType": "address" }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    { "type": "function", "name": "checker", "inputs": [], "outputs": [{ "name": "canExec", "type": "bool" }, { "name": "execPayload", "type": "bytes" }], "stateMutability": "view" },
+    { "type": "function", "name": "canExecute", "inputs": [], "outputs": [{ "name": "", "type": "bool" }], "stateMutability": "view" },
+    { "type": "function", "name": "executeCycle", "inputs": [{ "name": "limits", "type": "tuple", "components": [{ "name": "minEtiOut", "type": "uint256" }, { "name": "minEgazOut", "type": "uint256" }, { "name": "minStEtxOut", "type": "uint256" }, { "name": "minEtiLp", "type": "uint256" }, { "name": "minEgazLp", "type": "uint256" }] }], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "pause", "inputs": [], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "unpause", "inputs": [], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "setSpendBps", "inputs": [{ "name": "newSpendBps", "type": "uint256" }], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "setIntervalSeconds", "inputs": [{ "name": "newIntervalSeconds", "type": "uint256" }], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "setStEtxRedeemBps", "inputs": [{ "name": "newRedeemBps", "type": "uint256" }], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "setBurnWallet", "inputs": [{ "name": "newBurnWallet", "type": "address" }], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "burnWallet", "inputs": [], "outputs": [{ "type": "address" }], "stateMutability": "view" },
+    { "type": "function", "name": "treasury", "inputs": [], "outputs": [{ "type": "address" }], "stateMutability": "view" },
+    { "type": "function", "name": "intervalSeconds", "inputs": [], "outputs": [{ "type": "uint256" }], "stateMutability": "view" },
+    { "type": "function", "name": "spendBps", "inputs": [], "outputs": [{ "type": "uint256" }], "stateMutability": "view" },
+    { "type": "function", "name": "stEtxRedeemBps", "inputs": [], "outputs": [{ "type": "uint256" }], "stateMutability": "view" },
+    { "type": "function", "name": "lastExecutedAt", "inputs": [], "outputs": [{ "type": "uint256" }], "stateMutability": "view" },
+    { "type": "function", "name": "paused", "inputs": [], "outputs": [{ "type": "bool" }], "stateMutability": "view" }
+  ]
+}
