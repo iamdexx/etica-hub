@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { consumeLabsRateLimit } from '@/lib/labs/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,17 +30,29 @@ function normalizeSequence(value: string): string | null {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const limit = await consumeLabsRateLimit(req);
+
+  if (!limit.ok) {
+    return json(limit.body, {
+      status: limit.status,
+      headers: limit.headers,
+    });
+  }
+
   let body: { prompt?: unknown };
   try {
     body = (await req.json()) as { prompt?: unknown };
   } catch {
-    return json({ error: 'Invalid JSON payload.' }, { status: 400 });
+    return json({ error: 'Invalid JSON payload.' }, { status: 400, headers: limit.headers });
   }
 
   const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-  if (!prompt) return json({ error: 'Prompt is required.' }, { status: 400 });
+  if (!prompt) return json({ error: 'Prompt is required.' }, { status: 400, headers: limit.headers });
   if (prompt.length > MAX_PROMPT_CHARS) {
-    return json({ error: `Prompt must be ${MAX_PROMPT_CHARS} characters or fewer.` }, { status: 400 });
+    return json(
+      { error: `Prompt must be ${MAX_PROMPT_CHARS} characters or fewer.` },
+      { status: 400, headers: limit.headers },
+    );
   }
 
   const apiKey = process.env.AIBOT_LLM_GROQ_API_KEY ?? process.env.GROQ_API_KEY;
@@ -53,10 +66,10 @@ export async function POST(req: NextRequest): Promise<Response> {
           error: 'Groq is not configured yet and no raw amino-acid sequence could be extracted.',
           comingSoon: true,
         },
-        { status: 503 },
+        { status: 503, headers: limit.headers },
       );
     }
-    return json({ sequence, provider: 'local-extractor' });
+    return json({ sequence, provider: 'local-extractor' }, { headers: limit.headers });
   }
 
   const controller = new AbortController();
@@ -87,7 +100,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
 
     if (!response.ok) {
-      return json({ error: 'Groq sequence extraction failed.' }, { status: 502 });
+      return json({ error: 'Groq sequence extraction failed.' }, { status: 502, headers: limit.headers });
     }
 
     const payload = (await response.json()) as {
@@ -97,12 +110,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     const sequence = normalizeSequence(raw) ?? normalizeSequence(fallbackExtractSequence(raw) ?? '');
 
     if (!sequence) {
-      return json({ error: 'Could not produce a valid amino-acid sequence.' }, { status: 422 });
+      return json(
+        { error: 'Could not produce a valid amino-acid sequence.' },
+        { status: 422, headers: limit.headers },
+      );
     }
 
-    return json({ sequence, provider: 'groq', model: MODEL });
+    return json({ sequence, provider: 'groq', model: MODEL }, { headers: limit.headers });
   } catch {
-    return json({ error: 'Groq request timed out or failed.' }, { status: 502 });
+    return json({ error: 'Groq request timed out or failed.' }, { status: 502, headers: limit.headers });
   } finally {
     clearTimeout(timeout);
   }
