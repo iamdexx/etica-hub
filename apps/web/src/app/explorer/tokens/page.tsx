@@ -1,8 +1,7 @@
 import Link from 'next/link';
 import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
 import { explorerClient, shortAddress } from '@/lib/explorer';
-import { MarketCandles, demoCandles } from '@/components/MarketCandles';
-import { MarketChartShell, MarketPill, TimeframePills } from '@/components/MarketChartShell';
+import { BrandCandleChartCard } from '@/components/BrandCandleChartCard';
 
 export const revalidate = 0;
 export const dynamic = 'force-dynamic';
@@ -55,6 +54,27 @@ async function readToken(client: ReturnType<typeof explorerClient>, token: Token
   };
 }
 
+async function resolveEtxPair(
+  client: ReturnType<typeof explorerClient>,
+  tokenAddress: `0x${string}`,
+): Promise<`0x${string}` | null> {
+  const d = DEPLOYMENTS[MAINNET_CHAIN_ID];
+  if (!d || !d.swapFactory || d.swapFactory === ZERO) return null;
+  if (!d.etx || d.etx === ZERO) return null;
+  if (tokenAddress.toLowerCase() === d.etx.toLowerCase()) return null;
+  try {
+    const pair = (await client.readContract({
+      abi: abis.factoryAbi,
+      address: d.swapFactory,
+      functionName: 'getPair',
+      args: [tokenAddress, d.etx],
+    })) as `0x${string}`;
+    return pair && pair !== ZERO ? pair : null;
+  } catch {
+    return null;
+  }
+}
+
 function formatSupply(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return '—';
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
@@ -65,8 +85,14 @@ function formatSupply(value: number): string {
 
 export default async function TokensPage() {
   const client = explorerClient();
-  const rows = await Promise.all(knownTokens().map((token) => readToken(client, token)));
-  const primary = rows[0];
+  const tokens = knownTokens();
+  const rows = await Promise.all(tokens.map((token) => readToken(client, token)));
+  // For the headlined chart, prefer the first non-ETX token (so the
+  // user lands on the ETI/ETX market rather than ETX/ETX which doesn't
+  // exist as a pair). Fall back to whatever comes first if everything
+  // is ETX or pair resolution fails.
+  const primary = rows.find((r) => r.symbol !== 'ETX') ?? rows[0];
+  const primaryPair = primary ? await resolveEtxPair(client, primary.address) : null;
 
   return (
     <div className="space-y-6">
@@ -81,7 +107,8 @@ export default async function TokensPage() {
           <div className="text-[11px] uppercase tracking-wider text-emerald-300/75">EticaHub Scan · Assets</div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white md:text-4xl">Tokens</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">
-            Public-RPC-safe token registry for EticaHub assets with lightweight market terminal visuals. Full historical candles can be swapped in once an indexer is online.
+            Public-RPC-safe token registry for EticaHub assets, with a live OHLC chart
+            for the highlighted token&apos;s ETX pair derived directly from on-chain Sync events.
           </p>
         </div>
 
@@ -118,21 +145,20 @@ export default async function TokensPage() {
         </div>
       </section>
 
-      {primary ? (
-        <MarketChartShell
+      {primary && primaryPair ? (
+        <BrandCandleChartCard
+          pair={primaryPair}
           eyebrow="Token market"
-          title={`${primary.symbol} / ETX market structure`}
-          subtitle="Lightweight TradingView-style surface ready for indexed OHLC data."
-          actions={
-            <>
-              <TimeframePills active="24H" />
-              <MarketPill tone="green">{primary.symbol}</MarketPill>
-              <MarketPill>supply {formatSupply(primary.totalSupply)}</MarketPill>
-            </>
+          title={`${primary.symbol} / ETX market`}
+          subtitle="Live OHLC derived from on-chain reserves. Total supply highlighted below."
+          baseSymbol={primary.symbol}
+          quoteSymbol="ETX"
+          rightActions={
+            <span className="rounded-md border border-white/10 bg-white/5 px-2 py-1 font-mono text-[10px] text-white/55">
+              supply {formatSupply(primary.totalSupply)}
+            </span>
           }
-        >
-          <MarketCandles candles={demoCandles(primary.symbol.length)} />
-        </MarketChartShell>
+        />
       ) : null}
     </div>
   );
