@@ -8,6 +8,8 @@
  * surfaces to the UI for the "fold status" panel.
  */
 
+import { createBoltzEngine } from './boltz';
+import { createChai1Engine } from './chai1';
 import { createHuggingFaceEsmFoldEngine } from './hf-esmfold';
 import { createNvidiaEsmFoldEngine } from './nvidia-esmfold';
 import type {
@@ -25,6 +27,8 @@ import type {
 const CASCADE: readonly FoldEngine[] = [
   createHuggingFaceEsmFoldEngine(),
   createNvidiaEsmFoldEngine(),
+  createChai1Engine(),
+  createBoltzEngine(),
 ];
 
 export function listEngines(): FoldEngineDescriptor[] {

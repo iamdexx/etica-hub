@@ -1,34 +1,110 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const MAX_PROMPT_CHARS = 400;
+const AMINO_ACIDS = 'ACDEFGHIKLMNPQRSTVWY';
+
+type EngineDescriptor = {
+  id: string;
+  label: string;
+  model: string;
+  description: string;
+  isConfigured: boolean;
+  requiredEnv: string[];
+};
+
+type FoldAttempt = {
+  engine: string;
+  ok: boolean;
+  error?: string;
+  durationMs: number;
+};
+
+type FoldResponse = {
+  pdb?: string;
+  sequence?: string;
+  engine?: string;
+  attempts?: FoldAttempt[];
+  error?: string;
+};
+
+type ExplainResponse = {
+  analysis?: string;
+  error?: string;
+};
+
+/* ------------------------------------------------------------------ */
+/*  3Dmol viewer (typed locally to avoid external .d.ts)               */
+/* ------------------------------------------------------------------ */
+
+type Viewer3D = {
+  addModel: (data: string, format: string) => void;
+  setStyle: (selector: Record<string, unknown>, style: Record<string, unknown>) => void;
+  zoomTo: () => void;
+  render: () => void;
+  spin: (enabled: boolean) => void;
+};
+
+type Win3Dmol = typeof window & {
+  $3Dmol?: {
+    createViewer: (el: HTMLElement, opts?: Record<string, unknown>) => Viewer3D;
+  };
+};
+
+/* ------------------------------------------------------------------ */
+/*  Page                                                               */
+/* ------------------------------------------------------------------ */
 
 export default function LabsPage() {
+  /* ── refs ── */
   const viewerRef = useRef<HTMLDivElement | null>(null);
-  const [prompt, setPrompt] = useState('Design a stable 40 amino acid peptide beginning with MVL that improves thermal resilience.');
+  const viewerInstanceRef = useRef<Viewer3D | null>(null);
+
+  /* ── prompt + sequence ── */
+  const [prompt, setPrompt] = useState(
+    'Design a stable 40 amino acid peptide beginning with MVL that improves thermal resilience.',
+  );
   const [sequence, setSequence] = useState('');
+
+  /* ── engines ── */
+  const [engines, setEngines] = useState<EngineDescriptor[]>([]);
+  const [selectedEngine, setSelectedEngine] = useState<string>('auto');
+
+  /* ── fold state ── */
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState<'idle' | 'sequence' | 'folding' | 'rendered'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [pdb, setPdb] = useState<string | null>(null);
+  const [foldEngine, setFoldEngine] = useState<string | null>(null);
+  const [attempts, setAttempts] = useState<FoldAttempt[]>([]);
+
+  /* ── AI analysis ── */
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+
+  /* ── mutate ── */
+  const [mutateIdx, setMutateIdx] = useState<number | null>(null);
+  const [mutateAA, setMutateAA] = useState('');
+
+  /* ── share ── */
+  const [copied, setCopied] = useState(false);
 
   const charsRemaining = useMemo(() => MAX_PROMPT_CHARS - prompt.length, [prompt.length]);
 
-  async function renderMolecule(pdbText: string): Promise<void> {
+  /* ── fetch engine roster on mount ── */
+  useEffect(() => {
+    fetch('/api/labs/engines', { cache: 'no-store' })
+      .then((r) => r.json() as Promise<{ engines: EngineDescriptor[] }>)
+      .then((j) => setEngines(j.engines ?? []))
+      .catch(() => {});
+  }, []);
+
+  /* ── 3Dmol render ── */
+  const renderMolecule = useCallback(async (pdbText: string) => {
     if (!viewerRef.current) return;
 
-    const win = window as typeof window & {
-      $3Dmol?: {
-        createViewer: (element: HTMLElement, options?: Record<string, unknown>) => {
-          addModel: (data: string, format: string) => void;
-          setStyle: (selector: Record<string, unknown>, style: Record<string, unknown>) => void;
-          zoomTo: () => void;
-          render: () => void;
-          spin: (enabled: boolean) => void;
-        };
-      };
-    };
+    const win = window as Win3Dmol;
 
     if (!win.$3Dmol) {
       await new Promise<void>((resolve, reject) => {
@@ -42,60 +118,96 @@ export default function LabsPage() {
     }
 
     viewerRef.current.innerHTML = '';
-
-    const viewer = win.$3Dmol?.createViewer(viewerRef.current, {
+    const viewer = (window as Win3Dmol).$3Dmol?.createViewer(viewerRef.current, {
       backgroundColor: '#020806',
     });
+    if (!viewer) return;
 
-    viewer?.addModel(pdbText, 'pdb');
-    viewer?.setStyle({}, { cartoon: { color: 'spectrum' } });
-    viewer?.zoomTo();
-    viewer?.render();
-    viewer?.spin(true);
-  }
+    viewer.addModel(pdbText, 'pdb');
+    viewer.setStyle({}, { cartoon: { color: 'spectrum' } });
+    viewer.zoomTo();
+    viewer.render();
+    viewer.spin(true);
+    viewerInstanceRef.current = viewer;
+  }, []);
 
-  async function handleGenerate(): Promise<void> {
+  /* ── AI explain ── */
+  const handleExplain = useCallback(async () => {
+    if (!sequence) return;
+    setAnalysisLoading(true);
+    setAnalysis(null);
+    try {
+      const res = await fetch('/api/labs/explain', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sequence, prompt }),
+      });
+      const data = (await res.json()) as ExplainResponse;
+      if (data.analysis) setAnalysis(data.analysis);
+      else setAnalysis(data.error ?? 'Analysis unavailable.');
+    } catch {
+      setAnalysis('Failed to reach the AI analysis endpoint.');
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }, [sequence, prompt]);
+
+  /* ── main generate flow ── */
+  async function handleGenerate(overrideSequence?: string): Promise<void> {
     setLoading(true);
     setError(null);
     setPdb(null);
-    setSequence('');
+    setFoldEngine(null);
+    setAttempts([]);
+    setAnalysis(null);
+
+    const seqToFold = overrideSequence ?? '';
 
     try {
-      setStage('sequence');
+      let finalSequence = seqToFold;
 
-      const seqResponse = await fetch('/api/labs/sequence', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ prompt }),
-      });
-
-      const seqPayload = await seqResponse.json();
-
-      if (!seqResponse.ok) {
-        throw new Error(seqPayload.error ?? 'Failed to generate sequence.');
+      if (!finalSequence) {
+        setStage('sequence');
+        setSequence('');
+        const seqResponse = await fetch('/api/labs/sequence', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+        const seqPayload = await seqResponse.json();
+        if (!seqResponse.ok) throw new Error(seqPayload.error ?? 'Failed to generate sequence.');
+        finalSequence = seqPayload.sequence;
+        setSequence(finalSequence);
       }
 
-      setSequence(seqPayload.sequence);
       setStage('folding');
+
+      const foldBody: Record<string, unknown> = { sequence: finalSequence };
+      if (selectedEngine !== 'auto') {
+        foldBody.engine = selectedEngine;
+        foldBody.exclusive = true;
+      }
 
       const foldResponse = await fetch('/api/labs/fold', {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ sequence: seqPayload.sequence }),
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(foldBody),
       });
 
-      const foldPayload = await foldResponse.json();
+      const foldPayload = (await foldResponse.json()) as FoldResponse;
+
+      if (foldPayload.attempts) setAttempts(foldPayload.attempts);
+      if (foldPayload.engine) setFoldEngine(foldPayload.engine);
 
       if (!foldResponse.ok) {
         throw new Error(foldPayload.error ?? 'Failed to fold sequence.');
       }
 
-      setPdb(foldPayload.pdb);
-      await renderMolecule(foldPayload.pdb);
+      if (foldPayload.pdb) {
+        setPdb(foldPayload.pdb);
+        await renderMolecule(foldPayload.pdb);
+      }
+
       setStage('rendered');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected Labs error.');
@@ -104,45 +216,96 @@ export default function LabsPage() {
     }
   }
 
+  /* ── mutate + re-fold ── */
+  function handleMutate(): void {
+    if (mutateIdx === null || !mutateAA || !sequence) return;
+    const idx = mutateIdx;
+    if (idx < 0 || idx >= sequence.length) return;
+    const upper = mutateAA.toUpperCase();
+    if (!AMINO_ACIDS.includes(upper)) return;
+    const mutated = sequence.slice(0, idx) + upper + sequence.slice(idx + 1);
+    setSequence(mutated);
+    setMutateIdx(null);
+    setMutateAA('');
+    handleGenerate(mutated);
+  }
+
+  /* ── export PDB ── */
+  function handleExport(): void {
+    if (!pdb) return;
+    const blob = new Blob([pdb], { type: 'chemical/x-pdb' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `etica-labs-${sequence.slice(0, 8)}.pdb`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /* ── share ── */
+  function handleShare(): void {
+    const params = new URLSearchParams();
+    if (prompt) params.set('p', prompt);
+    if (sequence) params.set('s', sequence);
+    if (selectedEngine !== 'auto') params.set('e', selectedEngine);
+    const url = `${window.location.origin}/labs?${params.toString()}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  /* ── hydrate from URL params ── */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const p = params.get('p');
+    const s = params.get('s');
+    const e = params.get('e');
+    if (p) setPrompt(p);
+    if (s) setSequence(s);
+    if (e) setSelectedEngine(e);
+  }, []);
+
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-8 md:px-6">
+      {/* ── Hero ── */}
       <section className="rounded-3xl border border-emerald-400/20 bg-[#04110d] p-6 shadow-2xl shadow-emerald-950/20">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-emerald-300">
-              Etica Labs · AI Protein Studio
+              Etica Labs &middot; AI Molecular Intelligence
             </div>
-
             <h1 className="text-4xl font-semibold tracking-tight text-white md:text-5xl">
-              Generate peptide structures with Groq + ESMFold.
+              Design, fold, analyze &amp; share peptide structures.
             </h1>
-
             <p className="text-base text-white/70 md:text-lg">
-              Natural-language peptide design, ultra-fast sequence extraction via Groq, automatic ESMFold structure prediction, and real-time WebGL molecular rendering with 3Dmol.js.
+              Natural-language design, multi-engine structure prediction with automatic failover,
+              AI-powered structural analysis, and real-time WebGL rendering.
             </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <Metric label="LLM" value="Groq" />
-            <Metric label="Folding" value="ESMFold" />
+            <Metric label="Folding" value={foldEngine ?? 'Multi-engine'} />
             <Metric label="Rendering" value="3Dmol.js" />
           </div>
         </div>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
+        {/* ── Left column: prompt + controls ── */}
         <div className="space-y-5 rounded-3xl border border-white/10 bg-[#050b09] p-5">
           <div>
             <div className="text-sm font-medium text-white">Prompt</div>
             <div className="mt-1 text-sm text-white/55">
-              Describe the peptide or paste an amino-acid sequence. Inputs are capped to protect the free-tier inference infrastructure.
+              Describe the peptide or paste an amino-acid sequence.
             </div>
           </div>
 
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value.slice(0, MAX_PROMPT_CHARS))}
-            className="min-h-[220px] w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white outline-none ring-0 transition focus:border-emerald-400/40"
+            className="min-h-[160px] w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white outline-none ring-0 transition focus:border-emerald-400/40"
             placeholder="Design a 40 amino acid peptide beginning with MVL..."
           />
 
@@ -151,25 +314,83 @@ export default function LabsPage() {
             <span>{charsRemaining} remaining</span>
           </div>
 
+          {/* ── Engine selector ── */}
+          <div>
+            <div className="mb-2 text-xs font-medium uppercase tracking-wider text-white/50">
+              Folding engine
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <EnginePill
+                id="auto"
+                label="Auto"
+                description="Cascade through all configured engines"
+                active={selectedEngine === 'auto'}
+                configured
+                onClick={() => setSelectedEngine('auto')}
+              />
+              {engines.map((eng) => (
+                <EnginePill
+                  key={eng.id}
+                  id={eng.id}
+                  label={eng.label}
+                  description={eng.isConfigured ? eng.description : `Requires ${eng.requiredEnv.join(', ')}`}
+                  active={selectedEngine === eng.id}
+                  configured={eng.isConfigured}
+                  onClick={() => setSelectedEngine(eng.id)}
+                />
+              ))}
+            </div>
+          </div>
+
           <button
             type="button"
-            onClick={handleGenerate}
+            onClick={() => handleGenerate()}
             disabled={loading || prompt.trim().length === 0}
             className="inline-flex items-center justify-center rounded-full bg-brand-accent px-5 py-3 text-sm font-medium text-brand-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? 'Generating structure…' : 'Generate molecule'}
+            {loading ? 'Generating structure\u2026' : 'Generate molecule'}
           </button>
 
+          {/* ── Pipeline info ── */}
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
             <div className="font-medium text-white">Pipeline</div>
             <ol className="mt-3 space-y-2 text-white/60">
-              <li>1. Prompt → Groq sequence extraction</li>
-              <li>2. Sequence → Hugging Face ESMFold</li>
-              <li>3. PDB → 3Dmol.js render</li>
+              <li>1. Prompt &rarr; Groq sequence extraction</li>
+              <li>2. Sequence &rarr; {selectedEngine === 'auto' ? 'Multi-engine cascade' : engines.find((e) => e.id === selectedEngine)?.label ?? selectedEngine}</li>
+              <li>3. PDB &rarr; 3Dmol.js render</li>
+              <li>4. Sequence &rarr; AI structural analysis</li>
             </ol>
           </div>
+
+          {/* ── Fold attempts trace ── */}
+          {attempts.length > 0 && (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="text-xs font-medium uppercase tracking-wider text-white/50">
+                Engine trace
+              </div>
+              <div className="mt-2 space-y-1">
+                {attempts.map((a, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className={a.ok ? 'text-emerald-400' : 'text-rose-400'}>
+                      {a.ok ? '\u25CF' : '\u25CB'}
+                    </span>
+                    <span className="text-white/70">{a.engine}</span>
+                    {a.durationMs > 0 && (
+                      <span className="text-white/40">{(a.durationMs / 1000).toFixed(1)}s</span>
+                    )}
+                    {a.error && !a.ok && (
+                      <span className="truncate text-white/35" title={a.error}>
+                        {a.error.slice(0, 60)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
+        {/* ── Right column: viewer + analysis + tools ── */}
         <div className="space-y-5 rounded-3xl border border-white/10 bg-[#050b09] p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -178,21 +399,61 @@ export default function LabsPage() {
                 Interactive WebGL visualization rendered directly in-browser.
               </div>
             </div>
-
             <StatusBadge stage={stage} />
           </div>
 
           <div
             ref={viewerRef}
-            className="h-[540px] overflow-hidden rounded-3xl border border-emerald-400/15 bg-[#020806]"
+            className="h-[440px] overflow-hidden rounded-3xl border border-emerald-400/15 bg-[#020806]"
           >
             {!pdb && (
               <div className="flex h-full items-center justify-center text-center text-sm text-white/40">
-                {loading ? 'Preparing protein structure…' : 'Your folded molecule will render here.'}
+                {loading ? 'Preparing protein structure\u2026' : 'Your folded molecule will render here.'}
               </div>
             )}
           </div>
 
+          {/* ── Action bar: Export + Share + Explain ── */}
+          {stage === 'rendered' && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleExport}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10"
+              >
+                <DownloadIcon /> Export PDB
+              </button>
+              <button
+                type="button"
+                onClick={handleShare}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10"
+              >
+                <ShareIcon /> {copied ? 'Copied!' : 'Share link'}
+              </button>
+              <button
+                type="button"
+                onClick={handleExplain}
+                disabled={analysisLoading}
+                className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-4 py-2 text-xs font-medium text-emerald-200 transition hover:bg-emerald-400/20 disabled:opacity-50"
+              >
+                <SparkleIcon /> {analysisLoading ? 'Analyzing\u2026' : 'AI Analysis'}
+              </button>
+            </div>
+          )}
+
+          {/* ── AI analysis panel ── */}
+          {analysis && (
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wider text-emerald-300/70">
+                AI Structural Analysis
+              </div>
+              <div className="whitespace-pre-wrap text-sm leading-relaxed text-white/80">
+                {analysis}
+              </div>
+            </div>
+          )}
+
+          {/* ── Sequence + System status ── */}
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
               <div className="text-xs uppercase tracking-wider text-white/40">Extracted sequence</div>
@@ -205,11 +466,62 @@ export default function LabsPage() {
               <div className="text-xs uppercase tracking-wider text-white/40">System status</div>
               <div className="mt-3 space-y-2 text-sm text-white/70">
                 <div>Groq parsing: operational</div>
-                <div>ESMFold inference: serverless</div>
+                <div>
+                  Engines:{' '}
+                  {engines.length > 0
+                    ? `${engines.filter((e) => e.isConfigured).length}/${engines.length} configured`
+                    : 'loading\u2026'}
+                </div>
                 <div>3D renderer: active</div>
               </div>
             </div>
           </div>
+
+          {/* ── Mutate panel ── */}
+          {sequence && stage === 'rendered' && (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="mb-3 text-xs font-medium uppercase tracking-wider text-white/50">
+                Point mutation
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="space-y-1">
+                  <span className="text-xs text-white/50">Position (0-indexed)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={sequence.length - 1}
+                    value={mutateIdx ?? ''}
+                    onChange={(e) => setMutateIdx(e.target.value === '' ? null : Number(e.target.value))}
+                    className="block w-20 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-white/50">New residue</span>
+                  <input
+                    type="text"
+                    maxLength={1}
+                    value={mutateAA}
+                    onChange={(e) => setMutateAA(e.target.value.toUpperCase())}
+                    className="block w-14 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-center text-sm text-white outline-none focus:border-emerald-400/40"
+                    placeholder="A"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleMutate}
+                  disabled={mutateIdx === null || !mutateAA || loading}
+                  className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10 disabled:opacity-40"
+                >
+                  Mutate &amp; re-fold
+                </button>
+                {mutateIdx !== null && mutateIdx >= 0 && mutateIdx < sequence.length && (
+                  <span className="text-xs text-white/40">
+                    Current: <span className="font-mono text-emerald-300">{sequence[mutateIdx]}</span> at position {mutateIdx}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4 text-sm text-rose-200">
@@ -219,6 +531,48 @@ export default function LabsPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+/* ================================================================== */
+/*  Sub-components                                                     */
+/* ================================================================== */
+
+function EnginePill({
+  id,
+  label,
+  description,
+  active,
+  configured,
+  onClick,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  active: boolean;
+  configured: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={description}
+      disabled={!configured && id !== 'auto'}
+      className={[
+        'rounded-full border px-3 py-1.5 text-xs font-medium transition',
+        active
+          ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-200'
+          : configured || id === 'auto'
+            ? 'border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+            : 'cursor-not-allowed border-white/8 bg-white/[0.02] text-white/30',
+      ].join(' ')}
+    >
+      {label}
+      {!configured && id !== 'auto' && (
+        <span className="ml-1 text-[10px] text-white/25">(not configured)</span>
+      )}
+    </button>
   );
 }
 
@@ -245,5 +599,37 @@ function StatusBadge({ stage }: { stage: 'idle' | 'sequence' | 'folding' | 'rend
     <div className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-xs uppercase tracking-wider text-emerald-200">
       {label}
     </div>
+  );
+}
+
+/* ── Inline SVG icons (tiny, no dep) ── */
+
+function DownloadIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+    </svg>
+  );
+}
+
+function SparkleIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3Z" />
+    </svg>
   );
 }
