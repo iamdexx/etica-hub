@@ -34,6 +34,25 @@ type ExplainResponse = {
   error?: string;
 };
 
+type PlanCandidate = {
+  sequence: string;
+  rationale: string;
+};
+
+type ResearchPlan = {
+  hypothesis: string;
+  approach: string;
+  successCriteria: string;
+  risks: string;
+  candidates: PlanCandidate[];
+};
+
+type PlanResponse = {
+  plan?: ResearchPlan;
+  error?: string;
+  detail?: string;
+};
+
 /* ------------------------------------------------------------------ */
 /*  3Dmol viewer (typed locally to avoid external .d.ts)               */
 /* ------------------------------------------------------------------ */
@@ -83,6 +102,11 @@ export default function LabsPage() {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
 
+  /* ── research plan ── */
+  const [plan, setPlan] = useState<ResearchPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+
   /* ── mutate ── */
   const [mutateIdx, setMutateIdx] = useState<number | null>(null);
   const [mutateAA, setMutateAA] = useState('');
@@ -130,6 +154,31 @@ export default function LabsPage() {
     viewer.spin(true);
     viewerInstanceRef.current = viewer;
   }, []);
+
+  /* ── Research plan ── */
+  const handlePlan = useCallback(async () => {
+    if (!prompt.trim()) return;
+    setPlanLoading(true);
+    setPlanError(null);
+    setPlan(null);
+    try {
+      const res = await fetch('/api/labs/plan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = (await res.json()) as PlanResponse;
+      if (!res.ok || !data.plan) {
+        setPlanError(data.error ?? `Planner returned ${res.status}.`);
+        return;
+      }
+      setPlan(data.plan);
+    } catch (err) {
+      setPlanError(err instanceof Error ? err.message : 'Failed to reach the planner.');
+    } finally {
+      setPlanLoading(false);
+    }
+  }, [prompt]);
 
   /* ── AI explain ── */
   const handleExplain = useCallback(async () => {
@@ -210,7 +259,13 @@ export default function LabsPage() {
 
       setStage('rendered');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected Labs error.');
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'Labs request failed. See the engine trace below for details.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -263,7 +318,10 @@ export default function LabsPage() {
     const e = params.get('e');
     if (p) setPrompt(p);
     if (s) setSequence(s);
-    if (e) setSelectedEngine(e);
+    // Only honor engine param if it points to a real, non-broken engine.
+    // Old shared URLs with ?e=hf-esmfold lock users to the deprovisioned
+    // HuggingFace endpoint. Default to auto-cascade in that case.
+    if (e && e !== 'hf-esmfold') setSelectedEngine(e);
   }, []);
 
   return (
@@ -314,6 +372,81 @@ export default function LabsPage() {
             <span>{charsRemaining} remaining</span>
           </div>
 
+          {/* ── Research planner ── */}
+          <div className="space-y-3 rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.04] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-medium text-emerald-100">Research plan</div>
+                <div className="mt-0.5 text-xs text-white/55">
+                  Optional. Have the AI scope a hypothesis &amp; 3 candidates before folding.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handlePlan}
+                disabled={planLoading || prompt.trim().length === 0}
+                className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-100 transition hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {planLoading ? 'Planning\u2026' : plan ? 'Replan' : 'Create plan'}
+              </button>
+            </div>
+
+            {planError && (
+              <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
+                {planError}
+              </div>
+            )}
+
+            {plan && (
+              <div className="space-y-3 text-sm text-white/80">
+                <PlanField label="Hypothesis" value={plan.hypothesis} />
+                <PlanField label="Approach" value={plan.approach} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <PlanField label="Success criteria" value={plan.successCriteria} compact />
+                  <PlanField label="Risks" value={plan.risks} compact />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-emerald-200/70">
+                    Candidates ({plan.candidates.length})
+                  </div>
+                  {plan.candidates.map((c, i) => (
+                    <div
+                      key={i}
+                      className="min-w-0 rounded-xl border border-white/10 bg-black/30 p-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-medium text-white/80">
+                          Candidate {i + 1}
+                          <span className="ml-2 text-white/40">{c.sequence.length} aa</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSequence(c.sequence);
+                            handleGenerate(c.sequence);
+                          }}
+                          disabled={loading}
+                          className="inline-flex items-center gap-1 rounded-full bg-brand-accent px-3 py-1 text-[11px] font-medium text-brand-ink transition hover:opacity-90 disabled:opacity-50"
+                        >
+                          Fold this
+                        </button>
+                      </div>
+                      {c.rationale && (
+                        <div className="mt-1.5 text-xs leading-snug text-white/55">
+                          {c.rationale}
+                        </div>
+                      )}
+                      <div className="mt-2 break-all font-mono text-[11px] leading-relaxed text-emerald-200/80">
+                        {c.sequence}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* ── Engine selector ── */}
           <div>
             <div className="mb-2 text-xs font-medium uppercase tracking-wider text-white/50">
@@ -355,10 +488,11 @@ export default function LabsPage() {
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
             <div className="font-medium text-white">Pipeline</div>
             <ol className="mt-3 space-y-2 text-white/60">
-              <li>1. Prompt &rarr; Groq sequence extraction</li>
-              <li>2. Sequence &rarr; {selectedEngine === 'auto' ? 'Multi-engine cascade' : engines.find((e) => e.id === selectedEngine)?.label ?? selectedEngine}</li>
-              <li>3. PDB &rarr; 3Dmol.js render</li>
-              <li>4. Sequence &rarr; AI structural analysis</li>
+              <li>1. Prompt &rarr; Groq research plan (optional)</li>
+              <li>2. Plan / Prompt &rarr; Groq sequence extraction</li>
+              <li>3. Sequence &rarr; {selectedEngine === 'auto' ? 'Multi-engine cascade' : engines.find((e) => e.id === selectedEngine)?.label ?? selectedEngine}</li>
+              <li>4. PDB &rarr; 3Dmol.js render</li>
+              <li>5. Sequence &rarr; AI structural analysis</li>
             </ol>
           </div>
 
@@ -531,8 +665,13 @@ export default function LabsPage() {
           )}
 
           {error && (
-            <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4 text-sm text-rose-200">
-              {error}
+            <div className="space-y-2 rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4 text-sm text-rose-200">
+              <div className="break-words">{error}</div>
+              {attempts.length > 0 && (
+                <div className="text-xs text-rose-200/70">
+                  Tried {attempts.length} engine{attempts.length === 1 ? '' : 's'}; see the trace on the left for details.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -580,6 +719,26 @@ function EnginePill({
         <span className="ml-1 text-[10px] text-white/25">(not configured)</span>
       )}
     </button>
+  );
+}
+
+function PlanField({
+  label,
+  value,
+  compact,
+}: {
+  label: string;
+  value: string;
+  compact?: boolean;
+}) {
+  if (!value) return null;
+  return (
+    <div className={compact ? '' : 'space-y-1'}>
+      <div className="text-[11px] font-medium uppercase tracking-wider text-emerald-200/70">
+        {label}
+      </div>
+      <div className="text-sm leading-snug text-white/75">{value}</div>
+    </div>
   );
 }
 
