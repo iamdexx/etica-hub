@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { ConnectButton } from './ConnectButton';
 import { cn } from '@/lib/utils';
 
@@ -43,9 +44,54 @@ function TelegramLink() {
   );
 }
 
+function MenuIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {open ? (
+        <>
+          <line x1="6" y1="6" x2="18" y2="18" />
+          <line x1="6" y1="18" x2="18" y2="6" />
+        </>
+      ) : (
+        <>
+          <line x1="4" y1="7" x2="20" y2="7" />
+          <line x1="4" y1="12" x2="20" y2="12" />
+          <line x1="4" y1="17" x2="20" y2="17" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export function SiteHeader() {
   const pathname = usePathname();
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Close drawer on route change
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll while drawer is open
+  useEffect(() => {
+    if (drawerOpen) {
+      const previous = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = previous;
+      };
+    }
+  }, [drawerOpen]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-[#020806]/88 backdrop-blur-md supports-[backdrop-filter]:bg-[#020806]/72">
@@ -82,36 +128,53 @@ export function SiteHeader() {
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <TelegramLink />
           <ConnectButton />
+          <button
+            type="button"
+            aria-label={drawerOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen((v) => !v)}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/80 transition-colors hover:border-white/25 hover:bg-white/10 hover:text-white lg:hidden"
+          >
+            <MenuIcon open={drawerOpen} />
+          </button>
         </div>
       </div>
 
-      <nav aria-label="Primary navigation" className="border-t border-white/10 lg:hidden">
-        <div className="relative">
-          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-[#020806] to-transparent" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-[#020806] to-transparent" />
-
-          <div className="mx-auto flex w-full max-w-7xl gap-1 overflow-x-auto px-3 py-2 [scrollbar-width:none] [scroll-padding-inline:1rem] [&::-webkit-scrollbar]:hidden sm:px-4 md:px-5">
-            {NAV.map((item) => {
-              const active = isActive(item.href);
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    'shrink-0 rounded-full border px-2.5 py-1 text-xs leading-5 transition-colors',
-                    active
-                      ? 'border-brand-accent/70 bg-brand-accent text-brand-ink shadow-none'
-                      : 'border-white/10 bg-white/[0.035] text-white/62 hover:border-white/20 hover:bg-white/8 hover:text-white',
-                  )}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
+      {/* Mobile drawer */}
+      {drawerOpen && (
+        <div className="fixed inset-0 top-[57px] z-40 lg:hidden" aria-modal="true" role="dialog">
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setDrawerOpen(false)}
+            className="absolute inset-0 cursor-default bg-black/50 backdrop-blur-sm"
+          />
+          <nav
+            aria-label="Primary navigation"
+            className="relative max-h-[calc(100vh-57px)] overflow-y-auto border-b border-white/10 bg-[#020806]/95 px-3 py-3 shadow-2xl sm:px-4"
+          >
+            <div className="mx-auto grid w-full max-w-7xl gap-1">
+              {NAV.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex items-center rounded-xl border px-4 py-3 text-sm font-medium transition-colors',
+                      active
+                        ? 'border-brand-accent/60 bg-brand-accent/15 text-brand-accent'
+                        : 'border-white/10 bg-white/[0.03] text-white/80 hover:border-white/20 hover:bg-white/8 hover:text-white',
+                    )}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
         </div>
-      </nav>
+      )}
     </header>
   );
 }
