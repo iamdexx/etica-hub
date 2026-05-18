@@ -7,13 +7,13 @@ import { DEPLOYMENTS, abis } from '@etica-hub/shared';
 import { resolveBaseTokenAddress, type TradeBaseSymbol } from '@/lib/trading/baseSymbol';
 import {
   filterSamplesToWindow,
-  formatPriceRatio,
   invertPrice,
   priceHeadline,
   TIME_WINDOW_LABELS,
   TIME_WINDOWS,
   type TimeWindow,
 } from '@/lib/trading/priceLabel';
+import { BrandCandleChart, type BrandCandle } from '@/components/BrandCandleChart';
 
 /**
  * Client-side price chart fallback.
@@ -270,27 +270,22 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
   }, [reservesQuery.data, reservesQuery.dataUpdatedAt, baseIsToken0, cacheKey]);
 
   // Filter the raw rolling buffer to the user-selected visualization window
-  // (24h / 7d / 30d / all), then invert if requested. Both transforms run on
-  // the visible slice — the underlying `samples` array is never mutated.
-  const {
-    pathD,
-    areaD,
-    minP,
-    maxP,
-    latest,
-    first,
-    visibleCount,
-    visibleFirstTs,
-    visibleLastTs,
-  } = useMemo(() => {
+  // (24h / 7d / 30d / all), invert if requested, then bucket into OHLC
+  // candles whose width is tuned to the active window. Both transforms run
+  // on the visible slice — the underlying `samples` array is never mutated.
+  const { candles, latest, first, visibleCount } = useMemo(() => {
     const visible = filterSamplesToWindow(samples, windowKey, (s) => s.ts);
-    const closes = visible.map((s) => (inverted ? invertPrice(s.price) : s.price));
-    const built = buildSvg(closes);
+    const oriented: Sample[] = inverted
+      ? visible.map((s) => ({ ts: s.ts, price: invertPrice(s.price) }))
+      : visible;
+    const built = bucketSamplesToCandles(oriented, windowKey);
+    const latestC = built[built.length - 1]?.c ?? 0;
+    const firstO = built[0]?.o ?? 0;
     return {
-      ...built,
-      visibleCount: visible.length,
-      visibleFirstTs: visible[0]?.ts ?? null,
-      visibleLastTs: visible[visible.length - 1]?.ts ?? null,
+      candles: built,
+      latest: latestC,
+      first: firstO,
+      visibleCount: oriented.length,
     };
   }, [samples, windowKey, inverted]);
 
@@ -364,98 +359,70 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
         </div>
       </div>
 
-      <div className="relative">
-        <svg
-          viewBox="0 0 600 200"
-          preserveAspectRatio="none"
-          className="h-56 w-full"
-          role="img"
-          aria-label={`${baseSymbol}/${quoteSymbol} on-chain price chart`}
-        >
-          <defs>
-            <linearGradient id="onchain-chart-fill" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="currentColor" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          {pathD && (
-            <>
-              <path
-                d={areaD}
-                fill="url(#onchain-chart-fill)"
-                className={positive ? 'text-emerald-400' : 'text-rose-400'}
-              />
-              <path
-                d={pathD}
-                fill="none"
-                strokeWidth="1.5"
-                stroke="currentColor"
-                className={positive ? 'text-emerald-300' : 'text-rose-300'}
-              />
-            </>
-          )}
-        </svg>
-
-        {(fatalError || loading) && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="rounded-full border border-white/10 bg-black/60 px-3 py-1 text-xs text-white/60">
-              {fatalError ?? `Sampling live price every ${POLL_INTERVAL_MS / 1000}s…`}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-3 flex justify-between text-xs tabular-nums text-white/50">
-        <span>Low {formatPriceRatio(minP)}</span>
-        <span>
-          {visibleFirstTs !== null && visibleLastTs !== null
-            ? `${fmtClock(visibleFirstTs)} → ${fmtClock(visibleLastTs)}`
-            : ''}
-        </span>
-        <span>High {formatPriceRatio(maxP)}</span>
-      </div>
+      <BrandCandleChart
+        candles={candles}
+        height={320}
+        priceSuffix={inverted ? baseSymbol : quoteSymbol}
+        overlay={
+          fatalError
+            ? fatalError
+            : loading
+              ? `Sampling live price every ${POLL_INTERVAL_MS / 1000}s…`
+              : candles.length === 0
+                ? 'No on-chain samples in this window yet.'
+                : null
+        }
+      />
     </div>
   );
 }
 
-function buildSvg(closes: number[]) {
-  const empty = { pathD: '', areaD: '', minP: 0, maxP: 0, latest: 0, first: 0 };
-  if (closes.length === 0) return empty;
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const span = max - min || max || 1;
-  const W = 600;
-  const H = 200;
-  const padX = 8;
-  const padY = 12;
-  const usableW = W - padX * 2;
-  const usableH = H - padY * 2;
-  const n = closes.length;
-  const points = closes.map((v, i) => {
-    const x = padX + (usableW * i) / Math.max(1, n - 1);
-    const y = padY + usableH - ((v - min) / span) * usableH;
-    return [x, y] as const;
-  });
-  const pathD = points
-    .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)}`)
-    .join(' ');
-  const [firstX] = points[0]!;
-  const [lastX] = points[points.length - 1]!;
-  const areaD = `${pathD} L${lastX.toFixed(2)} ${(padY + usableH).toFixed(
-    2,
-  )} L${firstX.toFixed(2)} ${(padY + usableH).toFixed(2)} Z`;
-  return {
-    pathD,
-    areaD,
-    minP: min,
-    maxP: max,
-    latest: closes[closes.length - 1] ?? 0,
-    first: closes[0] ?? 0,
-  };
-}
+// Bucket widths tuned to render ~96-180 candles when each window is fully
+// populated. With a shorter rolling buffer the visualization simply renders
+// fewer (wider-spaced) candles.
+const CANDLE_INTERVAL_SECONDS: Record<TimeWindow, number> = {
+  '24h': 15 * 60,
+  '7d': 60 * 60,
+  '30d': 4 * 60 * 60,
+  all: 24 * 60 * 60,
+};
 
-function fmtClock(ts: number): string {
-  return new Date(ts * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+function bucketSamplesToCandles(samples: Sample[], windowKey: TimeWindow): BrandCandle[] {
+  if (samples.length === 0) return [];
+  const intervalSec = CANDLE_INTERVAL_SECONDS[windowKey];
+  const buckets = new Map<number, Sample[]>();
+  for (const s of samples) {
+    const bucketTs = Math.floor(s.ts / intervalSec) * intervalSec;
+    let arr = buckets.get(bucketTs);
+    if (!arr) {
+      arr = [];
+      buckets.set(bucketTs, arr);
+    }
+    arr.push(s);
+  }
+  const orderedKeys = Array.from(buckets.keys()).sort((a, b) => a - b);
+  const out: BrandCandle[] = [];
+  let lastClose: number | null = null;
+  for (const bucketTs of orderedKeys) {
+    const arr = buckets.get(bucketTs)!;
+    arr.sort((a, b) => a.ts - b.ts);
+    const open = lastClose ?? arr[0]!.price;
+    let high = arr[0]!.price;
+    let low = arr[0]!.price;
+    for (const s of arr) {
+      if (s.price > high) high = s.price;
+      if (s.price < low) low = s.price;
+    }
+    const close = arr[arr.length - 1]!.price;
+    // Stitch the previous close as this bucket's open so consecutive candles
+    // join visually. Clamp the high/low band so the wick never escapes the
+    // body when the stitched open jumps outside the in-bucket range.
+    const effHigh = Math.max(high, open, close);
+    const effLow = Math.min(low, open, close);
+    out.push({ t: bucketTs, o: open, h: effHigh, l: effLow, c: close });
+    lastClose = close;
+  }
+  return out;
 }
 
 // ---- history backfill + cache helpers -------------------------------------
