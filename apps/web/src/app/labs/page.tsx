@@ -294,7 +294,7 @@ export default function LabsPage() {
 
       <section className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
         {/* ── Left column: prompt + controls ── */}
-        <div className="space-y-5 rounded-3xl border border-white/10 bg-[#050b09] p-5">
+        <div className="min-w-0 space-y-5 rounded-3xl border border-white/10 bg-[#050b09] p-5">
           <div>
             <div className="text-sm font-medium text-white">Prompt</div>
             <div className="mt-1 text-sm text-white/55">
@@ -364,24 +364,31 @@ export default function LabsPage() {
 
           {/* ── Fold attempts trace ── */}
           {attempts.length > 0 && (
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20 p-4">
               <div className="text-xs font-medium uppercase tracking-wider text-white/50">
                 Engine trace
               </div>
-              <div className="mt-2 space-y-1">
+              <div className="mt-2 space-y-2">
                 {attempts.map((a, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    <span className={a.ok ? 'text-emerald-400' : 'text-rose-400'}>
-                      {a.ok ? '\u25CF' : '\u25CB'}
-                    </span>
-                    <span className="text-white/70">{a.engine}</span>
-                    {a.durationMs > 0 && (
-                      <span className="text-white/40">{(a.durationMs / 1000).toFixed(1)}s</span>
-                    )}
-                    {a.error && !a.ok && (
-                      <span className="truncate text-white/35" title={a.error}>
-                        {a.error.slice(0, 60)}
+                  <div key={i} className="min-w-0 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className={a.ok ? 'text-emerald-400' : 'text-rose-400'}>
+                        {a.ok ? '\u25CF' : '\u25CB'}
                       </span>
+                      <span className="truncate font-medium text-white/80">{a.engine}</span>
+                      {a.durationMs > 0 && (
+                        <span className="ml-auto shrink-0 text-white/40">
+                          {(a.durationMs / 1000).toFixed(1)}s
+                        </span>
+                      )}
+                    </div>
+                    {a.error && !a.ok && (
+                      <div
+                        className="mt-1 break-words pl-5 text-[11px] leading-snug text-white/40"
+                        title={a.error}
+                      >
+                        {a.error.length > 160 ? `${a.error.slice(0, 160)}\u2026` : a.error}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -391,7 +398,7 @@ export default function LabsPage() {
         </div>
 
         {/* ── Right column: viewer + analysis + tools ── */}
-        <div className="space-y-5 rounded-3xl border border-white/10 bg-[#050b09] p-5">
+        <div className="min-w-0 space-y-5 rounded-3xl border border-white/10 bg-[#050b09] p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
               <div className="text-sm font-medium text-white">Molecular Viewer</div>

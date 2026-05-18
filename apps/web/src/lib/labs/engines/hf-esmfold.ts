@@ -68,9 +68,19 @@ export function createHuggingFaceEsmFoldEngine(): FoldEngine {
           return { ok: true, pdb: text };
         }
 
+        // Detect "Model not supported" — HF currently has esmfold_v1 deprovisioned
+        // from the inference router. There's no point retrying; surface a clear
+        // message so the cascade can move on.
+        if (response.status === 400 && /not supported|not deployed/i.test(text)) {
+          return {
+            ok: false,
+            error: 'HF inference router is not currently serving facebook/esmfold_v1. Try another engine.',
+          };
+        }
+
         lastError = `HF ${response.status}: ${text.slice(0, 240)}`;
 
-        if (RETRYABLE_STATUS.has(response.status) || !looksLikePdb(text)) {
+        if (RETRYABLE_STATUS.has(response.status)) {
           await sleep(Math.min(15_000, 2_500 * (attempt + 1)));
           continue;
         }
