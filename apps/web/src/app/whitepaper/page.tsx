@@ -135,7 +135,7 @@ export default function WhitepaperPage() {
           </div>
         </aside>
 
-        <article className="prose prose-invert prose-sm max-w-none break-words rounded-2xl border border-white/10 bg-white/[0.03] p-6 prose-headings:scroll-mt-24 prose-headings:tracking-tight prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-a:break-all prose-a:text-brand-accent prose-a:no-underline hover:prose-a:underline prose-code:rounded prose-code:bg-white/10 prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none md:prose-base">
+        <article className="prose prose-invert prose-sm w-full min-w-0 max-w-none break-words rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-6 prose-headings:scroll-mt-24 prose-headings:tracking-tight prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-a:break-all prose-a:text-brand-accent prose-a:no-underline hover:prose-a:underline prose-code:break-all prose-code:rounded prose-code:bg-white/10 prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none md:prose-base">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
             {md}
           </ReactMarkdown>

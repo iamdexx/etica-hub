@@ -2,12 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isFullySanctionedCountry, isGeoRestricted } from './lib/geoBlock';
 
 const ROUTE_ALIASES: Record<string, string> = {
-  '/blocks': '/explorer',
-  '/transactions': '/explorer',
-  '/contracts': '/explorer',
-  '/explorer/blocks': '/explorer',
-  '/explorer/transactions': '/explorer',
-  '/explorer/contracts': '/explorer',
+  '/blocks': '/explorer/blocks',
+  '/transactions': '/explorer/txs',
+  '/contracts': '/explorer/contracts',
+  '/explorer/transactions': '/explorer/txs',
   '/explorer/research': '/research',
   '/explorer/bridge': '/bridge',
 };

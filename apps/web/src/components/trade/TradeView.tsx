@@ -38,6 +38,7 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
                 <Link
                   key={s}
                   href={`/trade/${s}`}
+                  scroll={false}
                   className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
                     s === baseSymbol
                       ? 'border-brand-accent bg-brand-accent text-brand-ink'
