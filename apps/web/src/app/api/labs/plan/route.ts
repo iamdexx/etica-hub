@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { consumeLabsRateLimit } from '@/lib/labs/rate-limit';
+import { gatherReferences, summarizeReferencesForPrompt, type Reference } from '@/lib/labs/research';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -117,6 +118,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
+  // Pull in related public research first so the planner builds on existing
+  // work instead of duplicating it. Both lookups are short-timeout and fail
+  // open: if PubMed/PDB are slow we still plan, just without their context.
+  const references: Reference[] = await gatherReferences(prompt).catch(() => []);
+  const refSummary = summarizeReferencesForPrompt(references);
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25_000);
 
@@ -131,12 +138,17 @@ export async function POST(req: NextRequest): Promise<Response> {
       '  "risks": "<one sentence on the biggest failure mode or off-target risk>",',
       '  "candidates": [',
       '    { "sequence": "<one-letter amino acid codes, 10-400 residues, only ACDEFGHIKLMNPQRSTVWY>",',
-      '      "rationale": "<one short sentence explaining this candidate>" }',
+      '      "rationale": "<one short sentence explaining this candidate; cite [N] references where relevant>" }',
       '  ]',
       '}',
       'Generate exactly 3 candidate sequences that follow the user goal (length, prefix, motifs).',
+      'IMPORTANT: do not duplicate prior work. If references are provided below, treat them as the state of the art and build on them — cite the bracketed [N] index in your candidates\' rationale (e.g. "adapts the helix bundle of [2]") and differentiate each candidate from the cited structures/papers.',
       'Return ONLY the JSON object. No markdown, no code fences, no commentary.',
     ].join(' ');
+
+    const userContent = refSummary
+      ? `Goal: ${prompt}\n\nExisting research and structures (cite by [N] index):\n${refSummary}`
+      : prompt;
 
     const response = await fetch(GROQ_API_URL, {
       method: 'POST',
@@ -151,7 +163,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt },
+          { role: 'user', content: userContent },
         ],
       }),
       signal: controller.signal,
@@ -185,7 +197,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
 
-    return json({ plan, provider: 'groq', model: MODEL }, { headers: limit.headers });
+    return json(
+      { plan, references, provider: 'groq', model: MODEL },
+      { headers: limit.headers },
+    );
   } catch {
     return json(
       { error: 'Planner request timed out or failed.' },

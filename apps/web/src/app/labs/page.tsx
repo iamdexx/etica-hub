@@ -47,8 +47,17 @@ type ResearchPlan = {
   candidates: PlanCandidate[];
 };
 
+type Reference = {
+  source: 'pubmed' | 'pdb';
+  id: string;
+  title: string;
+  detail: string;
+  url: string;
+};
+
 type PlanResponse = {
   plan?: ResearchPlan;
+  references?: Reference[];
   error?: string;
   detail?: string;
 };
@@ -63,6 +72,8 @@ type Viewer3D = {
   zoomTo: () => void;
   render: () => void;
   spin: (enabled: boolean) => void;
+  resize?: () => void;
+  clear?: () => void;
 };
 
 type Win3Dmol = typeof window & {
@@ -106,6 +117,7 @@ export default function LabsPage() {
   const [plan, setPlan] = useState<ResearchPlan | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [references, setReferences] = useState<Reference[]>([]);
 
   /* ── mutate ── */
   const [mutateIdx, setMutateIdx] = useState<number | null>(null);
@@ -153,6 +165,22 @@ export default function LabsPage() {
     viewer.render();
     viewer.spin(true);
     viewerInstanceRef.current = viewer;
+
+    // 3Dmol's WebGL canvas defaults to its intrinsic size; on mobile the grid
+    // hands us a final width AFTER the first paint, so the canvas can overflow
+    // the parent rounded panel and bleed into adjacent UI. Force a resize on
+    // the next two frames so the canvas matches the parent box.
+    requestAnimationFrame(() => viewerInstanceRef.current?.resize?.());
+    setTimeout(() => viewerInstanceRef.current?.resize?.(), 120);
+  }, []);
+
+  /* ── re-resize on viewport change so the canvas stays inside the panel ── */
+  useEffect(() => {
+    function onResize(): void {
+      viewerInstanceRef.current?.resize?.();
+    }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
   /* ── Research plan ── */
@@ -161,6 +189,7 @@ export default function LabsPage() {
     setPlanLoading(true);
     setPlanError(null);
     setPlan(null);
+    setReferences([]);
     try {
       const res = await fetch('/api/labs/plan', {
         method: 'POST',
@@ -173,12 +202,27 @@ export default function LabsPage() {
         return;
       }
       setPlan(data.plan);
+      if (data.references) setReferences(data.references);
     } catch (err) {
       setPlanError(err instanceof Error ? err.message : 'Failed to reach the planner.');
     } finally {
       setPlanLoading(false);
     }
   }, [prompt]);
+
+  /* ── reset / close the rendered viewer ── */
+  const handleResetViewer = useCallback(() => {
+    if (viewerRef.current) viewerRef.current.innerHTML = '';
+    viewerInstanceRef.current = null;
+    setPdb(null);
+    setStage('idle');
+    setError(null);
+    setAnalysis(null);
+    setAttempts([]);
+    setFoldEngine(null);
+    setMutateIdx(null);
+    setMutateAA('');
+  }, []);
 
   /* ── AI explain ── */
   const handleExplain = useCallback(async () => {
@@ -406,6 +450,48 @@ export default function LabsPage() {
                   <PlanField label="Risks" value={plan.risks} compact />
                 </div>
 
+                {references.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-emerald-200/70">
+                      {`Related research (${references.length}) — candidates cite by [N]`}
+                    </div>
+                    <ul className="space-y-1.5">
+                      {references.map((r, i) => (
+                        <li
+                          key={`${r.source}-${r.id}`}
+                          className="min-w-0 rounded-xl border border-white/10 bg-black/20 p-2.5"
+                        >
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+                            <span className="font-mono text-emerald-200/90">[{i + 1}]</span>
+                            <span
+                              className={`rounded px-1.5 py-px text-[10px] uppercase tracking-wider ${
+                                r.source === 'pubmed'
+                                  ? 'bg-sky-400/15 text-sky-200'
+                                  : 'bg-violet-400/15 text-violet-200'
+                              }`}
+                            >
+                              {r.source === 'pubmed' ? 'PubMed' : 'PDB'}
+                            </span>
+                            <a
+                              href={r.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="min-w-0 break-words text-white/85 underline-offset-2 hover:underline"
+                            >
+                              {r.title}
+                            </a>
+                          </div>
+                          {r.detail && (
+                            <div className="mt-1 text-[11px] leading-snug text-white/45">
+                              {r.detail}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-emerald-200/70">
                     Candidates ({plan.candidates.length})
@@ -543,14 +629,26 @@ export default function LabsPage() {
             <StatusBadge stage={stage} />
           </div>
 
-          <div
-            ref={viewerRef}
-            className="h-[440px] overflow-hidden rounded-3xl border border-emerald-400/15 bg-[#020806]"
-          >
-            {!pdb && (
-              <div className="flex h-full items-center justify-center text-center text-sm text-white/40">
-                {loading ? 'Preparing protein structure\u2026' : 'Your folded molecule will render here.'}
-              </div>
+          <div className="relative w-full min-w-0">
+            <div
+              ref={viewerRef}
+              className="relative h-[440px] w-full min-w-0 overflow-hidden rounded-3xl border border-emerald-400/15 bg-[#020806]"
+            >
+              {!pdb && (
+                <div className="flex h-full items-center justify-center text-center text-sm text-white/40">
+                  {loading ? 'Preparing protein structure\u2026' : 'Your folded molecule will render here.'}
+                </div>
+              )}
+            </div>
+            {pdb && (
+              <button
+                type="button"
+                onClick={handleResetViewer}
+                aria-label="Close fold and reset"
+                className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white/80 backdrop-blur transition hover:bg-black/80 hover:text-white"
+              >
+                <CloseIcon />
+              </button>
             )}
           </div>
 
@@ -578,6 +676,13 @@ export default function LabsPage() {
                 className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-4 py-2 text-xs font-medium text-emerald-200 transition hover:bg-emerald-400/20 disabled:opacity-50"
               >
                 <SparkleIcon /> {analysisLoading ? 'Analyzing\u2026' : 'AI Analysis'}
+              </button>
+              <button
+                type="button"
+                onClick={handleResetViewer}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white/80 transition hover:bg-white/10"
+              >
+                <CloseIcon /> Start over
               </button>
             </div>
           )}
@@ -796,6 +901,15 @@ function SparkleIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3Z" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   );
 }
