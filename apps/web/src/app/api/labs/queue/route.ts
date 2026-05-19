@@ -18,7 +18,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 
-import { attachJobToGoal, getGoal } from '@/lib/labs/goal-store';
+import { attachJobToGoal, createGoal, getGoal } from '@/lib/labs/goal-store';
 import type { LabsJob } from '@/lib/labs/job';
 import { runBiomedicalGate, runHardDenylist } from '@/lib/labs/moderation';
 import { getStatus } from '@/lib/labs/moderation-store';
@@ -156,6 +156,29 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
+  const submitter = submitterTag(req);
+
+  // Auto-root: top-level submits without an explicit goalId get a fresh
+  // root goal synthesised from the prompt so every job shows up under
+  // a topic on /labs/feed. Skips when the caller already nominated a
+  // goal (e.g. branch / goal-detail submit paths).
+  if (!goalId) {
+    try {
+      const rootGoal = await createGoal({
+        title: prompt,
+        description: '',
+        submitterTag: submitter,
+        submitterWallet,
+        origin: 'user',
+      });
+      goalId = rootGoal.id;
+    } catch {
+      // Goal synthesis is best-effort — if the goal store is briefly
+      // unavailable, the job still runs goal-less and renders without
+      // a topic pill. Better than blocking the submit.
+    }
+  }
+
   const maxIterations = clampIterations(body.maxIterations);
   const id = randomUUID();
   const now = Date.now();
@@ -170,7 +193,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     createdAt: now,
     updatedAt: now,
     events: [],
-    submitterTag: submitterTag(req),
+    submitterTag: submitter,
     submitterWallet,
     goalId,
     moderation: 'visible',
