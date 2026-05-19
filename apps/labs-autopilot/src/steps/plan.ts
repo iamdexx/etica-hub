@@ -223,6 +223,38 @@ export interface PriorContextGoal {
   candidates: PriorContextCandidate[];
 }
 
+/**
+ * Shape returned by the server's /api/labs/goals/[id]/context endpoint.
+ * Field names differ from the worker-side PriorContext — fetchGoalContext
+ * in worker.ts maps between the two.
+ */
+export interface ServerGoalContext {
+  goal?: { id: string; title: string };
+  priorCandidates?: Array<{
+    jobId: string;
+    jobPrompt?: string;
+    sequence?: string;
+    rationale?: string;
+    analysis?: string;
+    score?: number;
+    folded?: boolean;
+  }>;
+  relatedGoals?: Array<{
+    goalId: string;
+    title: string;
+    overlapScore?: number;
+    topCandidate?: {
+      jobId: string;
+      jobPrompt?: string;
+      sequence?: string;
+      rationale?: string;
+      analysis?: string;
+      score?: number;
+      folded?: boolean;
+    };
+  }>;
+}
+
 export interface PriorContext {
   /** Same-goal prior best candidates. */
   selfPriorCandidates?: PriorContextCandidate[];
