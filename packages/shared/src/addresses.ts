@@ -119,6 +119,16 @@ export const DEPLOYMENTS: Record<
      * Zero until deploy lands on-chain.
      */
     stableSwapHarvesterAdapter: Address;
+    /**
+     * EticaResearchMarkets — singleton bonding-curve router for research
+     * tokens. Holds the shared 5M ETX research pool and is the sole
+     * mint/burn authority for every {@link ResearchToken} it launches.
+     * Constant-product bonding curve per market, 1% trade fee routed
+     * 40/30/20/10 (pool / etiLpSink / treasury / researcher), UI-only
+     * graduation at 100k ETX reserve, UI-only sunset after 30d of
+     * no trades. Zero until deploy lands on-chain.
+     */
+    eticaResearchMarkets: Address;
   }
 > = {
   61803: {
@@ -137,6 +147,7 @@ export const DEPLOYMENTS: Record<
     eticaStableSwap: '0xbbf5814C1EA0531Cb07541b80c547ee7878C036E',
     liquidityTimelock10y: '0xFdf919673570Cea9c513461604450D003716d739',
     stableSwapHarvesterAdapter: '0x9Adc6298EFDcc1604CB95DaaB33331f866DDBe76',
+    eticaResearchMarkets: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -154,6 +165,7 @@ export const DEPLOYMENTS: Record<
     eticaStableSwap: '0x0000000000000000000000000000000000000000',
     liquidityTimelock10y: '0x0000000000000000000000000000000000000000',
     stableSwapHarvesterAdapter: '0x0000000000000000000000000000000000000000',
+    eticaResearchMarkets: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -172,6 +184,7 @@ export const DEPLOYMENTS: Record<
     eticaStableSwap: '0x0000000000000000000000000000000000000000',
     liquidityTimelock10y: '0x0000000000000000000000000000000000000000',
     stableSwapHarvesterAdapter: '0x0000000000000000000000000000000000000000',
+    eticaResearchMarkets: '0x0000000000000000000000000000000000000000',
   },
 };
 
