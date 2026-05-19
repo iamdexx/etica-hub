@@ -32,7 +32,8 @@ import {
   type PriorContext,
   type ResearchPlan,
 } from './steps/plan.js';
-import { foldWithNvidia } from './steps/fold.js';
+import { foldWithCascade } from './steps/fold.js';
+import { sequenceOnlyScore } from './steps/sequence-score.js';
 import { analyseStructure } from './steps/analyse.js';
 import { mutateSequence } from './steps/mutate.js';
 import { proposeBranchPlan, proposeNextDirection } from './steps/expand.js';
@@ -67,6 +68,12 @@ type CandidateResult = {
   analysis?: string;
   score?: number;
   error?: string;
+  /**
+   * True when the cascade failed and we published the candidate with a
+   * sequence-only score so mint is never blocked on a flaky fold host.
+   * UI surfaces a "Structure pending — re-fold available" badge.
+   */
+  structurePending?: boolean;
 };
 
 type JobResult = {
@@ -466,34 +473,59 @@ async function buildCandidateResult(
   candidate: PlanCandidate,
   events: LabsJobEvent[],
   pdbMap: Record<number, string>,
+  ctx: {
+    prompt: string;
+    peerSequences: readonly string[];
+  },
 ): Promise<CandidateResult> {
   log(`fold candidate[${index}] (${candidate.sequence.length} aa)`);
-  const fold = await foldWithNvidia(candidate.sequence);
-  if (!fold.ok) {
+  const outcome = await foldWithCascade(candidate.sequence);
+
+  for (const attempt of outcome.attempts) {
+    if (attempt.ok) {
+      events.push({
+        kind: 'folded',
+        message: `Candidate ${index} folded on ${attempt.engine} (attempt ${attempt.attempts}, ${attempt.durationMs}ms)`,
+        meta: { index, engine: attempt.engine, attempts: attempt.attempts },
+      });
+    } else if (attempt.attempts > 0) {
+      events.push({
+        kind: 'fold_attempt_failed',
+        message: `Engine ${attempt.engine} failed after ${attempt.attempts} attempt(s): ${attempt.error ?? 'unknown'}`,
+        meta: { index, engine: attempt.engine, attempts: attempt.attempts },
+      });
+    }
+  }
+
+  if (!outcome.ok) {
+    const peers = ctx.peerSequences;
+    const seqScore = sequenceOnlyScore({
+      sequence: candidate.sequence,
+      prompt: ctx.prompt,
+      rationale: candidate.rationale,
+      peerSequences: peers,
+    });
     events.push({
-      kind: 'error',
-      message: `Fold failed for candidate ${index}: ${fold.error}`,
-      meta: { index, engine: 'nvidia-esmfold' },
+      kind: 'structure_pending',
+      message: `Cascade exhausted for candidate ${index}; publishing with sequence-only score ${seqScore.score.toFixed(2)} (structure pending re-fold).`,
+      meta: { index, score: seqScore.score, peers: peers.length },
     });
     return {
       index,
       sequence: candidate.sequence,
       rationale: candidate.rationale,
-      engine: 'nvidia-esmfold',
       folded: false,
-      error: fold.error,
+      structurePending: true,
+      analysis: seqScore.summary,
+      score: seqScore.score,
+      error: outcome.error,
     };
   }
 
-  events.push({
-    kind: 'folded',
-    message: `Candidate ${index} folded on NVIDIA (${fold.pdb.length} bytes)`,
-    meta: { index, engine: 'nvidia-esmfold', bytes: fold.pdb.length },
-  });
-  pdbMap[index] = fold.pdb;
+  pdbMap[index] = outcome.pdb;
 
   log(`analyse candidate[${index}]`);
-  const analysis = await analyseStructure(candidate.sequence, fold.pdb).catch((err) => {
+  const analysis = await analyseStructure(candidate.sequence, outcome.pdb).catch((err) => {
     events.push({
       kind: 'error',
       message: `Analysis failed for candidate ${index}: ${
@@ -516,7 +548,7 @@ async function buildCandidateResult(
     index,
     sequence: candidate.sequence,
     rationale: candidate.rationale,
-    engine: 'nvidia-esmfold',
+    engine: outcome.engine,
     folded: true,
     analysis: analysis?.summary,
     score: analysis?.score,
@@ -567,10 +599,23 @@ async function runJob(job: LabsJob): Promise<void> {
     meta: { candidates: plan.candidates.length, references: plan.references.length },
   });
 
+  // Peer sequences used for sequence-only novelty scoring when the
+  // cascade exhausts retries. Pull from the goal's prior self candidates
+  // first (most similar context) then seed with this job's own results
+  // so later candidates compare against earlier ones in the same run.
+  const peerSequences: string[] = [];
+  for (const prior of priorContext?.selfPriorCandidates ?? []) {
+    if (prior.sequence) peerSequences.push(prior.sequence);
+  }
+
   for (let i = 0; i < plan.candidates.length; i++) {
     const candidate = plan.candidates[i]!;
-    const result = await buildCandidateResult(job.id, i, candidate, events, pdbMap);
+    const result = await buildCandidateResult(job.id, i, candidate, events, pdbMap, {
+      prompt: job.prompt,
+      peerSequences,
+    });
     allCandidates.push(result);
+    peerSequences.push(candidate.sequence);
   }
 
   events.push({ kind: 'iteration_done', message: 'Iteration 1 complete' });
@@ -608,8 +653,12 @@ async function runJob(job: LabsJob): Promise<void> {
         message: `Generated mutant #${idx} from parent #${bestIndex}: ${mutant.description}`,
         meta: { parent: bestIndex, child: idx },
       });
-      const result = await buildCandidateResult(job.id, idx, candidate, events, pdbMap);
+      const result = await buildCandidateResult(job.id, idx, candidate, events, pdbMap, {
+        prompt: job.prompt,
+        peerSequences,
+      });
       allCandidates.push(result);
+      peerSequences.push(candidate.sequence);
     }
 
     events.push({ kind: 'iteration_done', message: `Iteration ${iter} complete` });

@@ -22,6 +22,10 @@ export type LabsJobEventKind =
   | 'started'
   | 'planned'
   | 'folded'
+  | 'fold_attempt_failed'
+  | 'structure_pending'
+  | 're_fold_requested'
+  | 're_fold_completed'
   | 'analysed'
   | 'mutated'
   | 'iteration_done'
@@ -58,6 +62,13 @@ export interface LabsCandidateResult {
   score?: number;
   /** Fold attempt error message, if `folded` is false. */
   error?: string;
+  /**
+   * True when the cascade failed and the candidate is awaiting structure.
+   * Mint never blocks on fold: candidates can be published with a
+   * sequence-only score and `pdb: null`; UI surfaces a "Structure pending"
+   * badge with a re-fold action. Worker clears this on a successful retry.
+   */
+  structurePending?: boolean;
 }
 
 export interface LabsPlanSnapshot {

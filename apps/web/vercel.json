@@ -12,6 +12,10 @@
     {
       "path": "/api/labs/autopilot/dispatch",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/labs/fold/retry",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

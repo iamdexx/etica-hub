@@ -110,16 +110,22 @@ function statusLabel(status: LabsJobStatus): string {
 }
 
 function CandidateCard({
+  jobId,
   candidate,
   pdb,
+  onRefoldQueued,
 }: {
+  jobId: string;
   candidate: LabsCandidateResult;
   pdb: string | undefined;
+  onRefoldQueued: () => void;
 }): JSX.Element {
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const viewerInstanceRef = useRef<Viewer3D | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [refolding, setRefolding] = useState(false);
+  const [refoldStatus, setRefoldStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!pdb || !viewerRef.current) return;
@@ -190,7 +196,12 @@ function CandidateCard({
             </span>
           )}
         </div>
-        {!candidate.folded && candidate.error && (
+        {candidate.structurePending && (
+          <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-200">
+            structure pending
+          </span>
+        )}
+        {!candidate.folded && !candidate.structurePending && candidate.error && (
           <span className="text-[11px] text-rose-300">fold failed</span>
         )}
       </div>
@@ -237,6 +248,55 @@ function CandidateCard({
         <p className="mt-4 text-[11px] text-white/45">
           Structure was generated but not retained in the feed snapshot.
         </p>
+      ) : candidate.structurePending ? (
+        <div className="mt-4 rounded-lg border border-amber-400/20 bg-amber-400/[0.04] p-3">
+          <p className="text-[11px] text-amber-200/90">
+            Structure pending — the fold engines were unavailable, so this
+            research was published with a sequence-only score. A retry runs
+            automatically every few minutes, or you can request one now.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={refolding}
+              onClick={async () => {
+                setRefolding(true);
+                setRefoldStatus(null);
+                try {
+                  const res = await fetch(
+                    `/api/labs/fold/${encodeURIComponent(jobId)}/re-fold`,
+                    {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify({ candidateIndex: candidate.index }),
+                    },
+                  );
+                  if (res.status === 202) {
+                    setRefoldStatus('Re-fold queued. New attempt within ~5 min.');
+                    onRefoldQueued();
+                  } else {
+                    const body = (await res.json().catch(() => ({}))) as {
+                      error?: string;
+                    };
+                    setRefoldStatus(
+                      body.error ?? `Re-fold request failed (${res.status}).`,
+                    );
+                  }
+                } catch (err) {
+                  setRefoldStatus(
+                    err instanceof Error ? err.message : 'Re-fold request failed.',
+                  );
+                } finally {
+                  setRefolding(false);
+                }
+              }}
+              className="rounded border border-amber-300/40 bg-amber-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-amber-100 transition-colors hover:border-amber-200/60 hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {refolding ? 'queuing…' : 're-fold this RES'}
+            </button>
+            {refoldStatus && <span className="text-[11px] text-white/70">{refoldStatus}</span>}
+          </div>
+        </div>
       ) : (
         <p className="mt-4 text-[11px] text-rose-300/85">
           {candidate.error ? `Fold failed: ${candidate.error}` : 'Not folded yet.'}
@@ -454,8 +514,10 @@ export default function LabsFeedDetailPage(): JSX.Element {
                 {job.result.candidates.map((candidate) => (
                   <CandidateCard
                     key={candidate.index}
+                    jobId={job.id}
                     candidate={candidate}
                     pdb={job.result?.pdbBySequenceIndex?.[candidate.index]}
+                    onRefoldQueued={() => void tick()}
                   />
                 ))}
               </div>

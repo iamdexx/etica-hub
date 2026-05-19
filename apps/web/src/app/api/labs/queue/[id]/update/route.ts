@@ -19,6 +19,11 @@ import { NextRequest } from 'next/server';
 import type { LabsJob, LabsJobEvent, LabsJobResult, LabsJobStatus } from '@/lib/labs/job';
 import { labsQueue } from '@/lib/labs/queue';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
+import {
+  foldRetryQueue,
+  makeFoldRetryEntryId,
+  nextRetryDelayMs,
+} from '@/lib/labs/fold-retry-queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,12 +35,17 @@ const VALID_EVENT_KINDS = new Set([
   'started',
   'planned',
   'folded',
+  'fold_attempt_failed',
+  'structure_pending',
+  're_fold_requested',
+  're_fold_completed',
   'analysed',
   'mutated',
   'iteration_done',
   'completed',
   'error',
   'note',
+  'goal_context',
 ]);
 const MAX_EVENTS_PER_UPDATE = 50;
 const MAX_PDB_PER_RESULT = 4;
@@ -97,6 +107,7 @@ function sanitizeResult(raw: unknown): LabsJobResult | undefined {
           ? Math.max(0, Math.min(1, cr.score))
           : undefined,
       error: typeof cr.error === 'string' ? cr.error.slice(0, 400) : undefined,
+      structurePending: cr.structurePending === true ? true : undefined,
     });
   }
 
@@ -179,5 +190,37 @@ export async function POST(
   };
 
   await queue.put(next);
+
+  // Auto-enqueue fold retries for any candidate the worker published
+  // with `structurePending: true`. The cron at /api/labs/fold/retry
+  // will drain the queue every 5 min and patch the candidate back in
+  // place once a fold engine recovers. Best-effort — a retry-queue
+  // failure must not break the worker update path.
+  if (result?.candidates?.length) {
+    try {
+      const retryQ = foldRetryQueue();
+      const now = Date.now();
+      const initialDelay = nextRetryDelayMs(1) ?? 5 * 60 * 1000;
+      for (const c of result.candidates) {
+        if (!c.structurePending) continue;
+        const entryId = makeFoldRetryEntryId(id, c.index);
+        const existingEntry = await retryQ.get(entryId);
+        if (existingEntry) continue; // already scheduled
+        await retryQ.schedule({
+          id: entryId,
+          jobId: id,
+          candidateIndex: c.index,
+          sequence: c.sequence,
+          firstQueuedAt: now,
+          nextRetryAt: now + initialDelay,
+          attempts: 0,
+          lastError: c.error,
+        });
+      }
+    } catch (err) {
+      console.error('[labs] fold-retry enqueue failed', err);
+    }
+  }
+
   return json({ job: next });
 }
