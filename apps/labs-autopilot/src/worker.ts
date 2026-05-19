@@ -35,6 +35,7 @@ import {
 import { foldWithNvidia } from './steps/fold.js';
 import { analyseStructure } from './steps/analyse.js';
 import { mutateSequence } from './steps/mutate.js';
+import { proposeBranchPlan, proposeNextDirection } from './steps/expand.js';
 
 type LabsJobStatus = 'pending' | 'running' | 'done' | 'error';
 
@@ -91,7 +92,31 @@ const BASE_URL = (process.env.LABS_AUTOPILOT_BASE_URL ?? 'https://eticahub.com')
 const TOKEN = process.env.LABS_AUTOPILOT_TOKEN ?? '';
 const MAX_JOBS_PER_TICK = Math.max(
   1,
-  Math.min(5, Number(process.env.LABS_AUTOPILOT_MAX_JOBS_PER_TICK ?? '1')),
+  Math.min(50, Number(process.env.LABS_AUTOPILOT_MAX_JOBS_PER_TICK ?? '20')),
+);
+/** Hard wall-clock budget for one tick. GH Actions allows up to 6h; we
+ * cap at 50 min by default so the runner exits cleanly and the next
+ * Vercel-cron tick can pick up new work without bumping into a stale
+ * instance. */
+const TICK_BUDGET_MS = Math.max(
+  60_000,
+  Number(process.env.LABS_AUTOPILOT_TICK_BUDGET_MS ?? `${50 * 60 * 1000}`),
+);
+/** Cross-goal seeding threshold: best candidate score must exceed this
+ * for the worker to also enqueue a follow-up on the top-related goal.
+ * Range [0, 1]; default 0.75 = top quartile. Set to 1.1 to disable. */
+const CROSS_GOAL_SCORE_THRESHOLD = Math.max(
+  0,
+  Math.min(1.1, Number(process.env.LABS_AUTOPILOT_CROSS_GOAL_THRESHOLD ?? '0.75')),
+);
+/** Branch-spawn threshold: when a goal-attached job finishes with a
+ * winning candidate scoring at or above this, the worker forks a
+ * dedicated child goal to drill into that specific lead while the
+ * parent goal continues its own continuation/cross-goal expansion.
+ * Range [0, 1.1]; default 0.85. Set to 1.1 to disable branching. */
+const BRANCH_SCORE_THRESHOLD = Math.max(
+  0,
+  Math.min(1.1, Number(process.env.LABS_AUTOPILOT_BRANCH_SCORE_THRESHOLD ?? '0.85')),
 );
 
 function log(message: string, meta?: Record<string, unknown>): void {
@@ -169,6 +194,265 @@ async function touchGoal(goalId: string, completed: boolean): Promise<void> {
     });
   } catch (err) {
     log(`goal-touch failed for ${goalId}: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+type GoalSnapshot = {
+  id: string;
+  title: string;
+  description?: string;
+  moderation?: string;
+  keywords?: string[];
+};
+
+async function fetchGoalSnapshot(goalId: string): Promise<GoalSnapshot | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/labs/goals/${encodeURIComponent(goalId)}`, {
+      method: 'GET',
+      headers: { 'x-labs-worker-token': TOKEN },
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { goal?: GoalSnapshot } | GoalSnapshot;
+    if (j && typeof j === 'object' && 'goal' in j && j.goal) return j.goal;
+    if (j && typeof j === 'object' && 'id' in j) return j as GoalSnapshot;
+    return null;
+  } catch (err) {
+    log(`goal fetch failed for ${goalId}: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+async function fetchRelatedGoalIds(
+  goalId: string,
+  limit = 3,
+): Promise<Array<{ id: string; overlap: number }>> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/labs/goals/${encodeURIComponent(goalId)}/related?limit=${limit}`,
+      {
+        method: 'GET',
+        headers: { 'x-labs-worker-token': TOKEN },
+      },
+    );
+    if (!res.ok) return [];
+    const j = (await res.json()) as { related?: Array<{ id: string; overlap: number }> };
+    return Array.isArray(j.related) ? j.related : [];
+  } catch (err) {
+    log(`related-goals fetch failed for ${goalId}: ${err instanceof Error ? err.message : err}`);
+    return [];
+  }
+}
+
+type SpawnOutcome =
+  | { ok: true; id: string; kind: 'continuation' | 'cross-goal' }
+  | { ok: false; reason: string };
+
+async function spawnFollowUp(
+  goalId: string,
+  prompt: string,
+  parentJobId: string,
+  kind: 'continuation' | 'cross-goal',
+): Promise<SpawnOutcome> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/labs/queue/spawn`, {
+      method: 'POST',
+      headers: {
+        'x-labs-worker-token': TOKEN,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ goalId, prompt, parentJobId, kind }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      id?: string;
+      reason?: string;
+    };
+    if (data.ok && typeof data.id === 'string') {
+      return { ok: true, id: data.id, kind };
+    }
+    return { ok: false, reason: data.reason ?? `http ${res.status}` };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+type BranchOutcome =
+  | { ok: true; goalId: string; jobId: string }
+  | { ok: false; reason: string };
+
+async function callBranchEndpoint(payload: {
+  parentGoalId: string;
+  parentJobId: string;
+  title: string;
+  description: string;
+  firstPrompt: string;
+}): Promise<BranchOutcome> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/labs/goals/branch`, {
+      method: 'POST',
+      headers: {
+        'x-labs-worker-token': TOKEN,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      goalId?: string;
+      jobId?: string;
+      reason?: string;
+    };
+    if (data.ok && typeof data.goalId === 'string' && typeof data.jobId === 'string') {
+      return { ok: true, goalId: data.goalId, jobId: data.jobId };
+    }
+    return { ok: false, reason: data.reason ?? `http ${res.status}` };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * If the parent job produced a winner above BRANCH_SCORE_THRESHOLD,
+ * fork a dedicated child goal to drill into that specific lead. The
+ * parent continues with its own continuation chain in parallel.
+ * Failures are non-fatal — the parent job stays `done`.
+ */
+async function maybeBranchHighScoreLead(
+  job: LabsJob,
+  winner: CandidateResult,
+): Promise<void> {
+  if (typeof winner.score !== 'number' || winner.score < BRANCH_SCORE_THRESHOLD) return;
+  if (!winner.folded) return;
+  if (!job.goalId) return;
+
+  const parent = await fetchGoalSnapshot(job.goalId);
+  if (!parent) {
+    log(`branch skipped: parent goal ${job.goalId} not found`);
+    return;
+  }
+  if (parent.moderation === 'denied') {
+    log(`branch skipped: parent goal ${job.goalId} denied`);
+    return;
+  }
+
+  const plan = await proposeBranchPlan({
+    parentGoalTitle: parent.title,
+    parentGoalDescription: parent.description,
+    parentPrompt: job.prompt,
+    candidateIndex: winner.index,
+    candidateSequence: winner.sequence,
+    candidateScore: winner.score,
+    candidateAnalysis: winner.analysis,
+    candidateRationale: winner.rationale,
+  });
+  if (!plan) {
+    log(
+      `branch skipped: planner returned no branch plan for goal ${job.goalId} (score ${winner.score.toFixed(2)})`,
+    );
+    return;
+  }
+
+  const outcome = await callBranchEndpoint({
+    parentGoalId: job.goalId,
+    parentJobId: job.id,
+    title: plan.title,
+    description: plan.description,
+    firstPrompt: plan.firstPrompt,
+  });
+  if (outcome.ok) {
+    log(
+      `branched goal ${job.goalId} → child goal ${outcome.goalId}, first job ${outcome.jobId} (score ${winner.score.toFixed(2)})`,
+    );
+  } else {
+    log(`branch declined for goal ${job.goalId}: ${outcome.reason}`);
+  }
+}
+
+/**
+ * Auto-expand a completed goal-attached job: ask Groq for the next
+ * direction in the same problem space and (if score is strong enough)
+ * also seed one cross-goal follow-up on the most-related goal.
+ *
+ * Server-side caps (per-goal daily, global pending, operator-pause)
+ * are enforced by /api/labs/queue/spawn; this function fires the
+ * request and trusts the response.
+ */
+async function enqueueAutoExpansion(
+  job: LabsJob,
+  plan: ResearchPlan,
+  winner: CandidateResult | null,
+): Promise<void> {
+  if (!job.goalId) return;
+  const goal = await fetchGoalSnapshot(job.goalId);
+  if (!goal) {
+    log(`expansion skipped: goal ${job.goalId} not found`);
+    return;
+  }
+  if (
+    goal.moderation === 'hidden' ||
+    goal.moderation === 'operator-hidden' ||
+    goal.moderation === 'denied'
+  ) {
+    log(`expansion skipped: goal ${job.goalId} is paused (${goal.moderation})`);
+    return;
+  }
+  const summary =
+    winner?.analysis ??
+    plan.hypothesis ??
+    `Best candidate: ${winner?.rationale ?? 'no candidate available'}`;
+  const score = winner?.score;
+
+  // 1. Same-goal continuation.
+  const nextPrompt = await proposeNextDirection({
+    goalTitle: goal.title,
+    goalDescription: goal.description,
+    previousPrompt: job.prompt,
+    bestCandidateSummary: summary,
+    bestCandidateScore: score,
+    kind: 'continuation',
+  });
+  if (nextPrompt) {
+    const out = await spawnFollowUp(job.goalId, nextPrompt, job.id, 'continuation');
+    if (out.ok) {
+      log(`auto-expanded goal ${job.goalId} → job ${out.id}`);
+    } else {
+      log(`auto-expansion declined for goal ${job.goalId}: ${out.reason}`);
+    }
+  } else {
+    log(`auto-expansion skipped: planner returned no direction for goal ${job.goalId}`);
+  }
+
+  // 2. Cross-goal seeding if score is strong enough.
+  if (typeof score === 'number' && score >= CROSS_GOAL_SCORE_THRESHOLD) {
+    const related = await fetchRelatedGoalIds(job.goalId, 3);
+    const top = related[0];
+    if (top) {
+      const relatedGoal = await fetchGoalSnapshot(top.id);
+      if (
+        relatedGoal &&
+        relatedGoal.moderation !== 'hidden' &&
+        relatedGoal.moderation !== 'operator-hidden' &&
+        relatedGoal.moderation !== 'denied'
+      ) {
+        const crossPrompt = await proposeNextDirection({
+          goalTitle: goal.title,
+          goalDescription: goal.description,
+          previousPrompt: job.prompt,
+          bestCandidateSummary: summary,
+          bestCandidateScore: score,
+          kind: 'cross-goal',
+          relatedGoalTitle: relatedGoal.title,
+        });
+        if (crossPrompt) {
+          const out = await spawnFollowUp(relatedGoal.id, crossPrompt, job.id, 'cross-goal');
+          if (out.ok) {
+            log(`cross-goal seeded ${relatedGoal.id} → job ${out.id}`);
+          } else {
+            log(`cross-goal seed declined for ${relatedGoal.id}: ${out.reason}`);
+          }
+        }
+      }
+    }
   }
 }
 
@@ -389,6 +673,32 @@ async function runJob(job: LabsJob): Promise<void> {
 
   if (job.goalId) await touchGoal(job.goalId, true);
 
+  // Auto-expansion: spawn the next research direction(s) so the worker
+  // can keep chaining cures in the same problem space (and optionally
+  // cross-pollinate into related goals). Failures here MUST NOT mark
+  // the parent job as errored — the parent run completed successfully.
+  if (job.goalId) {
+    try {
+      await enqueueAutoExpansion(job, plan, winner);
+    } catch (err) {
+      log(`auto-expansion threw for ${job.id}: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // Strong-score branching: if the winning candidate cleared the
+    // branch threshold, fork a dedicated child goal to drill into
+    // that specific lead. Runs independently of the continuation
+    // chain above so the parent keeps expanding in its own direction
+    // while the branch deep-dives the high-scoring sequence. Failures
+    // here are also non-fatal — the parent job stays `done`.
+    if (winner) {
+      try {
+        await maybeBranchHighScoreLead(job, winner);
+      } catch (err) {
+        log(`branch threw for ${job.id}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
+
   log(`done job ${job.id} — ${allCandidates.length} candidates`);
 }
 
@@ -406,9 +716,18 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  log(`tick start; base=${BASE_URL}, max-jobs-per-tick=${MAX_JOBS_PER_TICK}`);
+  log(
+    `tick start; base=${BASE_URL}, max-jobs-per-tick=${MAX_JOBS_PER_TICK}, budget=${Math.round(
+      TICK_BUDGET_MS / 1000,
+    )}s`,
+  );
+  const tickStart = Date.now();
   let processed = 0;
   for (let i = 0; i < MAX_JOBS_PER_TICK; i++) {
+    if (Date.now() - tickStart > TICK_BUDGET_MS) {
+      log(`tick budget exhausted after ${processed} job(s); exiting cleanly`);
+      break;
+    }
     let job: LabsJob | null;
     try {
       job = await popJob();

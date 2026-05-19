@@ -37,6 +37,21 @@ export interface LabsGoal {
   submitterWallet?: string;
   /** Community moderation status. Hidden goals are skipped by the worker. */
   moderation: ModerationStatus;
+  /**
+   * If set, this goal was auto-branched off a parent goal when one of
+   * the parent's runs produced a high-scoring candidate worth dedicated
+   * follow-up research. The parent stays expansive on its own thread
+   * while the branch goal drills into that specific lead.
+   */
+  parentGoalId?: string;
+  /** The job-id that triggered this branch (parent's winning run). */
+  parentJobId?: string;
+  /**
+   * Origin marker. 'user' = submitted directly; 'branch' = auto-spawned
+   * from a strong-scoring parent candidate. Used by the UI to render
+   * branch trees and by the worker to attribute autopilot expansions.
+   */
+  origin?: 'user' | 'branch';
 }
 
 export interface LabsGoalSummary {
@@ -49,6 +64,9 @@ export interface LabsGoalSummary {
   keywords: string[];
   moderation: ModerationStatus;
   submitterWallet?: string;
+  parentGoalId?: string;
+  parentJobId?: string;
+  origin?: 'user' | 'branch';
 }
 
 /**
