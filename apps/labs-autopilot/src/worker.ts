@@ -29,6 +29,7 @@ import 'dotenv/config';
 import {
   generatePlan,
   type PlanCandidate,
+  type PriorContext,
   type ResearchPlan,
 } from './steps/plan.js';
 import { foldWithNvidia } from './steps/fold.js';
@@ -53,6 +54,7 @@ type LabsJob = {
   createdAt: number;
   updatedAt: number;
   events: LabsJobEvent[];
+  goalId?: string;
 };
 
 type CandidateResult = {
@@ -137,6 +139,39 @@ async function update(id: string, payload: UpdatePayload): Promise<void> {
   }
 }
 
+async function fetchGoalContext(goalId: string): Promise<PriorContext | null> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/labs/goals/${encodeURIComponent(goalId)}/context`,
+      {
+        method: 'GET',
+        headers: { 'x-labs-worker-token': TOKEN },
+      },
+    );
+    if (!res.ok) return null;
+    const json = (await res.json()) as PriorContext;
+    return json;
+  } catch (err) {
+    log(`goal-context fetch failed for ${goalId}: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+async function touchGoal(goalId: string, completed: boolean): Promise<void> {
+  try {
+    await fetch(`${BASE_URL}/api/labs/goals/${encodeURIComponent(goalId)}/touch`, {
+      method: 'POST',
+      headers: {
+        'x-labs-worker-token': TOKEN,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ completed }),
+    });
+  } catch (err) {
+    log(`goal-touch failed for ${goalId}: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 /**
  * Build a CandidateResult from a (sequence, rationale) by folding +
  * analysing. Each step writes events on success/failure.
@@ -211,10 +246,26 @@ async function runJob(job: LabsJob): Promise<void> {
   const pdbMap: Record<number, string> = {};
   const allCandidates: CandidateResult[] = [];
 
+  // Pull prior + cross-goal context if this job is attached to a goal.
+  let priorContext: PriorContext | undefined;
+  if (job.goalId) {
+    const ctx = await fetchGoalContext(job.goalId);
+    if (ctx) {
+      priorContext = ctx;
+      const selfN = ctx.selfPriorCandidates?.length ?? 0;
+      const relN = ctx.relatedGoals?.length ?? 0;
+      events.push({
+        kind: 'goal_context',
+        message: `Loaded goal context: ${selfN} prior candidate(s) + ${relN} related goal(s)`,
+        meta: { goalId: job.goalId, selfPrior: selfN, related: relN },
+      });
+    }
+  }
+
   // Iteration 1 — plan + fold + analyse.
   let plan: ResearchPlan;
   try {
-    plan = await generatePlan(job.prompt);
+    plan = await generatePlan(job.prompt, priorContext);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await update(job.id, {
@@ -222,6 +273,7 @@ async function runJob(job: LabsJob): Promise<void> {
       status: 'error',
       iterationsDelta: 0,
     });
+    if (job.goalId) await touchGoal(job.goalId, false);
     return;
   }
 
@@ -335,6 +387,8 @@ async function runJob(job: LabsJob): Promise<void> {
     },
   });
 
+  if (job.goalId) await touchGoal(job.goalId, true);
+
   log(`done job ${job.id} — ${allCandidates.length} candidates`);
 }
 
@@ -382,6 +436,7 @@ async function main(): Promise<void> {
       } catch (updateErr) {
         console.error('Could not mark job errored:', updateErr);
       }
+      if (job.goalId) await touchGoal(job.goalId, false);
       process.exitCode = 1;
     }
   }

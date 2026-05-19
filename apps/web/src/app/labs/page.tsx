@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAccount, useWalletClient } from 'wagmi';
+
+import { signSubmit } from '@/lib/labs/client-sig';
 
 const MAX_PROMPT_CHARS = 400;
 const AMINO_ACIDS = 'ACDEFGHIKLMNPQRSTVWY';
@@ -133,6 +136,71 @@ export default function LabsPage() {
   const [autopilotLoading, setAutopilotLoading] = useState(false);
   const [autopilotError, setAutopilotError] = useState<string | null>(null);
 
+  /* ── wallet (required for submissions on EticaLabs) ── */
+  const { address, isConnected } = useAccount();
+  const { data: walletClient } = useWalletClient();
+
+  /* ── goals: optional persistent research target ── */
+  type GoalOption = { id: string; title: string };
+  const [goals, setGoals] = useState<GoalOption[]>([]);
+  const [selectedGoalId, setSelectedGoalId] = useState<string>('');
+  const [newGoalTitle, setNewGoalTitle] = useState('');
+  const [newGoalDescription, setNewGoalDescription] = useState('');
+  const [creatingGoal, setCreatingGoal] = useState(false);
+  const [goalNotice, setGoalNotice] = useState<string | null>(null);
+
+  /* ── load existing goals once ── */
+  useEffect(() => {
+    fetch('/api/labs/goals', { cache: 'no-store' })
+      .then((r) => r.json() as Promise<{ goals?: GoalOption[] }>)
+      .then((j) => setGoals(j.goals ?? []))
+      .catch(() => {});
+  }, []);
+
+  const handleCreateGoal = useCallback(async () => {
+    const title = newGoalTitle.trim();
+    if (!title) return;
+    if (!isConnected || !address || !walletClient) {
+      setGoalNotice('Connect your wallet to create a goal.');
+      return;
+    }
+    setCreatingGoal(true);
+    setGoalNotice(null);
+    try {
+      const sig = await signSubmit({
+        action: 'submit-goal',
+        payload: title,
+        wallet: address,
+        walletClient,
+      });
+      const res = await fetch('/api/labs/goals', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          description: newGoalDescription.trim(),
+          wallet: sig.wallet,
+          signature: sig.signature,
+          issuedAt: sig.issuedAt,
+        }),
+      });
+      const data = (await res.json()) as { goal?: GoalOption; error?: string };
+      if (!res.ok || !data.goal) {
+        setGoalNotice(data.error ?? `Goal create failed (${res.status}).`);
+        return;
+      }
+      setGoals((g) => [data.goal as GoalOption, ...g]);
+      setSelectedGoalId(data.goal.id);
+      setNewGoalTitle('');
+      setNewGoalDescription('');
+      setGoalNotice(`Goal "${data.goal.title}" ready — your run will attach to it.`);
+    } catch (err) {
+      setGoalNotice(err instanceof Error ? err.message : 'Failed to create goal.');
+    } finally {
+      setCreatingGoal(false);
+    }
+  }, [newGoalTitle, newGoalDescription, isConnected, address, walletClient]);
+
   const charsRemaining = useMemo(() => MAX_PROMPT_CHARS - prompt.length, [prompt.length]);
 
   /* ── fetch engine roster on mount ── */
@@ -220,13 +288,30 @@ export default function LabsPage() {
   /* ── Autopilot: enqueue prompt to /api/labs/queue and redirect to the feed entry ── */
   const handleAutopilot = useCallback(async () => {
     if (!prompt.trim()) return;
+    if (!isConnected || !address || !walletClient) {
+      setAutopilotError('Connect your wallet to submit research to Autopilot.');
+      return;
+    }
     setAutopilotLoading(true);
     setAutopilotError(null);
     try {
+      const payload = selectedGoalId ? `${selectedGoalId}|${prompt}` : prompt;
+      const sig = await signSubmit({
+        action: 'submit-job',
+        payload,
+        wallet: address,
+        walletClient,
+      });
       const res = await fetch('/api/labs/queue', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+          prompt,
+          ...(selectedGoalId ? { goalId: selectedGoalId } : {}),
+          wallet: sig.wallet,
+          signature: sig.signature,
+          issuedAt: sig.issuedAt,
+        }),
       });
       const data = (await res.json()) as { id?: string; error?: string };
       if (!res.ok || !data.id) {
@@ -241,7 +326,7 @@ export default function LabsPage() {
     } finally {
       setAutopilotLoading(false);
     }
-  }, [prompt, router]);
+  }, [prompt, router, selectedGoalId, isConnected, address, walletClient]);
 
   /* ── reset / close the rendered viewer ── */
   const handleResetViewer = useCallback(() => {
