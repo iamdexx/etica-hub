@@ -87,11 +87,18 @@ contract EticaResearchNFTTest is Test {
         // Reconstruct EIP-712 domain separator from the contract's
         // public eip712Domain() so this test stays correct even if
         // anything about the chain context changes.
-        (, string memory name, string memory version, uint256 chainId, address verifyingContract,,) =
-            nft.eip712Domain();
+        (
+            ,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,,
+        ) = nft.eip712Domain();
         bytes32 domainSeparator = keccak256(
             abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
                 keccak256(bytes(name)),
                 keccak256(bytes(version)),
                 chainId,
@@ -145,8 +152,12 @@ contract EticaResearchNFTTest is Test {
         // Splitter must exist for this tokenId.
         address splitter = nft.splitterOf(tokenId);
         assertTrue(splitter != address(0), "splitter not deployed");
-        assertEq(EticaResearchRoyaltySplitter(payable(splitter)).nft(), address(nft), "splitter.nft");
-        assertEq(EticaResearchRoyaltySplitter(payable(splitter)).tokenId(), tokenId, "splitter.tokenId");
+        assertEq(
+            EticaResearchRoyaltySplitter(payable(splitter)).nft(), address(nft), "splitter.nft"
+        );
+        assertEq(
+            EticaResearchRoyaltySplitter(payable(splitter)).tokenId(), tokenId, "splitter.tokenId"
+        );
     }
 
     function test_claim_invalidSignatureReverts() public {
@@ -478,9 +489,7 @@ contract EticaResearchNFTTest is Test {
         uint256 last = code.length - 4;
         for (uint256 i = 0; i <= last; i++) {
             if (
-                code[i] == selector[0]
-                    && code[i + 1] == selector[1]
-                    && code[i + 2] == selector[2]
+                code[i] == selector[0] && code[i + 1] == selector[1] && code[i + 2] == selector[2]
                     && code[i + 3] == selector[3]
             ) {
                 return true;

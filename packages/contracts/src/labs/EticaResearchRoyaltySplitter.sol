@@ -100,11 +100,11 @@ contract EticaResearchRoyaltySplitter {
         treasuryReleased += toTreasury;
 
         if (toSubmitter > 0) {
-            (bool ok, ) = payable(submitter).call{value: toSubmitter}("");
+            (bool ok,) = payable(submitter).call{value: toSubmitter}("");
             if (!ok) revert TransferFailed();
         }
         if (toTreasury > 0) {
-            (bool ok, ) = payable(treasury).call{value: toTreasury}("");
+            (bool ok,) = payable(treasury).call{value: toTreasury}("");
             if (!ok) revert TransferFailed();
         }
 

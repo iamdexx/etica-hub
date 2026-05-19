@@ -300,12 +300,7 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
         _safeMint(msg.sender, tokenId);
 
         emit DiscoveryClaimed(
-            tokenId,
-            branchHash,
-            msg.sender,
-            payload.submitter,
-            payload.score,
-            payload.branchGoalId
+            tokenId, branchHash, msg.sender, payload.submitter, payload.score, payload.branchGoalId
         );
     }
 
@@ -406,16 +401,18 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
 
     function _jsonTail(uint256 tokenId, Discovery storage d) internal view returns (bytes memory) {
         return abi.encodePacked(
-            ',"animation_url":"',
-            _viewerUrl(tokenId),
-            '","attributes":',
-            _buildAttributes(d),
-            "}"
+            ',"animation_url":"', _viewerUrl(tokenId), '","attributes":', _buildAttributes(d), "}"
         );
     }
 
-    function _buildName(uint256 tokenId, string memory parentGoalTitle) internal pure returns (string memory) {
-        return string(abi.encodePacked("EticaResearch Cure #", tokenId.toString(), " - ", parentGoalTitle));
+    function _buildName(uint256 tokenId, string memory parentGoalTitle)
+        internal
+        pure
+        returns (string memory)
+    {
+        return string(
+            abi.encodePacked("EticaResearch Cure #", tokenId.toString(), " - ", parentGoalTitle)
+        );
     }
 
     // ---------------------------------------------------------------
@@ -456,7 +453,11 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
     // Internal: description, svg, attributes, urls
     // ---------------------------------------------------------------
 
-    function _buildDescription(uint256 tokenId, Discovery storage d) internal view returns (string memory) {
+    function _buildDescription(uint256 tokenId, Discovery storage d)
+        internal
+        view
+        returns (string memory)
+    {
         // Split into chunks to keep each abi.encodePacked under the
         // EVM stack limit. Re-merged at return.
         bytes memory a = abi.encodePacked(
@@ -581,7 +582,9 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
         bytes memory b = bytes(s);
         if (b.length <= maxLen) return s;
         bytes memory out = new bytes(maxLen + 3);
-        for (uint256 i = 0; i < maxLen; i++) out[i] = b[i];
+        for (uint256 i = 0; i < maxLen; i++) {
+            out[i] = b[i];
+        }
         out[maxLen] = ".";
         out[maxLen + 1] = ".";
         out[maxLen + 2] = ".";
@@ -624,7 +627,9 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
             }
         }
         bytes memory trimmed = new bytes(j);
-        for (uint256 i = 0; i < j; i++) trimmed[i] = out[i];
+        for (uint256 i = 0; i < j; i++) {
+            trimmed[i] = out[i];
+        }
         return string(trimmed);
     }
 
@@ -670,7 +675,9 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
             }
         }
         bytes memory trimmed = new bytes(j);
-        for (uint256 i = 0; i < j; i++) trimmed[i] = out[i];
+        for (uint256 i = 0; i < j; i++) {
+            trimmed[i] = out[i];
+        }
         return string(trimmed);
     }
 
