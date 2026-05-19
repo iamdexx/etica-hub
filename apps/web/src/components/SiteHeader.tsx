@@ -14,6 +14,7 @@ const NAV = [
   { href: '/stake', label: 'Stake' },
   { href: '/farms', label: 'Farms' },
   { href: '/research', label: 'Research' },
+  { href: '/research-markets', label: 'Markets' },
   { href: '/bridge', label: 'Bridge' },
   { href: '/explorer', label: 'Explorer' },
   { href: '/whitepaper', label: 'Whitepaper' },
