@@ -1,8 +1,8 @@
 /**
  * Wallet-gated flag / vouch controls for an EticaLabs goal or job.
  *
- * Voter must connect a wallet on chain 61803 and hold ≥ 100 ETX.
- * Weight = balance, soft-capped at 100k ETX per wallet.
+ * Voter must connect a wallet on chain 61803 and hold ≥ 100 stETX.
+ * Weight = stETX balance, soft-capped at 100k stETX per wallet.
  * Each vote is EIP-191 signed; the server re-verifies and records the
  * raw signature into the public moderation log.
  */
@@ -34,7 +34,7 @@ export function FlagVouchPanel({ targetType, targetId, onVoted }: FlagVouchPanel
   const submit = useCallback(
     async (action: 'flag' | 'vouch') => {
       if (!isConnected || !address || !walletClient) {
-        setError('Connect a wallet on chain 61803 holding ≥ 100 ETX to vote.');
+        setError('Connect a wallet on chain 61803 holding ≥ 100 stETX to vote. Stake ETX at /stake to earn moderation rights.');
         return;
       }
       setBusy(action);
@@ -85,8 +85,9 @@ export function FlagVouchPanel({ targetType, targetId, onVoted }: FlagVouchPanel
     <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
       <p className="text-sm font-medium text-white">Community moderation</p>
       <p className="mt-1 text-xs text-white/55">
-        Flag or vouch with your wallet. Weight = ETX balance (≥ 100 minimum, soft-capped at
-        100k). All votes are signed and publicly logged.
+        Flag or vouch with your wallet. Weight = stETX balance (≥ 100 minimum, soft-capped
+        at 100k). All votes are signed and publicly logged. Don’t hold stETX yet? Stake ETX
+        at /stake to earn moderation rights.
       </p>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">

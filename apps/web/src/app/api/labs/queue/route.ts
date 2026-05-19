@@ -84,8 +84,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   // Wallet-sig submission gate — every job is recorded with the
-  // submitting wallet for the public moderation log. No ETX balance
-  // requirement; only proof of address control.
+  // submitting wallet for the public moderation log. No token balance
+  // requirement; only proof of address control. Moderation (flag/vouch)
+  // separately requires ≥ 100 stETX.
   const auth = await verifySubmitPayload({
     action: 'submit-job',
     payload:

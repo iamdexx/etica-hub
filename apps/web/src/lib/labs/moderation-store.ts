@@ -1,18 +1,23 @@
 /**
- * Wallet-gated, ETX-weighted community moderation storage for EticaLabs.
+ * Wallet-gated, stETX-weighted community moderation storage for EticaLabs.
  *
  * The moderation surface (flag/vouch) is restricted to connected wallets
- * on chain 61803 holding ≥ {@link MIN_VOTE_BALANCE_ETX} ETX. Vote weight
- * is the wallet's ETX balance at vote time, soft-capped at
- * {@link MAX_VOTE_WEIGHT_ETX} so a single whale cannot singlehandedly
+ * on chain 61803 holding ≥ {@link MIN_VOTE_BALANCE_STETX} stETX. Vote
+ * weight is the wallet's stETX balance at vote time, soft-capped at
+ * {@link MAX_VOTE_WEIGHT_STETX} so a single whale cannot singlehandedly
  * hide or restore content.
+ *
+ * Moderation rights flow from active staking participation (depositing
+ * ETX into the ERC-4626 vault), not from passive token holding — which
+ * keeps the community-moderation gate squarely on the utility side of
+ * any securities analysis.
  *
  * Auto-thresholds (community auto-actions only — operator-overridden
  * items are exempt):
  *   - hide: total flag-weight > total vouch-weight AND
  *           distinct flaggers ≥ {@link HIDE_MIN_VOTERS} AND
- *           flag-weight ≥ {@link HIDE_MIN_TOTAL_WEIGHT_ETX}
- *   - restore: vouch-weight - flag-weight ≥ {@link RESTORE_DELTA_ETX}
+ *           flag-weight ≥ {@link HIDE_MIN_TOTAL_WEIGHT_STETX}
+ *   - restore: vouch-weight - flag-weight ≥ {@link RESTORE_DELTA_STETX}
  *
  * Key layout:
  *   labs:mod:status:{type}:{id}        STRING    current ModerationStatus
@@ -37,11 +42,11 @@ import {
 } from './moderation';
 import { labsStore } from './store';
 
-export const MIN_VOTE_BALANCE_ETX = 100n * 10n ** 18n;
-export const MAX_VOTE_WEIGHT_ETX = 100_000n * 10n ** 18n;
+export const MIN_VOTE_BALANCE_STETX = 100n * 10n ** 18n;
+export const MAX_VOTE_WEIGHT_STETX = 100_000n * 10n ** 18n;
 export const HIDE_MIN_VOTERS = COMMUNITY_HIDE_THRESHOLD;
-export const HIDE_MIN_TOTAL_WEIGHT_ETX = 1_000n * 10n ** 18n;
-export const RESTORE_DELTA_ETX = 5_000n * 10n ** 18n;
+export const HIDE_MIN_TOTAL_WEIGHT_STETX = 1_000n * 10n ** 18n;
+export const RESTORE_DELTA_STETX = 5_000n * 10n ** 18n;
 
 export type ModTarget = 'job' | 'goal';
 
@@ -183,10 +188,10 @@ export interface VoteResult {
   newStatus?: ModerationStatus;
 }
 
-/** Soft-cap ETX balance into a vote weight. */
+/** Soft-cap stETX balance into a vote weight. */
 export function weightFor(balance: bigint): bigint {
   if (balance <= 0n) return 0n;
-  return balance > MAX_VOTE_WEIGHT_ETX ? MAX_VOTE_WEIGHT_ETX : balance;
+  return balance > MAX_VOTE_WEIGHT_STETX ? MAX_VOTE_WEIGHT_STETX : balance;
 }
 
 async function recordVote(
@@ -307,7 +312,7 @@ export async function applyVote(input: VoteInput): Promise<VoteResult> {
 }
 
 /**
- * ETX-weighted analogue of {@link evaluateCommunityVerdict}.
+ * stETX-weighted analogue of {@link evaluateCommunityVerdict}.
  */
 export function evaluateWeightedVerdict(
   current: ModerationStatus,
@@ -319,7 +324,7 @@ export function evaluateWeightedVerdict(
   // From any non-denied state, the community can force the item to
   // `visible` with a sufficient vouch-over-flag margin. This is what
   // makes operator-hide reversible.
-  if (tallies.vouchWeight >= tallies.flagWeight + RESTORE_DELTA_ETX) {
+  if (tallies.vouchWeight >= tallies.flagWeight + RESTORE_DELTA_STETX) {
     if (current !== 'visible') return 'visible';
   }
 
@@ -329,7 +334,7 @@ export function evaluateWeightedVerdict(
   if (
     tallies.flagVoters >= HIDE_MIN_VOTERS &&
     tallies.flagWeight > tallies.vouchWeight &&
-    tallies.flagWeight >= HIDE_MIN_TOTAL_WEIGHT_ETX
+    tallies.flagWeight >= HIDE_MIN_TOTAL_WEIGHT_STETX
   ) {
     if (current === 'visible' || current === 'operator-approved') {
       return 'hidden';

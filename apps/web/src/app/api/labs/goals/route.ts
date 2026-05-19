@@ -8,8 +8,8 @@
  *                                    (Groq biomedical gate) at submit.
  *
  * Submission is wallet-gated (EIP-191 signature) but does NOT require
- * any ETX balance. Only the moderation surface (flag/vouch) requires
- * an ETX-holding wallet.
+ * any token balance. Only the moderation surface (flag/vouch) requires
+ * a wallet holding ≥ 100 stETX.
  */
 import { createHash } from 'crypto';
 import { NextRequest } from 'next/server';

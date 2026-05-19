@@ -6,7 +6,7 @@
  *
  *   1. Layer 1 hard denylist — terminal, never overridable
  *   2. Operator action — reversible by sufficient community vouches
- *   3. Community ETX-weighted vote
+ *   3. Community stETX-weighted vote
  *
  * Operator wallet is pinned to TREASURY_ADDRESS (or LABS_OPERATOR_ADDRESS
  * env override) and verified server-side via the same EIP-191 envelope
@@ -151,7 +151,7 @@ export default function AdminModerationPage(): JSX.Element {
           item visible and pre-empts community auto-hide unless vouches are reversed by a
           sufficient flag margin. Layer 1 hard-denials are absolute. Community vouches can
           reverse any operator action when vouch-weight exceeds flag-weight by ≥ 5,000
-          ETX.
+          stETX.
         </p>
         <p className="mt-2 text-xs text-white/55">
           Operator wallet: <span className="font-mono">{OPERATOR_ENV}</span>

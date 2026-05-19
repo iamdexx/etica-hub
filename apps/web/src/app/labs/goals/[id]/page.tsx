@@ -52,13 +52,13 @@ function relativeTime(ms: number): string {
   return `${day}d ago`;
 }
 
-function fmtEtxWei(wei: string): string {
+function fmtStEtxWei(wei: string): string {
   try {
     const n = BigInt(wei);
     const whole = n / 10n ** 18n;
-    return `${whole.toLocaleString()} ETX`;
+    return `${whole.toLocaleString()} stETX`;
   } catch {
-    return '0 ETX';
+    return '0 stETX';
   }
 }
 
@@ -217,14 +217,14 @@ export default function GoalDetailPage(): JSX.Element {
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
           <p className="text-xs uppercase tracking-wider text-white/45">Flag weight</p>
           <p className="mt-1 text-2xl font-semibold text-rose-200">
-            {m ? fmtEtxWei(m.flagWeight) : '—'}
+            {m ? fmtStEtxWei(m.flagWeight) : '—'}
           </p>
           <p className="mt-1 text-xs text-white/55">{m?.flagVoters ?? 0} voters</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
           <p className="text-xs uppercase tracking-wider text-white/45">Vouch weight</p>
           <p className="mt-1 text-2xl font-semibold text-emerald-200">
-            {m ? fmtEtxWei(m.vouchWeight) : '—'}
+            {m ? fmtStEtxWei(m.vouchWeight) : '—'}
           </p>
           <p className="mt-1 text-xs text-white/55">{m?.vouchVoters ?? 0} voters</p>
         </div>

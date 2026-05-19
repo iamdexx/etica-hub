@@ -1,8 +1,9 @@
 /**
  * Wallet-sig gate for *submitting* a research goal or job to EticaLabs.
  *
- * Submission is open to any wallet on chain 61803 — no ETX balance
- * requirement. The wallet signs an EIP-191 message authorizing the
+ * Submission is open to any wallet on chain 61803 — no token balance
+ * requirement (moderation separately requires ≥ 100 stETX). The wallet
+ * signs an EIP-191 message authorizing the
  * specific submission (goal title or job prompt), proving that the
  * submitter controls the address recorded as `submitterWallet` on
  * the resulting goal/job for the public moderation log.

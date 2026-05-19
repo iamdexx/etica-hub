@@ -16,8 +16,8 @@
  * Returns { status, tallies, weightApplied, newStatus? }.
  *
  * - Submission is open to anyone (see /api/labs/queue).
- * - Moderation requires a wallet on chain 61803 holding ≥ 100 ETX.
- * - Vote weight = balance, soft-capped at 100k ETX per wallet.
+ * - Moderation requires a wallet on chain 61803 holding ≥ 100 stETX.
+ * - Vote weight = stETX balance, soft-capped at 100k stETX per wallet.
  * - One vote per wallet per item; flipping flag↔vouch overwrites the
  *   prior vote — no stacking.
  */
