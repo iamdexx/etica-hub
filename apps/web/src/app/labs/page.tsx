@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const MAX_PROMPT_CHARS = 400;
@@ -126,6 +128,11 @@ export default function LabsPage() {
   /* ── share ── */
   const [copied, setCopied] = useState(false);
 
+  /* ── autopilot submit ── */
+  const router = useRouter();
+  const [autopilotLoading, setAutopilotLoading] = useState(false);
+  const [autopilotError, setAutopilotError] = useState<string | null>(null);
+
   const charsRemaining = useMemo(() => MAX_PROMPT_CHARS - prompt.length, [prompt.length]);
 
   /* ── fetch engine roster on mount ── */
@@ -209,6 +216,32 @@ export default function LabsPage() {
       setPlanLoading(false);
     }
   }, [prompt]);
+
+  /* ── Autopilot: enqueue prompt to /api/labs/queue and redirect to the feed entry ── */
+  const handleAutopilot = useCallback(async () => {
+    if (!prompt.trim()) return;
+    setAutopilotLoading(true);
+    setAutopilotError(null);
+    try {
+      const res = await fetch('/api/labs/queue', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = (await res.json()) as { id?: string; error?: string };
+      if (!res.ok || !data.id) {
+        setAutopilotError(data.error ?? `Autopilot returned ${res.status}.`);
+        return;
+      }
+      router.push(`/labs/feed/${data.id}`);
+    } catch (err) {
+      setAutopilotError(
+        err instanceof Error ? err.message : 'Failed to reach the Autopilot queue.',
+      );
+    } finally {
+      setAutopilotLoading(false);
+    }
+  }, [prompt, router]);
 
   /* ── reset / close the rendered viewer ── */
   const handleResetViewer = useCallback(() => {
@@ -386,10 +419,19 @@ export default function LabsPage() {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Metric label="LLM" value="Groq" />
-            <Metric label="Folding" value={foldEngine ?? 'Multi-engine'} />
-            <Metric label="Rendering" value="3Dmol.js" />
+          <div className="flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Metric label="LLM" value="Groq" />
+              <Metric label="Folding" value={foldEngine ?? 'Multi-engine'} />
+              <Metric label="Rendering" value="3Dmol.js" />
+            </div>
+            <Link
+              href="/labs/feed"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-medium text-emerald-100 transition-colors hover:border-emerald-400/50 hover:bg-emerald-400/15"
+            >
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span>View live research feed</span>
+            </Link>
           </div>
         </div>
       </section>
@@ -425,15 +467,32 @@ export default function LabsPage() {
                   Optional. Have the AI scope a hypothesis &amp; 3 candidates before folding.
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handlePlan}
-                disabled={planLoading || prompt.trim().length === 0}
-                className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-100 transition hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {planLoading ? 'Planning\u2026' : plan ? 'Replan' : 'Create plan'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePlan}
+                  disabled={planLoading || prompt.trim().length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-100 transition hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {planLoading ? 'Planning\u2026' : plan ? 'Replan' : 'Create plan'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAutopilot}
+                  disabled={autopilotLoading || prompt.trim().length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1.5 text-xs font-medium text-sky-100 transition hover:bg-sky-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Submit to the public Autopilot feed — agents plan, fold, and post results in real time"
+                >
+                  {autopilotLoading ? 'Submitting\u2026' : 'Run on Autopilot'}
+                </button>
+              </div>
             </div>
+
+            {autopilotError && (
+              <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
+                {autopilotError}
+              </div>
+            )}
 
             {planError && (
               <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
