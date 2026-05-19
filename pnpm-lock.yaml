@@ -99,6 +99,22 @@ importers:
         specifier: ^2.1.5
         version: 2.1.9(@types/node@20.19.39)
 
+  apps/labs-autopilot:
+    dependencies:
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.6.1
+    devDependencies:
+      '@types/node':
+        specifier: ^20.17.6
+        version: 20.19.39
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   apps/orderbook:
     dependencies:
       '@etica-hub/shared':
