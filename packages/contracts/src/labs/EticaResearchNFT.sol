@@ -42,18 +42,23 @@ import {EticaResearchRoyaltySplitter} from "./EticaResearchRoyaltySplitter.sol";
 ///           - Transfer any existing NFT (standard ERC-721 transfer rules).
 ///           - Change any token's metadata (Discovery is set once in
 ///             {claim} and never written again).
-///           - Redirect any token's royalty receiver (per-token receiver
-///             is immutable; ERC-2981 reads it from {discoveryOf}.submitter).
+///           - Redirect any token's royalty receiver address (the
+///             per-token splitter is deployed at {claim} time via CREATE2
+///             with the tokenId as salt, and {royaltyInfo} reads that
+///             immutable mapping; no setter exists).
 ///           - Pause transfers or trading.
 ///           - Upgrade this contract.
 ///
-///         Royalty receiver per token is locked to
-///         `discoveryOf[tokenId].submitter` (the wallet that originated
-///         the parent research goal that produced this cure). Anyone
-///         can claim a discovery after the exclusive window, but the
-///         royalty stream forever flows to the original submitter — so
-///         a bot front-running a claim cannot steal the secondary-market
-///         royalty stream from the discoverer.
+///         The ERC-2981 royalty receiver per token is the per-token
+///         {EticaResearchRoyaltySplitter} address — immutable per
+///         token — which forwards 80% to the **current** NFT holder
+///         (resolved at release time via {ownerOf}) and 20% to the
+///         EticaHub treasury. Selling the NFT therefore transfers
+///         the secondary-market royalty stream to the buyer, which
+///         is what makes the in-app /labs/market listing valuable.
+///         The original discoverer's address is permanently recorded
+///         in {submitterOf} for attribution / provenance only — it
+///         does not gate any payout.
 ///
 /// @dev    CLAIM-AND-MINT FLOW
 ///
@@ -66,11 +71,18 @@ import {EticaResearchRoyaltySplitter} from "./EticaResearchRoyaltySplitter.sol";
 ///            digest with the {ATTESTOR} private key.
 ///         3. The cure is announced on the public lab feed with a
 ///            "Claim this discovery" button at /labs/cure/<branchGoalId>.
-///         4. The original submitter (or, after the exclusive window,
-///            anyone) calls {claim} with the payload and signature.
-///            They pay EGAZ gas. The contract verifies the signature,
-///            stores the Discovery, mints the NFT to msg.sender, and
-///            locks the royalty receiver to the original submitter.
+///         4. The original submitter calls {claim} during the
+///            exclusive window (default 7 days from discovery) with
+///            the payload + signature. They pay EGAZ gas. The contract
+///            verifies the signature, stores the Discovery, and mints
+///            the NFT to them.
+///         5. If they do NOT claim within the window, the cure is
+///            **abandoned**. After `exclusiveUntil` anyone can call
+///            {claim}, but the contract force-mints the NFT to the
+///            immutable {treasury} address (msg.sender is ignored).
+///            A cron / community member pays gas to settle; treasury
+///            ends up as the first holder and may then list on
+///            /labs/market to forward the royalty stream to a buyer.
 ///
 ///         The contract does NOT pay for or subsidize claims. Treasury
 ///         bears zero recurring infrastructure cost — IPFS pinning,
@@ -96,6 +108,9 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
     error EmptyParentGoal();
     error EmptySequence();
     error SubmitterZero();
+    error InsufficientMintFee(uint256 required, uint256 provided);
+    error FeeTransferFailed();
+    error RefundFailed();
 
     // ---------------------------------------------------------------
     // Events
@@ -105,11 +120,16 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
     /// @param  tokenId       The new NFT id.
     /// @param  branchGoalId  Off-chain branch-goal identifier; unique
     ///                       per minted cure (replay-prevented).
-    /// @param  claimedBy     The wallet that paid gas to mint
-    ///                       (== owner of the NFT at mint time).
-    /// @param  submitter     The original research-goal submitter; this
-    ///                       is the per-token royalty receiver and is
-    ///                       immutable for the life of this token.
+    /// @param  claimedBy     The wallet the NFT was minted to (==
+    ///                       owner of the NFT at mint time). During
+    ///                       the exclusive window this is the
+    ///                       discoverer; after the window closes it
+    ///                       is forced to be the treasury.
+    /// @param  submitter     The original research-goal submitter —
+    ///                       permanent attribution recorded in
+    ///                       {submitterOf}. Royalties flow to whichever
+    ///                       wallet is the **current** NFT holder at
+    ///                       release() time, not to this address.
     /// @param  score         Score in basis points (0..10000), where
     ///                       10000 == 1.00. Branch threshold is set
     ///                       off-chain by the autopilot.
@@ -119,6 +139,7 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
         address indexed claimedBy,
         address submitter,
         uint256 score,
+        uint256 mintFeeWei,
         string branchGoalId
     );
 
@@ -163,6 +184,26 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
     ///         contract's immutable value (not per-token).
     string public BASE_URL;
 
+    /// @notice Flat per-mint EGAZ fee paid to the treasury on every
+    ///         researcher claim, in wei. Constant per contract
+    ///         instance — baked in at deploy and never writable.
+    ///         This is the "treasury benefit" tax on every published
+    ///         cure: even a minimum-score cure pays at least this
+    ///         amount.
+    /// @dev    Waived (skipped) when the post-7d auto-forfeit path
+    ///         force-mints to the treasury — treasury paying itself
+    ///         is pointless and would brick the abandoned-cure rail.
+    uint256 public immutable BASE_MINT_FEE_WEI;
+
+    /// @notice Cap on the score-indexed slice of the per-mint EGAZ
+    ///         fee, in wei. Constant per contract instance. Actual
+    ///         score-indexed fee = (MAX_SCORE_MINT_FEE_WEI * score)
+    ///         / 10000, so a score-1.0 cure pays this full cap and
+    ///         a score-0.5 cure pays half. Higher score = higher fee.
+    /// @dev    Waived (skipped) on post-7d treasury auto-forfeit
+    ///         for the same reason as BASE_MINT_FEE_WEI.
+    uint256 public immutable MAX_SCORE_MINT_FEE_WEI;
+
     // ---------------------------------------------------------------
     // Mutable storage (per token, but never overwritten)
     // ---------------------------------------------------------------
@@ -176,7 +217,7 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
         uint256 score; // basis points (0..10000)
         uint256 iterations;
         string branchGoalId;
-        address submitter; // royalty receiver, immutable per token
+        address submitter; // original discoverer; attribution-only
         uint64 discoveredAt; // == block.timestamp at mint
         uint64 blockNumber; // == block.number at mint
     }
@@ -205,43 +246,81 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
     // Constructor
     // ---------------------------------------------------------------
 
-    /// @param attestor_  The EticaLabs Autopilot attestor address.
-    ///                   Signs ClaimPayloads off-chain. Has zero
-    ///                   power over already-minted NFTs.
-    /// @param treasury_  EticaHub treasury address. Receives 20% of
-    ///                   every secondary-market royalty (= 1% of
-    ///                   sale price). Immutable post-deploy.
-    /// @param baseUrl_   Base URL for external links rendered into
-    ///                   token JSON (e.g. "https://eticahub.com").
-    constructor(address attestor_, address treasury_, string memory baseUrl_)
-        ERC721("EticaResearch Cure", "CURE")
-        EIP712("EticaResearchNFT", "1")
-    {
+    /// @param attestor_              The EticaLabs Autopilot attestor
+    ///                               address. Signs ClaimPayloads
+    ///                               off-chain. Has zero power over
+    ///                               already-minted NFTs.
+    /// @param treasury_              EticaHub treasury address. Receives
+    ///                               20% of every secondary-market
+    ///                               royalty (= 1% of sale price) AND
+    ///                               the per-mint EGAZ fee on every
+    ///                               researcher claim. Immutable
+    ///                               post-deploy.
+    /// @param baseUrl_               Base URL for external links rendered
+    ///                               into token JSON (e.g.
+    ///                               "https://eticahub.com").
+    /// @param baseMintFeeWei_        Flat EGAZ fee charged on every
+    ///                               researcher claim, paid to treasury.
+    ///                               Zero is permitted (no flat fee).
+    /// @param maxScoreMintFeeWei_    Cap on the score-indexed EGAZ slice
+    ///                               of the per-mint fee; actual
+    ///                               score-indexed fee scales linearly
+    ///                               with the candidate score (basis
+    ///                               points) up to this cap. Zero is
+    ///                               permitted (no score-indexed fee).
+    constructor(
+        address attestor_,
+        address treasury_,
+        string memory baseUrl_,
+        uint256 baseMintFeeWei_,
+        uint256 maxScoreMintFeeWei_
+    ) ERC721("EticaResearch Cure", "CURE") EIP712("EticaResearchNFT", "1") {
         if (attestor_ == address(0)) revert AttestorZero();
         if (treasury_ == address(0)) revert TreasuryZero();
         ATTESTOR = attestor_;
         treasury = treasury_;
         BASE_URL = baseUrl_;
+        BASE_MINT_FEE_WEI = baseMintFeeWei_;
+        MAX_SCORE_MINT_FEE_WEI = maxScoreMintFeeWei_;
     }
 
     // ---------------------------------------------------------------
     // Public claim entrypoint
     // ---------------------------------------------------------------
 
-    /// @notice Mint the NFT for a discovery, paying EGAZ gas.
+    /// @notice Mint the NFT for a discovery, paying EGAZ gas plus the
+    ///         per-mint treasury fee.
     /// @dev    During the exclusive window
     ///         (`block.timestamp <= payload.exclusiveUntil`), only
-    ///         `payload.submitter` may call. Afterwards, anyone may
-    ///         call — but the royalty receiver is still locked to
-    ///         `payload.submitter` for the lifetime of the token, so
-    ///         the discoverer keeps their secondary-market stream
-    ///         even if a third party claims.
+    ///         `payload.submitter` may call — and the NFT mints to
+    ///         them. The caller must attach
+    ///         `BASE_MINT_FEE_WEI + (MAX_SCORE_MINT_FEE_WEI * score) / 10000`
+    ///         in `msg.value`; the contract forwards that to the
+    ///         immutable {treasury} address and refunds any excess
+    ///         back to `msg.sender`.
+    ///
+    ///         Afterwards the cure is considered **abandoned**:
+    ///         anyone may call to settle the discovery, but the NFT
+    ///         is force-minted to the immutable {treasury} address
+    ///         (msg.sender is ignored for the recipient). The per-mint
+    ///         fee is **waived** on this auto-forfeit path — the
+    ///         treasury paying itself would be pointless and would
+    ///         brick the abandoned-cure rail. This enforces
+    ///         "unclaimed cures auto-forfeit to treasury" at the
+    ///         contract layer — no admin path, no race, no requirement
+    ///         that anyone in particular call it.
+    ///
+    ///         Provenance is preserved either way: `submitterOf`
+    ///         (and the tokenURI "Original discoverer" field) is
+    ///         always set to `payload.submitter` regardless of who
+    ///         actually paid gas to mint.
     /// @param  payload  The full Discovery record + window timestamps.
     /// @param  sig      EIP-712 signature from {ATTESTOR} over
     ///                  `payload`.
     /// @return tokenId  Newly minted token id (1-indexed).
     function claim(ClaimPayload calldata payload, bytes calldata sig)
         external
+        payable
         returns (uint256 tokenId)
     {
         // Cheap field-level sanity gates before doing expensive sig recovery.
@@ -255,18 +334,24 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
         bytes32 branchHash = keccak256(bytes(payload.branchGoalId));
         if (branchClaimed[branchHash]) revert BranchAlreadyClaimed();
 
-        // Exclusive window: discoverer-only claim.
-        if (block.timestamp <= payload.exclusiveUntil) {
-            if (msg.sender != payload.submitter) {
-                revert SubmitterOnlyDuringExclusive();
-            }
+        // Exclusive window: discoverer-only claim. After the window
+        // closes the cure is treated as abandoned and the recipient
+        // is forced to the treasury (resolved below at mint time).
+        bool exclusive = block.timestamp <= payload.exclusiveUntil;
+        if (exclusive && msg.sender != payload.submitter) {
+            revert SubmitterOnlyDuringExclusive();
         }
 
         // EIP-712 signature verification — must be the immutable attestor.
-        bytes32 structHash = _hashClaimPayload(payload);
-        bytes32 digest = _hashTypedDataV4(structHash);
-        address recovered = ECDSA.recover(digest, sig);
-        if (recovered != ATTESTOR) revert InvalidSignature();
+        // Wrapped in a scope block so the digest / recovered locals
+        // are released before the heavier mint + fee + emit phase
+        // below, keeping us under the Solidity stack-slot limit.
+        {
+            bytes32 structHash = _hashClaimPayload(payload);
+            bytes32 digest = _hashTypedDataV4(structHash);
+            address recovered = ECDSA.recover(digest, sig);
+            if (recovered != ATTESTOR) revert InvalidSignature();
+        }
 
         // Mark claimed and mint.
         branchClaimed[branchHash] = true;
@@ -291,17 +376,70 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
         // tokenId; combined with the (address(this), tokenId)
         // constructor args this gives a unique, predictable address
         // for every minted cure. The splitter accepts marketplace
-        // value via {receive} and forwards 80/20 (submitter/treasury)
-        // on permissionless {release} calls.
+        // value via {receive} (native) or bare ERC-20 transfers, and
+        // forwards 80/20 (current-holder/treasury) on permissionless
+        // {release} / {releaseERC20} calls.
         EticaResearchRoyaltySplitter splitter =
             new EticaResearchRoyaltySplitter{salt: bytes32(tokenId)}(address(this), tokenId);
         splitterOf[tokenId] = address(splitter);
 
-        _safeMint(msg.sender, tokenId);
+        // During the exclusive window the discoverer mints to
+        // themselves (the prior `msg.sender == submitter` check
+        // already enforced this). After it closes, the cure is
+        // abandoned and the NFT is force-minted to the treasury
+        // regardless of who paid gas to trigger the call.
+        address recipient = exclusive ? msg.sender : treasury;
+        _safeMint(recipient, tokenId);
+
+        // Settle the per-mint EGAZ fee (or waiver) and surface the
+        // amount that ended up flowing to the treasury so it can be
+        // emitted in the event below.
+        uint256 mintFeeWei = _settleMintFee(recipient, payload.score);
 
         emit DiscoveryClaimed(
-            tokenId, branchHash, msg.sender, payload.submitter, payload.score, payload.branchGoalId
+            tokenId,
+            branchHash,
+            recipient,
+            payload.submitter,
+            payload.score,
+            mintFeeWei,
+            payload.branchGoalId
         );
+    }
+
+    /// @notice Internal fee accounting helper for {claim}. Charges the
+    ///         BASE + score-indexed EGAZ fee to the treasury and
+    ///         refunds any overpayment to msg.sender when the
+    ///         recipient is a researcher; waives the fee entirely
+    ///         (and refunds all msg.value) when the recipient is the
+    ///         treasury itself on the post-7d auto-forfeit path.
+    /// @dev    Pulled out of {claim} to keep that function under the
+    ///         Solidity stack-slot limit (16 locals).
+    function _settleMintFee(address recipient, uint256 score) internal returns (uint256 feeWei) {
+        if (recipient == treasury) {
+            // Post-7d auto-forfeit. Treasury paying itself is pointless
+            // and would brick the abandoned-cure rail; the fee is
+            // waived. Any value accidentally sent is fully refunded
+            // to the gas-payer so they aren't griefed for triggering
+            // the auto-mint.
+            if (msg.value > 0) {
+                (bool ok,) = payable(msg.sender).call{value: msg.value}("");
+                if (!ok) revert RefundFailed();
+            }
+            return 0;
+        }
+
+        feeWei = BASE_MINT_FEE_WEI + (MAX_SCORE_MINT_FEE_WEI * score) / SCORE_DENOM;
+        if (msg.value < feeWei) revert InsufficientMintFee(feeWei, msg.value);
+        if (feeWei > 0) {
+            (bool ok,) = payable(treasury).call{value: feeWei}("");
+            if (!ok) revert FeeTransferFailed();
+        }
+        uint256 refund = msg.value - feeWei;
+        if (refund > 0) {
+            (bool ok,) = payable(msg.sender).call{value: refund}("");
+            if (!ok) revert RefundFailed();
+        }
     }
 
     /// @notice Convenience helper for off-chain signers. Returns the
@@ -316,10 +454,12 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
         return branchClaimed[keccak256(bytes(branchGoalId))];
     }
 
-    /// @notice Per-token submitter accessor consumed by the
-    ///         per-token {EticaResearchRoyaltySplitter}. Returning a
-    ///         dedicated function lets the splitter remain ignorant
-    ///         of the {Discovery} struct layout.
+    /// @notice Per-token original-discoverer accessor. The splitter
+    ///         no longer reads this for payout (it uses {ownerOf}
+    ///         instead, so royalty follows ownership), but the value
+    ///         is preserved here for permanent attribution — it is
+    ///         shown in the tokenURI's "Original discoverer" field
+    ///         and exposed for off-chain explorers / marketplaces.
     function submitterOf(uint256 tokenId) external view returns (address) {
         return discoveryOf[tokenId].submitter;
     }
@@ -330,10 +470,12 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
 
     /// @inheritdoc IERC2981
     /// @dev    Per-token receiver is the immutable splitter contract
-    ///         deployed at {claim} time; it forwards 80% of incoming
-    ///         value to the original submitter and 20% to the
-    ///         EticaHub treasury. Neither leg can be retargeted by
-    ///         any party.
+    ///         deployed at {claim} time. The splitter forwards 80%
+    ///         of incoming value to the **current** NFT holder
+    ///         (resolved at release time) and 20% to the EticaHub
+    ///         treasury. The receiver address (the splitter) cannot
+    ///         be retargeted by any party; the 80% leg naturally
+    ///         tracks ownership via ERC-721 transfers.
     function royaltyInfo(uint256 tokenId, uint256 salePrice)
         external
         view
