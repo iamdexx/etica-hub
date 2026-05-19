@@ -1,0 +1,73 @@
+name: Labs Autopilot
+
+# EticaLabs Autopilot worker tick.
+#
+# Pops the oldest pending Labs research job from Redis (via the website's
+# /api/labs/queue/pop endpoint), runs a Groq plan -> NVIDIA fold -> Groq
+# analyse -> mutate loop for up to maxIterations rounds, and posts results
+# back via /api/labs/queue/[id]/update.
+#
+# Runs every 10 minutes by default — GitHub free-tier shared runners
+# delay schedule events under load, so this is best-effort. The worker
+# itself is idempotent: an empty queue tick is a no-op (204 from /pop).
+#
+# Required repository secrets:
+#   LABS_AUTOPILOT_TOKEN   — shared secret with the website (same value
+#                            as the LABS_AUTOPILOT_TOKEN env var on Vercel)
+#   GROQ_API_KEY           — Groq free tier; used for plan + analyse
+#   NVIDIA_API_KEY         — NVIDIA NIM free tier; used for ESMFold
+#
+# Optional repo variables:
+#   LABS_AUTOPILOT_BASE_URL          — defaults to https://eticahub.com
+#   LABS_AUTOPILOT_MAX_JOBS_PER_TICK — defaults to 1
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      max_jobs:
+        description: 'Override LABS_AUTOPILOT_MAX_JOBS_PER_TICK for this run'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: labs-autopilot
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    name: Worker tick
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LABS_AUTOPILOT_BASE_URL: ${{ vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
+      LABS_AUTOPILOT_MAX_JOBS_PER_TICK: ${{ github.event.inputs.max_jobs || vars.LABS_AUTOPILOT_MAX_JOBS_PER_TICK || '1' }}
+      LABS_AUTOPILOT_TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+    steps:
+      - name: Guard — required secrets present
+        if: ${{ !secrets.LABS_AUTOPILOT_TOKEN || !secrets.GROQ_API_KEY || !secrets.NVIDIA_API_KEY }}
+        run: |
+          echo "::warning::Labs Autopilot secrets not configured; skipping tick."
+          echo "Required secrets: LABS_AUTOPILOT_TOKEN, GROQ_API_KEY, NVIDIA_API_KEY"
+          exit 0
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Tick
+        run: pnpm --filter @etica-hub/labs-autopilot run worker:tick
