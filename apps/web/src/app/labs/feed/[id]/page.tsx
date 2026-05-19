@@ -14,9 +14,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAccount, useWalletClient } from 'wagmi';
 
+import { signSubmit } from '@/lib/labs/client-sig';
 import type {
   LabsCandidateResult,
   LabsJob,
@@ -120,12 +122,20 @@ function CandidateCard({
   pdb: string | undefined;
   onRefoldQueued: () => void;
 }): JSX.Element {
+  const router = useRouter();
+  const { address, isConnected } = useAccount();
+  const { data: walletClient } = useWalletClient();
+
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const viewerInstanceRef = useRef<Viewer3D | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [refolding, setRefolding] = useState(false);
   const [refoldStatus, setRefoldStatus] = useState<string | null>(null);
+  const [branchOpen, setBranchOpen] = useState(false);
+  const [branchPrompt, setBranchPrompt] = useState('');
+  const [branching, setBranching] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!pdb || !viewerRef.current) return;
@@ -177,6 +187,56 @@ function CandidateCard({
       setTimeout(() => setCopied(false), 1500);
     } catch {
       /* ignore */
+    }
+  }
+
+  async function handleBranch(): Promise<void> {
+    setBranchError(null);
+    const prompt = branchPrompt.trim();
+    if (!prompt) {
+      setBranchError('Describe what to explore on this lead.');
+      return;
+    }
+    if (!isConnected || !address || !walletClient) {
+      setBranchError('Connect your wallet to start a branch.');
+      return;
+    }
+    setBranching(true);
+    try {
+      const signedPayload = `branch:${jobId}#${candidate.index}|${prompt}`;
+      const sig = await signSubmit({
+        action: 'submit-job',
+        payload: signedPayload,
+        wallet: address,
+        walletClient,
+      });
+      const res = await fetch('/api/labs/goals/branch-from-candidate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          parentJobId: jobId,
+          candidateIndex: candidate.index,
+          prompt,
+          wallet: sig.wallet,
+          signature: sig.signature,
+          issuedAt: sig.issuedAt,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        jobId?: string;
+        goalId?: string;
+        error?: string;
+      };
+      if (!res.ok || !body.jobId) {
+        setBranchError(body.error ?? `Branch failed (${res.status}).`);
+        return;
+      }
+      router.push(`/labs/feed/${body.jobId}`);
+    } catch (err) {
+      setBranchError(err instanceof Error ? err.message : 'Branch failed.');
+    } finally {
+      setBranching(false);
     }
   }
 
@@ -302,6 +362,81 @@ function CandidateCard({
           {candidate.error ? `Fold failed: ${candidate.error}` : 'Not folded yet.'}
         </p>
       )}
+
+      <div className="mt-4 border-t border-white/5 pt-3">
+        {!branchOpen ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setBranchOpen(true);
+                setBranchError(null);
+                if (!branchPrompt) {
+                  setBranchPrompt(
+                    `Continue this lead from candidate #${candidate.index + 1}. Refine for higher affinity and lower off-target risk.`,
+                  );
+                }
+              }}
+              className="rounded border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-emerald-100 transition-colors hover:border-emerald-200/60 hover:bg-emerald-400/20"
+            >
+              branch from this RES
+            </button>
+            <span className="text-[11px] text-white/45">
+              starts a child research chain that inherits this candidate&apos;s context
+            </span>
+          </div>
+        ) : (
+          <div className="space-y-2 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.04] p-3">
+            <p className="text-[11px] uppercase tracking-wider text-emerald-200/80">
+              branch from RES #{candidate.index + 1}
+            </p>
+            <textarea
+              value={branchPrompt}
+              onChange={(e) => setBranchPrompt(e.target.value)}
+              maxLength={400}
+              rows={3}
+              placeholder="Describe what to explore next on this lead…"
+              className="w-full resize-none rounded border border-white/10 bg-black/30 p-2 text-xs text-white/90 outline-none focus:border-emerald-300/40"
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10px] text-white/45">
+                {branchPrompt.length}/400 · one wallet signature required
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={branching}
+                  onClick={() => {
+                    setBranchOpen(false);
+                    setBranchError(null);
+                  }}
+                  className="rounded border border-white/10 px-2.5 py-1 text-[11px] uppercase tracking-wider text-white/70 transition-colors hover:border-white/30 hover:text-white disabled:opacity-50"
+                >
+                  cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={branching || !branchPrompt.trim()}
+                  onClick={() => {
+                    void handleBranch();
+                  }}
+                  className="rounded border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-emerald-100 transition-colors hover:border-emerald-200/60 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {branching ? 'signing…' : 'sign & start branch'}
+                </button>
+              </div>
+            </div>
+            {branchError && (
+              <p className="text-[11px] text-rose-300">{branchError}</p>
+            )}
+            {!isConnected && (
+              <p className="text-[11px] text-amber-200/80">
+                Connect your wallet to start a branch.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
