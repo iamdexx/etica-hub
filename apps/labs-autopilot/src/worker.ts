@@ -30,7 +30,10 @@ import {
   generatePlan,
   type PlanCandidate,
   type PriorContext,
+  type PriorContextCandidate,
+  type PriorContextGoal,
   type ResearchPlan,
+  type ServerGoalContext,
 } from './steps/plan.js';
 import { foldWithCascade } from './steps/fold.js';
 import { sequenceOnlyScore } from './steps/sequence-score.js';
@@ -181,8 +184,36 @@ async function fetchGoalContext(goalId: string): Promise<PriorContext | null> {
       },
     );
     if (!res.ok) return null;
-    const json = (await res.json()) as PriorContext;
-    return json;
+    const raw = (await res.json()) as ServerGoalContext;
+
+    // Map server field names to the worker-side PriorContext shape.
+    // The API returns `priorCandidates` / `relatedGoals[].topCandidate`
+    // while the worker expects `selfPriorCandidates` / `relatedGoals[].candidates[]`.
+    const selfPriorCandidates: PriorContextCandidate[] = (raw.priorCandidates ?? []).map((c) => ({
+      jobId: c.jobId,
+      jobPrompt: c.jobPrompt,
+      sequence: c.sequence,
+      rationale: c.rationale,
+      analysis: c.analysis,
+      score: c.score,
+    }));
+
+    const relatedGoals: PriorContextGoal[] = (raw.relatedGoals ?? []).map((g) => ({
+      id: g.goalId,
+      title: g.title,
+      candidates: g.topCandidate
+        ? [{
+            jobId: g.topCandidate.jobId,
+            jobPrompt: g.topCandidate.jobPrompt,
+            sequence: g.topCandidate.sequence,
+            rationale: g.topCandidate.rationale,
+            analysis: g.topCandidate.analysis,
+            score: g.topCandidate.score,
+          }]
+        : [],
+    }));
+
+    return { selfPriorCandidates, relatedGoals };
   } catch (err) {
     log(`goal-context fetch failed for ${goalId}: ${err instanceof Error ? err.message : err}`);
     return null;
