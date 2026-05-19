@@ -12,6 +12,8 @@ export { etxFarmsAbi } from './etxFarms';
 export { eticaStableSwapAbi } from './eticaStableSwap';
 export { liquidityTimelock10yAbi } from './liquidityTimelock10y';
 export { stableSwapHarvesterAdapterAbi } from './stableSwapHarvesterAdapter';
+export { eticaResearchMarketsAbi } from './eticaResearchMarkets';
+export { researchTokenAbi } from './researchToken';
 export {
   bridgeVaultAbi,
   bridgeMinterAbi,
