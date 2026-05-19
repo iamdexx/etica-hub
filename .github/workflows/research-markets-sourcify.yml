@@ -1,0 +1,62 @@
+name: Research markets auto-Sourcify
+
+# Auto-verify every ResearchToken launched via EticaResearchMarkets onto
+# Sourcify. Because ResearchToken bytecode is deterministic across
+# launches (only constructor strings differ), one canonical bundle —
+# committed at packages/contracts/sourcify-bundles/ResearchToken/ —
+# verifies every new token, and submission can be fully unattended.
+#
+# This tick is intentionally stateless: each run re-reads the singleton's
+# `Launched` events from a sliding window of recent blocks and asks
+# Sourcify itself which tokens still need submission. No checkpoint, no
+# orphan branch, idempotent on retry.
+#
+# Required repo variables:
+#   RESEARCH_SOURCIFY_RPC_URL    — Etica mainnet RPC, e.g.
+#                                  https://eticamainnet.eticascan.org
+#
+# Optional repo variables:
+#   RESEARCH_SOURCIFY_SERVER     — defaults to https://sourcify.dev/server
+#   RESEARCH_SOURCIFY_LOOKBACK   — block window, defaults to 50_000
+#   RESEARCH_SOURCIFY_SINGLETON  — manual override of the singleton
+#                                  address (skips reading addresses.ts)
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      lookback:
+        description: 'Override RESEARCH_SOURCIFY_LOOKBACK for this run'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-markets-sourcify
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    name: Worker tick
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RESEARCH_SOURCIFY_RPC_URL: ${{ vars.RESEARCH_SOURCIFY_RPC_URL || 'https://eticamainnet.eticascan.org' }}
+      RESEARCH_SOURCIFY_SERVER: ${{ vars.RESEARCH_SOURCIFY_SERVER || 'https://sourcify.dev/server' }}
+      RESEARCH_SOURCIFY_LOOKBACK: ${{ github.event.inputs.lookback || vars.RESEARCH_SOURCIFY_LOOKBACK || '50000' }}
+      RESEARCH_SOURCIFY_SINGLETON: ${{ vars.RESEARCH_SOURCIFY_SINGLETON || '' }}
+      RESEARCH_SOURCIFY_CHAIN_ID: '61803'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Run worker
+        run: pnpm --filter @etica-hub/research-markets-sourcify run worker:tick

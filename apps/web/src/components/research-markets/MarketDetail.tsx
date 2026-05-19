@@ -14,6 +14,7 @@ import {
   graduationProgress,
 } from '@/lib/research-markets';
 import { BuySellCard } from './BuySellCard';
+import { SourcifyBadge } from './SourcifyBadge';
 
 function shortAddress(addr: string): string {
   if (!addr || addr.length < 10) return addr;
@@ -246,7 +247,10 @@ export function MarketDetail({ token }: { token: Address }) {
 
           {/* Provenance */}
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-            <h3 className="text-sm font-semibold text-zinc-100">Provenance</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-zinc-100">Provenance</h3>
+              <SourcifyBadge token={market.token} />
+            </div>
             <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
               <div>
                 <dt className="text-zinc-500">Token contract</dt>
@@ -257,6 +261,15 @@ export function MarketDetail({ token }: { token: Address }) {
                 <dd className="break-all font-mono text-zinc-200">{market.researcher}</dd>
               </div>
             </dl>
+            <p className="mt-3 text-[11px] text-zinc-500">
+              ResearchToken bytecode is identical across every launch — only the
+              constructor metadata differs. The launchpad submits one canonical
+              source bundle to Sourcify on a {`~10`}min cron, so every minted
+              token becomes publicly verifiable without manual intervention.
+              This is an explicit anti-MEV property: bytecode-equivalence with
+              a verified template proves the token has no hidden mint, pause,
+              tax, or blacklist hook.
+            </p>
           </div>
         </div>
 

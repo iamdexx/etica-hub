@@ -1,0 +1,12 @@
+{
+  "contractIdentifier": "src/research-markets/ResearchToken.sol:ResearchToken",
+  "compilerVersion": "0.8.26+commit.8a97fa7a",
+  "compilerShortVersion": "0.8.26",
+  "evmVersion": "paris",
+  "optimizer": {
+    "enabled": true,
+    "runs": 200
+  },
+  "sourceCount": 20,
+  "generatedAt": "2026-05-19T03:15:12.978Z"
+}
