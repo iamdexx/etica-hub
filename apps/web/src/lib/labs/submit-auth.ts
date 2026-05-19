@@ -8,9 +8,10 @@
  * submitter controls the address recorded as `submitterWallet` on
  * the resulting goal/job for the public moderation log.
  */
-import { getAddress, isAddress, verifyMessage, type Address } from 'viem';
+import { getAddress, isAddress, type Address } from 'viem';
 
 import { MAX_SIG_AGE_MS, voteMessage } from './moderation-store';
+import { verifyEticaMessage } from './sig-verify';
 
 export interface SubmitAuthInput {
   action: 'submit-goal' | 'submit-job';
@@ -50,17 +51,20 @@ export async function verifySubmitPayload(
     payload: input.payload,
     issuedAt: input.issuedAt,
   });
-  let valid = false;
-  try {
-    valid = await verifyMessage({
-      address: wallet,
-      message,
-      signature: input.signature as `0x${string}`,
-    });
-  } catch {
-    valid = false;
-  }
-  if (!valid) {
+  const verify = await verifyEticaMessage({
+    message,
+    signature: input.signature,
+    expected: wallet,
+  });
+  if (!verify.ok) {
+    const recovered = verify.recoveredEip191 ?? verify.recoveredRawKeccak;
+    if (recovered && recovered.toLowerCase() !== wallet.toLowerCase()) {
+      return {
+        ok: false,
+        status: 401,
+        error: `Signature recovered to ${recovered} but you are connected as ${wallet}. Switch accounts in your wallet to the connected address and retry.`,
+      };
+    }
     return { ok: false, status: 401, error: 'Signature does not match wallet.' };
   }
   return { ok: true, wallet };

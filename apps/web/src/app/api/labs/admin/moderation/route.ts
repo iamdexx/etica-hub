@@ -22,9 +22,10 @@
  * votes.
  */
 import { NextRequest } from 'next/server';
-import { getAddress, isAddress, verifyMessage, type Address } from 'viem';
+import { getAddress, isAddress, type Address } from 'viem';
 
 import { TREASURY_ADDRESS } from '@etica-hub/shared';
+import { verifyEticaMessage } from '@/lib/labs/sig-verify';
 
 import { updateGoal } from '@/lib/labs/goal-store';
 import {
@@ -119,17 +120,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     issuedAt,
   });
 
-  let valid = false;
-  try {
-    valid = await verifyMessage({
-      address: wallet,
-      message: envelope,
-      signature: signature as `0x${string}`,
-    });
-  } catch {
-    valid = false;
-  }
-  if (!valid) {
+  const verify = await verifyEticaMessage({
+    message: envelope,
+    signature,
+    expected: wallet,
+  });
+  if (!verify.ok) {
+    const recovered = verify.recoveredEip191 ?? verify.recoveredRawKeccak;
+    if (recovered && recovered.toLowerCase() !== wallet.toLowerCase()) {
+      return json(
+        {
+          error: `Signature recovered to ${recovered} but you are connected as ${wallet}. Switch accounts in your wallet to the connected address and retry.`,
+        },
+        { status: 401, headers: limit.headers },
+      );
+    }
     return json({ error: 'Invalid signature.' }, { status: 401, headers: limit.headers });
   }
 
