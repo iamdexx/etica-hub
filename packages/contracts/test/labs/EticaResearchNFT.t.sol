@@ -19,23 +19,25 @@ import {MockERC20} from "../mocks/MockERC20.sol";
 ///           - per-token immutable splitter address — but **royalty
 ///             follows the current NFT holder**, resolved at release()
 ///             time via {ownerOf};
-///           - 80/20 splitter math: 80% to current holder, 20% to
-///             treasury, supported for both native EGAZ and arbitrary
-///             ERC-20 (sale-asset-agnostic);
+///           - 79/20/1 splitter math: 79% to current holder, 20% to
+///             the ancestor chain (geometric 80/20, depth-25 cap),
+///             1% to treasury, supported for both native EGAZ and
+///             arbitrary ERC-20 (sale-asset-agnostic);
 ///           - 7-day exclusive window — researcher mints to self —
 ///             then permissionless settlement with the NFT
 ///             force-minted to the treasury (post-7d auto-forfeit);
-///           - per-mint EGAZ fee: BASE + score-indexed, both to
-///             treasury, waived for the post-7d auto-forfeit path;
+///           - per-mint EGAZ fee: BASE + score-indexed, split
+///             79/20/1 across holder / ancestor cascade / treasury,
+///             waived for the post-7d auto-forfeit path;
 ///           - branch-id replay prevention;
 ///           - on-chain tokenURI shape (data:application/json;base64 +
-///             cure record embedded in description).
+///             research record embedded in description).
 contract EticaResearchNFTTest is Test {
     // ---------------------------------------------------------------
     // EIP-712 typehash (mirrors contract).
     // ---------------------------------------------------------------
     bytes32 internal constant CLAIM_TYPEHASH = keccak256(
-        "ClaimPayload(string parentGoalTitle,string sequence,string analysis,uint256 score,uint256 iterations,string branchGoalId,address submitter,uint64 expiresAt,uint64 exclusiveUntil)"
+        "ClaimPayload(string parentGoalTitle,string sequence,string analysis,uint256 score,uint256 iterations,string branchGoalId,address submitter,uint64 expiresAt,uint64 exclusiveUntil,string parentBranchGoalId)"
     );
 
     // ---------------------------------------------------------------
@@ -77,7 +79,7 @@ contract EticaResearchNFTTest is Test {
 
     function _basePayload() internal view returns (EticaResearchNFT.ClaimPayload memory p) {
         p = EticaResearchNFT.ClaimPayload({
-            parentGoalTitle: "Cure IDH1-mutant glioblastoma",
+            parentGoalTitle: "Research IDH1-mutant glioblastoma",
             sequence: "MAGSKLRPDFNCYK",
             analysis: "Selective binding to R132H pocket; 340x selectivity over WT.",
             score: 9100,
@@ -85,7 +87,8 @@ contract EticaResearchNFTTest is Test {
             branchGoalId: "branch_001",
             submitter: submitter,
             expiresAt: uint64(block.timestamp + 1 days),
-            exclusiveUntil: uint64(block.timestamp + 7 days)
+            exclusiveUntil: uint64(block.timestamp + 7 days),
+            parentBranchGoalId: ""
         });
     }
 
@@ -109,7 +112,8 @@ contract EticaResearchNFTTest is Test {
                 keccak256(bytes(p.branchGoalId)),
                 p.submitter,
                 p.expiresAt,
-                p.exclusiveUntil
+                p.exclusiveUntil,
+                keccak256(bytes(p.parentBranchGoalId))
             )
         );
 
@@ -146,8 +150,8 @@ contract EticaResearchNFTTest is Test {
     function test_constructor_setsImmutables() public view {
         assertEq(nft.ATTESTOR(), attestor, "attestor not set");
         assertEq(nft.treasury(), treasury, "treasury not set");
-        assertEq(nft.name(), "EticaResearch Cure", "name");
-        assertEq(nft.symbol(), "CURE", "symbol");
+        assertEq(nft.name(), "EticaResearch", "name");
+        assertEq(nft.symbol(), "RES", "symbol");
         assertEq(nft.BASE_MINT_FEE_WEI(), TEST_BASE_FEE, "base fee");
         assertEq(nft.MAX_SCORE_MINT_FEE_WEI(), TEST_MAX_SCORE_FEE, "max score fee");
     }
@@ -364,7 +368,10 @@ contract EticaResearchNFTTest is Test {
     // Splitter mechanics: 80/20 native EGAZ + per-token isolation
     // ---------------------------------------------------------------
 
-    function test_splitter_releasePaysHolder80AndTreasury20() public {
+    function test_splitter_releasePaysHolder99AndTreasury1_rootResearch() public {
+        // Root research record (no parent) — the 20% ancestor slice
+        // has no recipients to cascade to, so it falls through to the
+        // current holder. Net split = 99% holder / 1% treasury.
         EticaResearchNFT.ClaimPayload memory p = _basePayload();
         bytes memory sig = _sign(p, attestorPk);
         vm.prank(submitter);
@@ -378,20 +385,20 @@ contract EticaResearchNFTTest is Test {
 
         EticaResearchRoyaltySplitter(splitter).release();
 
-        // Submitter is still the current NFT holder, so 80% flows to
-        // them; 20% to treasury.
-        assertEq(submitter.balance - submitterBefore, 0.8 ether, "holder slice");
-        assertEq(treasury.balance - treasuryBefore, 0.2 ether, "treasury slice");
+        assertEq(
+            submitter.balance - submitterBefore, 0.99 ether, "holder slice (79% + 20% fallthrough)"
+        );
+        assertEq(treasury.balance - treasuryBefore, 0.01 ether, "treasury slice (1%)");
         assertEq(splitter.balance, 0, "splitter drained");
 
         assertEq(
             EticaResearchRoyaltySplitter(splitter).holderReleased(),
-            0.8 ether,
+            0.99 ether,
             "holderReleased accumulator"
         );
         assertEq(
             EticaResearchRoyaltySplitter(splitter).treasuryReleased(),
-            0.2 ether,
+            0.01 ether,
             "treasuryReleased accumulator"
         );
     }
@@ -428,8 +435,8 @@ contract EticaResearchNFTTest is Test {
         EticaResearchRoyaltySplitter(s2).release();
 
         assertEq(submitter.balance - sub1Before, 0, "holder #1 untouched");
-        assertEq(otherSubmitter.balance - sub2Before, 0.8 ether, "holder #2 paid");
-        assertEq(treasury.balance - treasuryBefore, 0.2 ether, "treasury paid");
+        assertEq(otherSubmitter.balance - sub2Before, 0.99 ether, "holder #2 paid");
+        assertEq(treasury.balance - treasuryBefore, 0.01 ether, "treasury paid");
     }
 
     function test_splitter_nothingToReleaseReverts() public {
@@ -475,8 +482,10 @@ contract EticaResearchNFTTest is Test {
         // 4. Buyer (= current holder) receives the 80% leg; treasury
         //    still receives 20%; original submitter is bypassed.
         assertEq(submitter.balance - submitterBefore, 0, "submitter bypassed");
-        assertEq(buyer.balance - buyerBefore, 0.8 ether, "buyer (= holder) paid 80%");
-        assertEq(treasury.balance - treasuryBefore, 0.2 ether, "treasury paid 20%");
+        assertEq(
+            buyer.balance - buyerBefore, 0.99 ether, "buyer (= holder) paid 99% (root cascade)"
+        );
+        assertEq(treasury.balance - treasuryBefore, 0.01 ether, "treasury paid 1%");
     }
 
     // ---------------------------------------------------------------
@@ -563,22 +572,24 @@ contract EticaResearchNFTTest is Test {
         EticaResearchRoyaltySplitter(splitter).releaseERC20(IERC20(address(token)));
 
         assertEq(
-            token.balanceOf(submitter) - submitterBefore, 800 ether, "holder receives 80% in stETX"
+            token.balanceOf(submitter) - submitterBefore,
+            990 ether,
+            "holder receives 99% in stETX (root)"
         );
         assertEq(
-            token.balanceOf(treasury) - treasuryBefore, 200 ether, "treasury receives 20% in stETX"
+            token.balanceOf(treasury) - treasuryBefore, 10 ether, "treasury receives 1% in stETX"
         );
         assertEq(token.balanceOf(splitter), 0, "splitter drained of stETX");
 
         // Per-token accumulators must track this asset independently.
         assertEq(
             EticaResearchRoyaltySplitter(splitter).holderReleasedToken(address(token)),
-            800 ether,
+            990 ether,
             "holderReleasedToken[stETX]"
         );
         assertEq(
             EticaResearchRoyaltySplitter(splitter).treasuryReleasedToken(address(token)),
-            200 ether,
+            10 ether,
             "treasuryReleasedToken[stETX]"
         );
         // Native EGAZ accumulators must NOT be touched.
@@ -611,8 +622,8 @@ contract EticaResearchNFTTest is Test {
         EticaResearchRoyaltySplitter(splitter).releaseERC20(IERC20(address(token)));
 
         assertEq(token.balanceOf(submitter), 0, "original submitter bypassed");
-        assertEq(token.balanceOf(buyer), 80 ether, "new holder paid 80%");
-        assertEq(token.balanceOf(treasury), 20 ether, "treasury paid 20%");
+        assertEq(token.balanceOf(buyer), 99 ether, "new holder paid 99% (root cascade)");
+        assertEq(token.balanceOf(treasury), 1 ether, "treasury paid 1%");
     }
 
     function test_splitter_releaseERC20_zeroTokenReverts() public {
@@ -633,6 +644,10 @@ contract EticaResearchNFTTest is Test {
     // ---------------------------------------------------------------
 
     function test_mintFee_chargedDuringExclusiveWindow() public {
+        // Root mint — mint fee is split 79/20/1 (holder/ancestors/treasury).
+        // With no ancestors the 20% ancestor slice falls through to the
+        // holder (= minter), so the minter pockets 99% back and only
+        // 1% lands at treasury.
         EticaResearchNFT.ClaimPayload memory p = _basePayload();
         bytes memory sig = _sign(p, attestorPk);
 
@@ -647,12 +662,15 @@ contract EticaResearchNFTTest is Test {
         vm.prank(submitter);
         nft.claim{value: expected}(p, sig);
 
-        assertEq(submitterBefore - submitter.balance, expected, "submitter paid fee");
-        assertEq(treasury.balance - treasuryBefore, expected, "treasury received fee");
+        uint256 expectedTreasury = expected / 100; // 1% of fee
+        uint256 netCost = expected - (expected - expectedTreasury); // = expectedTreasury
+        assertEq(submitterBefore - submitter.balance, netCost, "submitter net cost = 1% of fee");
+        assertEq(treasury.balance - treasuryBefore, expectedTreasury, "treasury received 1% slice");
     }
 
     function test_mintFee_scoreIndexedScalesLinearly() public {
         // Different score = different fee, by the linear formula.
+        // Root mint: treasury slice is 1% of computed fee.
         EticaResearchNFT.ClaimPayload memory p = _basePayload();
         p.score = 5000; // 0.50
         bytes memory sig = _sign(p, attestorPk);
@@ -664,7 +682,7 @@ contract EticaResearchNFTTest is Test {
         uint256 treasuryBefore = treasury.balance;
         vm.prank(submitter);
         nft.claim{value: expected}(p, sig);
-        assertEq(treasury.balance - treasuryBefore, expected, "treasury got fee");
+        assertEq(treasury.balance - treasuryBefore, expected / 100, "treasury got 1% of fee");
     }
 
     function test_mintFee_overpaymentRefunded() public {
@@ -679,9 +697,15 @@ contract EticaResearchNFTTest is Test {
         vm.prank(submitter);
         nft.claim{value: expected + overpayment}(p, sig);
 
-        // Submitter's net cost is exactly the fee, not the overpayment.
-        assertEq(submitterBefore - submitter.balance, expected, "submitter only paid fee");
-        assertEq(treasury.balance - treasuryBefore, expected, "treasury received only fee");
+        // Overpayment refunded; submitter's net cost = 1% of fee
+        // (the rest of the fee cascades back as the holder leg on a
+        // root mint).
+        assertEq(
+            submitterBefore - submitter.balance, expected / 100, "submitter net cost = 1% of fee"
+        );
+        assertEq(
+            treasury.balance - treasuryBefore, expected / 100, "treasury received only 1% of fee"
+        );
     }
 
     function test_mintFee_underpaymentReverts() public {
