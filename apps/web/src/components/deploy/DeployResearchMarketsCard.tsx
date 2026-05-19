@@ -346,8 +346,9 @@ export function DeployResearchMarketsCard() {
           </li>
           <li>
             Every trade takes a 1% fee in ETX (capped at 5%) routed{' '}
-            <span className="font-mono">40 / 30 / 20 / 10</span> — pool (compounds the 5M seed) /
-            etiLpSink (POL burn) / treasury / researcher.
+            <span className="font-mono">80 / 10 / 0 / 10</span> — pool (compounds the 5M seed,
+            permanently locked, pulls every market&apos;s floor up monotonically) /
+            etiLpSink (POL burn) / treasury / researcher (C-with-lock split).
           </li>
           <li>
             <span className="font-mono">Graduation</span> at 100k ETX reserve is a UI-only flag —
