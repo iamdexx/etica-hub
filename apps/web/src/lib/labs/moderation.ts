@@ -15,6 +15,8 @@
  *      (`operator-hidden` / `operator-approved`).
  */
 
+import { groqChat, GroqError } from './groq';
+
 /* ------------------------------------------------------------------ */
 /*  Status                                                             */
 /* ------------------------------------------------------------------ */
@@ -148,6 +150,7 @@ export function runHardDenylist(text: string): DenylistResult {
 /* ------------------------------------------------------------------ */
 
 const BIOMED_GATE_MODEL = 'llama-3.3-70b-versatile';
+const BIOMED_GATE_FALLBACK_MODEL = 'llama-3.1-8b-instant';
 const BIOMED_GATE_TIMEOUT_MS = 6000;
 
 const BIOMED_GATE_SYSTEM = `You are a biomedical-scope classifier for EticaLabs, a community research platform.
@@ -177,44 +180,36 @@ export async function runBiomedicalGate(
   prompt: string,
   apiKey: string,
 ): Promise<BiomedicalGateResult> {
-  if (!apiKey) return { verdict: 'unclear', error: 'missing-groq-key' };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), BIOMED_GATE_TIMEOUT_MS);
+  // `apiKey` is still accepted for backwards compatibility, but groqChat
+  // reads the full key pool (GROQ_API_KEYS rotation + single-key fallbacks)
+  // so we get multi-key rotation + retry + cascade for free here.
+  if (!apiKey && !process.env.GROQ_API_KEYS && !process.env.GROQ_API_KEY) {
+    return { verdict: 'unclear', error: 'missing-groq-key' };
+  }
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: BIOMED_GATE_MODEL,
-        temperature: 0,
-        max_tokens: 4,
-        messages: [
-          { role: 'system', content: BIOMED_GATE_SYSTEM },
-          { role: 'user', content: prompt.slice(0, 1200) },
-        ],
-      }),
+    const result = await groqChat({
+      models: [BIOMED_GATE_MODEL, BIOMED_GATE_FALLBACK_MODEL],
+      temperature: 0,
+      max_tokens: 4,
+      timeoutMs: BIOMED_GATE_TIMEOUT_MS,
+      maxRetriesPerKey: 2,
+      messages: [
+        { role: 'system', content: BIOMED_GATE_SYSTEM },
+        { role: 'user', content: prompt.slice(0, 1200) },
+      ],
     });
-    if (!res.ok) {
-      return { verdict: 'unclear', error: `groq-${res.status}` };
-    }
-    const json = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const raw = json.choices?.[0]?.message?.content?.trim().toLowerCase() ?? '';
+    const raw = result.content.trim().toLowerCase();
     if (raw.startsWith('yes')) return { verdict: 'yes', raw };
     if (raw.startsWith('no')) return { verdict: 'no', raw };
     return { verdict: 'unclear', raw };
   } catch (err) {
+    if (err instanceof GroqError) {
+      return { verdict: 'unclear', error: `groq-${err.status || 'error'}` };
+    }
     return {
       verdict: 'unclear',
       error: err instanceof Error ? err.message : String(err),
     };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

@@ -101,7 +101,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Layer 2 — biomedical gate. Cheap Groq call; fail-closed if Groq is down.
   const groqKey = process.env.GROQ_API_KEY ?? '';
-  if (groqKey) {
+  if (groqKey || process.env.GROQ_API_KEYS) {
     const gate = await runBiomedicalGate(prompt, groqKey);
     if (gate.verdict !== 'yes') {
       return json(

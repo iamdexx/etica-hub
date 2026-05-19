@@ -1,12 +1,16 @@
 import { NextRequest } from 'next/server';
 import { consumeLabsRateLimit } from '@/lib/labs/rate-limit';
+import {
+  groqChat,
+  GroqError,
+  GROQ_MODEL_PRIMARY,
+  GROQ_MODEL_FALLBACK,
+  hasGroqKey,
+} from '@/lib/labs/groq';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
-
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.1-8b-instant';
 
 function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
@@ -33,17 +37,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     return json({ error: 'Sequence is required.' }, { status: 400, headers: limit.headers });
   }
 
-  const apiKey = process.env.AIBOT_LLM_GROQ_API_KEY ?? process.env.GROQ_API_KEY;
-
-  if (!apiKey) {
+  if (!hasGroqKey()) {
     return json(
       { error: 'Groq API key is not configured.', comingSoon: true },
       { status: 503, headers: limit.headers },
     );
   }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
 
   try {
     const systemPrompt = [
@@ -61,43 +60,32 @@ export async function POST(req: NextRequest): Promise<Response> {
       ? `Original design prompt: "${prompt}"\n\nFolded sequence (${sequence.length} residues): ${sequence}`
       : `Folded sequence (${sequence.length} residues): ${sequence}`;
 
-    const response = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.3,
-        max_tokens: 512,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userContent },
-        ],
-      }),
-      signal: controller.signal,
-      cache: 'no-store',
+    // Explanation is short and tolerant of model quality, so prefer the
+    // 8B model (much higher daily cap) and cascade up to 70B only if 8B
+    // burns through retries. groqChat rotates keys + retries 429/5xx.
+    const result = await groqChat({
+      models: [GROQ_MODEL_FALLBACK, GROQ_MODEL_PRIMARY],
+      temperature: 0.3,
+      max_tokens: 512,
+      timeoutMs: 20_000,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ],
     });
 
-    if (!response.ok) {
-      return json({ error: 'AI analysis failed.' }, { status: 502, headers: limit.headers });
-    }
-
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-
-    const analysis = payload.choices?.[0]?.message?.content?.trim() ?? '';
-
-    if (!analysis) {
+    if (!result.content) {
       return json({ error: 'AI returned empty analysis.' }, { status: 502, headers: limit.headers });
     }
 
-    return json({ analysis, model: MODEL }, { headers: limit.headers });
-  } catch {
+    return json({ analysis: result.content, model: result.model }, { headers: limit.headers });
+  } catch (err) {
+    if (err instanceof GroqError) {
+      return json(
+        { error: 'AI analysis failed.', detail: (err.detail ?? err.message).slice(0, 240) },
+        { status: 502, headers: limit.headers },
+      );
+    }
     return json({ error: 'AI analysis request timed out.' }, { status: 502, headers: limit.headers });
-  } finally {
-    clearTimeout(timeout);
   }
 }
