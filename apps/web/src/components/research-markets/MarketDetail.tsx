@@ -170,6 +170,19 @@ export function MarketDetail({ token }: { token: Address }) {
             <Stat label="Last trade" value={ageText(market.lastTradeAt)} />
           </div>
 
+          {/* Permanent floor pull — C-with-lock fee split */}
+          {!isSunset && (
+            <div className="rounded-xl border border-sky-700/40 bg-sky-500/5 p-5 text-xs text-sky-200">
+              <p className="text-sm font-semibold text-sky-100">Permanent floor pull</p>
+              <p className="mt-1 text-sky-300/80">
+                Every 1% trade fee splits <strong>80/10/0/10</strong>: 80% stays in this market&apos;s
+                curve as locked POL (never withdrawable), 10% buys ETI and burns the ETI/ETX LP,
+                0% to treasury, 10% to the researcher. The 80% pool slice pulls the floor up
+                monotonically with every trade — for as long as the curve exists.
+              </p>
+            </div>
+          )}
+
           {/* Graduation progress */}
           {!isGraduated && !isSunset && graduationThreshold > 0n && (
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">

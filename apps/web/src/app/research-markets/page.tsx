@@ -34,7 +34,11 @@ export default function ResearchMarketsPage() {
       <footer className="mt-12 rounded-xl border border-zinc-800 bg-zinc-900/30 p-5 text-xs text-zinc-500">
         <p className="font-medium text-zinc-300">How it works</p>
         <ul className="mt-2 list-inside list-disc space-y-1">
-          <li>1% fee per trade splits 40/30/20/10: pool / ETI LP burn / treasury / researcher.</li>
+          <li>
+            1% fee per trade splits <strong>80/10/0/10</strong>: pool (permanently locked POL) /
+            ETI LP burn / treasury / researcher. The 80% pool slice is never withdrawable —
+            every trade pulls each market&apos;s floor up forever.
+          </li>
           <li>Every minted token is plain ERC-20 with on-chain metadata + auto-Sourcify verification.</li>
           <li>No external LP positions, ever — the bonding curve is the only venue.</li>
         </ul>

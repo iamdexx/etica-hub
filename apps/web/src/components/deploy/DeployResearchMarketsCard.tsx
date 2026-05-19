@@ -30,9 +30,10 @@ import eticaResearchMarketsArtifact from '@/lib/etica-research-markets-artifact.
  *
  * Constructor takes a single struct:
  *   - etx: ETX token address (the unique settlement asset).
- *   - treasury: protocol treasury multisig (receives the 20% fee slice).
- *   - etiLpSink: ETI POL-burn sink (receives the 30% fee slice; mirrors the
- *     TreasuryHarvester sink pattern).
+ *   - treasury: protocol treasury multisig (receives the treasury fee slice;
+ *     defaulted to 0% under the C-with-lock split).
+ *   - etiLpSink: ETI POL-burn sink (receives the 10% fee slice; mirrors the
+ *     TreasuryHarvester sink pattern — deepens ETI/ETX liquidity).
  *   - owner: contract owner (post-deploy admin — sets fee rate, fee split,
  *     graduation threshold, sunset window, default virtual reserves,
  *     launch toll).
@@ -40,8 +41,10 @@ import eticaResearchMarketsArtifact from '@/lib/etica-research-markets-artifact.
  *     (default: 100 ETX, routed to the shared pool — not a trade fee).
  *   - feeRateBps: trade fee in basis points (default: 100 = 1%, cap 500).
  *   - etiLpBps / treasuryBps / researcherBps: trade fee split in bps; the
- *     remainder (after these three) compounds the shared pool.
- *     Default 3000 / 2000 / 1000 → pool gets 40%.
+ *     remainder (after these three) compounds the shared pool and is
+ *     permanently locked POL (never withdrawable). Default
+ *     1000 / 0 / 1000 → pool gets 80% — the "C-with-lock" split that
+ *     pulls every market's floor up monotonically with use.
  *   - graduationThreshold: ETX reserve in a market that triggers the
  *     UI-only Graduated flag (default 100k ETX).
  *   - sunsetWindow: seconds of no-trade after which a market may be flagged
@@ -85,10 +88,12 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 // via the owner-gated setters on the singleton — no redeploy required.
 const DEFAULT_LAUNCH_TOLL_ETX = '100';
 const DEFAULT_FEE_RATE_BPS = 100; // 1%
-const DEFAULT_ETI_LP_BPS = 3000; // 30%
-const DEFAULT_TREASURY_BPS = 2000; // 20%
+const DEFAULT_ETI_LP_BPS = 1000; // 10%
+const DEFAULT_TREASURY_BPS = 0; // 0% (C-with-lock: all value stays on-chain)
 const DEFAULT_RESEARCHER_BPS = 1000; // 10%
-// Pool slice = BPS - etiLp - treasury - researcher = 10000 - 6000 = 4000 (40%).
+// Pool slice = BPS - etiLp - treasury - researcher = 10000 - 2000 = 8000 (80%).
+// This residual is the permanently locked POL that pulls every market's
+// floor up monotonically with use — it is never withdrawable.
 const DEFAULT_GRADUATION_THRESHOLD_ETX = '100000';
 const DEFAULT_SUNSET_WINDOW_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const DEFAULT_VIRTUAL_ETX_START = '5000';
@@ -382,7 +387,7 @@ export function DeployResearchMarketsCard() {
             />
           </label>
           <label className="block text-sm text-white/70">
-            Treasury multisig (receives 20% of trade fees)
+            Treasury multisig (receives the treasury slice — default 0% under C-with-lock)
             <input
               type="text"
               className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
@@ -396,7 +401,7 @@ export function DeployResearchMarketsCard() {
             />
           </label>
           <label className="block text-sm text-white/70">
-            ETI LP sink (receives 30% of trade fees — POL burn target)
+            ETI LP sink (receives 10% of trade fees — POL burn target, deepens ETI/ETX)
             <input
               type="text"
               className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"

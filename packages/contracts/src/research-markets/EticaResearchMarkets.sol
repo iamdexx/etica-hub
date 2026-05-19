@@ -18,13 +18,19 @@ import {IEticaResearchMarkets} from "./IEticaResearchMarkets.sol";
 ///         reserves. Buy/sell, launch, and the trade-fee router live here
 ///         and only here.
 ///
-/// @dev    Per-trade fee (1% by default) splits 40/30/20/10:
-///           - 40% stays in the singleton (compounds the shared pool)
-///           - 30% routes to {etiLpSink} (POL burn pattern — pair with ETI
-///             and burn the LP, same flywheel TreasuryHarvester already uses)
-///           - 20% routes to {treasury}
+/// @dev    Per-trade fee (1% by default) splits 80/10/0/10 ("C-with-lock"):
+///           - 80% stays in the singleton (compounds the shared pool;
+///             this slice is the locked POL — it is never withdrawable
+///             and pulls every market's floor up monotonically with use)
+///           - 10% routes to {etiLpSink} (POL burn pattern — pair with ETI
+///             and burn the LP, same flywheel TreasuryHarvester already uses;
+///             permanently deepens ETI/ETX liquidity)
+///           - 0%  routes to {treasury} by default (kept as a tunable knob
+///             via {setFeeSplit}, but defaulted off so all value stays
+///             on-chain backing the curves)
 ///           - 10% routes to the researcher (the wallet that launched the
-///             token via {launch})
+///             token via {launch}) — the incentive to publish + promote
+///             real science
 ///
 ///         The "shared pool" is the singleton's free ETX balance: the part
 ///         of `etx.balanceOf(address(this))` not attributed to any
@@ -89,13 +95,15 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
     ///         {markSunsetted} to flip its dormant flag.
     uint32 public sunsetWindow;
 
-    /// @notice POL burner address that receives the 30% ETI-LP slice of
+    /// @notice POL burner address that receives the 10% ETI-LP slice of
     ///         every trade fee. Typically set to the existing
     ///         TreasuryHarvester or a dedicated EtiLpBurner contract that
     ///         knows how to pair ETX with ETI and burn the LP.
     address public etiLpSink;
 
-    /// @notice Treasury multisig that receives the 20% treasury slice.
+    /// @notice Treasury multisig that receives the treasury slice
+    ///         (defaulted to 0% under the C-with-lock fee split; governance
+    ///         can re-enable via {setFeeSplit}).
     address public treasury;
 
     /// @notice Default virtual ETX reserve seeded on every new market. The
@@ -277,7 +285,7 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
 
     /// @notice Buy `token` with `etxInGross` ETX. The full gross amount is
     ///         pulled from msg.sender's ETX balance; a 1% (default) fee is
-    ///         deducted and routed per the 40/30/20/10 split; the
+    ///         deducted and routed per the 80/10/0/10 split; the
     ///         remaining 99% sets the new constant-product invariant and
     ///         determines how many tokens are minted to msg.sender.
     function buy(address token, uint256 etxInGross, uint256 minTokensOut, uint256 deadline)
@@ -334,7 +342,7 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
     ///         allowance needed — the singleton is the token's sole
     ///         mint/burn authority). The gross ETX repaid by the curve is
     ///         reduced by the 1% (default) fee, which routes per the
-    ///         40/30/20/10 split; msg.sender receives the net.
+    ///         80/10/0/10 split; msg.sender receives the net.
     function sell(address token, uint256 tokensIn, uint256 minEtxOut, uint256 deadline)
         external
         nonReentrant

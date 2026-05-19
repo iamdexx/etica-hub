@@ -13,8 +13,9 @@ import {ResearchToken} from "../../src/research-markets/ResearchToken.sol";
 ///           - launch flow + toll routing into the shared pool
 ///           - bonding-curve buy/sell math (constant product against
 ///             virtual reserves)
-///           - 40/30/20/10 fee router (pool / etiLpSink / treasury /
-///             researcher)
+///           - 80/10/0/10 fee router (pool / etiLpSink / treasury /
+///             researcher) — the "C-with-lock" split that pulls the
+///             curve floor up monotonically with use
 ///           - graduation flag fires at the threshold
 ///           - sunset flag flips after 30 days and auto-unsets on trade
 ///           - admin guards (owner-only)
@@ -50,8 +51,8 @@ contract EticaResearchMarketsTest is Test {
             owner: OWNER,
             launchTollEtx: LAUNCH_TOLL,
             feeRateBps: 100, // 1%
-            etiLpBps: 3000, // 30%
-            treasuryBps: 2000, // 20%
+            etiLpBps: 1000, // 10%
+            treasuryBps: 0, // 0%
             researcherBps: 1000, // 10%
             graduationThreshold: GRAD_THRESHOLD,
             sunsetWindow: SUNSET_WINDOW,
@@ -147,8 +148,8 @@ contract EticaResearchMarketsTest is Test {
 
         uint256 etxIn = 1_000 * ONE;
         uint256 expectedFee = (etxIn * 100) / 10_000; // 1% = 10 ETX
-        uint256 expectedEtiLp = (expectedFee * 3000) / 10_000; // 3 ETX
-        uint256 expectedTreas = (expectedFee * 2000) / 10_000; // 2 ETX
+        uint256 expectedEtiLp = (expectedFee * 1000) / 10_000; // 1 ETX
+        uint256 expectedTreas = (expectedFee * 0) / 10_000; // 0 ETX
         uint256 expectedResch = (expectedFee * 1000) / 10_000; // 1 ETX
 
         uint256 etiLpBefore = etx.balanceOf(ETI_LP_SINK);
@@ -308,7 +309,7 @@ contract EticaResearchMarketsTest is Test {
 
     function test_OnlyOwner_CanSetFeeSplit() public {
         vm.prank(OWNER);
-        markets.setFeeSplit(2500, 2500, 500); // 25/25/5/45 (pool gets 45)
+        markets.setFeeSplit(2500, 2500, 500); // 25/25/5 → pool slice 45
         assertEq(markets.etiLpBps(), 2500);
         assertEq(markets.treasuryBps(), 2500);
         assertEq(markets.researcherBps(), 500);
@@ -332,10 +333,11 @@ contract EticaResearchMarketsTest is Test {
         markets.buy(token, 1_000 * ONE, 0, block.timestamp + 1);
 
         // After buy: 99% of 1_000 ETX = 990 ETX credited to market.
-        // 0.4% of fee (40% of 10 = 4 ETX) stayed as free pool compound.
+        // 80% of fee (80% of 10 = 8 ETX) stayed as free pool compound
+        // under the C-with-lock split (1000/0/1000 = 80% residual pool).
         EticaResearchMarkets.MarketView memory v = markets.market(token);
         assertEq(v.virtualEtxAcc, 990 * ONE);
-        assertEq(markets.freePoolEtx(), 5_000_100 * ONE + 4 * ONE);
+        assertEq(markets.freePoolEtx(), 5_000_100 * ONE + 8 * ONE);
     }
 
     // ─── Math invariant ───────────────────────────────────────────────
