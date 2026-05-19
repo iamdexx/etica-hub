@@ -1,6 +1,6 @@
 # EticaHub Whitepaper
 
-**Version 1.5 — Research Markets Edition**
+**Version 1.6 — Research NFT Edition**
 
 ---
 
@@ -8,7 +8,7 @@
 
 EticaHub is a community-built application layer on the Etica blockchain. It introduces **ETX** (ticker `ETX`, name `EticaHub`, supply 100,000,000, fixed), a hub-and-spoke decentralized exchange where every pair shares ETX as its reserve asset, a research subscription and tipping layer that reads Etica's native proposal contract, and a pre-designed (but not yet deployed) proposal-gated token launchpad that, when activated, will require every new token to open both a `token/ETX` and a `token/ETI` pool — structurally funnelling demand to both assets.
 
-Since the v1 genesis launch, EticaHub has shipped several additional surfaces — all of them non-custodial, non-dilutive to the fixed ETX supply, and built on the same hub-and-spoke invariant: a UniswapX-style **Trading Stack** (limit, stop, DCA, bounded grid, Infinity Bot), an **ERC-4626 liquid staking vault (stETX)**, the **EticaStableSwap V3 pool** — a rate-aware Curve-style AMM (Phase 0) for stETX↔ETX with a 10-year-locked treasury seed and a live admin-fee adapter that flows back into the harvester, an on-chain **Treasury Harvester** that redistributes treasury LP-fee accruals via a deterministic 10/10/40/40 split with a permanent Protocol-Owned-Liquidity (POL) burn, an **ETXFarms** non-emissive LP-staking surface, a skinny **on-chain explorer** with Sourcify-backed contract verification, a public **market-data API**, a **community buy bot** that posts DEX swaps to Telegram, **EticaLabs** — an AI-native molecular intelligence workstation with a continuously-running autopilot research loop — and **EticaResearchMarkets** (§15), a permissionless launchpad for science-funding ERC-20s where every market trades against the shared 5M-ETX-seeded singleton on an internal constant-product curve with an 80/10/0/10 fee split, no withdrawable LP, a permanent floor-pull property, and auto-Sourcify verification of every minted token. All hosted on free-tier infrastructure. The **Phase 3 cross-chain bridge** stack — twelve audited-pattern contracts implementing an optimistic-veto design on Hyperlane rails, a 10M ETX insurance backstop, three custom ISMs, a free GitHub-Actions watcher, and the `/bridge` UI — is contract-complete in the repo and pending the live deploy of Hyperlane on Etica (Phase H). A frontend-only good-faith **jurisdictional gate** on `/stake` and `/farms` mirrors the same posture adopted by Uniswap and Aave; the underlying contracts remain permissionless.
+Since the v1 genesis launch, EticaHub has shipped several additional surfaces — all of them non-custodial, non-dilutive to the fixed ETX supply, and built on the same hub-and-spoke invariant: a UniswapX-style **Trading Stack** (limit, stop, DCA, bounded grid, Infinity Bot), an **ERC-4626 liquid staking vault (stETX)**, the **EticaStableSwap V3 pool** — a rate-aware Curve-style AMM (Phase 0) for stETX↔ETX with a 10-year-locked treasury seed and a live admin-fee adapter that flows back into the harvester, an on-chain **Treasury Harvester** that redistributes treasury LP-fee accruals via a deterministic 10/10/40/40 split with a permanent Protocol-Owned-Liquidity (POL) burn, an **ETXFarms** non-emissive LP-staking surface, a skinny **on-chain explorer** with Sourcify-backed contract verification, a public **market-data API**, a **community buy bot** that posts DEX swaps to Telegram, **EticaLabs** — an AI-native molecular intelligence workstation with a continuously-running autopilot research loop — **EticaResearchMarkets** (§15), a permissionless launchpad for science-funding ERC-20s where every market trades against the shared 5M-ETX-seeded singleton on an internal constant-product curve with an 80/10/0/10 fee split, no withdrawable LP, a permanent floor-pull property, and auto-Sourcify verification of every minted token, and **EticaResearch NFTs (RES)** — an immutable ERC-721 mintable from every published research candidate, with the full sequence, analysis, score, and ancestry stored on-chain forever; a deterministic SVG card and a live 3D fold viewer surfaced via `animation_url`; a 1–10 EGAZ score-indexed mint fee; a 7-day exclusive window in which the NFT mints directly to the discoverer's wallet (and force-mints to the treasury fee-free after expiry); and a uniform **79 / 20 / 1** split on every mint and every secondary sale (79 % current holder, 20 % ancestors cascading 25 levels up the research chain at 80/20 geometric, 1 % treasury). All hosted on free-tier infrastructure. The **Phase 3 cross-chain bridge** stack — twelve audited-pattern contracts implementing an optimistic-veto design on Hyperlane rails, a 10M ETX insurance backstop, three custom ISMs, a free GitHub-Actions watcher, and the `/bridge` UI — is contract-complete in the repo and pending the live deploy of Hyperlane on Etica (Phase H). A frontend-only good-faith **jurisdictional gate** on `/stake` and `/farms` mirrors the same posture adopted by Uniswap and Aave; the underlying contracts remain permissionless.
 
 This document describes what EticaHub is, what it is not, how the v1 mainnet launch works, what has shipped since, and what remains explicitly deferred to later phases.
 
@@ -590,9 +590,72 @@ Per autopilot run (3 iterations, 3 candidates per iteration):
 
 Steady-state capacity at zero cost is roughly **~10-15 user submissions per day** before any free tier saturates — plenty of headroom for community-driven exploration, and the limits scale linearly with paid tiers if demand ever justifies it.
 
-### 14.7 Non-custodial / non-financial posture
+### 14.7 Non-custodial / non-financial posture (off-chain layer)
 
-EticaLabs touches no user funds and creates no on-chain transactions. It is a pure research surface — Groq calls, ESMFold calls, public reads from PubMed/RCSB, and a Redis-backed queue. Nothing in EticaLabs interacts with ETX, stETX, the DEX, the harvester, or any treasury surface. It exists because EticaHub is community-built and the community wanted a research workstation; it stays free because the architecture is built on free tiers from day one.
+The off-chain EticaLabs pipeline (plan → fold → analyse → mutate, the autopilot queue, the public feed) touches no user funds and creates no on-chain transactions. It is a pure research surface — Groq calls, ESMFold calls, public reads from PubMed/RCSB, and a Redis-backed queue. Nothing in the off-chain layer interacts with ETX, stETX, the DEX, the harvester, or any treasury surface. Section 14.8 below describes the on-chain minting layer that lives *on top* of the research feed — purely opt-in, and itself non-custodial (each user signs their own `claim` tx).
+
+### 14.8 EticaResearch NFTs (RES)
+
+Every research candidate the autopilot publishes can be **minted as an immutable ERC-721 token ("RES")** on chain `61803`. The NFT contract is `EticaResearchNFT`, deployed at the address in Appendix A, with no `Ownable`, no `AccessControl`, no pause, no upgrade path, and no mutable metadata. Two immutable addresses are baked into the constructor at deploy time:
+
+- `treasury` — the protocol treasury wallet (the same address that backs the harvester and stETX). It receives the 1 % treasury slice on every fee event and is also the recipient of every NFT that goes unclaimed past its 7-day exclusive window.
+- `attestor` — a single server-side key (held only in the Vercel environment as `LABS_ATTESTOR_PRIVATE_KEY`) whose signature is the only authority recognised by `claim`. The attestor cannot transfer, freeze, revoke, or modify any NFT; it can only authorise a mint of a specific `ClaimPayload` that has already been published to `/labs/feed`.
+
+Minting flow (one signature per side, no shared key):
+
+1. The discoverer opens the candidate card on `/labs/feed/[id]` and clicks **mint as RES**. The front-end POSTs `{jobId, candidateIndex}` to `/api/labs/mint/attest`.
+2. The server fetches the candidate from Redis, builds the EIP-712 `ClaimPayload` (parent goal title, sequence, analysis, score, iterations, branch goal id, submitter wallet, `expiresAt`, `exclusiveUntil`, parent branch goal id), signs it with the attestor key, and returns `{payload, signature, nftAddress, chainId, mintFeeWei, baseMintFeeWei, maxScoreMintFeeWei, exclusive, exclusiveUntil}`. The attestor key never leaves the server.
+3. The discoverer signs the on-chain `claim(payload, sig)` tx in their own wallet, paying the mint fee as `msg.value`. The contract verifies the attestor signature, enforces the recipient policy (see below), and `_safeMint`s the RES.
+
+The full `Discovery` struct (parent goal title, full amino-acid sequence, full multi-paragraph analysis, score, iterations, branch goal id, submitter, `discoveredAt`, `blockNumber`) is written into contract storage at mint time and is never overwritten. `tokenURI(tokenId)` returns a data-URI JSON blob built entirely from that storage — no IPFS, no CDN, no truncation, no fetch — with a deterministic on-chain SVG card as `image` and an `animation_url` pointing to `https://eticahub.com/labs/research/{tokenId}/viewer` (a Mol*-rendered live 3D fold viewer). Marketplaces, wallets, and explorers therefore see the full research record forever, even if every off-chain surface goes dark.
+
+### 14.9 Mint fee, exclusive window, and treasury auto-forfeit
+
+The mint fee is computed deterministically from the candidate's score:
+
+- **Base fee:** 1 EGAZ (the chain's native gas token), paid on every mint, regardless of score.
+- **Score-indexed fee:** up to 9 EGAZ linearly scaled by the candidate's score (capped at score 1.0).
+- **Maximum mint fee:** 10 EGAZ at the top of the score range.
+
+Every `ClaimPayload` signed by the attestor carries an `exclusiveUntil` timestamp set to **`job.updatedAt + 7 days`**. The contract uses this timestamp as the sole gate on recipient policy:
+
+- **Inside the exclusive window (`block.timestamp < exclusiveUntil`):** the only address allowed to call `claim` and receive the NFT is `payload.submitter` (the discoverer's wallet, captured at the moment they kicked off the run). The NFT `_safeMint`s directly to `msg.sender == payload.submitter`. The full mint fee is collected and routed through the cascade (§14.10).
+- **After the exclusive window (`block.timestamp >= exclusiveUntil`):** anyone can call `claim`. The contract **ignores `msg.sender` as recipient** and force-mints the NFT to the immutable `treasury` address. The mint fee is **fully waived** — any `msg.value` is refunded. The caller only pays the L1 gas. A small permissionless cron sweeps the autopilot's expired candidates so the treasury never has to act manually.
+
+Resigning the same `jobId` later does not extend exclusivity: `exclusiveUntil` is anchored to the original `job.updatedAt`, so the attestor cannot stretch a discoverer's window after the fact.
+
+### 14.10 The 79 / 20 / 1 cascade
+
+**Every economic event on a RES — every mint, every secondary sale — splits the fee/royalty pool 79 % to the current holder, 20 % to ancestors, 1 % to the treasury.** The 20 % ancestor slice cascades upward along the research chain at an 80 / 20 geometric ratio, capped at a depth of 25 ancestors: the direct parent receives 80 % of the ancestor slice, the grandparent 80 % of what remains, and so on. Treasury is always exactly 1 % of any event — never more.
+
+Three invariants hold by construction:
+
+- **Root RES (no `parentBranchGoalId`):** the 20 % ancestor slice has no recipient and **falls through to the current holder** (not the treasury). On a root mint or sale the holder therefore nets 99 % and the treasury gets 1 %.
+- **Reverting ancestor recipient:** if any ancestor's wallet reverts on receipt (e.g. a `payable` fallback that throws), that ancestor's share is rolled into the **current holder's** slice. The cascade never bricks a release and treasury is never the fall-through.
+- **No upgrade path:** the 79 / 20 / 1 numbers are constants in the contract, not parameters. There is no admin function to change them.
+
+The sale leg works against any marketplace that respects EIP-2981. The NFT contract returns the 5 % royalty leg of any sale, and the marketplace pays it into the same `_distribute` function that handles mint fees — so an OpenSea sale and a wallet-to-wallet OTC transfer that the parties choose to attribute through the contract both flow through the same 79 / 20 / 1 cascade.
+
+### 14.11 Branch from any RES — one-signature child chains
+
+Every candidate card on `/labs/feed/[id]` (and every RES card after minting) exposes a **Branch from this RES** button. One click + one wallet signature creates a new research goal whose `parentBranchGoalId` points at the source candidate, with the source's parent goal title, sequence, and analysis pre-loaded as context for the planner. From that moment, every future RES minted under the new goal automatically cascades 20 % of every mint and sale up to the source — and onward through its own ancestors — at the depth-25 80/20 geometric ratio. The contract requires no change to support branching; `parentBranchGoalId` is already a first-class field of the `ClaimPayload`.
+
+### 14.12 Reliability — the mint never blocks on a flaky engine
+
+Two background pipelines protect the publish-to-mint path from upstream failures:
+
+- **Fold reliability.** The fold cascade is NVIDIA-NIM-first (it is the steadier of the free ESMFold endpoints), with retries (3 attempts per engine, exponential 0/5/30 s backoff) and a 90 s `AbortController` timeout per engine. If the full cascade exhausts, the candidate is enqueued to a **Redis retry queue** (`labs:fold-retry-queue`) that a Vercel cron drains every 5 minutes for up to ~18 hours. If the engine *still* never recovers, the worker publishes the candidate anyway with `pdb: null` and a `structurePending: true` flag, computes its score from sequence-only heuristics (capped at 0.55), and exposes a **Re-fold this RES** button that anyone can click to retry. The mint contract has no opinion on fold output — the attestor signs the same `ClaimPayload` either way — so a candidate is guaranteed to be mintable within a bounded time of publication.
+- **Groq reliability.** Every Groq call (planning, analysis, mutation, scoring) flows through a shared helper that supports multi-key rotation (`GROQ_API_KEYS` accepts a comma-separated list), per-attempt retry + exponential backoff on 429 / 408 / 5xx, automatic eviction of 401 / 403 keys, a model cascade (70 B → 8 B for plan / expand / analyse, 8 B → 70 B for explain / sequence), a JSON-mode auto-drop on validator rejection, and a composed per-attempt timeout. If Groq is fully exhausted, the worker emits a deterministic objective-only summary so candidates still rank and remain mintable.
+
+Both pipelines are non-custodial and free-tier; the mint contract sees only the final `ClaimPayload` and has no exposure to the reliability of either upstream service.
+
+### 14.13 Unified moderator dashboard
+
+`/labs/moderation` is a public dashboard ranking every goal and job by community signal (flag-voters × 10 + vouches + recency). Anyone can browse free; Flag and Vouch actions require a wallet signature and a non-zero stETX balance (the existing 4-layer wallet-gated stETX-weighted moderation pipeline). The dashboard inherits the same `/api/labs/admin/moderation` endpoint used by individual job pages — no new contract, no admin key, no special role — and exists purely to surface the highest-signal items at the top.
+
+### 14.14 Non-financial posture (clarified)
+
+The off-chain Labs surface remains non-financial and touches no user funds. The on-chain mint layer described in §14.8–14.12 is opt-in: a user only interacts with it when they click **mint as RES** and sign the resulting `claim` tx in their own wallet. The attestor server-signs the EIP-712 authorisation but never holds, custodies, or transfers any token or NFT — its sole power is to authorise mints of payloads that the autopilot has already published publicly to `/labs/feed`.
 
 ---
 
@@ -898,6 +961,7 @@ Timeline is indicative, not committed.
 - **v1.2 — EticaLabs:** `/labs` AI molecular workstation with Groq plan → engine-cascade fold (HF ESMFold / NVIDIA NIM ESMFold / Chai-1 / Boltz) → Groq structural analysis → mutate + export + share. Research-aware planner pulls PubMed + RCSB PDB references. **EticaLabs Autopilot** — `/labs/feed` public research feed backed by a Redis queue + GitHub Actions worker on a 10-minute cron — runs plan → fold → analyse → mutate for N iterations on every public submission. Built entirely on free tiers.
 - **v1.2 — EticaStableSwap (Phase 0):** rate-aware AMM live at `0xbbf5…036E`; 30M ETX-equivalent treasury seed locked 10y in `LiquidityTimelock10y` (`0xFdf9…d739`, unlocks 2036-05-01); `StableSwapHarvesterAdapter` (`0x9Adc…Be76`) bridges admin fees into the existing 10/10/40/40 flywheel; `/swap` auto-routes direct stETX↔ETX through the pool; public LP card on `/pool`; live `/api/v1/tvl` and `/api/v1/liquidity-flow` count the seed.
 - **v1.3 — EticaResearchMarkets:** singleton launchpad live (PR #199), `/deploy/research-markets` browser deployer (PR #200), `/research-markets` launchpad UI with tabbed Live / Pending / Graduated / Sunset views and per-market detail pages with buy/sell card + IPFS image upload (PR #201), graduated tokens wired into `/swap` and `/trade/[address]` (PR #202), singleton upgraded to 80/10/0/10 fee split with permanent floor pull (PR #203), auto-Sourcify cron + canonical bundle + live status badge (PR #204). Treasury seeds the singleton with 5M ETX as the free-pool backstop. See §15.
+- **v1.6 — Research NFTs (RES):** immutable `EticaResearchNFT` ERC-721 deployed at `0xE16cD6B16ec20aFFb32A72917b7AfB5D00F0e599` with metadata library at `0x66aa725d9d18481bB937F4DF2DA68f82DF964219` (PRs #214–216, #222, #225). Every published research candidate on `/labs/feed` is mintable as a RES: 1–10 EGAZ score-indexed fee (PR #215), discoverer-first 7-day exclusive window with treasury auto-forfeit and fee waiver after expiry, uniform 79 / 20 / 1 split on every mint and secondary sale with a depth-25 80/20 ancestor cascade (PR #216), un-truncated candidate / goal descriptions (PR #217), NVIDIA-first fold reliability pipeline with retry queue + mint-never-blocks (PR #218), one-signature **Branch from this RES** child chains (PR #219), unified `/labs/moderation` dashboard (PR #220), Groq multi-key + retry + cascade pipeline (PR #221), `/deploy/research-nft` browser deployer (PR #222), `/api/labs/mint/attest` server-signed EIP-712 attest route (PR #223), and **mint as RES** button on every candidate card (PR #224). See §14.8–14.14.
 
 ### Near-term
 
@@ -996,6 +1060,9 @@ Etica mainnet (chain id `61803`). Canonical source: `packages/shared/src/address
 | `EticaStableSwap` (stETX/ETX) | `0xbbf5814C1EA0531Cb07541b80c547ee7878C036E` |
 | `LiquidityTimelock10y` | `0xFdf919673570Cea9c513461604450D003716d739` (unlocks 2036-05-01) |
 | `StableSwapHarvesterAdapter` | `0x9Adc6298EFDcc1604CB95DaaB33331f866DDBe76` |
+| `EticaResearchMarkets` (singleton) | `0x6605d2F6A8b77a8dC7f53Fd1EDe0974d85937D17` |
+| `EticaResearchNFTMetadata` (library) | `0x66aa725d9d18481bB937F4DF2DA68f82DF964219` |
+| `EticaResearchNFT` (RES) | `0xE16cD6B16ec20aFFb32A72917b7AfB5D00F0e599` |
 | `BridgeVault` (Etica) | *pending Phase H deploy* |
 | `BridgeInsuranceFund` (Etica) | *pending Phase H deploy* |
 | `FeeRouter` (Etica) | *pending Phase H deploy* |
