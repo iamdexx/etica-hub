@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const MAX_PROMPT_CHARS = 400;
@@ -125,6 +126,13 @@ export default function LabsPage() {
 
   /* ── share ── */
   const [copied, setCopied] = useState(false);
+
+  /* ── autopilot submission ── */
+  const [autopilotIterations, setAutopilotIterations] = useState(3);
+  const [autopilotSubmitting, setAutopilotSubmitting] = useState(false);
+  const [autopilotError, setAutopilotError] = useState<string | null>(null);
+  const [autopilotJobId, setAutopilotJobId] = useState<string | null>(null);
+  const [autopilotQueuedAhead, setAutopilotQueuedAhead] = useState<number | null>(null);
 
   const charsRemaining = useMemo(() => MAX_PROMPT_CHARS - prompt.length, [prompt.length]);
 
@@ -339,6 +347,40 @@ export default function LabsPage() {
     a.download = `etica-labs-${sequence.slice(0, 8)}.pdb`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  /* ── autopilot submit ── */
+  async function handleAutopilotSubmit(): Promise<void> {
+    if (!prompt.trim() || autopilotSubmitting) return;
+    setAutopilotSubmitting(true);
+    setAutopilotError(null);
+    setAutopilotJobId(null);
+    setAutopilotQueuedAhead(null);
+    try {
+      const res = await fetch('/api/labs/queue', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, maxIterations: autopilotIterations }),
+      });
+      const data = (await res.json()) as {
+        id?: string;
+        queuedAhead?: number;
+        error?: string;
+        detail?: string;
+      };
+      if (!res.ok || !data.id) {
+        setAutopilotError(data.error ?? `Autopilot submit returned ${res.status}.`);
+        return;
+      }
+      setAutopilotJobId(data.id);
+      setAutopilotQueuedAhead(typeof data.queuedAhead === 'number' ? data.queuedAhead : null);
+    } catch (err) {
+      setAutopilotError(
+        err instanceof Error ? err.message : 'Failed to reach the autopilot queue.',
+      );
+    } finally {
+      setAutopilotSubmitting(false);
+    }
   }
 
   /* ── share ── */
@@ -569,6 +611,72 @@ export default function LabsPage() {
           >
             {loading ? 'Generating structure\u2026' : 'Generate molecule'}
           </button>
+
+          {/* ── Autopilot — submit to the public lab queue ── */}
+          <div className="space-y-3 rounded-2xl border border-sky-400/15 bg-sky-400/[0.04] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-sky-100">Run continuously on EticaLabs</div>
+                <div className="mt-0.5 text-xs text-white/55">
+                  Queue this prompt for the background research agent — plan → fold → analyse → mutate
+                  for N iterations. Result lands on the{' '}
+                  <Link href="/labs/feed" className="text-sky-200 underline-offset-2 hover:underline">
+                    public feed
+                  </Link>
+                  .
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-white/55">
+                <label htmlFor="autopilot-iters" className="text-white/45">
+                  iter
+                </label>
+                <select
+                  id="autopilot-iters"
+                  value={autopilotIterations}
+                  onChange={(e) => setAutopilotIterations(Number(e.target.value))}
+                  className="rounded-md border border-white/10 bg-black/30 px-2 py-1 text-xs text-white outline-none focus:border-sky-400/40"
+                >
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                  <option value={3}>3</option>
+                  <option value={4}>4</option>
+                  <option value={5}>5</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAutopilotSubmit}
+              disabled={autopilotSubmitting || prompt.trim().length === 0}
+              className="inline-flex w-full items-center justify-center rounded-full border border-sky-400/30 bg-sky-400/10 px-4 py-2.5 text-sm font-medium text-sky-100 transition hover:bg-sky-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {autopilotSubmitting ? 'Submitting\u2026' : 'Run continuously on EticaLabs'}
+            </button>
+
+            {autopilotError && (
+              <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
+                {autopilotError}
+              </div>
+            )}
+
+            {autopilotJobId && (
+              <div className="space-y-2 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-xs">
+                <div className="font-medium text-emerald-100">Queued.</div>
+                <div className="text-white/65">
+                  {autopilotQueuedAhead !== null
+                    ? `${autopilotQueuedAhead} job${autopilotQueuedAhead === 1 ? '' : 's'} ahead of yours.`
+                    : 'Pending pickup by the next worker tick (≤ 10 min).'}
+                </div>
+                <Link
+                  href={`/labs/feed/${autopilotJobId}`}
+                  className="inline-flex items-center gap-1 text-emerald-200 underline-offset-2 hover:underline"
+                >
+                  Watch it run →
+                </Link>
+              </div>
+            )}
+          </div>
 
           {/* ── Pipeline info ── */}
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
