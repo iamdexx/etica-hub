@@ -158,24 +158,37 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  // Parent goal — branching is only meaningful when the parent has a
-  // goal chain; otherwise the cascade has nowhere to anchor.
-  const parentGoalId = parentJob.goalId;
-  if (!parentGoalId) {
-    return json(
-      {
-        error:
-          'Parent job has no goal to branch from. Submit it to Autopilot first.',
-      },
-      { status: 422, headers: limit.headers },
+  // Parent goal — branching anchors the cascade to a research chain.
+  // Legacy jobs (pre persistent-goals) may have no goalId; in that
+  // case we synthesise a root goal from the parent prompt so the
+  // child has somewhere to root, attach the parent to it, and proceed.
+  let parentGoalId = parentJob.goalId;
+  let parentGoal = parentGoalId
+    ? await getGoal(parentGoalId).catch(() => null)
+    : null;
+  if (!parentGoalId || !parentGoal) {
+    const seedTitle = clamp(parentJob.prompt.trim() || 'Legacy research job', MAX_GOAL_TITLE);
+    const seedDescription = clamp(
+      [
+        'Auto-rooted goal for a legacy autopilot job that predates persistent goals.',
+        `Original prompt: ${parentJob.prompt.trim()}`,
+      ].join('\n\n'),
+      MAX_GOAL_DESCRIPTION,
     );
-  }
-  const parentGoal = await getGoal(parentGoalId).catch(() => null);
-  if (!parentGoal) {
-    return json(
-      { error: 'Parent goal missing.' },
-      { status: 404, headers: limit.headers },
-    );
+    const synthetic = await createGoal({
+      title: seedTitle,
+      description: seedDescription,
+      submitterTag: parentJob.submitterTag ?? submitterTag(req),
+      submitterWallet: parentJob.submitterWallet,
+      origin: 'user',
+    });
+    parentGoalId = synthetic.id;
+    parentGoal = synthetic;
+    const attachedAt = parentJob.updatedAt ?? Date.now();
+    await attachJobToGoal(synthetic.id, parentJob.id, attachedAt).catch(() => {});
+    await queue
+      .put({ ...parentJob, goalId: synthetic.id })
+      .catch(() => undefined);
   }
   const parentStatus = await getStatus('goal', parentGoal.id).catch(
     () => parentGoal.moderation,
