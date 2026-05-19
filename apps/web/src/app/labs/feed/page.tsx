@@ -16,6 +16,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
+import { ModerationBadge } from '@/components/labs/ModerationBadge';
 import type { LabsFeedEntry, LabsJobStatus } from '@/lib/labs/job';
 
 const REFRESH_MS = 5_000;
@@ -201,12 +202,20 @@ export default function LabsFeedPage(): JSX.Element {
               {entry.prompt}
             </p>
 
-            <div className="mt-auto flex items-center justify-between gap-2 border-t border-white/5 pt-3 text-[11px] text-white/55">
+            <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-3 text-[11px] text-white/55">
               <span>
                 iteration {entry.iterations}
                 {entry.status === 'running' ? ' …' : ''}
               </span>
-              <span className="font-mono text-white/40">{entry.id.slice(0, 8)}</span>
+              <div className="flex items-center gap-2">
+                {entry.goalId && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-violet-200">
+                    goal
+                  </span>
+                )}
+                <ModerationBadge status={entry.moderation} />
+                <span className="font-mono text-white/40">{entry.id.slice(0, 8)}</span>
+              </div>
             </div>
           </Link>
         ))}

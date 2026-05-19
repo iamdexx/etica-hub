@@ -206,12 +206,68 @@ function tryParse(raw: string): ResearchPlan | null {
   };
 }
 
-export async function generatePlan(prompt: string): Promise<ResearchPlan> {
+export interface PriorContextCandidate {
+  jobId: string;
+  jobPrompt?: string;
+  sequence?: string;
+  rationale?: string;
+  analysis?: string;
+  score?: number;
+}
+
+export interface PriorContextGoal {
+  id: string;
+  title: string;
+  candidates: PriorContextCandidate[];
+}
+
+export interface PriorContext {
+  /** Same-goal prior best candidates. */
+  selfPriorCandidates?: PriorContextCandidate[];
+  /** Cross-goal related-work seeds. */
+  relatedGoals?: PriorContextGoal[];
+}
+
+function summarizePriorContext(ctx: PriorContext | undefined): string {
+  if (!ctx) return '';
+  const lines: string[] = [];
+  if (ctx.selfPriorCandidates && ctx.selfPriorCandidates.length > 0) {
+    lines.push('Prior work on this goal (cite as [self-N]):');
+    ctx.selfPriorCandidates.slice(0, 4).forEach((c, i) => {
+      const tag = `[self-${i + 1}]`;
+      const seq = c.sequence ? ` seq=${c.sequence.slice(0, 40)}${c.sequence.length > 40 ? '…' : ''}` : '';
+      const sc = typeof c.score === 'number' ? ` score=${c.score.toFixed(2)}` : '';
+      const rat = c.rationale ? ` — ${c.rationale}` : '';
+      lines.push(`${tag}${seq}${sc}${rat}`);
+    });
+    lines.push('');
+  }
+  if (ctx.relatedGoals && ctx.relatedGoals.length > 0) {
+    lines.push('Related work from other EticaLabs goals (cite as [rel-N]):');
+    let idx = 1;
+    for (const g of ctx.relatedGoals.slice(0, 3)) {
+      const top = g.candidates[0];
+      if (!top) continue;
+      const seq = top.sequence ? ` seq=${top.sequence.slice(0, 40)}${top.sequence.length > 40 ? '…' : ''}` : '';
+      const sc = typeof top.score === 'number' ? ` score=${top.score.toFixed(2)}` : '';
+      lines.push(`[rel-${idx}] goal "${g.title}"${seq}${sc} — ${top.rationale ?? ''}`);
+      idx += 1;
+    }
+    lines.push('');
+  }
+  return lines.join('\n').trim();
+}
+
+export async function generatePlan(
+  prompt: string,
+  priorContext?: PriorContext,
+): Promise<ResearchPlan> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY not set');
 
   const references = await gatherReferences(prompt).catch(() => []);
   const refSummary = summarizeReferencesForPrompt(references);
+  const ctxSummary = summarizePriorContext(priorContext);
 
   const systemPrompt = [
     'You are a protein-engineering planner.',
@@ -232,9 +288,17 @@ export async function generatePlan(prompt: string): Promise<ResearchPlan> {
     'REFUSE prompts that ask for human pathogens, biological weapons, gain-of-function on dangerous viruses, or toxin enhancement — instead emit `{"refused":"out-of-scope"}` and no candidates.',
   ].join(' ');
 
-  const userContent = refSummary
-    ? `Goal: ${prompt}\n\nExisting research and structures (cite by [N] index):\n${refSummary}`
-    : prompt;
+  const userParts: string[] = [`Goal: ${prompt}`];
+  if (refSummary) {
+    userParts.push(`Existing research and structures (cite by [N] index):\n${refSummary}`);
+  }
+  if (ctxSummary) {
+    userParts.push(ctxSummary);
+    userParts.push(
+      'When prior or related work is provided, differentiate your candidates from them — do not repeat sequences or rationales verbatim. Cite as [self-N] or [rel-N] where it informs your design.',
+    );
+  }
+  const userContent = userParts.join('\n\n');
 
   const { signal, cancel } = withTimeout(45_000);
   // 3-attempt cascade: 70B+json_object → 70B no-mode → 8B no-mode.

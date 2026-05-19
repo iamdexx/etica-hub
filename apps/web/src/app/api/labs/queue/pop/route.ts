@@ -13,6 +13,7 @@
 
 import { NextRequest } from 'next/server';
 
+import { getStatus } from '@/lib/labs/moderation-store';
 import { appendJobEvent, labsQueue, withStatus } from '@/lib/labs/queue';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 
@@ -29,24 +30,35 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!auth.ok) return json(auth.body, { status: auth.status });
 
   const queue = labsQueue();
-  const id = await queue.popPending();
-  if (!id) {
-    return new Response(null, { status: 204 });
+  // Skip jobs that are hidden / denied / operator-hidden so workers never
+  // process them. We pop up to 8 candidates per tick before giving up.
+  for (let i = 0; i < 8; i++) {
+    const id = await queue.popPending();
+    if (!id) return new Response(null, { status: 204 });
+
+    const job = await queue.get(id);
+    if (!job) continue;
+
+    const modStatus = await getStatus('job', id).catch(() => 'visible');
+    if (
+      modStatus === 'hidden' ||
+      modStatus === 'denied' ||
+      modStatus === 'operator-hidden'
+    ) {
+      const skipped = appendJobEvent(withStatus(job, 'error'), {
+        kind: 'skipped',
+        message: `Skipped by moderation (${modStatus})`,
+      });
+      await queue.put(skipped);
+      continue;
+    }
+
+    const running = appendJobEvent(withStatus(job, 'running'), {
+      kind: 'started',
+      message: 'Worker picked up job',
+    });
+    await queue.put(running);
+    return json({ job: running });
   }
-
-  const job = await queue.get(id);
-  if (!job) {
-    return json(
-      { error: `Popped job ${id} but blob is missing — skipping.` },
-      { status: 410 },
-    );
-  }
-
-  const running = appendJobEvent(withStatus(job, 'running'), {
-    kind: 'started',
-    message: 'Worker picked up job',
-  });
-  await queue.put(running);
-
-  return json({ job: running });
+  return new Response(null, { status: 204 });
 }

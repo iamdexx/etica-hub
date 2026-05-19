@@ -8,6 +8,7 @@
  * reads the same Redis to render the public lab notebook.
  */
 
+import type { ModerationStatus } from './moderation';
 import type { Reference } from './research';
 
 export type LabsJobStatus =
@@ -26,7 +27,9 @@ export type LabsJobEventKind =
   | 'iteration_done'
   | 'completed'
   | 'error'
-  | 'note';
+  | 'note'
+  | 'goal_context'
+  | 'skipped';
 
 export interface LabsJobEvent {
   at: number; // epoch ms
@@ -88,6 +91,12 @@ export interface LabsJob {
   result?: LabsJobResult;
   /** Optional opaque submitter tag (truncated client IP hash or "anon"). */
   submitterTag?: string;
+  /** Submitter EIP-191-signed wallet address (chain 61803), required on every new job. */
+  submitterWallet?: string;
+  /** Optional parent goal id — see lib/labs/goal.ts. */
+  goalId?: string;
+  /** Community moderation status. Defaults to 'visible' on legacy jobs. */
+  moderation?: ModerationStatus;
 }
 
 /** Lightweight projection used by the public /labs/feed index. */
@@ -98,4 +107,6 @@ export interface LabsFeedEntry {
   createdAt: number;
   updatedAt: number;
   iterations: number;
+  goalId?: string;
+  moderation?: ModerationStatus;
 }

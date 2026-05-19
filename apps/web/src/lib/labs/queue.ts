@@ -64,6 +64,8 @@ function feedEntryFromJob(job: LabsJob): LabsFeedEntry {
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     iterations: job.iterations,
+    goalId: job.goalId,
+    moderation: job.moderation,
   };
 }
 
