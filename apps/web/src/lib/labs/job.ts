@@ -120,4 +120,12 @@ export interface LabsFeedEntry {
   iterations: number;
   goalId?: string;
   moderation?: ModerationStatus;
+  /** Parent goal title — surfaced so feed cards can group by research topic. */
+  goalTitle?: string;
+  /** 'user' for top-level goals, 'branch' for child research chains. */
+  goalOrigin?: 'user' | 'branch';
+  /** Ancestor goal id when this goal was branched. */
+  parentGoalId?: string;
+  /** Ancestor goal title — surfaced so branches read as "Branch from <X>". */
+  parentGoalTitle?: string;
 }

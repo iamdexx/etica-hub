@@ -18,7 +18,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 
-import { attachJobToGoal, getGoal } from '@/lib/labs/goal-store';
+import { attachJobToGoal, createGoal, getGoal } from '@/lib/labs/goal-store';
 import type { LabsJob } from '@/lib/labs/job';
 import { runBiomedicalGate, runHardDenylist } from '@/lib/labs/moderation';
 import { getStatus } from '@/lib/labs/moderation-store';
@@ -156,6 +156,29 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
+  const submitter = submitterTag(req);
+
+  // Auto-root: top-level submits without an explicit goalId get a fresh
+  // root goal synthesised from the prompt so every job shows up under
+  // a topic on /labs/feed. Skips when the caller already nominated a
+  // goal (e.g. branch / goal-detail submit paths).
+  if (!goalId) {
+    try {
+      const rootGoal = await createGoal({
+        title: prompt,
+        description: '',
+        submitterTag: submitter,
+        submitterWallet,
+        origin: 'user',
+      });
+      goalId = rootGoal.id;
+    } catch {
+      // Goal synthesis is best-effort — if the goal store is briefly
+      // unavailable, the job still runs goal-less and renders without
+      // a topic pill. Better than blocking the submit.
+    }
+  }
+
   const maxIterations = clampIterations(body.maxIterations);
   const id = randomUUID();
   const now = Date.now();
@@ -170,7 +193,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     createdAt: now,
     updatedAt: now,
     events: [],
-    submitterTag: submitterTag(req),
+    submitterTag: submitter,
     submitterWallet,
     goalId,
     moderation: 'visible',
@@ -216,5 +239,58 @@ export async function GET(_req: NextRequest): Promise<Response> {
     queue.recent(20).catch(() => []),
     queue.pendingCount().catch(() => 0),
   ]);
-  return json({ entries, pending });
+
+  // Enrich entries with goal titles so the feed can group by topic.
+  // Batch the goal lookups so we never refetch the same goal twice in
+  // a single render.
+  const goalIds = new Set<string>();
+  for (const entry of entries) {
+    if (entry.goalId) goalIds.add(entry.goalId);
+  }
+  const goals = new Map<string, { title: string; origin?: 'user' | 'branch'; parentGoalId?: string }>();
+  await Promise.all(
+    Array.from(goalIds).map(async (id) => {
+      const goal = await getGoal(id).catch(() => null);
+      if (goal) {
+        goals.set(id, {
+          title: goal.title,
+          origin: goal.origin,
+          parentGoalId: goal.parentGoalId,
+        });
+      }
+    }),
+  );
+  // Second pass: any goal referenced as a parent that we haven't fetched yet.
+  const parentIds = new Set<string>();
+  for (const g of goals.values()) {
+    if (g.parentGoalId && !goals.has(g.parentGoalId)) parentIds.add(g.parentGoalId);
+  }
+  await Promise.all(
+    Array.from(parentIds).map(async (id) => {
+      const goal = await getGoal(id).catch(() => null);
+      if (goal) {
+        goals.set(id, {
+          title: goal.title,
+          origin: goal.origin,
+          parentGoalId: goal.parentGoalId,
+        });
+      }
+    }),
+  );
+
+  const enriched = entries.map((entry) => {
+    if (!entry.goalId) return entry;
+    const goal = goals.get(entry.goalId);
+    if (!goal) return entry;
+    const parent = goal.parentGoalId ? goals.get(goal.parentGoalId) : undefined;
+    return {
+      ...entry,
+      goalTitle: goal.title,
+      goalOrigin: goal.origin,
+      parentGoalId: goal.parentGoalId,
+      parentGoalTitle: parent?.title,
+    };
+  });
+
+  return json({ entries: enriched, pending });
 }
