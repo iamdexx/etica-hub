@@ -1,0 +1,257 @@
+EticaHub Proprietary License v1.0
+==================================
+
+Copyright (c) 2024-2025 EticaHub. All rights reserved.
+
+THIS REPOSITORY IS PROPRIETARY AND SOURCE-AVAILABLE.
+
+The source code, configuration, scripts, smart contracts, documentation,
+designs, and other materials in this repository (collectively, the
+"Software") are published publicly for the limited purpose of inspection,
+security review, and public audit. No license, express or implied, is
+granted under this License to use, run, fork, modify, redistribute,
+sublicense, sell, or otherwise exploit the Software in whole or in part,
+except as expressly set out in this License.
+
+For commercial licensing inquiries, contact the EticaHub treasury at
+on-chain address 0xB2B4bC9d02970A55efF64C2D84c622c87967C19D
+or via the EticaHub project at https://eticahub.com.
+
+--------------------------------------------------------------------------
+1. Definitions
+--------------------------------------------------------------------------
+
+   "EticaHub" or "the Licensor" means the copyright holder of the
+   Software and its designated successor under Section 8.
+
+   "EticaHub Protocol" means the on-chain contracts, off-chain services,
+   and websites operated by or on behalf of EticaHub at
+   https://eticahub.com and its subdomains, including (without
+   limitation) the ETX token, stETX vault, EticaSwap V2,
+   EticaStableSwap, EticaResearchMarkets, EticaLabs Autopilot, the
+   EticaHub bridge stack, and any successor protocol designated by
+   EticaHub.
+
+   "EticaHub Marks" means the names "Etica", "EticaHub", "EticaLabs",
+   "EticaSwap", "EticaStableSwap", "ETX", "stETX",
+   "EticaResearchMarkets", and any associated logos, marks, or
+   trade dress.
+
+   "Software" has the meaning given in the preamble above.
+
+   "You" means the individual or legal entity exercising rights under
+   this License.
+
+   "Commercial License" means a separate, written commercial license
+   agreement signed by EticaHub.
+
+--------------------------------------------------------------------------
+2. Permitted Uses (No Commercial License Required)
+--------------------------------------------------------------------------
+
+   Subject to your compliance with this License, EticaHub grants you a
+   limited, worldwide, non-exclusive, non-transferable, non-sublicensable
+   right to do the following with the Software, and only the following:
+
+   (a) View and read the source code as published in this repository;
+
+   (b) Clone the repository locally for the sole purpose of inspecting
+       or auditing the Software;
+
+   (c) Make and publish good-faith security disclosures referencing
+       specific lines or files in the Software, provided the disclosure
+       is made privately to EticaHub before public disclosure, in
+       accordance with EticaHub's responsible-disclosure policy;
+
+   (d) Quote short excerpts of the Software in scholarly publications,
+       journalism, or independent analysis, subject to standard fair-use
+       attribution and the trademark restrictions in Section 5;
+
+   (e) Submit Contributions to EticaHub on the terms set out in
+       Section 7.
+
+   No other use is permitted under this License. In particular, and
+   without limitation, the following are NOT permitted without a
+   Commercial License:
+
+   - Running the Software, in original or modified form, on any
+     production, staging, test, or local network for any purpose other
+     than read-only inspection of compiled artifacts;
+   - Deploying any smart contract derived from the Software to any
+     blockchain;
+   - Operating any website, service, bot, indexer, frontend, backend,
+     API, or other system that incorporates or is materially based on
+     the Software;
+   - Creating, distributing, or maintaining a fork of this repository
+     for any purpose other than a sealed local audit copy;
+   - Incorporating the Software, in original or modified form, into
+     any other software product;
+   - Selling, sublicensing, or transferring rights to the Software.
+
+--------------------------------------------------------------------------
+3. Commercial License
+--------------------------------------------------------------------------
+
+   Any use of the Software not expressly permitted by Section 2 requires
+   a Commercial License from EticaHub.
+
+   Commercial Licenses are available on commercially reasonable terms
+   negotiated in good faith. To request a Commercial License, contact
+   the EticaHub treasury at the address at the top of this file with
+   the following information:
+
+   (a) the legal entity that will be licensed;
+   (b) the intended use case and a description of any planned
+       modifications;
+   (c) the geographies in which the Software will be deployed;
+   (d) the expected scale of deployment (users, TVL, revenue).
+
+   EticaHub reserves the right to grant or deny a Commercial License,
+   in its sole discretion, on terms including (without limitation)
+   royalties, lump-sum fees, revenue-share, equity, or grants of
+   sublicensable rights to EticaHub-deployed code.
+
+--------------------------------------------------------------------------
+4. Ethics Conditions
+--------------------------------------------------------------------------
+
+   Any rights granted under this License or under any Commercial License
+   are conditioned on your continuing not to use, deploy, fork, or
+   modify the Software:
+
+   (a) to extract maximal-extractable value (MEV) against users of the
+       EticaHub Protocol, including but not limited to sandwich attacks
+       and front-running of EticaHub-routed swaps;
+
+   (b) to facilitate access to the EticaHub Protocol from jurisdictions
+       comprehensively sanctioned by the United States Office of Foreign
+       Assets Control (OFAC), namely Cuba, Iran, North Korea, Syria,
+       and the Crimea, Donetsk, Luhansk, and Kherson regions, in any
+       manner that circumvents EticaHub's geo-restriction measures;
+
+   (c) to facilitate, promote, or distribute material depicting the
+       sexual abuse or exploitation of any person under the age of
+       consent in their jurisdiction (which is at all times under 18);
+
+   (d) to design, fund, distribute, or operate weapons of mass
+       destruction, including chemical, biological, radiological, or
+       nuclear weapons; or
+
+   (e) in violation of applicable law in any jurisdiction in which you
+       operate or distribute.
+
+   Violation of this Section 4 is a material breach of this License
+   and any Commercial License, and terminates all rights granted to
+   you immediately and without notice.
+
+--------------------------------------------------------------------------
+5. EticaHub Marks
+--------------------------------------------------------------------------
+
+   No right or license is granted under this License to use the EticaHub
+   Marks. You may identify your project as compatible with or having
+   inspected the EticaHub Protocol using factual statements, but you
+   may not use the EticaHub Marks in a manner that suggests sponsorship,
+   endorsement, or affiliation without prior written permission from
+   EticaHub.
+
+--------------------------------------------------------------------------
+6. Patents
+--------------------------------------------------------------------------
+
+   No patent license is granted, whether expressly, by implication, by
+   estoppel, or otherwise, except under and pursuant to a Commercial
+   License.
+
+   If you, your employer, or any party in a control relationship with
+   you brings a claim that the Software, the EticaHub Protocol, or any
+   product or service of EticaHub infringes any patent, all rights
+   granted to you under this License and any Commercial License
+   terminate immediately.
+
+--------------------------------------------------------------------------
+7. Contributions
+--------------------------------------------------------------------------
+
+   By submitting any Contribution to this repository (including pull
+   requests, issues, suggested edits, code review comments, and
+   discussions), you irrevocably assign to EticaHub a perpetual,
+   worldwide, non-exclusive, royalty-free, sublicensable, transferable
+   license to use, modify, distribute, relicense, and commercially
+   exploit your Contribution under this License, under any future
+   version of this License, and under any other terms EticaHub
+   chooses. You represent that you have all rights necessary to grant
+   this license.
+
+   EticaHub may, but is not required to, accept, merge, modify, or
+   distribute any Contribution.
+
+--------------------------------------------------------------------------
+8. Reservation of Rights to the EticaHub DAO
+--------------------------------------------------------------------------
+
+   EticaHub reserves the right to delegate, transfer, or assign its
+   rights under this License (including the right to grant Commercial
+   Licenses, accept Contributions, and enforce this License) to a
+   community-governed treasury, multisig, or DAO designated by future
+   on-chain governance of the EticaHub Protocol. Any such delegation
+   will be announced on https://eticahub.com.
+
+--------------------------------------------------------------------------
+9. Termination
+--------------------------------------------------------------------------
+
+   Any breach of this License terminates all rights granted to you
+   immediately. Upon termination, you must cease all use of the
+   Software, delete all local copies, and destroy any derivative works
+   in your possession or control.
+
+   Sections 4 (Ethics Conditions), 5 (EticaHub Marks), 6 (Patents),
+   7 (Contributions), 10 (No Warranty), 11 (Limitation of Liability),
+   and 12 (Governing Law) survive termination.
+
+--------------------------------------------------------------------------
+10. No Warranty
+--------------------------------------------------------------------------
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+   NON-INFRINGEMENT. ETICAHUB MAKES NO REPRESENTATION OR WARRANTY THAT
+   THE SOFTWARE IS FREE FROM DEFECTS, ERRORS, OR VULNERABILITIES, OR
+   THAT IT WILL OPERATE UNINTERRUPTED OR ERROR-FREE.
+
+--------------------------------------------------------------------------
+11. Limitation of Liability
+--------------------------------------------------------------------------
+
+   TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT WILL ETICAHUB,
+   ITS CONTRIBUTORS, OR ITS LICENSORS BE LIABLE TO YOU OR ANY THIRD
+   PARTY FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL,
+   EXEMPLARY, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, REVENUE,
+   GOODWILL, OR DATA, ARISING OUT OF OR RELATED TO THIS LICENSE OR THE
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES AND
+   EVEN IF A REMEDY FAILS OF ITS ESSENTIAL PURPOSE.
+
+--------------------------------------------------------------------------
+12. Governing Law and Jurisdiction
+--------------------------------------------------------------------------
+
+   This License is governed by the laws of the State of Delaware, USA,
+   without regard to its conflict-of-law principles. Any dispute
+   arising out of or related to this License will be brought
+   exclusively in the state or federal courts located in Wilmington,
+   Delaware, USA, and you consent to the personal jurisdiction of
+   those courts.
+
+--------------------------------------------------------------------------
+13. Severability and Entire Agreement
+--------------------------------------------------------------------------
+
+   If any provision of this License is held to be unenforceable, the
+   remaining provisions remain in full force. This License is the
+   entire agreement between you and EticaHub regarding the Software
+   and supersedes any prior agreement or understanding, oral or
+   written.
+
+Required Notice: Copyright EticaHub (https://eticahub.com)
