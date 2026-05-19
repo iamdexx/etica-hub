@@ -11,7 +11,7 @@
  * Public so unit tests can import the same `verifyVotePayload` helper
  * that the route handlers use.
  */
-import { createPublicClient, getAddress, http, isAddress, verifyMessage, type Address, type PublicClient } from 'viem';
+import { createPublicClient, getAddress, http, isAddress, type Address, type PublicClient } from 'viem';
 import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 
 import {
@@ -20,6 +20,7 @@ import {
   voteMessage,
   type ModTarget,
 } from './moderation-store';
+import { verifyEticaMessage } from './sig-verify';
 
 const STETX_DECIMALS = 18n;
 const BALANCE_OF_ABI = [
@@ -84,17 +85,20 @@ export async function verifyVotePayload(input: VerifyInput): Promise<VerifyResul
     reason: input.reason,
     issuedAt: input.issuedAt,
   });
-  let valid = false;
-  try {
-    valid = await verifyMessage({
-      address: wallet,
-      message,
-      signature: input.signature as `0x${string}`,
-    });
-  } catch {
-    valid = false;
-  }
-  if (!valid) {
+  const verify = await verifyEticaMessage({
+    message,
+    signature: input.signature,
+    expected: wallet,
+  });
+  if (!verify.ok) {
+    const recovered = verify.recoveredEip191 ?? verify.recoveredRawKeccak;
+    if (recovered && recovered.toLowerCase() !== wallet.toLowerCase()) {
+      return {
+        ok: false,
+        status: 401,
+        error: `Signature recovered to ${recovered} but you are connected as ${wallet}. Switch accounts in your wallet to the connected address and retry.`,
+      };
+    }
     return { ok: false, status: 401, error: 'Signature does not match wallet.' };
   }
 
