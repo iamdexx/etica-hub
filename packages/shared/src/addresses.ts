@@ -124,9 +124,11 @@ export const DEPLOYMENTS: Record<
      * tokens. Holds the shared 5M ETX research pool and is the sole
      * mint/burn authority for every {@link ResearchToken} it launches.
      * Constant-product bonding curve per market, 1% trade fee routed
-     * 40/30/20/10 (pool / etiLpSink / treasury / researcher), UI-only
-     * graduation at 100k ETX reserve, UI-only sunset after 30d of
-     * no trades. Zero until deploy lands on-chain.
+     * 80/10/0/10 (pool / etiLpSink / treasury / researcher) — the
+     * C-with-lock split: the 80% pool slice is permanently non-withdrawable
+     * locked POL that monotonically pulls every market's floor up with
+     * use. UI-only graduation at 100k ETX reserve, UI-only sunset after
+     * 30d of no trades. Zero until deploy lands on-chain.
      */
     eticaResearchMarkets: Address;
   }
