@@ -19,11 +19,14 @@ name: Labs Autopilot
 #
 # Optional repo variables:
 #   LABS_AUTOPILOT_BASE_URL          — defaults to https://eticahub.com
-#   LABS_AUTOPILOT_MAX_JOBS_PER_TICK — defaults to 1
+#   LABS_AUTOPILOT_MAX_JOBS_PER_TICK — defaults to 5 (drains a small
+#                                      backlog in a single tick so a
+#                                      throttled scheduler doesn't leave
+#                                      branches sitting in QUEUED for hours)
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       max_jobs:
@@ -45,7 +48,7 @@ jobs:
     timeout-minutes: 15
     env:
       LABS_AUTOPILOT_BASE_URL: ${{ vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
-      LABS_AUTOPILOT_MAX_JOBS_PER_TICK: ${{ github.event.inputs.max_jobs || vars.LABS_AUTOPILOT_MAX_JOBS_PER_TICK || '1' }}
+      LABS_AUTOPILOT_MAX_JOBS_PER_TICK: ${{ github.event.inputs.max_jobs || vars.LABS_AUTOPILOT_MAX_JOBS_PER_TICK || '5' }}
       LABS_AUTOPILOT_TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
