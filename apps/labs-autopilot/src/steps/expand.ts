@@ -1,0 +1,271 @@
+/**
+ * Worker-side "next research direction" generator.
+ *
+ * After a goal-attached job finishes, the worker calls
+ * {@link proposeNextDirection} with the goal title + the prompt that
+ * just completed + a short summary of the best candidate. Groq returns
+ * a single-sentence follow-up research prompt that the worker then
+ * enqueues via POST /api/labs/queue/spawn.
+ *
+ * The output is intentionally short (≤ 280 chars) so it fits the
+ * existing 400-char prompt cap and stays focused — open-ended "explore
+ * the whole space" prompts are far worse plans than narrow next-step
+ * questions.
+ *
+ * Failure mode: if Groq is unreachable or returns garbage, we return
+ * `null` and the worker skips the spawn. Better to no-op than enqueue
+ * a malformed follow-up.
+ */
+
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const MODEL_PRIMARY = 'llama-3.3-70b-versatile';
+const MODEL_FALLBACK = 'llama-3.1-8b-instant';
+const MAX_PROMPT_CHARS = 280;
+const REQUEST_TIMEOUT_MS = 15_000;
+
+export interface ExpansionInput {
+  goalTitle: string;
+  goalDescription?: string;
+  previousPrompt: string;
+  bestCandidateSummary?: string;
+  bestCandidateScore?: number;
+  kind: 'continuation' | 'cross-goal';
+  relatedGoalTitle?: string;
+}
+
+function systemPrompt(kind: 'continuation' | 'cross-goal'): string {
+  const base =
+    'You are EticaLabs Autopilot, an autonomous biomedical research planner. ' +
+    'Given a research goal and the most recent finding, you propose the single most ' +
+    'promising next research direction in the same space. Output ONLY one short ' +
+    'imperative sentence (max 280 chars) describing the next research prompt. ' +
+    'No preamble, no markdown, no quotes. Stay strictly within biomedical, ' +
+    'structural-biology, drug-discovery, or public-health research.';
+  if (kind === 'cross-goal') {
+    return (
+      base +
+      ' This is a cross-goal seed: the next prompt should bridge the original ' +
+      'finding into the related goal\'s problem area.'
+    );
+  }
+  return (
+    base +
+    ' This is a continuation: build directly on the finding to refine, validate, ' +
+    'or extend it within the same goal.'
+  );
+}
+
+function userPrompt(input: ExpansionInput): string {
+  const lines: string[] = [];
+  lines.push(`Goal: ${input.goalTitle.slice(0, 200)}`);
+  if (input.goalDescription) {
+    lines.push(`Goal description: ${input.goalDescription.slice(0, 280)}`);
+  }
+  if (input.kind === 'cross-goal' && input.relatedGoalTitle) {
+    lines.push(`Related goal to bridge into: ${input.relatedGoalTitle.slice(0, 200)}`);
+  }
+  lines.push(`Previous prompt: ${input.previousPrompt.slice(0, 280)}`);
+  if (typeof input.bestCandidateScore === 'number') {
+    lines.push(`Best candidate score: ${input.bestCandidateScore.toFixed(3)}`);
+  }
+  if (input.bestCandidateSummary) {
+    lines.push(`Best candidate summary: ${input.bestCandidateSummary.slice(0, 600)}`);
+  }
+  lines.push(
+    'Now write the next research prompt (ONE imperative sentence, ≤ 280 chars, no quotes):',
+  );
+  return lines.join('\n');
+}
+
+function sanitize(raw: string): string | null {
+  let s = raw.trim();
+  // strip surrounding quotes / backticks / markdown
+  s = s.replace(/^["'`]+|["'`]+$/g, '').trim();
+  s = s.replace(/^\s*[-*•]\s*/, '');
+  s = s.split('\n')[0]?.trim() ?? '';
+  if (!s) return null;
+  if (s.length > MAX_PROMPT_CHARS) s = s.slice(0, MAX_PROMPT_CHARS).trim();
+  // very-short outputs are almost always model refusals or junk
+  if (s.length < 20) return null;
+  return s;
+}
+
+async function callGroq(
+  apiKey: string,
+  model: string,
+  system: string,
+  user: string,
+): Promise<string | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(GROQ_URL, {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.5,
+        max_tokens: 200,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = data.choices?.[0]?.message?.content;
+    if (typeof text !== 'string') return null;
+    return text;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Generate the next research direction. Returns `null` on any failure
+ * — the worker should treat null as "skip the expansion this round".
+ */
+export async function proposeNextDirection(input: ExpansionInput): Promise<string | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+  const system = systemPrompt(input.kind);
+  const user = userPrompt(input);
+
+  const primary = await callGroq(apiKey, MODEL_PRIMARY, system, user);
+  if (primary) {
+    const cleaned = sanitize(primary);
+    if (cleaned) return cleaned;
+  }
+  const fallback = await callGroq(apiKey, MODEL_FALLBACK, system, user);
+  if (fallback) {
+    const cleaned = sanitize(fallback);
+    if (cleaned) return cleaned;
+  }
+  return null;
+}
+
+/* ----------------------------------------------------------------- *
+ *  Branch-goal proposer                                              *
+ * ----------------------------------------------------------------- *
+ * When a parent goal's job lands a high-scoring candidate, the       *
+ * worker forks a dedicated child goal to drill into that specific    *
+ * lead. We ask Groq for THREE outputs: a goal title, a short         *
+ * description, and a first-job research prompt — all narrowly scoped *
+ * to the winning sequence.                                           *
+ * ----------------------------------------------------------------- */
+
+export interface BranchInput {
+  parentGoalTitle: string;
+  parentGoalDescription?: string;
+  parentPrompt: string;
+  candidateIndex: number;
+  candidateSequence: string;
+  candidateScore: number;
+  candidateAnalysis?: string;
+  candidateRationale?: string;
+}
+
+export interface BranchPlan {
+  title: string;
+  description: string;
+  firstPrompt: string;
+}
+
+const MAX_BRANCH_TITLE = 140;
+const MAX_BRANCH_DESCRIPTION = 800;
+
+function branchSystemPrompt(): string {
+  return (
+    'You are EticaLabs Autopilot, an autonomous biomedical research planner. ' +
+    'A parent research goal has produced a high-scoring candidate worth a ' +
+    'dedicated follow-up thread. You will design that branch goal. Reply ' +
+    'with STRICT JSON only (no markdown, no preamble) matching this schema: ' +
+    '{"title": <string, ≤140 chars>, "description": <string, ≤800 chars>, ' +
+    '"firstPrompt": <string, ≤280 chars>}. Stay strictly within biomedical, ' +
+    'structural-biology, drug-discovery, or public-health research. The ' +
+    'firstPrompt must be ONE imperative sentence describing the next concrete ' +
+    'research action for this specific candidate (e.g. characterise binding ' +
+    'affinity, profile off-targets, design delivery vector). Do NOT echo the ' +
+    'parent goal verbatim — narrow into the candidate.'
+  );
+}
+
+function branchUserPrompt(input: BranchInput): string {
+  const lines: string[] = [];
+  lines.push(`Parent goal: ${input.parentGoalTitle.slice(0, 200)}`);
+  if (input.parentGoalDescription) {
+    lines.push(`Parent description: ${input.parentGoalDescription.slice(0, 280)}`);
+  }
+  lines.push(`Parent prompt that surfaced this lead: ${input.parentPrompt.slice(0, 280)}`);
+  lines.push(`Candidate #${input.candidateIndex} (score ${input.candidateScore.toFixed(3)}):`);
+  lines.push(`Sequence: ${input.candidateSequence.slice(0, 400)}`);
+  if (input.candidateRationale) {
+    lines.push(`Rationale: ${input.candidateRationale.slice(0, 400)}`);
+  }
+  if (input.candidateAnalysis) {
+    lines.push(`Structural analysis: ${input.candidateAnalysis.slice(0, 600)}`);
+  }
+  lines.push('Reply with the JSON object now:');
+  return lines.join('\n');
+}
+
+function parseBranchPlan(raw: string): BranchPlan | null {
+  if (!raw) return null;
+  // Pull the first {...} block out of the response in case the model
+  // wrapped it in prose despite instructions.
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const obj = parsed as { title?: unknown; description?: unknown; firstPrompt?: unknown };
+  const title = typeof obj.title === 'string' ? obj.title.trim().slice(0, MAX_BRANCH_TITLE) : '';
+  const description =
+    typeof obj.description === 'string'
+      ? obj.description.trim().slice(0, MAX_BRANCH_DESCRIPTION)
+      : '';
+  const firstPrompt =
+    typeof obj.firstPrompt === 'string'
+      ? obj.firstPrompt.trim().replace(/^["'`]+|["'`]+$/g, '').slice(0, MAX_PROMPT_CHARS)
+      : '';
+  if (title.length < 8 || firstPrompt.length < 20) return null;
+  return { title, description, firstPrompt };
+}
+
+/**
+ * Generate the title + description + first-job prompt for a dedicated
+ * branch goal off of a parent goal's high-scoring candidate. Returns
+ * null on any failure — worker treats null as "skip branching".
+ */
+export async function proposeBranchPlan(input: BranchInput): Promise<BranchPlan | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+  const system = branchSystemPrompt();
+  const user = branchUserPrompt(input);
+
+  const primary = await callGroq(apiKey, MODEL_PRIMARY, system, user);
+  if (primary) {
+    const parsed = parseBranchPlan(primary);
+    if (parsed) return parsed;
+  }
+  const fallback = await callGroq(apiKey, MODEL_FALLBACK, system, user);
+  if (fallback) {
+    const parsed = parseBranchPlan(fallback);
+    if (parsed) return parsed;
+  }
+  return null;
+}

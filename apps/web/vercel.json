@@ -8,6 +8,10 @@
     {
       "path": "/api/telemetry",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/labs/autopilot/dispatch",
+      "schedule": "* * * * *"
     }
   ]
 }

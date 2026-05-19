@@ -42,6 +42,9 @@ export function summariseGoal(g: LabsGoal): LabsGoalSummary {
     keywords: g.keywords,
     moderation: g.moderation,
     submitterWallet: g.submitterWallet,
+    parentGoalId: g.parentGoalId,
+    parentJobId: g.parentJobId,
+    origin: g.origin,
   };
 }
 
@@ -65,6 +68,12 @@ function parseGoal(json: string | null): LabsGoal | null {
       submitterWallet:
         typeof obj.submitterWallet === 'string' ? obj.submitterWallet : undefined,
       moderation: (obj.moderation as LabsGoal['moderation']) ?? 'visible',
+      parentGoalId:
+        typeof obj.parentGoalId === 'string' && obj.parentGoalId ? obj.parentGoalId : undefined,
+      parentJobId:
+        typeof obj.parentJobId === 'string' && obj.parentJobId ? obj.parentJobId : undefined,
+      origin:
+        obj.origin === 'branch' || obj.origin === 'user' ? obj.origin : undefined,
     };
   } catch {
     return null;
@@ -94,6 +103,9 @@ export interface CreateGoalInput {
   description: string;
   submitterTag: string;
   submitterWallet?: string;
+  parentGoalId?: string;
+  parentJobId?: string;
+  origin?: 'user' | 'branch';
 }
 
 export async function createGoal(input: CreateGoalInput): Promise<LabsGoal> {
@@ -114,6 +126,9 @@ export async function createGoal(input: CreateGoalInput): Promise<LabsGoal> {
     submitterTag: input.submitterTag,
     submitterWallet: input.submitterWallet,
     moderation: 'visible',
+    parentGoalId: input.parentGoalId,
+    parentJobId: input.parentJobId,
+    origin: input.origin ?? (input.parentGoalId ? 'branch' : 'user'),
   };
   await persistGoal(goal, { newKeywords: keywords, oldKeywords: [] });
   return goal;
