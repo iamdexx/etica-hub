@@ -25,6 +25,7 @@ import type {
   LabsJobEvent,
   LabsJobStatus,
 } from '@/lib/labs/job';
+import { MintResButton } from '@/components/labs/MintResButton';
 
 const REFRESH_MS = 5_000;
 
@@ -115,11 +116,13 @@ function CandidateCard({
   jobId,
   candidate,
   pdb,
+  submitterWallet,
   onRefoldQueued,
 }: {
   jobId: string;
   candidate: LabsCandidateResult;
   pdb: string | undefined;
+  submitterWallet: `0x${string}` | undefined;
   onRefoldQueued: () => void;
 }): JSX.Element {
   const router = useRouter();
@@ -362,6 +365,13 @@ function CandidateCard({
           {candidate.error ? `Fold failed: ${candidate.error}` : 'Not folded yet.'}
         </p>
       )}
+
+      <MintResButton
+        jobId={jobId}
+        candidateIndex={candidate.index}
+        submitter={submitterWallet}
+        hasSequence={!!candidate.sequence}
+      />
 
       <div className="mt-4 border-t border-white/5 pt-3">
         {!branchOpen ? (
@@ -652,6 +662,11 @@ export default function LabsFeedDetailPage(): JSX.Element {
                     jobId={job.id}
                     candidate={candidate}
                     pdb={job.result?.pdbBySequenceIndex?.[candidate.index]}
+                    submitterWallet={
+                      job.submitterWallet && /^0x[a-fA-F0-9]{40}$/.test(job.submitterWallet)
+                        ? (job.submitterWallet as `0x${string}`)
+                        : undefined
+                    }
                     onRefoldQueued={() => void tick()}
                   />
                 ))}

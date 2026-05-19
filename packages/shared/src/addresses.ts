@@ -131,6 +131,25 @@ export const DEPLOYMENTS: Record<
      * 30d of no trades. Zero until deploy lands on-chain.
      */
     eticaResearchMarkets: Address;
+    /**
+     * EticaResearchNFTMetadata — pure on-chain SVG + JSON tokenURI builder.
+     * Deployed once and linked into {@link eticaResearchNft} at compile time;
+     * extracted to a separate runtime contract so the NFT stays under the
+     * 24,576-byte EIP-170 limit. Zero state, zero authority, zero ETH. Zero
+     * until deploy lands on-chain.
+     */
+    eticaResearchNftMetadataLib: Address;
+    /**
+     * EticaResearchNFT — immutable ERC-721 minted once per published research
+     * candidate (RES). Every mint and every secondary-sale royalty splits
+     * 79% current holder / 20% ancestors (geometric 80/20, depth-25 cap) /
+     * 1% treasury, uniformly. Reverting ancestor wallets fall through to the
+     * current holder. Per-token CREATE2 royalty splitter holds and releases
+     * EGAZ + any ERC-20 royalty payments. Single immutable ATTESTOR signs
+     * ClaimPayloads; cannot transfer, freeze, or revoke any NFT. Zero until
+     * deploy lands on-chain.
+     */
+    eticaResearchNft: Address;
   }
 > = {
   61803: {
@@ -150,6 +169,8 @@ export const DEPLOYMENTS: Record<
     liquidityTimelock10y: '0xFdf919673570Cea9c513461604450D003716d739',
     stableSwapHarvesterAdapter: '0x9Adc6298EFDcc1604CB95DaaB33331f866DDBe76',
     eticaResearchMarkets: '0x6605d2F6A8b77a8dC7f53Fd1EDe0974d85937D17',
+    eticaResearchNftMetadataLib: '0x0000000000000000000000000000000000000000',
+    eticaResearchNft: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -168,6 +189,8 @@ export const DEPLOYMENTS: Record<
     liquidityTimelock10y: '0x0000000000000000000000000000000000000000',
     stableSwapHarvesterAdapter: '0x0000000000000000000000000000000000000000',
     eticaResearchMarkets: '0x0000000000000000000000000000000000000000',
+    eticaResearchNftMetadataLib: '0x0000000000000000000000000000000000000000',
+    eticaResearchNft: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -187,6 +210,8 @@ export const DEPLOYMENTS: Record<
     liquidityTimelock10y: '0x0000000000000000000000000000000000000000',
     stableSwapHarvesterAdapter: '0x0000000000000000000000000000000000000000',
     eticaResearchMarkets: '0x0000000000000000000000000000000000000000',
+    eticaResearchNftMetadataLib: '0x0000000000000000000000000000000000000000',
+    eticaResearchNft: '0x0000000000000000000000000000000000000000',
   },
 };
 
