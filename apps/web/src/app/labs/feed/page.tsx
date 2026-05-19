@@ -198,7 +198,7 @@ export default function LabsFeedPage(): JSX.Element {
               </span>
             </div>
 
-            <p className="line-clamp-4 text-sm text-white/85 group-hover:text-white">
+            <p className="whitespace-pre-wrap break-words text-sm text-white/85 group-hover:text-white">
               {entry.prompt}
             </p>
 
