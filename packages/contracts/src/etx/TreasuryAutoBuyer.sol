@@ -292,7 +292,7 @@ contract TreasuryAutoBuyer is Ownable, Pausable, ReentrancyGuard {
         if (egazDust > 0) egaz.safeTransfer(treasury, egazDust);
 
         uint256 stEtxDust = stEtx.balanceOf(address(this));
-        if (stEtxDust > 0) stEtx.safeTransfer(treasury, stEtxDust);
+        if (stEtxDust > 0) IERC20(address(stEtx)).safeTransfer(treasury, stEtxDust);
     }
 
     function setBurnWallet(address newBurnWallet) external onlyOwner {
