@@ -7,7 +7,11 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.1-8b-instant';
+// Use the 70B versatile model for primary calls — it's far more reliable at
+// producing valid JSON than the 8B instant model, which intermittently fails
+// Groq's server-side JSON validator when response_format=json_object is set.
+const MODEL_PRIMARY = 'llama-3.3-70b-versatile';
+const MODEL_FALLBACK = 'llama-3.1-8b-instant';
 const MAX_PROMPT_CHARS = 400;
 const AMINO_ACIDS = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
 const MAX_SEQUENCE_LENGTH = 400;
@@ -150,56 +154,91 @@ export async function POST(req: NextRequest): Promise<Response> {
       ? `Goal: ${prompt}\n\nExisting research and structures (cite by [N] index):\n${refSummary}`
       : prompt;
 
-    const response = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.4,
-        max_tokens: 1200,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userContent },
-        ],
-      }),
-      signal: controller.signal,
-      cache: 'no-store',
-    });
+    /**
+     * Groq occasionally returns 400 with `json_validate_failed` when
+     * response_format=json_object is set and the model emits text that
+     * doesn't strictly parse — especially on the 8B model. To make the
+     * planner reliable on mobile/LTE, we run a 3-attempt cascade:
+     *
+     *   1. primary model (70B) with strict json_object response_format
+     *   2. primary model (70B) WITHOUT response_format (tolerate parser)
+     *   3. fallback model (8B) WITHOUT response_format
+     *
+     * `tryParsePlan` is already tolerant — it pulls the outermost `{...}`
+     * substring and json-parses that — so dropping response_format is safe.
+     */
+    type Attempt = { model: string; useJsonMode: boolean };
+    const attempts: Attempt[] = [
+      { model: MODEL_PRIMARY, useJsonMode: true },
+      { model: MODEL_PRIMARY, useJsonMode: false },
+      { model: MODEL_FALLBACK, useJsonMode: false },
+    ];
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
+    let lastStatus = 0;
+    let lastDetail = '';
+    let lastRaw = '';
+    let usedModel = MODEL_PRIMARY;
+
+    for (const attempt of attempts) {
+      const response = await fetch(GROQ_API_URL, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: attempt.model,
+          temperature: 0.4,
+          max_tokens: 1200,
+          ...(attempt.useJsonMode
+            ? { response_format: { type: 'json_object' } }
+            : {}),
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
+        }),
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        lastStatus = response.status;
+        lastDetail = await response.text().catch(() => '');
+        continue;
+      }
+
+      const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string | null } }>;
+      };
+      const raw = payload.choices?.[0]?.message?.content?.trim() ?? '';
+      lastRaw = raw;
+      usedModel = attempt.model;
+      const plan = tryParsePlan(raw);
+      if (plan) {
+        return json(
+          { plan, references, provider: 'groq', model: usedModel },
+          { headers: limit.headers },
+        );
+      }
+    }
+
+    if (lastStatus && lastStatus !== 200) {
       return json(
         {
-          error: `Groq planning failed (${response.status}).`,
-          detail: text.slice(0, 240),
+          error: `Groq planning failed (${lastStatus}).`,
+          detail: lastDetail.slice(0, 240),
         },
         { status: 502, headers: limit.headers },
       );
     }
 
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-    const raw = payload.choices?.[0]?.message?.content?.trim() ?? '';
-    const plan = tryParsePlan(raw);
-
-    if (!plan) {
-      return json(
-        {
-          error: 'Planner returned an unparseable response. Try again or refine the prompt.',
-          raw: raw.slice(0, 400),
-        },
-        { status: 422, headers: limit.headers },
-      );
-    }
-
     return json(
-      { plan, references, provider: 'groq', model: MODEL },
-      { headers: limit.headers },
+      {
+        error: 'Planner returned an unparseable response. Try again or refine the prompt.',
+        raw: lastRaw.slice(0, 400),
+      },
+      { status: 422, headers: limit.headers },
     );
   } catch {
     return json(

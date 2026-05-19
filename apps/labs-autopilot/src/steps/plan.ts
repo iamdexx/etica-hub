@@ -9,7 +9,11 @@
  */
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.1-8b-instant';
+// 70B versatile is far more reliable at producing valid JSON than the 8B
+// instant model under Groq's response_format=json_object validator. We use
+// the 70B as primary and fall back to 8B without strict JSON mode if needed.
+const MODEL_PRIMARY = 'llama-3.3-70b-versatile';
+const MODEL_FALLBACK = 'llama-3.1-8b-instant';
 const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
 const RCSB_SEARCH = 'https://search.rcsb.org/rcsbsearch/v2/query';
@@ -233,40 +237,53 @@ export async function generatePlan(prompt: string): Promise<ResearchPlan> {
     : prompt;
 
   const { signal, cancel } = withTimeout(45_000);
+  // 3-attempt cascade: 70B+json_object → 70B no-mode → 8B no-mode.
+  const attempts: Array<{ model: string; useJsonMode: boolean }> = [
+    { model: MODEL_PRIMARY, useJsonMode: true },
+    { model: MODEL_PRIMARY, useJsonMode: false },
+    { model: MODEL_FALLBACK, useJsonMode: false },
+  ];
+  let lastErr: string = '';
   try {
-    const res = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.4,
-        max_tokens: 1400,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userContent },
-        ],
-      }),
-      signal,
-      cache: 'no-store',
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Groq plan ${res.status}: ${text.slice(0, 200)}`);
+    for (const attempt of attempts) {
+      const res = await fetch(GROQ_API_URL, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: attempt.model,
+          temperature: 0.4,
+          max_tokens: 1400,
+          ...(attempt.useJsonMode
+            ? { response_format: { type: 'json_object' } }
+            : {}),
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
+        }),
+        signal,
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        lastErr = `Groq plan ${res.status}: ${text.slice(0, 200)}`;
+        continue;
+      }
+      const payload = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string | null } }>;
+      };
+      const raw = payload.choices?.[0]?.message?.content?.trim() ?? '';
+      if (/"refused"/i.test(raw)) {
+        throw new Error('Planner refused: out-of-scope prompt');
+      }
+      const plan = tryParse(raw);
+      if (plan) return { ...plan, references };
+      lastErr = 'Planner returned unparseable response';
     }
-    const payload = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-    const raw = payload.choices?.[0]?.message?.content?.trim() ?? '';
-    if (/"refused"/i.test(raw)) {
-      throw new Error('Planner refused: out-of-scope prompt');
-    }
-    const plan = tryParse(raw);
-    if (!plan) throw new Error('Planner returned unparseable response');
-    return { ...plan, references };
+    throw new Error(lastErr || 'Planner failed across all attempts');
   } finally {
     cancel();
   }
