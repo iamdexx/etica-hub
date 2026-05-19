@@ -8,10 +8,8 @@ import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
-
 import {EticaResearchRoyaltySplitter} from "./EticaResearchRoyaltySplitter.sol";
+import {EticaResearchNFTMetadata} from "./EticaResearchNFTMetadata.sol";
 
 /// @title EticaResearchNFT
 /// @notice Permanent on-chain publication record for biomedical-research
@@ -93,9 +91,6 @@ import {EticaResearchRoyaltySplitter} from "./EticaResearchRoyaltySplitter.sol";
 ///         design. The research record lives in EticaHub chain state
 ///         forever.
 contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
-    using Strings for uint256;
-    using Strings for address;
-
     // ---------------------------------------------------------------
     // Errors
     // ---------------------------------------------------------------
@@ -653,51 +648,19 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
     ///         inline.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         _requireOwned(tokenId);
-        Discovery storage d = discoveryOf[tokenId];
-
-        // Build in chunks to avoid Solidity's stack-too-deep limit.
-        // Each part is its own memory allocation; we concatenate at
-        // the very end into the final data URI.
-        bytes memory head = _jsonHead(tokenId, d);
-        bytes memory mid = _jsonMid(tokenId, d);
-        bytes memory tail = _jsonTail(tokenId, d);
-        bytes memory full = bytes.concat(head, mid, tail);
-
-        return string(abi.encodePacked("data:application/json;base64,", Base64.encode(full)));
-    }
-
-    function _jsonHead(uint256 tokenId, Discovery storage d) internal view returns (bytes memory) {
-        return abi.encodePacked(
-            '{"name":"',
-            _jsonEscape(_buildName(tokenId, d.parentGoalTitle)),
-            '","description":"',
-            _jsonEscape(_buildDescription(tokenId, d)),
-            '"'
-        );
-    }
-
-    function _jsonMid(uint256 tokenId, Discovery storage d) internal view returns (bytes memory) {
-        return abi.encodePacked(
-            ',"image":"data:image/svg+xml;base64,',
-            Base64.encode(bytes(_buildSvg(tokenId, d))),
-            '","external_url":"',
-            _externalUrl(tokenId),
-            '"'
-        );
-    }
-
-    function _jsonTail(uint256 tokenId, Discovery storage d) internal view returns (bytes memory) {
-        return abi.encodePacked(
-            ',"animation_url":"', _viewerUrl(tokenId), '","attributes":', _buildAttributes(d), "}"
-        );
-    }
-
-    function _buildName(uint256 tokenId, string memory parentGoalTitle)
-        internal
-        pure
-        returns (string memory)
-    {
-        return string(abi.encodePacked("RES #", tokenId.toString(), " - ", parentGoalTitle));
+        Discovery storage s = discoveryOf[tokenId];
+        EticaResearchNFTMetadata.Discovery memory d = EticaResearchNFTMetadata.Discovery({
+            parentGoalTitle: s.parentGoalTitle,
+            sequence: s.sequence,
+            analysis: s.analysis,
+            score: s.score,
+            iterations: s.iterations,
+            branchGoalId: s.branchGoalId,
+            submitter: s.submitter,
+            discoveredAt: s.discoveredAt,
+            blockNumber: s.blockNumber
+        });
+        return EticaResearchNFTMetadata.buildTokenURI(tokenId, d, BASE_URL);
     }
 
     // ---------------------------------------------------------------
@@ -739,241 +702,5 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
                 keccak256(bytes(p.parentBranchGoalId))
             )
         );
-    }
-
-    // ---------------------------------------------------------------
-    // Internal: description, svg, attributes, urls
-    // ---------------------------------------------------------------
-
-    function _buildDescription(uint256 tokenId, Discovery storage d)
-        internal
-        view
-        returns (string memory)
-    {
-        // Split into chunks to keep each abi.encodePacked under the
-        // EVM stack limit. Re-merged at return.
-        bytes memory a = abi.encodePacked(
-            "## Parent goal\n",
-            d.parentGoalTitle,
-            "\n\n## Sequence\n`",
-            d.sequence,
-            "`\n\n## Findings\n",
-            d.analysis
-        );
-        bytes memory b = abi.encodePacked(
-            "\n\n## Score\n",
-            _scoreDecimal(d.score),
-            " (",
-            d.score.toString(),
-            "/10000)\n\n## Iterations\n",
-            d.iterations.toString()
-        );
-        bytes memory c = abi.encodePacked(
-            "\n\n## Discovered\n",
-            uint256(d.discoveredAt).toString(),
-            " UTC (block #",
-            uint256(d.blockNumber).toString(),
-            ")\n\n## Original submitter\n`",
-            d.submitter.toHexString()
-        );
-        bytes memory e = abi.encodePacked(
-            "`\n\n## Branch goal id\n`",
-            d.branchGoalId,
-            "`\n\n## Reproducibility\nFold the sequence with ESMFold or any equivalent structure-prediction engine to reproduce the predicted 3D structure. Analysis was generated by the EticaLabs Autopilot pipeline; see ",
-            _externalUrl(tokenId),
-            " for the live structural viewer and parent-goal trail."
-        );
-        return string(bytes.concat(a, b, c, e));
-    }
-
-    function _buildSvg(uint256 tokenId, Discovery storage d) internal view returns (string memory) {
-        // Minimal, readable card. ~1KB. Renders parent-goal title,
-        // tokenId, score, and a sequence preview. Pure on-chain.
-        // Split into chunks to stay below the EVM stack limit.
-        string memory seqPreview = _truncate(d.sequence, 40);
-        string memory titlePreview = _truncate(d.parentGoalTitle, 60);
-        bytes memory svgA = abi.encodePacked(
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" font-family="-apple-system,BlinkMacSystemFont,sans-serif">',
-            '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0b1020"/><stop offset="100%" stop-color="#1a2342"/></linearGradient></defs>',
-            '<rect width="800" height="500" fill="url(#g)"/>',
-            '<text x="40" y="80" fill="#7fd8ff" font-size="14" letter-spacing="6">ETICARESEARCH</text>',
-            '<text x="40" y="130" fill="#fff" font-size="36" font-weight="700">#',
-            tokenId.toString(),
-            "</text>"
-        );
-        bytes memory svgB = abi.encodePacked(
-            '<text x="40" y="200" fill="#cdd6f4" font-size="22" font-weight="600">',
-            _xmlEscape(titlePreview),
-            '</text><text x="40" y="280" fill="#7fd8ff" font-size="12" letter-spacing="3">SEQUENCE</text>',
-            '<text x="40" y="310" fill="#fff" font-size="18" font-family="monospace">',
-            _xmlEscape(seqPreview),
-            "</text>"
-        );
-        bytes memory svgC = abi.encodePacked(
-            '<text x="40" y="380" fill="#7fd8ff" font-size="12" letter-spacing="3">SCORE</text>',
-            '<text x="40" y="420" fill="#fff" font-size="48" font-weight="700">',
-            _scoreDecimal(d.score),
-            '</text><text x="600" y="470" fill="#7fd8ff" font-size="12" opacity="0.7">eticahub.com/labs</text>',
-            "</svg>"
-        );
-        return string(bytes.concat(svgA, svgB, svgC));
-    }
-
-    function _buildAttributes(Discovery storage d) internal view returns (string memory) {
-        bytes memory attrA = abi.encodePacked(
-            '[{"trait_type":"Score","value":',
-            _scoreDecimal(d.score),
-            ',"max_value":1},{"trait_type":"Score (bps)","value":',
-            d.score.toString(),
-            ',"max_value":10000},{"trait_type":"Iterations","value":',
-            d.iterations.toString(),
-            "}"
-        );
-        bytes memory attrB = abi.encodePacked(
-            ',{"trait_type":"Sequence length","value":',
-            bytes(d.sequence).length.toString(),
-            '},{"trait_type":"Parent goal","value":"',
-            _jsonEscape(d.parentGoalTitle),
-            '"},{"display_type":"date","trait_type":"Discovered","value":',
-            uint256(d.discoveredAt).toString(),
-            "}]"
-        );
-        return string(bytes.concat(attrA, attrB));
-    }
-
-    function _externalUrl(uint256 tokenId) internal view returns (string memory) {
-        return string(abi.encodePacked(BASE_URL, "/labs/research/", tokenId.toString()));
-    }
-
-    function _viewerUrl(uint256 tokenId) internal view returns (string memory) {
-        return string(abi.encodePacked(BASE_URL, "/labs/research/", tokenId.toString(), "/viewer"));
-    }
-
-    // ---------------------------------------------------------------
-    // Internal: small string helpers
-    // ---------------------------------------------------------------
-
-    /// @dev Render a score in basis points as "0.NN" / "0.NNNN".
-    function _scoreDecimal(uint256 scoreBps) internal pure returns (string memory) {
-        if (scoreBps >= SCORE_DENOM) return "1.00";
-        // Format as 0.XXXX (4 fractional digits).
-        bytes memory frac = bytes(scoreBps.toString());
-        bytes memory padded = new bytes(4);
-        uint256 pad = 4 - frac.length;
-        for (uint256 i = 0; i < 4; i++) {
-            if (i < pad) {
-                padded[i] = "0";
-            } else {
-                padded[i] = frac[i - pad];
-            }
-        }
-        return string(abi.encodePacked("0.", padded));
-    }
-
-    function _truncate(string memory s, uint256 maxLen) internal pure returns (string memory) {
-        bytes memory b = bytes(s);
-        if (b.length <= maxLen) return s;
-        bytes memory out = new bytes(maxLen + 3);
-        for (uint256 i = 0; i < maxLen; i++) {
-            out[i] = b[i];
-        }
-        out[maxLen] = ".";
-        out[maxLen + 1] = ".";
-        out[maxLen + 2] = ".";
-        return string(out);
-    }
-
-    /// @dev Escape a string for safe embedding in a JSON string literal.
-    function _jsonEscape(string memory s) internal pure returns (string memory) {
-        bytes memory b = bytes(s);
-        // Upper bound: each input char produces at most 6 output chars (\u00XX).
-        bytes memory out = new bytes(b.length * 6);
-        uint256 j;
-        for (uint256 i = 0; i < b.length; i++) {
-            bytes1 c = b[i];
-            if (c == 0x22) {
-                out[j++] = "\\";
-                out[j++] = '"';
-            } else if (c == 0x5c) {
-                out[j++] = "\\";
-                out[j++] = "\\";
-            } else if (c == 0x0a) {
-                out[j++] = "\\";
-                out[j++] = "n";
-            } else if (c == 0x0d) {
-                out[j++] = "\\";
-                out[j++] = "r";
-            } else if (c == 0x09) {
-                out[j++] = "\\";
-                out[j++] = "t";
-            } else if (uint8(c) < 0x20) {
-                // Other control char -> \u00XX
-                out[j++] = "\\";
-                out[j++] = "u";
-                out[j++] = "0";
-                out[j++] = "0";
-                out[j++] = _hexNibble(uint8(c) >> 4);
-                out[j++] = _hexNibble(uint8(c) & 0x0f);
-            } else {
-                out[j++] = c;
-            }
-        }
-        bytes memory trimmed = new bytes(j);
-        for (uint256 i = 0; i < j; i++) {
-            trimmed[i] = out[i];
-        }
-        return string(trimmed);
-    }
-
-    /// @dev Escape a string for safe embedding inside an SVG text node.
-    function _xmlEscape(string memory s) internal pure returns (string memory) {
-        bytes memory b = bytes(s);
-        bytes memory out = new bytes(b.length * 6);
-        uint256 j;
-        for (uint256 i = 0; i < b.length; i++) {
-            bytes1 c = b[i];
-            if (c == 0x26) {
-                out[j++] = "&";
-                out[j++] = "a";
-                out[j++] = "m";
-                out[j++] = "p";
-                out[j++] = ";";
-            } else if (c == 0x3c) {
-                out[j++] = "&";
-                out[j++] = "l";
-                out[j++] = "t";
-                out[j++] = ";";
-            } else if (c == 0x3e) {
-                out[j++] = "&";
-                out[j++] = "g";
-                out[j++] = "t";
-                out[j++] = ";";
-            } else if (c == 0x22) {
-                out[j++] = "&";
-                out[j++] = "q";
-                out[j++] = "u";
-                out[j++] = "o";
-                out[j++] = "t";
-                out[j++] = ";";
-            } else if (c == 0x27) {
-                out[j++] = "&";
-                out[j++] = "a";
-                out[j++] = "p";
-                out[j++] = "o";
-                out[j++] = "s";
-                out[j++] = ";";
-            } else {
-                out[j++] = c;
-            }
-        }
-        bytes memory trimmed = new bytes(j);
-        for (uint256 i = 0; i < j; i++) {
-            trimmed[i] = out[i];
-        }
-        return string(trimmed);
-    }
-
-    function _hexNibble(uint8 n) private pure returns (bytes1) {
-        return bytes1(n < 10 ? n + 0x30 : n - 10 + 0x61);
     }
 }
