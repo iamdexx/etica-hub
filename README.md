@@ -59,6 +59,24 @@ To run the frontend against a local anvil fork of Etica mainnet, see
 - `.gitignore` blocks `*.key`, `*.pem`, `*.keystore`, `secrets/`, `.secrets/`,
   and all `.env.*` except `.env.example`. Never commit a key.
 
+## License
+
+This repository is **proprietary and source-available** under the
+[EticaHub Proprietary License v1.0](./LICENSE).
+
+- The source is published for inspection, security review, and public
+  audit. Sourcify verification, aggregator vetting, and community
+  scrutiny all work against the published source.
+- **No rights to use, run, fork, modify, or redistribute the Software
+  are granted by this License.** Any such use requires a separately
+  signed Commercial License from the EticaHub treasury.
+- Commercial licensing inquiries: contact the EticaHub treasury at
+  on-chain address `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D` or via
+  https://eticahub.com.
+
+See [`LICENSE`](./LICENSE) for the full terms, including the ethics
+conditions, trademark notice, and contribution assignment.
+
 ## Initialized by Devin
 
 This repo was bootstrapped via Devin (https://devin.ai) for the repo owner
