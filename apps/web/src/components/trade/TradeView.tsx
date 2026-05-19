@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { MarketVolumeStrip } from '../MarketVolumeStrip';
+import { GraduatedMarketsSection } from '../research-markets/GraduatedMarketsSection';
 import { OnChainPriceChart } from './OnChainPriceChart';
 import { PriceChart } from './PriceChart';
 import { TradeTabs } from './TradeTabs';
@@ -69,6 +70,7 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
           <OnChainPriceChart key={baseSymbol} baseSymbol={baseSymbol} quoteSymbol="ETX" />
         )}
         <MarketVolumeStrip />
+        <GraduatedMarketsSection ctaTarget="trade" maxItems={4} />
       </div>
       <aside className="space-y-3">
         <TradeTabs baseSymbol={baseSymbol} />

@@ -3,6 +3,7 @@ import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
 import { SwapCard } from '@/components/swap/SwapCard';
 import { TelemetrySection, SourceBadge } from '@/components/telemetry/TelemetryCards';
 import { TvlBanner } from '@/components/TvlBanner';
+import { GraduatedMarketsSection } from '@/components/research-markets/GraduatedMarketsSection';
 import { getServerGeoRestricted } from '@/lib/geoBlockServer';
 
 export const metadata = { title: 'Swap · EticaHub' };
@@ -64,6 +65,8 @@ export default function SwapPage() {
           <SwapCard geoRestricted={geoRestricted} />
         </div>
       </section>
+
+      <GraduatedMarketsSection ctaTarget="swap" />
     </div>
   );
 }
