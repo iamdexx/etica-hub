@@ -98,7 +98,9 @@ contract EticaResearchMarketsTest is Test {
 
         address token = _launch(RESEARCHER, "RX1");
 
-        assertEq(etx.balanceOf(RESEARCHER), researcherBalBefore - LAUNCH_TOLL, "researcher pays toll");
+        assertEq(
+            etx.balanceOf(RESEARCHER), researcherBalBefore - LAUNCH_TOLL, "researcher pays toll"
+        );
         assertEq(etx.balanceOf(address(markets)), sinkBalBefore + LAUNCH_TOLL, "toll lands in pool");
 
         EticaResearchMarkets.MarketView memory v = markets.market(token);
@@ -351,7 +353,8 @@ contract EticaResearchMarketsTest is Test {
         uint256 k = uint256(V_ETX_START) * uint256(V_TOKEN_START);
 
         // Run a sequence of buys; verify (vETXstart + acc) * (vTokenStart - supply) ≈ k.
-        uint256[5] memory buys = [uint256(100 * ONE), 500 * ONE, 2_000 * ONE, 10_000 * ONE, 50_000 * ONE];
+        uint256[5] memory buys =
+            [uint256(100 * ONE), 500 * ONE, 2_000 * ONE, 10_000 * ONE, 50_000 * ONE];
         for (uint256 i = 0; i < buys.length; i++) {
             vm.prank(ALICE);
             markets.buy(token, buys[i], 0, block.timestamp + 1);

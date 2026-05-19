@@ -37,7 +37,9 @@ interface IEticaSwapRouterLike {
 }
 
 interface IERC4626Like is IERC20 {
-    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
+    function redeem(uint256 shares, address receiver, address owner)
+        external
+        returns (uint256 assets);
 }
 
 /// @title TreasuryAutoBuyer
@@ -202,19 +204,17 @@ contract TreasuryAutoBuyer is Ownable, Pausable, ReentrancyGuard {
         );
     }
 
-    function _payKeeperReward(uint256 amountIn, uint256 minEgazOut) internal returns (uint256 paid) {
+    function _payKeeperReward(uint256 amountIn, uint256 minEgazOut)
+        internal
+        returns (uint256 paid)
+    {
         address[] memory path = new address[](2);
         path[0] = address(etx);
         path[1] = address(egaz);
 
         etx.forceApprove(address(router), amountIn);
-        uint256[] memory amounts = router.swapExactTokensForEGAZ(
-            amountIn,
-            minEgazOut,
-            path,
-            msg.sender,
-            block.timestamp
-        );
+        uint256[] memory amounts =
+            router.swapExactTokensForEGAZ(amountIn, minEgazOut, path, msg.sender, block.timestamp);
         paid = amounts[amounts.length - 1];
     }
 
@@ -234,25 +234,14 @@ contract TreasuryAutoBuyer is Ownable, Pausable, ReentrancyGuard {
 
         base.forceApprove(address(router), swapAmount);
         uint256[] memory amounts = router.swapExactTokensForTokens(
-            swapAmount,
-            minTokenOut,
-            path,
-            address(this),
-            block.timestamp
+            swapAmount, minTokenOut, path, address(this), block.timestamp
         );
         bought = amounts[amounts.length - 1];
 
         base.forceApprove(address(router), pairAmount);
         quote.forceApprove(address(router), bought);
         (,, uint256 liquidity) = router.addLiquidity(
-            address(base),
-            address(quote),
-            pairAmount,
-            bought,
-            0,
-            0,
-            burnWallet,
-            block.timestamp
+            address(base), address(quote), pairAmount, bought, 0, 0, burnWallet, block.timestamp
         );
         if (liquidity < minLp) revert InsufficientBudget();
     }
@@ -267,11 +256,7 @@ contract TreasuryAutoBuyer is Ownable, Pausable, ReentrancyGuard {
 
         etx.forceApprove(address(router), amountIn);
         uint256[] memory amounts = router.swapExactTokensForTokens(
-            amountIn,
-            minStEtxOut,
-            path,
-            address(this),
-            block.timestamp
+            amountIn, minStEtxOut, path, address(this), block.timestamp
         );
         bought = amounts[amounts.length - 1];
 
@@ -292,7 +277,7 @@ contract TreasuryAutoBuyer is Ownable, Pausable, ReentrancyGuard {
         if (egazDust > 0) egaz.safeTransfer(treasury, egazDust);
 
         uint256 stEtxDust = stEtx.balanceOf(address(this));
-        if (stEtxDust > 0) stEtx.safeTransfer(treasury, stEtxDust);
+        if (stEtxDust > 0) IERC20(address(stEtx)).safeTransfer(treasury, stEtxDust);
     }
 
     function setBurnWallet(address newBurnWallet) external onlyOwner {
@@ -302,7 +287,9 @@ contract TreasuryAutoBuyer is Ownable, Pausable, ReentrancyGuard {
     }
 
     function setIntervalSeconds(uint256 newIntervalSeconds) external onlyOwner {
-        if (newIntervalSeconds < 5 minutes || newIntervalSeconds > 7 days) revert InsufficientBudget();
+        if (newIntervalSeconds < 5 minutes || newIntervalSeconds > 7 days) {
+            revert InsufficientBudget();
+        }
         intervalSeconds = newIntervalSeconds;
         emit IntervalUpdated(newIntervalSeconds);
     }

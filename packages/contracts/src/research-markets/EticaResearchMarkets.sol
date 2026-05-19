@@ -169,7 +169,9 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
         if (a.feeRateBps > MAX_FEE_BPS) revert FeeTooHigh(a.feeRateBps, MAX_FEE_BPS);
         uint256 splitSum = uint256(a.etiLpBps) + uint256(a.treasuryBps) + uint256(a.researcherBps);
         if (splitSum > BPS) revert SplitInvalid(splitSum);
-        if (a.sunsetWindow < MIN_SUNSET_WINDOW) revert SunsetWindowTooShort(a.sunsetWindow, uint32(MIN_SUNSET_WINDOW));
+        if (a.sunsetWindow < MIN_SUNSET_WINDOW) {
+            revert SunsetWindowTooShort(a.sunsetWindow, uint32(MIN_SUNSET_WINDOW));
+        }
         if (a.defaultVirtualEtxStart == 0 || a.defaultVirtualTokenStart == 0) revert ZeroAmount();
 
         etx = a.etx;
@@ -215,7 +217,10 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
         feeRateBps = newBps;
     }
 
-    function setFeeSplit(uint16 newEtiLpBps, uint16 newTreasuryBps, uint16 newResearcherBps) external onlyOwner {
+    function setFeeSplit(uint16 newEtiLpBps, uint16 newTreasuryBps, uint16 newResearcherBps)
+        external
+        onlyOwner
+    {
         uint256 sum = uint256(newEtiLpBps) + uint256(newTreasuryBps) + uint256(newResearcherBps);
         if (sum > BPS) revert SplitInvalid(sum);
         etiLpBps = newEtiLpBps;
@@ -230,7 +235,9 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
     }
 
     function setSunsetWindow(uint32 newWindow) external onlyOwner {
-        if (newWindow < MIN_SUNSET_WINDOW) revert SunsetWindowTooShort(newWindow, uint32(MIN_SUNSET_WINDOW));
+        if (newWindow < MIN_SUNSET_WINDOW) {
+            revert SunsetWindowTooShort(newWindow, uint32(MIN_SUNSET_WINDOW));
+        }
         emit SunsetWindowUpdated(sunsetWindow, newWindow);
         sunsetWindow = newWindow;
     }
@@ -240,7 +247,10 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
         launchTollEtx = newToll;
     }
 
-    function setDefaultVirtualReserves(uint128 newEtxStart, uint128 newTokenStart) external onlyOwner {
+    function setDefaultVirtualReserves(uint128 newEtxStart, uint128 newTokenStart)
+        external
+        onlyOwner
+    {
         if (newEtxStart == 0 || newTokenStart == 0) revert ZeroAmount();
         defaultVirtualEtxStart = newEtxStart;
         defaultVirtualTokenStart = newTokenStart;
@@ -260,7 +270,11 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
     ///         researcher address, which lets the launchpad reuse a
     ///         single canonical Sourcify metadata bundle across every
     ///         launch.
-    function launch(ResearchToken.Metadata calldata md) external nonReentrant returns (address token) {
+    function launch(ResearchToken.Metadata calldata md)
+        external
+        nonReentrant
+        returns (address token)
+    {
         if (launchTollEtx > 0) {
             etx.safeTransferFrom(msg.sender, address(this), launchTollEtx);
         }
@@ -334,7 +348,9 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
             emit Graduated(token, m.virtualEtxAcc, m.graduatedAt);
         }
 
-        emit Bought(token, msg.sender, etxInGross, etxFee, tokensOut, m.virtualEtxAcc, m.tokenSupply);
+        emit Bought(
+            token, msg.sender, etxInGross, etxFee, tokensOut, m.virtualEtxAcc, m.tokenSupply
+        );
     }
 
     /// @notice Sell `tokensIn` of `token` back into the bonding curve. The
@@ -386,7 +402,16 @@ contract EticaResearchMarkets is IEticaResearchMarkets, Ownable, ReentrancyGuard
         // Route fee.
         _routeFee(token, etxFee, m.researcher);
 
-        emit Sold(token, msg.sender, tokensIn, etxOutGross, etxFee, etxOutNet, m.virtualEtxAcc, m.tokenSupply);
+        emit Sold(
+            token,
+            msg.sender,
+            tokensIn,
+            etxOutGross,
+            etxFee,
+            etxOutNet,
+            m.virtualEtxAcc,
+            m.tokenSupply
+        );
     }
 
     function _routeFee(address token, uint256 totalFee, address researcher) internal {
