@@ -17,9 +17,13 @@
  * a malformed follow-up.
  */
 
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL_PRIMARY = 'llama-3.3-70b-versatile';
-const MODEL_FALLBACK = 'llama-3.1-8b-instant';
+import {
+  groqChat,
+  GROQ_MODEL_PRIMARY,
+  GROQ_MODEL_FALLBACK,
+  readGroqKeyPool,
+} from '../groq';
+
 const MAX_PROMPT_CHARS = 280;
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -91,42 +95,25 @@ function sanitize(raw: string): string | null {
 }
 
 async function callGroq(
-  apiKey: string,
   model: string,
   system: string,
   user: string,
+  maxTokens: number,
 ): Promise<string | null> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(GROQ_URL, {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.5,
-        max_tokens: 200,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-      }),
+    const result = await groqChat({
+      models: [model],
+      temperature: 0.5,
+      max_tokens: maxTokens,
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
     });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const text = data.choices?.[0]?.message?.content;
-    if (typeof text !== 'string') return null;
-    return text;
+    return result.content || null;
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -135,17 +122,16 @@ async function callGroq(
  * — the worker should treat null as "skip the expansion this round".
  */
 export async function proposeNextDirection(input: ExpansionInput): Promise<string | null> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
+  if (readGroqKeyPool().length === 0) return null;
   const system = systemPrompt(input.kind);
   const user = userPrompt(input);
 
-  const primary = await callGroq(apiKey, MODEL_PRIMARY, system, user);
+  const primary = await callGroq(GROQ_MODEL_PRIMARY, system, user, 200);
   if (primary) {
     const cleaned = sanitize(primary);
     if (cleaned) return cleaned;
   }
-  const fallback = await callGroq(apiKey, MODEL_FALLBACK, system, user);
+  const fallback = await callGroq(GROQ_MODEL_FALLBACK, system, user, 200);
   if (fallback) {
     const cleaned = sanitize(fallback);
     if (cleaned) return cleaned;
@@ -252,17 +238,16 @@ function parseBranchPlan(raw: string): BranchPlan | null {
  * null on any failure — worker treats null as "skip branching".
  */
 export async function proposeBranchPlan(input: BranchInput): Promise<BranchPlan | null> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
+  if (readGroqKeyPool().length === 0) return null;
   const system = branchSystemPrompt();
   const user = branchUserPrompt(input);
 
-  const primary = await callGroq(apiKey, MODEL_PRIMARY, system, user);
+  const primary = await callGroq(GROQ_MODEL_PRIMARY, system, user, 600);
   if (primary) {
     const parsed = parseBranchPlan(primary);
     if (parsed) return parsed;
   }
-  const fallback = await callGroq(apiKey, MODEL_FALLBACK, system, user);
+  const fallback = await callGroq(GROQ_MODEL_FALLBACK, system, user, 600);
   if (fallback) {
     const parsed = parseBranchPlan(fallback);
     if (parsed) return parsed;

@@ -136,7 +136,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
   const groqKey = process.env.GROQ_API_KEY ?? '';
-  if (groqKey) {
+  if (groqKey || process.env.GROQ_API_KEYS) {
     const gate = await runBiomedicalGate(
       `${title}\n${description}\n${firstPrompt}`,
       groqKey,

@@ -1,12 +1,17 @@
 import { NextRequest } from 'next/server';
 import { consumeLabsRateLimit } from '@/lib/labs/rate-limit';
+import {
+  groqChat,
+  GroqError,
+  GROQ_MODEL_PRIMARY,
+  GROQ_MODEL_FALLBACK,
+  hasGroqKey,
+} from '@/lib/labs/groq';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.1-8b-instant';
 const AMINO_ACIDS = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
 const MAX_PROMPT_CHARS = 400;
 const MAX_SEQUENCE_LENGTH = 400;
@@ -55,12 +60,18 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const apiKey = process.env.AIBOT_LLM_GROQ_API_KEY ?? process.env.GROQ_API_KEY;
+  // Always try the local extractor first — if the prompt already contains a
+  // raw amino-acid sequence we don't need to spend a Groq quota slot on it.
+  // This also acts as the ultimate fallback if Groq is unreachable.
+  const localFallback = (): { sequence: string } | null => {
+    const raw = fallbackExtractSequence(prompt);
+    const seq = raw ? normalizeSequence(raw) : null;
+    return seq ? { sequence: seq } : null;
+  };
 
-  if (!apiKey) {
-    const fallback = fallbackExtractSequence(prompt);
-    const sequence = fallback ? normalizeSequence(fallback) : null;
-    if (!sequence) {
+  if (!hasGroqKey()) {
+    const fallback = localFallback();
+    if (!fallback) {
       return json(
         {
           error: 'Groq is not configured yet and no raw amino-acid sequence could be extracted.',
@@ -69,57 +80,59 @@ export async function POST(req: NextRequest): Promise<Response> {
         { status: 503, headers: limit.headers },
       );
     }
-    return json({ sequence, provider: 'local-extractor' }, { headers: limit.headers });
+    return json({ ...fallback, provider: 'local-extractor' }, { headers: limit.headers });
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
-
   try {
-    const response = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0,
-        max_tokens: 256,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'Extract or design exactly one valid amino-acid sequence from the user request. Return only uppercase one-letter amino acid codes. No markdown, spaces, labels, punctuation, or explanation. Allowed letters: ACDEFGHIKLMNPQRSTVWY. Length must be between 10 and 400 residues.',
-          },
-          { role: 'user', content: prompt },
-        ],
-      }),
-      signal: controller.signal,
-      cache: 'no-store',
+    // Sequence extraction is short + deterministic, so prefer the 8B model
+    // (much higher daily cap). groqChat rotates keys and retries 429/5xx.
+    const result = await groqChat({
+      models: [GROQ_MODEL_FALLBACK, GROQ_MODEL_PRIMARY],
+      temperature: 0,
+      max_tokens: 256,
+      timeoutMs: 20_000,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Extract or design exactly one valid amino-acid sequence from the user request. Return only uppercase one-letter amino acid codes. No markdown, spaces, labels, punctuation, or explanation. Allowed letters: ACDEFGHIKLMNPQRSTVWY. Length must be between 10 and 400 residues.',
+        },
+        { role: 'user', content: prompt },
+      ],
     });
 
-    if (!response.ok) {
-      return json({ error: 'Groq sequence extraction failed.' }, { status: 502, headers: limit.headers });
-    }
-
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-    const raw = payload.choices?.[0]?.message?.content ?? '';
-    const sequence = normalizeSequence(raw) ?? normalizeSequence(fallbackExtractSequence(raw) ?? '');
+    const sequence =
+      normalizeSequence(result.content) ??
+      normalizeSequence(fallbackExtractSequence(result.content) ?? '');
 
     if (!sequence) {
+      const fallback = localFallback();
+      if (fallback) {
+        return json({ ...fallback, provider: 'local-extractor' }, { headers: limit.headers });
+      }
       return json(
         { error: 'Could not produce a valid amino-acid sequence.' },
         { status: 422, headers: limit.headers },
       );
     }
 
-    return json({ sequence, provider: 'groq', model: MODEL }, { headers: limit.headers });
-  } catch {
+    return json(
+      { sequence, provider: 'groq', model: result.model },
+      { headers: limit.headers },
+    );
+  } catch (err) {
+    // If Groq is fully exhausted, fall back to the local extractor before
+    // giving up — prompts often contain raw sequences anyway.
+    const fallback = localFallback();
+    if (fallback) {
+      return json({ ...fallback, provider: 'local-extractor' }, { headers: limit.headers });
+    }
+    if (err instanceof GroqError) {
+      return json(
+        { error: 'Groq sequence extraction failed.', detail: (err.detail ?? err.message).slice(0, 240) },
+        { status: 502, headers: limit.headers },
+      );
+    }
     return json({ error: 'Groq request timed out or failed.' }, { status: 502, headers: limit.headers });
-  } finally {
-    clearTimeout(timeout);
   }
 }

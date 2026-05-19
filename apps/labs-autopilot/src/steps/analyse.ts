@@ -8,8 +8,13 @@
  * to drive iteration ranking.
  */
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.1-8b-instant';
+import {
+  groqChat,
+  GroqError,
+  GROQ_MODEL_FALLBACK,
+  GROQ_MODEL_PRIMARY,
+  readGroqKeyPool,
+} from '../groq';
 
 export type Analysis = {
   summary: string;
@@ -85,8 +90,9 @@ function parseScoreFromText(text: string): number | null {
 }
 
 export async function analyseStructure(sequence: string, pdb: string): Promise<Analysis> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY not set');
+  if (readGroqKeyPool().length === 0) {
+    throw new Error('GROQ_API_KEY (or GROQ_API_KEYS) not set');
+  }
 
   const s = summarizePdb(pdb);
   const confidence = pdbConfidenceScore(s);
@@ -112,41 +118,38 @@ export async function analyseStructure(sequence: string, pdb: string): Promise<A
     `HELIX records: ${s.helixHint}, SHEET records: ${s.sheetHint}`,
   ].join('\n');
 
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 25_000);
+  // groqChat handles retry/key-rotation/model-cascade automatically. If
+  // Groq is fully exhausted we fall back to a deterministic objective-only
+  // summary so analysis never blocks the worker pipeline.
   try {
-    const res = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.3,
-        max_tokens: 350,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: summary },
-        ],
-      }),
-      signal: ctrl.signal,
-      cache: 'no-store',
+    const result = await groqChat({
+      models: [GROQ_MODEL_FALLBACK, GROQ_MODEL_PRIMARY],
+      temperature: 0.3,
+      max_tokens: 350,
+      timeoutMs: 25_000,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: summary },
+      ],
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Groq analyse ${res.status}: ${text.slice(0, 200)}`);
-    }
-    const payload = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-    const raw = payload.choices?.[0]?.message?.content?.trim() ?? '';
+    const raw = result.content;
     const parsed = parseScoreFromText(raw);
     // Blend Groq's qualitative score with the objective pLDDT confidence
     // 60/40 so a low-confidence fold can't be talked up.
     const score = parsed === null ? confidence : parsed * 0.6 + confidence * 0.4;
     return { summary: raw.replace(/score\s*[:=].*$/i, '').trim(), score };
-  } finally {
-    clearTimeout(t);
+  } catch (err) {
+    if (err instanceof GroqError) {
+      // Worker must never block on Groq — emit an objective-only summary so
+      // the candidate can still be ranked + published downstream.
+      const fallback = [
+        `Objective summary only (Groq unavailable: ${err.status || 'network'}).`,
+        `Predicted ${s.length} residues, ${s.atomCount} atoms.`,
+        `Mean pLDDT ${s.bMean.toFixed(1)} (range ${s.bMin.toFixed(1)}–${s.bMax.toFixed(1)}).`,
+        `HELIX records: ${s.helixHint}, SHEET records: ${s.sheetHint}.`,
+      ].join(' ');
+      return { summary: fallback, score: confidence };
+    }
+    throw err;
   }
 }

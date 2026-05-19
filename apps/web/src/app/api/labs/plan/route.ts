@@ -1,17 +1,18 @@
 import { NextRequest } from 'next/server';
 import { consumeLabsRateLimit } from '@/lib/labs/rate-limit';
 import { gatherReferences, summarizeReferencesForPrompt, type Reference } from '@/lib/labs/research';
+import {
+  groqChat,
+  GroqError,
+  GROQ_MODEL_PRIMARY,
+  GROQ_MODEL_FALLBACK,
+  hasGroqKey,
+} from '@/lib/labs/groq';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-// Use the 70B versatile model for primary calls — it's far more reliable at
-// producing valid JSON than the 8B instant model, which intermittently fails
-// Groq's server-side JSON validator when response_format=json_object is set.
-const MODEL_PRIMARY = 'llama-3.3-70b-versatile';
-const MODEL_FALLBACK = 'llama-3.1-8b-instant';
 const MAX_PROMPT_CHARS = 400;
 const AMINO_ACIDS = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
 const MAX_SEQUENCE_LENGTH = 400;
@@ -114,8 +115,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const apiKey = process.env.AIBOT_LLM_GROQ_API_KEY ?? process.env.GROQ_API_KEY;
-  if (!apiKey) {
+  if (!hasGroqKey()) {
     return json(
       { error: 'Groq API key is not configured.', comingSoon: true },
       { status: 503, headers: limit.headers },
@@ -127,9 +127,6 @@ export async function POST(req: NextRequest): Promise<Response> {
   // open: if PubMed/PDB are slow we still plan, just without their context.
   const references: Reference[] = await gatherReferences(prompt).catch(() => []);
   const refSummary = summarizeReferencesForPrompt(references);
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25_000);
 
   try {
     const systemPrompt = [
@@ -154,83 +151,44 @@ export async function POST(req: NextRequest): Promise<Response> {
       ? `Goal: ${prompt}\n\nExisting research and structures (cite by [N] index):\n${refSummary}`
       : prompt;
 
-    /**
-     * Groq occasionally returns 400 with `json_validate_failed` when
-     * response_format=json_object is set and the model emits text that
-     * doesn't strictly parse — especially on the 8B model. To make the
-     * planner reliable on mobile/LTE, we run a 3-attempt cascade:
-     *
-     *   1. primary model (70B) with strict json_object response_format
-     *   2. primary model (70B) WITHOUT response_format (tolerate parser)
-     *   3. fallback model (8B) WITHOUT response_format
-     *
-     * `tryParsePlan` is already tolerant — it pulls the outermost `{...}`
-     * substring and json-parses that — so dropping response_format is safe.
-     */
-    type Attempt = { model: string; useJsonMode: boolean };
-    const attempts: Attempt[] = [
-      { model: MODEL_PRIMARY, useJsonMode: true },
-      { model: MODEL_PRIMARY, useJsonMode: false },
-      { model: MODEL_FALLBACK, useJsonMode: false },
-    ];
-
-    let lastStatus = 0;
-    let lastDetail = '';
+    // groqChat handles the (key × model × jsonMode) cascade and retries
+    // on 429/5xx with exponential backoff. tryParsePlan is tolerant — it
+    // pulls the outermost {...} substring — so we still get a plan back
+    // when Groq emits json_validate_failed.
     let lastRaw = '';
-    let usedModel = MODEL_PRIMARY;
-
-    for (const attempt of attempts) {
-      const response = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: attempt.model,
+    const models = [GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK];
+    for (const model of models) {
+      try {
+        const result = await groqChat({
+          models: [model],
           temperature: 0.4,
           max_tokens: 1200,
-          ...(attempt.useJsonMode
-            ? { response_format: { type: 'json_object' } }
-            : {}),
+          jsonMode: true,
+          timeoutMs: 25_000,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userContent },
           ],
-        }),
-        signal: controller.signal,
-        cache: 'no-store',
-      });
-
-      if (!response.ok) {
-        lastStatus = response.status;
-        lastDetail = await response.text().catch(() => '');
-        continue;
+        });
+        lastRaw = result.content;
+        const plan = tryParsePlan(result.content);
+        if (plan) {
+          return json(
+            { plan, references, provider: 'groq', model: result.model },
+            { headers: limit.headers },
+          );
+        }
+      } catch (err) {
+        if (err instanceof GroqError && model === models[models.length - 1]) {
+          return json(
+            {
+              error: `Groq planning failed (${err.status}).`,
+              detail: (err.detail ?? err.message).slice(0, 240),
+            },
+            { status: 502, headers: limit.headers },
+          );
+        }
       }
-
-      const payload = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string | null } }>;
-      };
-      const raw = payload.choices?.[0]?.message?.content?.trim() ?? '';
-      lastRaw = raw;
-      usedModel = attempt.model;
-      const plan = tryParsePlan(raw);
-      if (plan) {
-        return json(
-          { plan, references, provider: 'groq', model: usedModel },
-          { headers: limit.headers },
-        );
-      }
-    }
-
-    if (lastStatus && lastStatus !== 200) {
-      return json(
-        {
-          error: `Groq planning failed (${lastStatus}).`,
-          detail: lastDetail.slice(0, 240),
-        },
-        { status: 502, headers: limit.headers },
-      );
     }
 
     return json(
@@ -245,7 +203,5 @@ export async function POST(req: NextRequest): Promise<Response> {
       { error: 'Planner request timed out or failed.' },
       { status: 502, headers: limit.headers },
     );
-  } finally {
-    clearTimeout(timeout);
   }
 }

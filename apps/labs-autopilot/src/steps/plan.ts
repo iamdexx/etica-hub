@@ -8,12 +8,14 @@
  * copy keeps the autopilot independent of any Next.js bundling.
  */
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-// 70B versatile is far more reliable at producing valid JSON than the 8B
-// instant model under Groq's response_format=json_object validator. We use
-// the 70B as primary and fall back to 8B without strict JSON mode if needed.
-const MODEL_PRIMARY = 'llama-3.3-70b-versatile';
-const MODEL_FALLBACK = 'llama-3.1-8b-instant';
+import {
+  groqChat,
+  GroqError,
+  GROQ_MODEL_PRIMARY,
+  GROQ_MODEL_FALLBACK,
+  readGroqKeyPool,
+} from '../groq';
+
 const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
 const RCSB_SEARCH = 'https://search.rcsb.org/rcsbsearch/v2/query';
@@ -262,8 +264,9 @@ export async function generatePlan(
   prompt: string,
   priorContext?: PriorContext,
 ): Promise<ResearchPlan> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY not set');
+  if (readGroqKeyPool().length === 0) {
+    throw new Error('GROQ_API_KEY (or GROQ_API_KEYS) not set');
+  }
 
   const references = await gatherReferences(prompt).catch(() => []);
   const refSummary = summarizeReferencesForPrompt(references);
@@ -300,55 +303,37 @@ export async function generatePlan(
   }
   const userContent = userParts.join('\n\n');
 
-  const { signal, cancel } = withTimeout(45_000);
-  // 3-attempt cascade: 70B+json_object → 70B no-mode → 8B no-mode.
-  const attempts: Array<{ model: string; useJsonMode: boolean }> = [
-    { model: MODEL_PRIMARY, useJsonMode: true },
-    { model: MODEL_PRIMARY, useJsonMode: false },
-    { model: MODEL_FALLBACK, useJsonMode: false },
-  ];
-  let lastErr: string = '';
-  try {
-    for (const attempt of attempts) {
-      const res = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: attempt.model,
-          temperature: 0.4,
-          max_tokens: 1400,
-          ...(attempt.useJsonMode
-            ? { response_format: { type: 'json_object' } }
-            : {}),
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userContent },
-          ],
-        }),
-        signal,
-        cache: 'no-store',
+  // groqChat does (key × model × jsonMode) cascade + retry on 429/5xx.
+  // Each model gets its own pass so we don't burn the 70B retry budget
+  // before trying the 8B fallback.
+  let lastErr = '';
+  const models = [GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK];
+  for (const model of models) {
+    try {
+      const result = await groqChat({
+        models: [model],
+        temperature: 0.4,
+        max_tokens: 1400,
+        jsonMode: true,
+        timeoutMs: 45_000,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
       });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        lastErr = `Groq plan ${res.status}: ${text.slice(0, 200)}`;
-        continue;
-      }
-      const payload = (await res.json()) as {
-        choices?: Array<{ message?: { content?: string | null } }>;
-      };
-      const raw = payload.choices?.[0]?.message?.content?.trim() ?? '';
-      if (/"refused"/i.test(raw)) {
+      if (/"refused"/i.test(result.content)) {
         throw new Error('Planner refused: out-of-scope prompt');
       }
-      const plan = tryParse(raw);
+      const plan = tryParse(result.content);
       if (plan) return { ...plan, references };
       lastErr = 'Planner returned unparseable response';
+    } catch (err) {
+      if (err instanceof GroqError) {
+        lastErr = `Groq plan ${err.status}: ${(err.detail ?? err.message).slice(0, 200)}`;
+        continue;
+      }
+      throw err;
     }
-    throw new Error(lastErr || 'Planner failed across all attempts');
-  } finally {
-    cancel();
   }
+  throw new Error(lastErr || 'Planner failed across all attempts');
 }

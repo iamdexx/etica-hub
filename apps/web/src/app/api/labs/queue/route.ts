@@ -140,7 +140,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // the worker prompt-hardens follow-up iterations).
   if (!goalId) {
     const apiKey = process.env.GROQ_API_KEY ?? '';
-    if (apiKey) {
+    if (apiKey || process.env.GROQ_API_KEYS) {
       const gate = await runBiomedicalGate(prompt, apiKey);
       if (gate.verdict !== 'yes') {
         return json(

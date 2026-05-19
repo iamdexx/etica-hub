@@ -106,7 +106,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const apiKey = process.env.GROQ_API_KEY ?? '';
-  if (apiKey) {
+  if (apiKey || process.env.GROQ_API_KEYS) {
     const gate = await runBiomedicalGate(combined, apiKey);
     if (gate.verdict !== 'yes') {
       return json(
