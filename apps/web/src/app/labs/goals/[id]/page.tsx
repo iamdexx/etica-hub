@@ -248,7 +248,7 @@ export default function GoalDetailPage(): JSX.Element {
                   <span className="uppercase tracking-wider">{entry.status}</span>
                   <span>{relativeTime(entry.updatedAt || entry.createdAt)}</span>
                 </div>
-                <p className="line-clamp-3 text-sm text-white/85">{entry.prompt}</p>
+                <p className="whitespace-pre-wrap break-words text-sm text-white/85">{entry.prompt}</p>
                 <div className="flex items-center justify-between gap-2 text-[11px] text-white/45">
                   <span>iteration {entry.iterations}</span>
                   <ModerationBadge status={entry.moderation} />
@@ -276,7 +276,7 @@ export default function GoalDetailPage(): JSX.Element {
               >
                 <p className="text-sm font-medium text-white">{r.title}</p>
                 {r.description && (
-                  <p className="line-clamp-2 text-xs text-white/55">{r.description}</p>
+                  <p className="whitespace-pre-wrap break-words text-xs text-white/55">{r.description}</p>
                 )}
                 <div className="flex items-center justify-between gap-2 text-[11px] text-white/45">
                   <span>

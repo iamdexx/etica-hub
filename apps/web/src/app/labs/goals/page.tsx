@@ -115,7 +115,7 @@ export default function LabsGoalsPage(): JSX.Element {
               <ModerationBadge status={g.moderation} />
             </div>
             {g.description && (
-              <p className="line-clamp-3 text-sm text-white/65">{g.description}</p>
+              <p className="whitespace-pre-wrap break-words text-sm text-white/65">{g.description}</p>
             )}
             {g.keywords.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
