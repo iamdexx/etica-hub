@@ -216,5 +216,58 @@ export async function GET(_req: NextRequest): Promise<Response> {
     queue.recent(20).catch(() => []),
     queue.pendingCount().catch(() => 0),
   ]);
-  return json({ entries, pending });
+
+  // Enrich entries with goal titles so the feed can group by topic.
+  // Batch the goal lookups so we never refetch the same goal twice in
+  // a single render.
+  const goalIds = new Set<string>();
+  for (const entry of entries) {
+    if (entry.goalId) goalIds.add(entry.goalId);
+  }
+  const goals = new Map<string, { title: string; origin?: 'user' | 'branch'; parentGoalId?: string }>();
+  await Promise.all(
+    Array.from(goalIds).map(async (id) => {
+      const goal = await getGoal(id).catch(() => null);
+      if (goal) {
+        goals.set(id, {
+          title: goal.title,
+          origin: goal.origin,
+          parentGoalId: goal.parentGoalId,
+        });
+      }
+    }),
+  );
+  // Second pass: any goal referenced as a parent that we haven't fetched yet.
+  const parentIds = new Set<string>();
+  for (const g of goals.values()) {
+    if (g.parentGoalId && !goals.has(g.parentGoalId)) parentIds.add(g.parentGoalId);
+  }
+  await Promise.all(
+    Array.from(parentIds).map(async (id) => {
+      const goal = await getGoal(id).catch(() => null);
+      if (goal) {
+        goals.set(id, {
+          title: goal.title,
+          origin: goal.origin,
+          parentGoalId: goal.parentGoalId,
+        });
+      }
+    }),
+  );
+
+  const enriched = entries.map((entry) => {
+    if (!entry.goalId) return entry;
+    const goal = goals.get(entry.goalId);
+    if (!goal) return entry;
+    const parent = goal.parentGoalId ? goals.get(goal.parentGoalId) : undefined;
+    return {
+      ...entry,
+      goalTitle: goal.title,
+      goalOrigin: goal.origin,
+      parentGoalId: goal.parentGoalId,
+      parentGoalTitle: parent?.title,
+    };
+  });
+
+  return json({ entries: enriched, pending });
 }

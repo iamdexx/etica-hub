@@ -86,6 +86,7 @@ export default function LabsFeedPage(): JSX.Element {
   const [pending, setPending] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [topicFilter, setTopicFilter] = useState<string | null>(null);
 
   const tick = useCallback(async () => {
     try {
@@ -110,9 +111,33 @@ export default function LabsFeedPage(): JSX.Element {
     return () => clearInterval(id);
   }, [tick]);
 
-  const running = entries.filter((e) => e.status === 'running').length;
-  const queued = entries.filter((e) => e.status === 'pending').length;
-  const done = entries.filter((e) => e.status === 'done').length;
+  // Distinct research topics (root goals) across all visible entries.
+  // Branch entries roll up to their parent topic so the chip-set shows
+  // a single "Brain cancer" pill rather than one per child chain.
+  const topics = new Map<string, string>();
+  for (const e of entries) {
+    if (!e.goalId) continue;
+    const rootId =
+      e.goalOrigin === 'branch' && e.parentGoalId ? e.parentGoalId : e.goalId;
+    const rootTitle =
+      e.goalOrigin === 'branch' && e.parentGoalTitle
+        ? e.parentGoalTitle
+        : e.goalTitle;
+    if (!rootTitle) continue;
+    if (!topics.has(rootId)) topics.set(rootId, rootTitle);
+  }
+
+  const filtered = topicFilter
+    ? entries.filter((e) => {
+        const rootId =
+          e.goalOrigin === 'branch' && e.parentGoalId ? e.parentGoalId : e.goalId;
+        return rootId === topicFilter;
+      })
+    : entries;
+
+  const running = filtered.filter((e) => e.status === 'running').length;
+  const queued = filtered.filter((e) => e.status === 'pending').length;
+  const done = filtered.filter((e) => e.status === 'done').length;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -173,6 +198,45 @@ export default function LabsFeedPage(): JSX.Element {
         </div>
       )}
 
+      {topics.size > 0 && (
+        <div className="mb-5 -mx-1 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setTopicFilter(null)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              topicFilter === null
+                ? 'border-white/30 bg-white/15 text-white'
+                : 'border-white/10 bg-white/[0.04] text-white/65 hover:border-white/25 hover:text-white'
+            }`}
+          >
+            All topics ({entries.length})
+          </button>
+          {Array.from(topics.entries()).map(([id, title]) => {
+            const count = entries.filter((e) => {
+              const rootId =
+                e.goalOrigin === 'branch' && e.parentGoalId ? e.parentGoalId : e.goalId;
+              return rootId === id;
+            }).length;
+            const active = topicFilter === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTopicFilter(active ? null : id)}
+                className={`max-w-[20rem] truncate rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  active
+                    ? 'border-violet-400/60 bg-violet-400/15 text-violet-100'
+                    : 'border-white/10 bg-white/[0.04] text-white/70 hover:border-violet-400/40 hover:text-white'
+                }`}
+                title={title}
+              >
+                {title} <span className="text-white/40">({count})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {loaded && entries.length === 0 && !error && (
         <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] px-6 py-12 text-center">
           <p className="text-base font-medium text-white">No runs yet.</p>
@@ -188,45 +252,65 @@ export default function LabsFeedPage(): JSX.Element {
       )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {entries.map((entry) => (
-          <Link
-            key={entry.id}
-            href={`/labs/feed/${entry.id}`}
-            className="group flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider ${statusClasses(entry.status)}`}
-              >
-                <StatusDot status={entry.status} />
-                <span>{statusLabel(entry.status)}</span>
-              </span>
-              <span className="text-[11px] text-white/45">
-                {relativeTime(entry.updatedAt || entry.createdAt)}
-              </span>
-            </div>
-
-            <p className="whitespace-pre-wrap break-words text-sm text-white/85 group-hover:text-white">
-              {entry.prompt}
-            </p>
-
-            <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-3 text-[11px] text-white/55">
-              <span>
-                iteration {entry.iterations}
-                {entry.status === 'running' ? ' …' : ''}
-              </span>
-              <div className="flex items-center gap-2">
-                {entry.goalId && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-violet-200">
-                    goal
-                  </span>
-                )}
-                <ModerationBadge status={entry.moderation} />
-                <span className="font-mono text-white/40">{entry.id.slice(0, 8)}</span>
+        {filtered.map((entry) => {
+          const isBranch = entry.goalOrigin === 'branch';
+          const topicLabel = entry.goalTitle
+            ? isBranch && entry.parentGoalTitle
+              ? `Branch from: ${entry.parentGoalTitle}`
+              : entry.goalTitle
+            : null;
+          return (
+            <Link
+              key={entry.id}
+              href={`/labs/feed/${entry.id}`}
+              className="group flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider ${statusClasses(entry.status)}`}
+                >
+                  <StatusDot status={entry.status} />
+                  <span>{statusLabel(entry.status)}</span>
+                </span>
+                <span className="text-[11px] text-white/45">
+                  {relativeTime(entry.updatedAt || entry.createdAt)}
+                </span>
               </div>
-            </div>
-          </Link>
-        ))}
+
+              {topicLabel && (
+                <div className="flex items-start gap-1.5">
+                  <span
+                    className={`mt-0.5 inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider ${
+                      isBranch
+                        ? 'border-fuchsia-400/30 bg-fuchsia-400/10 text-fuchsia-200'
+                        : 'border-violet-400/30 bg-violet-400/10 text-violet-200'
+                    }`}
+                  >
+                    {isBranch ? 'branch' : 'topic'}
+                  </span>
+                  <span className="line-clamp-2 break-words text-[12px] font-medium text-white/80">
+                    {topicLabel}
+                  </span>
+                </div>
+              )}
+
+              <p className="whitespace-pre-wrap break-words text-sm text-white/85 group-hover:text-white">
+                {entry.prompt}
+              </p>
+
+              <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-3 text-[11px] text-white/55">
+                <span>
+                  iteration {entry.iterations}
+                  {entry.status === 'running' ? ' …' : ''}
+                </span>
+                <div className="flex items-center gap-2">
+                  <ModerationBadge status={entry.moderation} />
+                  <span className="font-mono text-white/40">{entry.id.slice(0, 8)}</span>
+                </div>
+              </div>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
