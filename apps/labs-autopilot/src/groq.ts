@@ -69,9 +69,9 @@ export function readGroqKeyPool(): string[] {
   return [...pool];
 }
 
-const BACKOFF_BASE_MS = 350;
+const BACKOFF_BASE_MS = 1000;
 function backoffMs(attempt: number): number {
-  return Math.min(3000, BACKOFF_BASE_MS * 2 ** attempt);
+  return Math.min(8000, BACKOFF_BASE_MS * 2 ** attempt);
 }
 
 function isRetryableStatus(status: number): boolean {
