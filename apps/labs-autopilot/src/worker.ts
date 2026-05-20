@@ -128,13 +128,12 @@ const BRANCH_SCORE_THRESHOLD = Math.max(
   0,
   Math.min(1.1, Number(process.env.LABS_AUTOPILOT_BRANCH_SCORE_THRESHOLD ?? '0.85')),
 );
-/** Cooldown (ms) between consecutive jobs in the same tick so Groq
- * rate-limit windows can recover. Each job makes ~10 Groq API calls
- * and the free tier throttles at ~30 RPM; a 10s gap prevents the next
- * job from exhausting retries on 429s. */
+/** Cooldown (ms) between consecutive jobs in the same tick. With
+ * multi-key rotation this can be short — just enough to avoid
+ * burst-firing requests on the same key. Set to 0 to disable. */
 const INTER_JOB_COOLDOWN_MS = Math.max(
   0,
-  Number(process.env.LABS_AUTOPILOT_INTER_JOB_COOLDOWN_MS ?? '10000'),
+  Number(process.env.LABS_AUTOPILOT_INTER_JOB_COOLDOWN_MS ?? '2000'),
 );
 
 function log(message: string, meta?: Record<string, unknown>): void {
@@ -800,8 +799,8 @@ async function main(): Promise<void> {
     console.error('GROQ_API_KEY (or comma-separated GROQ_API_KEYS) is required.');
     process.exit(1);
   }
-  if (!process.env.NVIDIA_API_KEY) {
-    console.error('NVIDIA_API_KEY is required.');
+  if (!process.env.NVIDIA_API_KEY && !process.env.NVIDIA_API_KEYS) {
+    console.error('NVIDIA_API_KEY (or comma-separated NVIDIA_API_KEYS) is required.');
     process.exit(1);
   }
 

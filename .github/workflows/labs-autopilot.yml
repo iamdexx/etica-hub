@@ -17,6 +17,11 @@ name: Labs Autopilot
 #   GROQ_API_KEY           — Groq free tier; used for plan + analyse
 #   NVIDIA_API_KEY         — NVIDIA NIM free tier; used for ESMFold
 #
+# Optional repository secrets (multi-key rotation):
+#   GROQ_API_KEYS          — comma-separated Groq keys for round-robin
+#                            rotation across rate-limit windows
+#   NVIDIA_API_KEYS        — comma-separated NVIDIA keys for round-robin
+#
 # Optional repo variables:
 #   LABS_AUTOPILOT_BASE_URL          — defaults to https://eticahub.com
 #   LABS_AUTOPILOT_MAX_JOBS_PER_TICK — defaults to 5 (drains a small
@@ -51,15 +56,17 @@ jobs:
       LABS_AUTOPILOT_MAX_JOBS_PER_TICK: ${{ github.event.inputs.max_jobs || vars.LABS_AUTOPILOT_MAX_JOBS_PER_TICK || '5' }}
       LABS_AUTOPILOT_TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      NVIDIA_API_KEYS: ${{ secrets.NVIDIA_API_KEYS }}
     steps:
       - name: Guard — required secrets present
         id: guard
         run: |
           missing=0
           if [ -z "$LABS_AUTOPILOT_TOKEN" ]; then echo "::warning::LABS_AUTOPILOT_TOKEN secret not set"; missing=1; fi
-          if [ -z "$GROQ_API_KEY" ]; then echo "::warning::GROQ_API_KEY secret not set"; missing=1; fi
-          if [ -z "$NVIDIA_API_KEY" ]; then echo "::warning::NVIDIA_API_KEY secret not set"; missing=1; fi
+          if [ -z "$GROQ_API_KEY" ] && [ -z "$GROQ_API_KEYS" ]; then echo "::warning::GROQ_API_KEY (or GROQ_API_KEYS) secret not set"; missing=1; fi
+          if [ -z "$NVIDIA_API_KEY" ] && [ -z "$NVIDIA_API_KEYS" ]; then echo "::warning::NVIDIA_API_KEY (or NVIDIA_API_KEYS) secret not set"; missing=1; fi
           if [ "$missing" = "1" ]; then
             echo "::warning::Labs Autopilot secrets not configured; skipping tick."
             echo "skip=true" >> "$GITHUB_OUTPUT"
