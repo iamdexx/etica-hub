@@ -809,6 +809,28 @@ async function main(): Promise<void> {
       TICK_BUDGET_MS / 1000,
     )}s`,
   );
+
+  // Requeue any jobs orphaned in "running" state by a previous tick that
+  // crashed or timed out. Best-effort — failures here are non-fatal.
+  try {
+    const rRes = await fetch(`${BASE_URL}/api/labs/queue/requeue-stale`, {
+      method: 'POST',
+      headers: {
+        'x-labs-worker-token': TOKEN,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ maxAgeMs: 10 * 60 * 1000 }),
+    });
+    if (rRes.ok) {
+      const rBody = (await rRes.json()) as { count?: number };
+      if (rBody.count && rBody.count > 0) {
+        log(`requeued ${rBody.count} stale running job(s)`);
+      }
+    }
+  } catch (err) {
+    log(`requeue-stale failed (non-fatal): ${err instanceof Error ? err.message : err}`);
+  }
+
   const tickStart = Date.now();
   let processed = 0;
   for (let i = 0; i < MAX_JOBS_PER_TICK; i++) {
