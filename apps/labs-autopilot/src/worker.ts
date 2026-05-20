@@ -128,6 +128,13 @@ const BRANCH_SCORE_THRESHOLD = Math.max(
   0,
   Math.min(1.1, Number(process.env.LABS_AUTOPILOT_BRANCH_SCORE_THRESHOLD ?? '0.85')),
 );
+/** Cooldown (ms) between consecutive jobs in the same tick. With
+ * multi-key rotation this can be short — just enough to avoid
+ * burst-firing requests on the same key. Set to 0 to disable. */
+const INTER_JOB_COOLDOWN_MS = Math.max(
+  0,
+  Number(process.env.LABS_AUTOPILOT_INTER_JOB_COOLDOWN_MS ?? '2000'),
+);
 
 function log(message: string, meta?: Record<string, unknown>): void {
   const stamp = new Date().toISOString();
@@ -615,6 +622,7 @@ async function runJob(job: LabsJob): Promise<void> {
     plan = await generatePlan(job.prompt, priorContext);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    log(`planner failed for ${job.id}: ${msg}`);
     await update(job.id, {
       events: [{ kind: 'error', message: `Planner failed: ${msg}` }],
       status: 'error',
@@ -791,8 +799,8 @@ async function main(): Promise<void> {
     console.error('GROQ_API_KEY (or comma-separated GROQ_API_KEYS) is required.');
     process.exit(1);
   }
-  if (!process.env.NVIDIA_API_KEY) {
-    console.error('NVIDIA_API_KEY is required.');
+  if (!process.env.NVIDIA_API_KEY && !process.env.NVIDIA_API_KEYS) {
+    console.error('NVIDIA_API_KEY (or comma-separated NVIDIA_API_KEYS) is required.');
     process.exit(1);
   }
 
@@ -821,6 +829,10 @@ async function main(): Promise<void> {
       break;
     }
 
+    if (processed > 0 && INTER_JOB_COOLDOWN_MS > 0) {
+      log(`cooldown ${INTER_JOB_COOLDOWN_MS}ms before next job`);
+      await new Promise((r) => setTimeout(r, INTER_JOB_COOLDOWN_MS));
+    }
     try {
       await runJob(job);
       processed += 1;

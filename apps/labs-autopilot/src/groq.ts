@@ -69,9 +69,13 @@ export function readGroqKeyPool(): string[] {
   return [...pool];
 }
 
-const BACKOFF_BASE_MS = 350;
+/** Round-robin counter so consecutive groqChat() calls start from
+ *  different keys, spreading rate-limit pressure across the pool. */
+let _groqRoundRobin = 0;
+
+const BACKOFF_BASE_MS = 1000;
 function backoffMs(attempt: number): number {
-  return Math.min(3000, BACKOFF_BASE_MS * 2 ** attempt);
+  return Math.min(8000, BACKOFF_BASE_MS * 2 ** attempt);
 }
 
 function isRetryableStatus(status: number): boolean {
@@ -172,6 +176,7 @@ export async function groqChat(req: GroqChatRequest): Promise<GroqChatResult> {
   const maxRetries = Math.max(1, req.maxRetriesPerKey ?? 3);
   const composed = composeSignal(req.signal, timeoutMs);
   const liveKeys = new Set<number>(keys.map((_, i) => i));
+  const startKey = _groqRoundRobin++ % keys.length;
 
   let attempts = 0;
   let lastStatus = 0;
@@ -181,7 +186,14 @@ export async function groqChat(req: GroqChatRequest): Promise<GroqChatResult> {
     for (const model of models) {
       const jsonPasses = req.jsonMode ? [true, false] : [false];
       for (const useJsonMode of jsonPasses) {
-        for (const keyIndex of [...liveKeys]) {
+        // Start from a round-robin offset so consecutive calls hit
+        // different keys first, spreading rate-limit pressure.
+        const keyOrder = [...liveKeys].sort((a, b) => {
+          const da = ((a - startKey) % keys.length + keys.length) % keys.length;
+          const db = ((b - startKey) % keys.length + keys.length) % keys.length;
+          return da - db;
+        });
+        for (const keyIndex of keyOrder) {
           for (let attempt = 0; attempt < maxRetries; attempt++) {
             attempts++;
             try {

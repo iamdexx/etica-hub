@@ -25,6 +25,30 @@ const PER_ENGINE_MAX_ATTEMPTS = 3;
 const PER_ATTEMPT_TIMEOUT_MS = 90_000;
 const BACKOFF_SCHEDULE_MS: readonly number[] = [0, 5_000, 30_000];
 
+/** Read NVIDIA key pool from NVIDIA_API_KEYS (comma-separated) and
+ *  NVIDIA_API_KEY (single), deduped. */
+export function readNvidiaKeyPool(): string[] {
+  const pool = new Set<string>();
+  const multi = process.env.NVIDIA_API_KEYS;
+  if (multi) {
+    for (const piece of multi.split(',')) {
+      const k = piece.trim();
+      if (k) pool.add(k);
+    }
+  }
+  const single = process.env.NVIDIA_API_KEY ?? '';
+  if (single) pool.add(single.trim());
+  return [...pool];
+}
+
+let _nvidiaRoundRobin = 0;
+
+function nextNvidiaKey(): string | null {
+  const keys = readNvidiaKeyPool();
+  if (keys.length === 0) return null;
+  return keys[_nvidiaRoundRobin++ % keys.length]!;
+}
+
 export type FoldResult = { ok: true; pdb: string } | { ok: false; error: string };
 
 export type CascadeAttempt = {
@@ -83,7 +107,7 @@ async function callWithTimeout<T>(
 
 /** NVIDIA NIM ESMFold (free, async 202 polling). */
 export async function foldWithNvidia(sequence: string): Promise<FoldResult> {
-  const apiKey = process.env.NVIDIA_API_KEY;
+  const apiKey = nextNvidiaKey();
   if (!apiKey) return { ok: false, error: 'NVIDIA_API_KEY not set' };
 
   let response: Response;
@@ -237,8 +261,8 @@ export async function foldWithCascade(sequence: string): Promise<CascadeOutcome>
   }> = [
     {
       id: 'nvidia-esmfold',
-      configured: Boolean(process.env.NVIDIA_API_KEY),
-      missingEnv: 'NVIDIA_API_KEY',
+      configured: readNvidiaKeyPool().length > 0,
+      missingEnv: 'NVIDIA_API_KEY(S)',
       call: foldWithNvidia,
     },
     {
