@@ -33,15 +33,38 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 import { getGoal } from '@/lib/labs/goal-store';
 import { labsQueue } from '@/lib/labs/queue';
+import { getResearchClient } from '@/lib/research';
+import eticaResearchNftArtifact from '@/lib/etica-research-nft-artifact.json';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
 
-/** 1 EGAZ (1e16 wei) — matches the deployer form default. */
-const BASE_MINT_FEE_WEI = 10_000_000_000_000_000n;
-/** 9 EGAZ (99e16 wei) — matches the deployer form default. */
-const MAX_SCORE_MINT_FEE_WEI = 990_000_000_000_000_000n;
+/**
+ * Cached on-chain fee constants. Both are immutable per deployed
+ * contract instance, so a single read per process lifetime is
+ * sufficient. Populated lazily by {@link getMintFees}.
+ */
+let _cachedFees: { base: bigint; maxScore: bigint } | null = null;
+
+async function getMintFees(nftAddress: Hex): Promise<{ base: bigint; maxScore: bigint }> {
+  if (_cachedFees) return _cachedFees;
+  const client = getResearchClient();
+  const [base, maxScore] = await Promise.all([
+    client.readContract({
+      abi: eticaResearchNftArtifact.abi,
+      address: nftAddress,
+      functionName: 'BASE_MINT_FEE_WEI',
+    }) as Promise<bigint>,
+    client.readContract({
+      abi: eticaResearchNftArtifact.abi,
+      address: nftAddress,
+      functionName: 'MAX_SCORE_MINT_FEE_WEI',
+    }) as Promise<bigint>,
+  ]);
+  _cachedFees = { base, maxScore };
+  return _cachedFees;
+}
 
 /** EIP-712 mint authorisation window (relative to now). */
 const SIGNATURE_VALIDITY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -87,9 +110,8 @@ function clampScoreBasisPoints(score: number | undefined): bigint {
   return BigInt(bps);
 }
 
-function computeMintFeeWei(scoreBps: bigint): bigint {
-  // Mirrors contract logic: BASE + (MAX_SCORE * score / 10000).
-  return BASE_MINT_FEE_WEI + (MAX_SCORE_MINT_FEE_WEI * scoreBps) / 10_000n;
+function computeMintFeeWei(base: bigint, maxScore: bigint, scoreBps: bigint): bigint {
+  return base + (maxScore * scoreBps) / 10_000n;
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -159,8 +181,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   const exclusiveUntilMs = candidateAnchorMs + EXCLUSIVE_WINDOW_MS;
   const expiresAtMs = now + SIGNATURE_VALIDITY_MS;
 
+  let fees: { base: bigint; maxScore: bigint };
+  try {
+    fees = await getMintFees(nftAddress);
+  } catch (err) {
+    return json(
+      { error: `Failed to read mint fees from contract: ${err instanceof Error ? err.message : err}` },
+      { status: 502 },
+    );
+  }
+
   const scoreBps = clampScoreBasisPoints(candidate.score);
-  const mintFeeWei = computeMintFeeWei(scoreBps);
+  const mintFeeWei = computeMintFeeWei(fees.base, fees.maxScore, scoreBps);
 
   const payload = {
     parentGoalTitle: goal.title,
@@ -205,8 +237,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     nftAddress,
     chainId,
     mintFeeWei: mintFeeWei.toString(),
-    baseMintFeeWei: BASE_MINT_FEE_WEI.toString(),
-    maxScoreMintFeeWei: MAX_SCORE_MINT_FEE_WEI.toString(),
+    baseMintFeeWei: fees.base.toString(),
+    maxScoreMintFeeWei: fees.maxScore.toString(),
     exclusive: now <= exclusiveUntilMs,
     exclusiveUntil: payload.exclusiveUntil.toString(),
   });
