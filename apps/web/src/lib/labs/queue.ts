@@ -84,13 +84,23 @@ export function restLabsQueue(url: string, token: string): LabsQueue {
     return res.json();
   }
 
+  /** Send a Redis command using the request body (array format) to avoid
+   *  URL-length limits for large values like serialized job payloads. */
+  async function bodyCmd(args: string[]): Promise<unknown> {
+    const res = await fetch(base, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify(args),
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`labs-queue bodyCmd [${args[0]}]: ${res.status}`);
+    return res.json();
+  }
+
   return {
     async enqueue(job) {
       const key = jobKey(job.id);
-      await call(
-        `/set/${encodeURIComponent(key)}/${encodeURIComponent(JSON.stringify(job))}/EX/${JOB_TTL_SECONDS}`,
-        { method: 'POST' },
-      );
+      await bodyCmd(['SET', key, JSON.stringify(job), 'EX', String(JOB_TTL_SECONDS)]);
       await call(`/lpush/${encodeURIComponent(PENDING_KEY)}/${encodeURIComponent(job.id)}`, {
         method: 'POST',
       });
@@ -113,10 +123,7 @@ export function restLabsQueue(url: string, token: string): LabsQueue {
     },
     async put(job) {
       const key = jobKey(job.id);
-      await call(
-        `/set/${encodeURIComponent(key)}/${encodeURIComponent(JSON.stringify(job))}/EX/${JOB_TTL_SECONDS}`,
-        { method: 'POST' },
-      );
+      await bodyCmd(['SET', key, JSON.stringify(job), 'EX', String(JOB_TTL_SECONDS)]);
       await call(
         `/zadd/${encodeURIComponent(FEED_KEY)}/${job.updatedAt}/${encodeURIComponent(job.id)}`,
         { method: 'POST' },

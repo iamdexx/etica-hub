@@ -44,7 +44,10 @@ function systemPrompt(kind: 'continuation' | 'cross-goal'): string {
     'promising next research direction in the same space. Output ONLY one short ' +
     'imperative sentence (max 280 chars) describing the next research prompt. ' +
     'No preamble, no markdown, no quotes. Stay strictly within biomedical, ' +
-    'structural-biology, drug-discovery, or public-health research.';
+    'structural-biology, drug-discovery, or public-health research. ' +
+    'IMPORTANT: Never reference internal identifiers like "Candidate #1" or ' +
+    '"Peptide #2" — instead refer to the actual sequence, target, or mechanism ' +
+    'by name. The prompt will appear on a public research feed.';
   if (kind === 'cross-goal') {
     return (
       base +
@@ -177,11 +180,22 @@ function branchSystemPrompt(): string {
     'with STRICT JSON only (no markdown, no preamble) matching this schema: ' +
     '{"title": <string, ≤140 chars>, "description": <string, ≤800 chars>, ' +
     '"firstPrompt": <string, ≤280 chars>}. Stay strictly within biomedical, ' +
-    'structural-biology, drug-discovery, or public-health research. The ' +
-    'firstPrompt must be ONE imperative sentence describing the next concrete ' +
-    'research action for this specific candidate (e.g. characterise binding ' +
-    'affinity, profile off-targets, design delivery vector). Do NOT echo the ' +
-    'parent goal verbatim — narrow into the candidate.'
+    'structural-biology, drug-discovery, or public-health research.\n\n' +
+    'CRITICAL RULES for the title:\n' +
+    '- The title appears on a PUBLIC research feed read by strangers. It must ' +
+    'be self-explanatory without context.\n' +
+    '- NEVER reference internal numbering like "Candidate #1", "Candidate #3", ' +
+    '"Peptide #2", or any similar ordinal placeholder — these are meaningless ' +
+    'to anyone outside this session.\n' +
+    '- Instead, name the actual molecule, target, or mechanism. Good examples: ' +
+    '"Alpha-helical AMP targeting Candida albicans cell membrane", ' +
+    '"REKVLEEKLLRKEKM stability optimization via salt-bridge engineering", ' +
+    '"pLDDT-guided loop refinement for anti-biofilm peptide".\n' +
+    '- Keep it specific, scientific, and descriptive of the research angle.\n\n' +
+    'The firstPrompt must be ONE imperative sentence describing the next concrete ' +
+    'research action (e.g. characterise binding affinity, profile off-targets, ' +
+    'design delivery vector). Do NOT echo the parent goal verbatim — narrow ' +
+    'into the specific candidate sequence and its biological context.'
   );
 }
 
@@ -192,7 +206,7 @@ function branchUserPrompt(input: BranchInput): string {
     lines.push(`Parent description: ${input.parentGoalDescription.slice(0, 280)}`);
   }
   lines.push(`Parent prompt that surfaced this lead: ${input.parentPrompt.slice(0, 280)}`);
-  lines.push(`Candidate #${input.candidateIndex} (score ${input.candidateScore.toFixed(3)}):`);
+  lines.push(`Lead candidate (pLDDT score ${input.candidateScore.toFixed(3)}):`);
   lines.push(`Sequence: ${input.candidateSequence.slice(0, 400)}`);
   if (input.candidateRationale) {
     lines.push(`Rationale: ${input.candidateRationale.slice(0, 400)}`);
@@ -200,7 +214,10 @@ function branchUserPrompt(input: BranchInput): string {
   if (input.candidateAnalysis) {
     lines.push(`Structural analysis: ${input.candidateAnalysis.slice(0, 600)}`);
   }
-  lines.push('Reply with the JSON object now:');
+  lines.push(
+    'Reply with the JSON object now. Remember: the title must name the actual ' +
+    'molecule/target/mechanism — never say "Candidate #N":',
+  );
   return lines.join('\n');
 }
 
