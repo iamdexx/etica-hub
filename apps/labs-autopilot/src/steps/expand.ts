@@ -177,22 +177,27 @@ function branchSystemPrompt(): string {
     '"firstPrompt": <string, ≤280 chars>}. Stay strictly within biomedical, ' +
     'structural-biology, drug-discovery, or public-health research.\n\n' +
     'CRITICAL RULES for the title:\n' +
-    '- The title appears on a PUBLIC research feed as a TOPIC CHIP read by ' +
-    'strangers. It must describe the RESEARCH TOPIC, not the molecule itself.\n' +
-    '- NEVER include raw amino acid sequences (e.g. MVIAEKMLQIL...) in the title.\n' +
-    '- NEVER reference internal numbering like "Candidate #1" or "Peptide #2".\n' +
-    '- NEVER start with a long uppercase string.\n' +
-    '- The title must describe the RESEARCH ANGLE or MECHANISM being studied.\n' +
+    '- The title appears on a PUBLIC research feed as a TOPIC CHIP. It MUST ' +
+    'follow the format: "Disease/Condition — Research Specifics"\n' +
+    '- MUST start with a specific disease, condition, or therapeutic area ' +
+    '(e.g. cancer type, infection, metabolic disorder)\n' +
+    '- Follow with " — " (em dash) then the specific research angle\n' +
+    '- NEVER include raw amino acid sequences (e.g. MVIAEKMLQIL...)\n' +
+    '- NEVER reference internal numbering like "Candidate #1" or "Peptide #2"\n' +
+    "- If the disease isn't obvious, infer from the target " +
+    '(EGFR → cancer, antimicrobial peptide → infectious disease, ' +
+    'cell-penetrating peptide → drug delivery)\n' +
     '- Good examples:\n' +
-    '  "Alpha-helical AMP targeting Candida albicans"\n' +
-    '  "Salt-bridge engineering for cell-penetrating peptide stability"\n' +
-    '  "pLDDT-guided loop refinement for anti-biofilm activity"\n' +
-    '  "EGFR kinase domain binding optimization"\n' +
-    '  "Threonine substitution effects on helix thermal stability"\n' +
+    '  "Ovarian Cancer — EGFR Loop Peptide Binding Optimization"\n' +
+    '  "Glioblastoma — Platinum Nanoparticle-Peptide Delivery"\n' +
+    '  "Bacterial Biofilm Infections — Anti-Biofilm Peptide Refinement"\n' +
+    '  "Breast Cancer — HER2-Targeting Cell-Penetrating Peptide"\n' +
+    '  "Antimicrobial Resistance — Membrane-Disrupting AMP Design"\n' +
     '- BAD examples (do NOT produce these):\n' +
     '  "MVIAEKMLQILADAMEAFASALDMATFRP Loop Stabilization" (has raw sequence)\n' +
     '  "Optimize Candidate #3 Peptide" (has ordinal reference)\n' +
-    '  "MAMQEMVQILADPMLAFASALEDAAGALMAPIYTKSFR" (just a sequence)\n' +
+    '  "Loop Refinement" (too vague, no disease context)\n' +
+    '  "EGFR Binding Optimization" (missing disease prefix)\n' +
     '- Keep under 80 characters. Be concise and topic-focused.\n\n' +
     'The firstPrompt must be ONE imperative sentence describing the next concrete ' +
     'research action (e.g. characterise binding affinity, profile off-targets, ' +
