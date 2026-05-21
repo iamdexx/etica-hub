@@ -22,9 +22,11 @@ function json(data: unknown, init?: ResponseInit): Response {
 }
 
 const CANDIDATE_PATTERN = /candidate\s*#?\d/i;
+// Matches titles that are mostly uppercase amino acid sequences (≥12 consecutive uppercase letters)
+const RAW_SEQUENCE_PATTERN = /[A-Z]{12,}/;
 
 function needsRename(title: string): boolean {
-  return CANDIDATE_PATTERN.test(title);
+  return CANDIDATE_PATTERN.test(title) || RAW_SEQUENCE_PATTERN.test(title);
 }
 
 async function generateTitle(description: string, oldTitle: string): Promise<string | null> {
@@ -40,11 +42,16 @@ async function generateTitle(description: string, oldTitle: string): Promise<str
   const key = keys[Math.floor(Math.random() * keys.length)];
 
   const prompt =
-    `You are a scientific title generator. Given the following research branch description, ` +
-    `produce ONE concise scientific title (max 120 chars) that names the actual molecule, ` +
-    `target protein, mechanism, or research angle. Do NOT use generic words like "Candidate", ` +
-    `"Optimize", or ordinal numbers. Just output the title text — no quotes, no explanation.\n\n` +
-    `Old title (bad): ${oldTitle}\n` +
+    `You are a scientific title generator for a public research feed. Given the description ` +
+    `below, produce ONE concise title (max 80 chars) describing the RESEARCH ANGLE — ` +
+    `e.g. "EGFR loop stabilization via salt-bridge engineering" or ` +
+    `"pLDDT-guided helix refinement for anti-biofilm peptide".\n\n` +
+    `STRICT RULES:\n` +
+    `- NEVER include raw amino acid sequences (like MVIAEKMLQIL...) in the title\n` +
+    `- NEVER start with a long uppercase string\n` +
+    `- DO name the target protein, mutation type, or mechanism\n` +
+    `- Keep it under 80 characters\n` +
+    `- No quotes or explanations — just the title\n\n` +
     `Description: ${description.slice(0, 600)}`;
 
   try {
@@ -73,8 +80,9 @@ async function generateTitle(description: string, oldTitle: string): Promise<str
       console.error(`[rename-goals] bad LLM output: ${text?.slice(0, 50) ?? 'empty'}`);
       return null;
     }
-    // Reject if LLM still produced a "Candidate #N" title
+    // Reject if LLM still produced a bad title
     if (CANDIDATE_PATTERN.test(text)) return null;
+    if (RAW_SEQUENCE_PATTERN.test(text)) return null;
     return text;
   } catch (err) {
     console.error('[rename-goals] generateTitle error:', err);
