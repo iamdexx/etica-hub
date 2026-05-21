@@ -134,15 +134,16 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const goal = await getGoal(body.goalId);
   if (!goal) return json({ error: 'Goal not found' }, { status: 404 });
 
-  let newTitle = body.title?.trim();
+  let newTitle: string | undefined = body.title?.trim() || undefined;
   if (!newTitle) {
     const parent = goal.parentGoalId ? await getGoal(goal.parentGoalId) : null;
-    newTitle = await generateTitle(
-      goal.description,
-      goal.title,
-      parent?.title ?? undefined,
-      parent?.description ?? undefined,
-    );
+    newTitle =
+      (await generateTitle(
+        goal.description,
+        goal.title,
+        parent?.title ?? undefined,
+        parent?.description ?? undefined,
+      )) ?? undefined;
   }
   if (!newTitle) return json({ error: 'Could not generate title' }, { status: 422 });
 
