@@ -17,12 +17,7 @@
  * a malformed follow-up.
  */
 
-import {
-  groqChat,
-  GROQ_MODEL_PRIMARY,
-  GROQ_MODEL_FALLBACK,
-  readGroqKeyPool,
-} from '../groq';
+import { groqChat, GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK, readGroqKeyPool } from '../groq';
 
 const MAX_PROMPT_CHARS = 280;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -52,7 +47,7 @@ function systemPrompt(kind: 'continuation' | 'cross-goal'): string {
     return (
       base +
       ' This is a cross-goal seed: the next prompt should bridge the original ' +
-      'finding into the related goal\'s problem area.'
+      "finding into the related goal's problem area."
     );
   }
   return (
@@ -178,20 +173,27 @@ function branchSystemPrompt(): string {
     'A parent research goal has produced a high-scoring candidate worth a ' +
     'dedicated follow-up thread. You will design that branch goal. Reply ' +
     'with STRICT JSON only (no markdown, no preamble) matching this schema: ' +
-    '{"title": <string, ≤140 chars>, "description": <string, ≤800 chars>, ' +
+    '{"title": <string, ≤80 chars>, "description": <string, ≤800 chars>, ' +
     '"firstPrompt": <string, ≤280 chars>}. Stay strictly within biomedical, ' +
     'structural-biology, drug-discovery, or public-health research.\n\n' +
     'CRITICAL RULES for the title:\n' +
-    '- The title appears on a PUBLIC research feed read by strangers. It must ' +
-    'be self-explanatory without context.\n' +
-    '- NEVER reference internal numbering like "Candidate #1", "Candidate #3", ' +
-    '"Peptide #2", or any similar ordinal placeholder — these are meaningless ' +
-    'to anyone outside this session.\n' +
-    '- Instead, name the actual molecule, target, or mechanism. Good examples: ' +
-    '"Alpha-helical AMP targeting Candida albicans cell membrane", ' +
-    '"REKVLEEKLLRKEKM stability optimization via salt-bridge engineering", ' +
-    '"pLDDT-guided loop refinement for anti-biofilm peptide".\n' +
-    '- Keep it specific, scientific, and descriptive of the research angle.\n\n' +
+    '- The title appears on a PUBLIC research feed as a TOPIC CHIP read by ' +
+    'strangers. It must describe the RESEARCH TOPIC, not the molecule itself.\n' +
+    '- NEVER include raw amino acid sequences (e.g. MVIAEKMLQIL...) in the title.\n' +
+    '- NEVER reference internal numbering like "Candidate #1" or "Peptide #2".\n' +
+    '- NEVER start with a long uppercase string.\n' +
+    '- The title must describe the RESEARCH ANGLE or MECHANISM being studied.\n' +
+    '- Good examples:\n' +
+    '  "Alpha-helical AMP targeting Candida albicans"\n' +
+    '  "Salt-bridge engineering for cell-penetrating peptide stability"\n' +
+    '  "pLDDT-guided loop refinement for anti-biofilm activity"\n' +
+    '  "EGFR kinase domain binding optimization"\n' +
+    '  "Threonine substitution effects on helix thermal stability"\n' +
+    '- BAD examples (do NOT produce these):\n' +
+    '  "MVIAEKMLQILADAMEAFASALDMATFRP Loop Stabilization" (has raw sequence)\n' +
+    '  "Optimize Candidate #3 Peptide" (has ordinal reference)\n' +
+    '  "MAMQEMVQILADPMLAFASALEDAAGALMAPIYTKSFR" (just a sequence)\n' +
+    '- Keep under 80 characters. Be concise and topic-focused.\n\n' +
     'The firstPrompt must be ONE imperative sentence describing the next concrete ' +
     'research action (e.g. characterise binding affinity, profile off-targets, ' +
     'design delivery vector). Do NOT echo the parent goal verbatim — narrow ' +
@@ -216,7 +218,7 @@ function branchUserPrompt(input: BranchInput): string {
   }
   lines.push(
     'Reply with the JSON object now. Remember: the title must name the actual ' +
-    'molecule/target/mechanism — never say "Candidate #N":',
+      'molecule/target/mechanism — never say "Candidate #N":',
   );
   return lines.join('\n');
 }
@@ -243,7 +245,10 @@ function parseBranchPlan(raw: string): BranchPlan | null {
       : '';
   const firstPrompt =
     typeof obj.firstPrompt === 'string'
-      ? obj.firstPrompt.trim().replace(/^["'`]+|["'`]+$/g, '').slice(0, MAX_PROMPT_CHARS)
+      ? obj.firstPrompt
+          .trim()
+          .replace(/^["'`]+|["'`]+$/g, '')
+          .slice(0, MAX_PROMPT_CHARS)
       : '';
   if (title.length < 8 || firstPrompt.length < 20) return null;
   return { title, description, firstPrompt };
