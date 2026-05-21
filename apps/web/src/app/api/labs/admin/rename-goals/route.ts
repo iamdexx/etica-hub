@@ -116,6 +116,41 @@ async function generateTitle(
   }
 }
 
+/**
+ * PATCH — rename a single goal by id.
+ * Body: { goalId: string, title?: string }
+ * If title is provided, use it directly. Otherwise generate one via LLM.
+ */
+export async function PATCH(req: NextRequest): Promise<Response> {
+  const auth = requireWorkerAuth(req);
+  if (!auth.ok) return json(auth.body, { status: auth.status });
+
+  const body = (await req.json().catch(() => ({}))) as {
+    goalId?: string;
+    title?: string;
+  };
+  if (!body.goalId) return json({ error: 'goalId required' }, { status: 400 });
+
+  const goal = await getGoal(body.goalId);
+  if (!goal) return json({ error: 'Goal not found' }, { status: 404 });
+
+  let newTitle: string | undefined = body.title?.trim() || undefined;
+  if (!newTitle) {
+    const parent = goal.parentGoalId ? await getGoal(goal.parentGoalId) : null;
+    newTitle =
+      (await generateTitle(
+        goal.description,
+        goal.title,
+        parent?.title ?? undefined,
+        parent?.description ?? undefined,
+      )) ?? undefined;
+  }
+  if (!newTitle) return json({ error: 'Could not generate title' }, { status: 422 });
+
+  await updateGoal(goal.id, { title: newTitle });
+  return json({ id: goal.id, oldTitle: goal.title, newTitle });
+}
+
 export async function POST(req: NextRequest): Promise<Response> {
   const auth = requireWorkerAuth(req);
   if (!auth.ok) return json(auth.body, { status: auth.status });
