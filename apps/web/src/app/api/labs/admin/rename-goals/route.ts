@@ -10,7 +10,7 @@
 
 import { NextRequest } from 'next/server';
 
-import { listGoals, updateGoal } from '@/lib/labs/goal-store';
+import { getGoal, listGoals, updateGoal } from '@/lib/labs/goal-store';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 
 export const runtime = 'nodejs';
@@ -22,28 +22,24 @@ function json(data: unknown, init?: ResponseInit): Response {
 }
 
 const CANDIDATE_PATTERN = /candidate\s*#?\d/i;
-// Matches titles that are mostly uppercase amino acid sequences (≥12 consecutive uppercase letters)
 const RAW_SEQUENCE_PATTERN = /[A-Z]{12,}/;
+// Titles must start with a disease/condition prefix like "Ovarian Cancer —"
+const HAS_DISEASE_PREFIX = /^[A-Z][a-zA-Z\s\/'-]+\s[—–\-]+\s/;
 
 function needsRename(title: string): boolean {
-  return CANDIDATE_PATTERN.test(title) || RAW_SEQUENCE_PATTERN.test(title);
+  if (CANDIDATE_PATTERN.test(title)) return true;
+  if (RAW_SEQUENCE_PATTERN.test(title)) return true;
+  // Rename if missing disease/condition prefix
+  if (!HAS_DISEASE_PREFIX.test(title)) return true;
+  return false;
 }
 
-/** Strip raw sequences from a title to produce a usable fallback. */
-function stripSequenceFallback(title: string): string | null {
-  // Remove any 12+ uppercase letter runs and clean up
-  const cleaned = title
-    .replace(/[A-Z]{12,}/g, '')
-    .replace(/^\s*[-–—:,.\s]+/, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  // Must have at least 15 meaningful chars left
-  if (cleaned.length < 15) return null;
-  // Capitalize first letter
-  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-}
-
-async function generateTitle(description: string, oldTitle: string): Promise<string | null> {
+async function generateTitle(
+  description: string,
+  oldTitle: string,
+  parentTitle?: string,
+  parentDescription?: string,
+): Promise<string | null> {
   const keys = (
     process.env.GROQ_API_KEYS ??
     process.env.GROQ_API_KEY ??
@@ -55,18 +51,34 @@ async function generateTitle(description: string, oldTitle: string): Promise<str
   if (!keys.length) return null;
   const key = keys[Math.floor(Math.random() * keys.length)];
 
+  const contextBlock = parentTitle
+    ? `\nParent research topic: ${parentTitle.slice(0, 200)}` +
+      (parentDescription ? `\nParent description: ${parentDescription.slice(0, 300)}` : '')
+    : '';
+
   const prompt =
-    `You are a scientific title generator for a public research feed. Given the description ` +
-    `below, produce ONE concise title (max 80 chars) describing the RESEARCH ANGLE — ` +
-    `e.g. "EGFR loop stabilization via salt-bridge engineering" or ` +
-    `"pLDDT-guided helix refinement for anti-biofilm peptide".\n\n` +
+    `You are a scientific title generator for a public research feed browsed by ` +
+    `researchers and the general public.\n\n` +
+    `FORMAT REQUIRED: "Disease/Condition — Research Specifics"\n\n` +
+    `GOOD examples:\n` +
+    `- "Ovarian Cancer — EGFR Loop Peptide Binding Optimization"\n` +
+    `- "Glioblastoma — Platinum Nanoparticle-Peptide Delivery"\n` +
+    `- "Type 2 Diabetes — GLP-1 Receptor Agonist Design"\n` +
+    `- "Bacterial Biofilm Infections — Anti-Biofilm Peptide Refinement"\n` +
+    `- "Breast Cancer — HER2-Targeting Cell-Penetrating Peptide"\n` +
+    `- "Antimicrobial Resistance — Membrane-Disrupting AMP Design"\n\n` +
     `STRICT RULES:\n` +
-    `- NEVER include raw amino acid sequences (like MVIAEKMLQIL...) in the title\n` +
-    `- NEVER start with a long uppercase string\n` +
-    `- DO name the target protein, mutation type, or mechanism\n` +
-    `- Keep it under 80 characters\n` +
-    `- No quotes or explanations — just the title\n\n` +
-    `Description: ${description.slice(0, 600)}`;
+    `- MUST start with a specific disease, condition, or therapeutic area\n` +
+    `- Follow with " — " (em dash) then the research specifics\n` +
+    `- NEVER include raw amino acid sequences\n` +
+    `- NEVER use vague terms like "Candidate #N" or "Loop Refinement" alone\n` +
+    `- If the disease isn't obvious from the description, infer from the peptide ` +
+    `target (e.g. EGFR → cancer, antimicrobial peptide → infectious disease)\n` +
+    `- Keep under 80 characters total\n` +
+    `- Output ONLY the title, no quotes or explanation\n\n` +
+    `Current title: ${oldTitle.slice(0, 120)}\n` +
+    `Description: ${description.slice(0, 400)}` +
+    contextBlock;
 
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -136,13 +148,28 @@ export async function POST(req: NextRequest): Promise<Response> {
   const startTime = Date.now();
   const MAX_RUNTIME_MS = 50_000; // bail before Vercel's 60s timeout
 
+  // Batch-fetch parent goals for context
+  const parentCache = new Map<string, { title: string; description: string }>();
+  for (const goal of toRename) {
+    if (goal.parentGoalId && !parentCache.has(goal.parentGoalId)) {
+      const parent = await getGoal(goal.parentGoalId);
+      if (parent)
+        parentCache.set(goal.parentGoalId, {
+          title: parent.title,
+          description: parent.description,
+        });
+    }
+  }
+
   for (const goal of toRename) {
     if (Date.now() - startTime > MAX_RUNTIME_MS) break;
-    let newTitle = await generateTitle(goal.description, goal.title);
-    // Fallback: strip raw sequences from existing title
-    if (!newTitle) {
-      newTitle = stripSequenceFallback(goal.title);
-    }
+    const parent = goal.parentGoalId ? parentCache.get(goal.parentGoalId) : undefined;
+    const newTitle = await generateTitle(
+      goal.description,
+      goal.title,
+      parent?.title,
+      parent?.description,
+    );
     if (!newTitle) {
       skipped += 1;
       continue;
