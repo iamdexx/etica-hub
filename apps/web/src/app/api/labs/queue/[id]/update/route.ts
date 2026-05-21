@@ -165,7 +165,15 @@ export async function POST(
   }
 
   const queue = labsQueue();
-  const existing = await queue.get(id);
+
+  let existing: LabsJob | null;
+  try {
+    existing = await queue.get(id);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[labs/update] queue.get failed for ${id}:`, msg);
+    return json({ error: `queue.get failed: ${msg}` }, { status: 502 });
+  }
   if (!existing) return json({ error: 'Job not found.' }, { status: 404 });
 
   const newEvents = sanitizeEvents(body.events);
@@ -189,7 +197,14 @@ export async function POST(
     result,
   };
 
-  await queue.put(next);
+  try {
+    await queue.put(next);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const payloadSize = JSON.stringify(next).length;
+    console.error(`[labs/update] queue.put failed for ${id} (${payloadSize} bytes):`, msg);
+    return json({ error: `queue.put failed (${payloadSize} bytes): ${msg}` }, { status: 502 });
+  }
 
   // Auto-enqueue fold retries for any candidate the worker published
   // with `structurePending: true`. The cron at /api/labs/fold/retry
@@ -199,7 +214,7 @@ export async function POST(
   if (result?.candidates?.length) {
     try {
       const retryQ = foldRetryQueue();
-      const now = Date.now();
+      const retryNow = Date.now();
       const initialDelay = nextRetryDelayMs(1) ?? 5 * 60 * 1000;
       for (const c of result.candidates) {
         if (!c.structurePending) continue;
@@ -211,8 +226,8 @@ export async function POST(
           jobId: id,
           candidateIndex: c.index,
           sequence: c.sequence,
-          firstQueuedAt: now,
-          nextRetryAt: now + initialDelay,
+          firstQueuedAt: retryNow,
+          nextRetryAt: retryNow + initialDelay,
           attempts: 0,
           lastError: c.error,
         });
