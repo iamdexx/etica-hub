@@ -29,6 +29,20 @@ function needsRename(title: string): boolean {
   return CANDIDATE_PATTERN.test(title) || RAW_SEQUENCE_PATTERN.test(title);
 }
 
+/** Strip raw sequences from a title to produce a usable fallback. */
+function stripSequenceFallback(title: string): string | null {
+  // Remove any 12+ uppercase letter runs and clean up
+  const cleaned = title
+    .replace(/[A-Z]{12,}/g, '')
+    .replace(/^\s*[-–—:,.\s]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Must have at least 15 meaningful chars left
+  if (cleaned.length < 15) return null;
+  // Capitalize first letter
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
 async function generateTitle(description: string, oldTitle: string): Promise<string | null> {
   const keys = (
     process.env.GROQ_API_KEYS ??
@@ -124,7 +138,11 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   for (const goal of toRename) {
     if (Date.now() - startTime > MAX_RUNTIME_MS) break;
-    const newTitle = await generateTitle(goal.description, goal.title);
+    let newTitle = await generateTitle(goal.description, goal.title);
+    // Fallback: strip raw sequences from existing title
+    if (!newTitle) {
+      newTitle = stripSequenceFallback(goal.title);
+    }
     if (!newTitle) {
       skipped += 1;
       continue;
