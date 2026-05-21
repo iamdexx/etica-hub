@@ -1,0 +1,100 @@
+/**
+ * One-time admin endpoint: renames branch goals whose titles contain
+ * vague internal references like "Candidate #N". Uses the goal's own
+ * description to derive a meaningful scientific title via Groq.
+ *
+ * POST /api/labs/admin/rename-goals
+ *   headers: { x-labs-worker-token: <LABS_AUTOPILOT_TOKEN> }
+ *   returns: { renamed: { id, oldTitle, newTitle }[], skipped: number }
+ */
+
+import { NextRequest } from 'next/server';
+
+import { listGoals, updateGoal } from '@/lib/labs/goal-store';
+import { requireWorkerAuth } from '@/lib/labs/worker-auth';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
+function json(data: unknown, init?: ResponseInit): Response {
+  return Response.json(data, init);
+}
+
+const CANDIDATE_PATTERN = /candidate\s*#?\d/i;
+
+function needsRename(title: string): boolean {
+  return CANDIDATE_PATTERN.test(title);
+}
+
+async function generateTitle(description: string, oldTitle: string): Promise<string | null> {
+  const keys = (process.env.GROQ_API_KEYS ?? process.env.GROQ_API_KEY ?? '')
+    .split(',')
+    .filter(Boolean);
+  if (!keys.length) return null;
+  const key = keys[Math.floor(Math.random() * keys.length)];
+
+  const prompt =
+    `You are a scientific title generator. Given the following research branch description, ` +
+    `produce ONE concise scientific title (max 120 chars) that names the actual molecule, ` +
+    `target protein, mechanism, or research angle. Do NOT use generic words like "Candidate", ` +
+    `"Optimize", or ordinal numbers. Just output the title text — no quotes, no explanation.\n\n` +
+    `Old title (bad): ${oldTitle}\n` +
+    `Description: ${description.slice(0, 600)}`;
+
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${key}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 80,
+        temperature: 0.3,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = data.choices?.[0]?.message?.content?.trim();
+    if (!text || text.length > 140) return null;
+    // Reject if LLM still produced a "Candidate #N" title
+    if (CANDIDATE_PATTERN.test(text)) return null;
+    return text;
+  } catch {
+    return null;
+  }
+}
+
+export async function POST(req: NextRequest): Promise<Response> {
+  const auth = requireWorkerAuth(req);
+  if (!auth.ok) return json(auth.body, { status: auth.status });
+
+  const allGoals = await listGoals(200, 0);
+  const toRename = allGoals.filter((g) => g.origin === 'branch' && needsRename(g.title));
+
+  if (!toRename.length) {
+    return json({ renamed: [], skipped: allGoals.length, message: 'No goals need renaming.' });
+  }
+
+  const renamed: Array<{ id: string; oldTitle: string; newTitle: string }> = [];
+  let skipped = 0;
+
+  for (const goal of toRename) {
+    const newTitle = await generateTitle(goal.description, goal.title);
+    if (!newTitle) {
+      skipped += 1;
+      continue;
+    }
+    await updateGoal(goal.id, { title: newTitle });
+    renamed.push({ id: goal.id, oldTitle: goal.title, newTitle });
+    // Small delay to avoid Groq rate limits
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+
+  return json({ renamed, skipped, total: toRename.length });
+}
