@@ -128,4 +128,8 @@ export interface LabsFeedEntry {
   parentGoalId?: string;
   /** Ancestor goal title — surfaced so branches read as "Branch from <X>". */
   parentGoalTitle?: string;
+  /** Root (top-level user-submitted) goal id — resolved by walking the full ancestor chain. */
+  rootGoalId?: string;
+  /** Root goal title — used as the topic chip label for grouping. */
+  rootGoalTitle?: string;
 }

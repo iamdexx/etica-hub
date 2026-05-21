@@ -120,10 +120,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (typeof body.goalId === 'string' && body.goalId.trim()) {
     const goal = await getGoal(body.goalId.trim()).catch(() => null);
     if (!goal) {
-      return json(
-        { error: 'Goal not found.' },
-        { status: 404, headers: limit.headers },
-      );
+      return json({ error: 'Goal not found.' }, { status: 404, headers: limit.headers });
     }
     const liveStatus = await getStatus('goal', goal.id).catch(() => goal.moderation);
     if (liveStatus !== 'visible' && liveStatus !== 'operator-approved') {
@@ -247,7 +244,10 @@ export async function GET(_req: NextRequest): Promise<Response> {
   for (const entry of entries) {
     if (entry.goalId) goalIds.add(entry.goalId);
   }
-  const goals = new Map<string, { title: string; origin?: 'user' | 'branch'; parentGoalId?: string }>();
+  const goals = new Map<
+    string,
+    { title: string; origin?: 'user' | 'branch'; parentGoalId?: string }
+  >();
   await Promise.all(
     Array.from(goalIds).map(async (id) => {
       const goal = await getGoal(id).catch(() => null);
@@ -260,35 +260,65 @@ export async function GET(_req: NextRequest): Promise<Response> {
       }
     }),
   );
-  // Second pass: any goal referenced as a parent that we haven't fetched yet.
-  const parentIds = new Set<string>();
-  for (const g of goals.values()) {
-    if (g.parentGoalId && !goals.has(g.parentGoalId)) parentIds.add(g.parentGoalId);
+
+  // Walk up the ancestor chain to find the ROOT goal (user-submitted)
+  // for each goal. We fetch ancestors iteratively until we hit a goal
+  // with no parentGoalId (max 10 levels to prevent infinite loops).
+  const MAX_DEPTH = 10;
+  let fetchMore = true;
+  for (let depth = 0; depth < MAX_DEPTH && fetchMore; depth++) {
+    const missing = new Set<string>();
+    for (const g of goals.values()) {
+      if (g.parentGoalId && !goals.has(g.parentGoalId)) missing.add(g.parentGoalId);
+    }
+    if (missing.size === 0) {
+      fetchMore = false;
+      break;
+    }
+    await Promise.all(
+      Array.from(missing).map(async (id) => {
+        const goal = await getGoal(id).catch(() => null);
+        if (goal) {
+          goals.set(id, {
+            title: goal.title,
+            origin: goal.origin,
+            parentGoalId: goal.parentGoalId,
+          });
+        }
+      }),
+    );
   }
-  await Promise.all(
-    Array.from(parentIds).map(async (id) => {
-      const goal = await getGoal(id).catch(() => null);
-      if (goal) {
-        goals.set(id, {
-          title: goal.title,
-          origin: goal.origin,
-          parentGoalId: goal.parentGoalId,
-        });
+
+  // Resolve the root ancestor for a given goal id.
+  function findRoot(id: string): { id: string; title: string } | undefined {
+    const visited = new Set<string>();
+    let cur = id;
+    while (cur && !visited.has(cur)) {
+      visited.add(cur);
+      const g = goals.get(cur);
+      if (!g) break;
+      if (!g.parentGoalId || !goals.has(g.parentGoalId)) {
+        return { id: cur, title: g.title };
       }
-    }),
-  );
+      cur = g.parentGoalId;
+    }
+    return undefined;
+  }
 
   const enriched = entries.map((entry) => {
     if (!entry.goalId) return entry;
     const goal = goals.get(entry.goalId);
     if (!goal) return entry;
     const parent = goal.parentGoalId ? goals.get(goal.parentGoalId) : undefined;
+    const root = findRoot(entry.goalId);
     return {
       ...entry,
       goalTitle: goal.title,
       goalOrigin: goal.origin,
       parentGoalId: goal.parentGoalId,
       parentGoalTitle: parent?.title,
+      rootGoalId: root?.id,
+      rootGoalTitle: root?.title,
     };
   });
 

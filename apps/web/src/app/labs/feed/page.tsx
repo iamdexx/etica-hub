@@ -112,25 +112,20 @@ export default function LabsFeedPage(): JSX.Element {
   }, [tick]);
 
   // Distinct research topics (root goals) across all visible entries.
-  // Branch entries roll up to their parent topic so the chip-set shows
-  // a single "Brain cancer" pill rather than one per child chain.
+  // Every entry resolves to its root ancestor (the original user-submitted
+  // goal) so the chip-set shows one pill per research programme.
   const topics = new Map<string, string>();
   for (const e of entries) {
     if (!e.goalId) continue;
-    const rootId =
-      e.goalOrigin === 'branch' && e.parentGoalId ? e.parentGoalId : e.goalId;
-    const rootTitle =
-      e.goalOrigin === 'branch' && e.parentGoalTitle
-        ? e.parentGoalTitle
-        : e.goalTitle;
+    const rootId = e.rootGoalId ?? e.parentGoalId ?? e.goalId;
+    const rootTitle = e.rootGoalTitle ?? e.parentGoalTitle ?? e.goalTitle;
     if (!rootTitle) continue;
     if (!topics.has(rootId)) topics.set(rootId, rootTitle);
   }
 
   const filtered = topicFilter
     ? entries.filter((e) => {
-        const rootId =
-          e.goalOrigin === 'branch' && e.parentGoalId ? e.parentGoalId : e.goalId;
+        const rootId = e.rootGoalId ?? e.parentGoalId ?? e.goalId;
         return rootId === topicFilter;
       })
     : entries;
@@ -148,9 +143,8 @@ export default function LabsFeedPage(): JSX.Element {
               Research feed
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-white/65">
-              Live view of every Autopilot run. Agents pick up prompts from the queue,
-              draft a research plan, fold candidate sequences, and post results here in
-              real time.
+              Live view of every Autopilot run. Agents pick up prompts from the queue, draft a
+              research plan, fold candidate sequences, and post results here in real time.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -213,8 +207,7 @@ export default function LabsFeedPage(): JSX.Element {
           </button>
           {Array.from(topics.entries()).map(([id, title]) => {
             const count = entries.filter((e) => {
-              const rootId =
-                e.goalOrigin === 'branch' && e.parentGoalId ? e.parentGoalId : e.goalId;
+              const rootId = e.rootGoalId ?? e.parentGoalId ?? e.goalId;
               return rootId === id;
             }).length;
             const active = topicFilter === id;
@@ -245,8 +238,8 @@ export default function LabsFeedPage(): JSX.Element {
             <Link href="/labs" className="text-brand-accent hover:underline">
               /labs
             </Link>{' '}
-            and click <span className="text-white/85">Run on Autopilot</span> to start the
-            first one.
+            and click <span className="text-white/85">Run on Autopilot</span> to start the first
+            one.
           </p>
         </div>
       )}
@@ -254,9 +247,10 @@ export default function LabsFeedPage(): JSX.Element {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((entry) => {
           const isBranch = entry.goalOrigin === 'branch';
+          const rootLabel = entry.rootGoalTitle ?? entry.parentGoalTitle;
           const topicLabel = entry.goalTitle
-            ? isBranch && entry.parentGoalTitle
-              ? `Branch from: ${entry.parentGoalTitle}`
+            ? isBranch && rootLabel
+              ? rootLabel
               : entry.goalTitle
             : null;
           return (
