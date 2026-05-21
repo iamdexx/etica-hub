@@ -28,7 +28,12 @@ function needsRename(title: string): boolean {
 }
 
 async function generateTitle(description: string, oldTitle: string): Promise<string | null> {
-  const keys = (process.env.GROQ_API_KEYS ?? process.env.GROQ_API_KEY ?? '')
+  const keys = (
+    process.env.GROQ_API_KEYS ??
+    process.env.GROQ_API_KEY ??
+    process.env.AIBOT_LLM_GROQ_API_KEY ??
+    ''
+  )
     .split(',')
     .filter(Boolean);
   if (!keys.length) return null;
@@ -56,16 +61,23 @@ async function generateTitle(description: string, oldTitle: string): Promise<str
         temperature: 0.3,
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[rename-goals] Groq ${res.status}: ${await res.text().catch(() => '')}`);
+      return null;
+    }
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
-    const text = data.choices?.[0]?.message?.content?.trim();
-    if (!text || text.length > 140) return null;
+    const text = data.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, '');
+    if (!text || text.length > 140) {
+      console.error(`[rename-goals] bad LLM output: ${text?.slice(0, 50) ?? 'empty'}`);
+      return null;
+    }
     // Reject if LLM still produced a "Candidate #N" title
     if (CANDIDATE_PATTERN.test(text)) return null;
     return text;
-  } catch {
+  } catch (err) {
+    console.error('[rename-goals] generateTitle error:', err);
     return null;
   }
 }
@@ -73,6 +85,22 @@ async function generateTitle(description: string, oldTitle: string): Promise<str
 export async function POST(req: NextRequest): Promise<Response> {
   const auth = requireWorkerAuth(req);
   if (!auth.ok) return json(auth.body, { status: auth.status });
+
+  // Check Groq key availability before starting
+  const hasKey = !!(
+    process.env.GROQ_API_KEYS ??
+    process.env.GROQ_API_KEY ??
+    process.env.AIBOT_LLM_GROQ_API_KEY
+  );
+  if (!hasKey) {
+    return json(
+      {
+        error:
+          'No Groq API key available (checked GROQ_API_KEYS, GROQ_API_KEY, AIBOT_LLM_GROQ_API_KEY)',
+      },
+      { status: 503 },
+    );
+  }
 
   const allGoals = await listGoals(200, 0);
   const toRename = allGoals.filter((g) => g.origin === 'branch' && needsRename(g.title));
