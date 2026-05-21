@@ -137,7 +137,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const allGoals = await listGoals(200, 0);
-  const toRename = allGoals.filter((g) => g.origin === 'branch' && needsRename(g.title));
+  const toRename = allGoals.filter((g) => needsRename(g.title));
 
   if (!toRename.length) {
     return json({ renamed: [], skipped: allGoals.length, message: 'No goals need renaming.' });
