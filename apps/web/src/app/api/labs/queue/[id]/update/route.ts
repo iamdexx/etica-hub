@@ -48,8 +48,8 @@ const VALID_EVENT_KINDS = new Set([
   'goal_context',
 ]);
 const MAX_EVENTS_PER_UPDATE = 50;
-const MAX_PDB_PER_RESULT = 4;
-const MAX_PDB_CHARS = 200_000; // ~200KB per PDB; trimmed beyond this
+const MAX_PDB_PER_RESULT = 1;
+const MAX_PDB_CHARS = 50_000; // ~50KB per PDB; trimmed beyond this
 const MAX_ANALYSIS_CHARS = 4000;
 
 function json(data: unknown, init?: ResponseInit): Response {
@@ -193,7 +193,7 @@ export async function POST(
     status: statusUpdate,
     iterations: existing.iterations + iterationsDelta,
     updatedAt: now,
-    events: [...existing.events, ...newEvents].slice(-200),
+    events: [...existing.events, ...newEvents].slice(-50),
     result,
   };
 
