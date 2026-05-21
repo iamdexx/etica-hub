@@ -24,7 +24,7 @@ const PENDING_KEY = 'labs:queue:pending';
 const FEED_KEY = 'labs:feed';
 const JOB_PREFIX = 'labs:job:';
 const RECENT_FEED_CAP = 50;
-const JOB_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const JOB_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 export interface LabsQueue {
   /** Push a new job onto the pending queue + register it in the feed index. */
