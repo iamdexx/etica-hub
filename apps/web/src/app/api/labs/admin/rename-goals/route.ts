@@ -119,8 +119,11 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const renamed: Array<{ id: string; oldTitle: string; newTitle: string }> = [];
   let skipped = 0;
+  const startTime = Date.now();
+  const MAX_RUNTIME_MS = 50_000; // bail before Vercel's 60s timeout
 
   for (const goal of toRename) {
+    if (Date.now() - startTime > MAX_RUNTIME_MS) break;
     const newTitle = await generateTitle(goal.description, goal.title);
     if (!newTitle) {
       skipped += 1;
@@ -129,7 +132,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     await updateGoal(goal.id, { title: newTitle });
     renamed.push({ id: goal.id, oldTitle: goal.title, newTitle });
     // Small delay to avoid Groq rate limits
-    await new Promise((r) => setTimeout(r, 1200));
+    await new Promise((r) => setTimeout(r, 400));
   }
 
   return json({ renamed, skipped, total: toRename.length });
