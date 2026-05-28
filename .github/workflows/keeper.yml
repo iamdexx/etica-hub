@@ -1,11 +1,16 @@
 name: Keeper (dry-run)
 
-# Scheduled keeper smoke check. Never submits transactions — the entry point
-# (`apps/keeper/src/dry-run.ts`) force-enables dryRun.
+# Scheduled keeper that reads open orders from the on-chain OrderRegistry
+# and logs "would attempt fill" lines. Never submits transactions — the
+# entry point (`apps/keeper/src/dry-run.ts`) force-enables dryRun.
 #
-# This scheduled workflow is intentionally a no-op until the Etica RPC endpoint
-# and registry are known healthy. Use a separate live/manual workflow when a
-# real keeper should read from chain.
+# Runs every 5 minutes. If the registry is not yet deployed (the default
+# today — DEPLOYMENTS[61803].orderRegistry is zero), the workflow exits
+# cleanly with a "skipped" message and does not fail.
+#
+# Manual runs: workflow_dispatch lets you trigger an ad-hoc dry-run from
+# the Actions tab, useful for sanity-checking after you deploy the
+# registry and wire its address into the repo variable / secret.
 
 on:
   schedule:
@@ -21,16 +26,15 @@ jobs:
   keeper-dry-run:
     name: Dry-run tick
     runs-on: ubuntu-latest
+    # Use repo variables so the registry address can be set once the
+    # `OrderRegistry` is deployed, without a code change. Secrets are only
+    # needed if you later wire a signer key for a non-dry-run keeper — not
+    # used here.
     env:
-      # Force this scheduled dry-run to stay off-chain. Repo variables may point
-      # at an RPC endpoint with an expired certificate; this job should verify
-      # the keeper command still starts and exits cleanly, not depend on that
-      # external endpoint being healthy.
-      KEEPER_RPC_URL: 'http://127.0.0.1:8545'
-      KEEPER_CHAIN_ID: '61803'
-      KEEPER_REACTOR_ADDRESS: '0xE2fc7EAcEB0146560bfcf46CC5B167df60E970B8'
-      KEEPER_REGISTRY_ADDRESS: '0x0000000000000000000000000000000000000000'
-      ORDERBOOK_URL: ''
+      KEEPER_RPC_URL: ${{ vars.KEEPER_RPC_URL || 'https://eticamainnet.eticascan.org' }}
+      KEEPER_CHAIN_ID: ${{ vars.KEEPER_CHAIN_ID || '61803' }}
+      KEEPER_REACTOR_ADDRESS: ${{ vars.KEEPER_REACTOR_ADDRESS || '0xE2fc7EAcEB0146560bfcf46CC5B167df60E970B8' }}
+      KEEPER_REGISTRY_ADDRESS: ${{ vars.KEEPER_REGISTRY_ADDRESS || '0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9' }}
       KEEPER_POLL_BATCH_SIZE: '100'
       KEEPER_DEADLINE_GRACE_SECONDS: '30'
       # Never submit — this workflow is log-only.
