@@ -48,9 +48,9 @@ function applyFilters(
 export default async function ResearchPage({
   searchParams,
 }: {
-  searchParams?: Promise<SearchParams>;
+  searchParams?: SearchParams;
 }) {
-  const params = (await searchParams) ?? {};
+  const params = searchParams ?? {};
   const statusFilter = parseStatus(params.status);
   const q = params.q;
 
@@ -138,18 +138,15 @@ export default async function ResearchPage({
                       ? q
                         ? `/research?q=${encodeURIComponent(q)}`
                         : '/research'
-                      : q
-                        ? `/research?status=${f.value}&q=${encodeURIComponent(q)}`
-                        : `/research?status=${f.value}`;
-
+                      : `/research?status=${f.value}${q ? `&q=${encodeURIComponent(q)}` : ''}`;
                   return (
                     <Link
-                      key={f.label}
+                      key={String(f.value)}
                       href={href}
-                      className={`rounded-full border px-3 py-1 text-xs transition ${
+                      className={`rounded-full border px-3 py-1 text-xs ${
                         active
-                          ? 'border-sky-300/40 bg-sky-300/10 text-sky-100'
-                          : 'border-white/10 text-white/60 hover:border-white/20 hover:text-white'
+                          ? 'border-sky-300/50 bg-sky-300/15 text-sky-100'
+                          : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10'
                       }`}
                     >
                       {f.label}
@@ -157,79 +154,34 @@ export default async function ResearchPage({
                   );
                 })}
               </div>
-
-              <input
-                type="search"
-                name="q"
-                defaultValue={q ?? ''}
-                placeholder="Search title, disease, or proposer..."
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-sky-300/50 focus:outline-none"
-              />
-
-              {statusFilter !== 'all' && (
-                <input type="hidden" name="status" value={String(statusFilter)} />
-              )}
-
-              <button className="w-full rounded-lg bg-brand-accent px-3 py-2 text-sm font-medium text-brand-ink hover:opacity-90">
-                Search proposals
-              </button>
+              <div className="flex gap-2">
+                <input
+                  name="q"
+                  defaultValue={q ?? ''}
+                  placeholder="Search title, proposer, disease..."
+                  className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-sky-300/50"
+                />
+                {statusFilter !== 'all' ? <input type="hidden" name="status" value={statusFilter} /> : null}
+                <button className="rounded-lg bg-brand-accent px-4 py-2 text-sm font-medium text-brand-ink hover:opacity-90">
+                  Search
+                </button>
+              </div>
             </form>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs leading-5 text-white/50">
-            <div className="font-medium text-white/70">Proposal workflow</div>
-            <p className="mt-1">Open proposals to inspect IPFS content, voter status, proposer identity, and tipping paths without leaving the Research Hub.</p>
           </div>
         </aside>
 
-        <div className="rounded-2xl border border-sky-400/20 bg-white/[0.03] p-3 shadow-xl shadow-sky-950/20">
+        <div className="space-y-4">
           {error ? (
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-6 text-sm text-red-200">
-              Couldn&apos;t reach the Etica RPC to load proposals. {error}
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+              Live feed unavailable: {error}
             </div>
-          ) : proposals.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-8 text-center text-sm text-white/50">
-              No proposals on this chain yet.
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-8 text-center text-sm text-white/50">
-              No proposals match your filters.
+          ) : null}
+          {filtered.length === 0 ? (
+            <div className="rounded-xl border border-white/10 bg-[#07120f] p-5 text-sm text-white/55">
+              No proposals match the current filters.
             </div>
           ) : (
-            <ul className="space-y-2">
-              {filtered.map((p) => (
-                <li key={p.hash}>
-                  <Link
-                    href={`/research/${p.hash}`}
-                    className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-black/25 p-4 transition hover:border-sky-300/30 hover:bg-sky-300/[0.04]"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-medium">
-                        <span className="text-white/40">#{p.id.toString()} · </span>
-                        {p.title || <span className="italic text-white/50">(untitled)</span>}
-                      </div>
-                      <StatusPill status={p.status} label={p.statusLabel} />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/50">
-                      <span>
-                        Disease:{' '}
-                        <span className="text-white/70">{p.diseaseName || `#${p.chunkId.toString()}`}</span>
-                      </span>
-                      <span>
-                        Proposer: <span className="text-white/70">{shortAddress(p.proposer)}</span>
-                      </span>
-                      <span>
-                        Votes:{' '}
-                        <span className="text-emerald-400/80">{p.forvotes > 0n ? '✓' : '—'}</span>
-                        <span className="mx-1">/</span>
-                        <span className="text-rose-400/80">{p.againstvotes > 0n ? '✗' : '—'}</span>
-                        <span className="ml-1 text-white/40">({p.nbvoters.toString()} voters)</span>
-                      </span>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            filtered.map((p) => <ProposalCard key={`${p.id}-${p.chainId}`} proposal={p} />)
           )}
         </div>
       </section>
@@ -237,17 +189,36 @@ export default async function ResearchPage({
   );
 }
 
-function StatusPill({ status, label }: { status: ProposalStatus; label: string }) {
-  const color =
-    status === ProposalStatus.Accepted
-      ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'
-      : status === ProposalStatus.Rejected
-        ? 'border-rose-400/30 bg-rose-400/10 text-rose-200'
-        : 'border-amber-400/30 bg-amber-400/10 text-amber-200';
-
+function ProposalCard({ proposal }: { proposal: ProposalSummary }) {
+  const label = PROPOSAL_STATUS_LABEL[proposal.status] ?? `Status ${proposal.status}`;
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${color}`}>
-      {label}
-    </span>
+    <article className="rounded-2xl border border-white/10 bg-[#07120f] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-white/35">
+            Proposal #{proposal.id.toString()} · chain {proposal.chainId}
+          </div>
+          <h2 className="mt-2 text-xl font-semibold text-white">{proposal.title}</h2>
+          <p className="mt-2 text-sm leading-6 text-white/55">{proposal.description}</p>
+        </div>
+        <span className="rounded-full border border-sky-300/30 bg-sky-300/10 px-3 py-1 text-xs text-sky-100">
+          {label}
+        </span>
+      </div>
+      <dl className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+        <KV label="Proposer" value={shortAddress(proposal.proposer)} />
+        <KV label="Disease" value={proposal.diseaseName ?? 'Unspecified'} />
+        <KV label="Vote window" value={`${proposal.startDate ?? '—'} → ${proposal.endDate ?? '—'}`} />
+      </dl>
+    </article>
+  );
+}
+
+function KV({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+      <dt className="text-xs uppercase tracking-wider text-white/35">{label}</dt>
+      <dd className="mt-1 font-mono text-sm text-white/80">{value}</dd>
+    </div>
   );
 }
