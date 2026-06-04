@@ -22,7 +22,7 @@ const swapEvent = parseAbiItem(
 );
 
 async function main() {
-  process.env.BUYBOT_RPC_URL ??= 'https://eticamainnet.eticascan.org';
+  process.env.BUYBOT_RPC_URL ??= 'https://eticamainnet.eticaprotocol.org';
   const config = loadBuyBotConfig();
   if (!config.enabled) {
     throw new Error(

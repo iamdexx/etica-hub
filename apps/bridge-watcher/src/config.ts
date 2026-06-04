@@ -124,7 +124,7 @@ export function loadWatcherConfig(env: NodeJS.ProcessEnv = process.env): Watcher
 
   return {
     etica: {
-      rpcUrl: env.BRIDGE_ETICA_RPC_URL?.trim() || 'https://eticamainnet.eticascan.org',
+      rpcUrl: env.BRIDGE_ETICA_RPC_URL?.trim() || 'https://eticamainnet.eticaprotocol.org',
       chainId: readNumber(env, 'BRIDGE_ETICA_CHAIN_ID', 61803),
       vault: readAddress(env, 'BRIDGE_VAULT_ADDRESS'),
     },

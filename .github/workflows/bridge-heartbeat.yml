@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: bridge-watcher
     env:
-      BRIDGE_ETICA_RPC_URL: ${{ vars.BRIDGE_ETICA_RPC_URL || 'https://eticamainnet.eticascan.org' }}
+      BRIDGE_ETICA_RPC_URL: ${{ vars.BRIDGE_ETICA_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
       BRIDGE_ETICA_CHAIN_ID: ${{ vars.BRIDGE_ETICA_CHAIN_ID || '61803' }}
       BRIDGE_MINTER_ETH_ADDRESS: ${{ vars.BRIDGE_MINTER_ETH_ADDRESS }}
       BRIDGE_ETH_RPC_URL: ${{ vars.BRIDGE_ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com' }}
