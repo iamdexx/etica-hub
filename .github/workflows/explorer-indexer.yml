@@ -44,7 +44,7 @@ jobs:
     env:
       INDEXER_MODULE: explorer
       CHAIN_ID: '61803'
-      ETICA_MAINNET_RPC_URL: ${{ vars.EXPLORER_INDEXER_RPC_URL || 'https://eticamainnet.eticascan.org' }}
+      ETICA_MAINNET_RPC_URL: ${{ vars.EXPLORER_INDEXER_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
       INDEX_DATA_DIR: ./data-branch
       INDEX_BLOCK_BATCH: '1000'
       INDEX_MAX_BLOCKS_PER_RUN: ${{ github.event.inputs.max_blocks || '5000' }}
