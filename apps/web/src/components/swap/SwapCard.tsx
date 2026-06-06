@@ -461,7 +461,7 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
         <p className="mt-3 break-words text-center text-xs text-rose-400">
           Couldn&rsquo;t switch your wallet to Etica Mainnet. Add the network
           manually: chain id <span className="font-mono">61803</span>, RPC{' '}
-          <span className="font-mono">https://eticamainnet.eticascan.org</span>,
+          <span className="font-mono">https://rpc2.etica-stats.org</span>,
           currency symbol <span className="font-mono">EGAZ</span>.
         </p>
       )}

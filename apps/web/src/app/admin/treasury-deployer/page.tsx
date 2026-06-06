@@ -66,7 +66,7 @@ export default function TreasuryDeployerPage() {
     treasuryAutoBuyerArtifact.bytecode.length > 10;
 
   const autobuyerAddress = deployedAddress || '0x_DEPLOYED_TREASURY_AUTOBUYER_ADDRESS';
-  const cronConfig = `Treasury AutoBuyer cron setup\n\nNetwork: Etica Mainnet\nChain ID: 61803\nAutoBuyer contract: ${autobuyerAddress}\nKeeper wallet: ${form.keeper}\nKeeper role: calls executeCycle() only\nKeeper reimbursement: native EGAZ only\nGas behavior: keeper reward is intentionally above expected gas so the keeper EGAZ balance should slowly increase over time\nDefault keeper reward: 0.05% of each cycle budget\nMax keeper reward cap: 0.5% of each cycle budget\n\nCron env values to set after deployment:\nAUTOBUYER_ADDRESS=${autobuyerAddress}\nAUTOBUYER_KEEPER_ADDRESS=${form.keeper}\nAUTOBUYER_RPC_URL=https://eticamainnet.eticascan.org\nAUTOBUYER_DRY_RUN=false\n\nSecret value you add yourself, never in chat:\nAUTOBUYER_PRIVATE_KEY=<private key for ${form.keeper}>\n\nTreasury safety:\n- never use the treasury private key for cron\n- keeper receives only native EGAZ reimbursement\n- all ETX, ETI, WEGAZ, and stETX dust returns to treasury\n- LP is minted directly to the burn wallet`;
+  const cronConfig = `Treasury AutoBuyer cron setup\n\nNetwork: Etica Mainnet\nChain ID: 61803\nAutoBuyer contract: ${autobuyerAddress}\nKeeper wallet: ${form.keeper}\nKeeper role: calls executeCycle() only\nKeeper reimbursement: native EGAZ only\nGas behavior: keeper reward is intentionally above expected gas so the keeper EGAZ balance should slowly increase over time\nDefault keeper reward: 0.05% of each cycle budget\nMax keeper reward cap: 0.5% of each cycle budget\n\nCron env values to set after deployment:\nAUTOBUYER_ADDRESS=${autobuyerAddress}\nAUTOBUYER_KEEPER_ADDRESS=${form.keeper}\nAUTOBUYER_RPC_URL=https://rpc2.etica-stats.org\nAUTOBUYER_DRY_RUN=false\n\nSecret value you add yourself, never in chat:\nAUTOBUYER_PRIVATE_KEY=<private key for ${form.keeper}>\n\nTreasury safety:\n- never use the treasury private key for cron\n- keeper receives only native EGAZ reimbursement\n- all ETX, ETI, WEGAZ, and stETX dust returns to treasury\n- LP is minted directly to the burn wallet`;
 
   function log(message: string) {
     setStatus((current) => `${current}\n${message}`);
@@ -116,7 +116,7 @@ export default function TreasuryDeployerPage() {
             chainName: 'Etica Mainnet',
             nativeCurrency: { name: 'EGAZ', symbol: 'EGAZ', decimals: 18 },
             rpcUrls: [
-              'https://eticamainnet.eticascan.org',
+              'https://rpc2.etica-stats.org',
               'https://eticamainnet.eticaprotocol.org',
             ],
             blockExplorerUrls: ['https://eticascan.org'],

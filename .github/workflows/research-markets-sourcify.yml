@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      RESEARCH_SOURCIFY_RPC_URL: ${{ vars.RESEARCH_SOURCIFY_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
+      RESEARCH_SOURCIFY_RPC_URL: ${{ vars.RESEARCH_SOURCIFY_RPC_URL || 'https://rpc2.etica-stats.org' }}
       RESEARCH_SOURCIFY_SERVER: ${{ vars.RESEARCH_SOURCIFY_SERVER || 'https://sourcify.dev/server' }}
       RESEARCH_SOURCIFY_LOOKBACK: ${{ github.event.inputs.lookback || vars.RESEARCH_SOURCIFY_LOOKBACK || '50000' }}
       RESEARCH_SOURCIFY_SINGLETON: ${{ vars.RESEARCH_SOURCIFY_SINGLETON || '' }}

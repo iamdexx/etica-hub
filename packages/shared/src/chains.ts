@@ -13,6 +13,7 @@ export const eticaMainnet = defineChain({
   rpcUrls: {
     default: {
       http: [
+        'https://rpc2.etica-stats.org',
         'https://eticamainnet.eticaprotocol.org',
         'https://61803.rpc.thirdweb.com',
         'https://eticamainnet.eticascan.org',
@@ -50,7 +51,7 @@ export const eticaCrucible = defineChain({
  * and other wallets treat it as a separate network from mainnet.
  *
  * Start it with:
- *   anvil --fork-url https://eticamainnet.eticascan.org \
+ *   anvil --fork-url https://rpc2.etica-stats.org \
  *         --chain-id 31337 --host 0.0.0.0 --port 8545
  */
 export const eticaLocalFork = defineChain({

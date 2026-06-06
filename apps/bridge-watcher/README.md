@@ -27,7 +27,7 @@ All knobs are env-var driven so workflows can be tuned without code changes.
 
 | Variable | Required | Notes |
 |---|---|---|
-| `BRIDGE_ETICA_RPC_URL` | required | Defaults to `https://eticamainnet.eticascan.org`. |
+| `BRIDGE_ETICA_RPC_URL` | required | Defaults to `https://rpc2.etica-stats.org`. |
 | `BRIDGE_VAULT_ADDRESS` | required for sanity-check | Etica `BridgeVault` deploy address. |
 | `BRIDGE_MINTER_ETH_ADDRESS` | one of (eth/bnb) | Ethereum `BridgeMinter` deploy address. Unset = skip Eth side. |
 | `BRIDGE_ETH_RPC_URL` | optional | Defaults to a publicnode endpoint. |

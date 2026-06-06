@@ -32,7 +32,7 @@ From <https://docs.sourcify.dev/docs/chain-support/>:
      [`services/server/test/chains/sources/storage-contract-chain-addresses.json`](https://github.com/argotorg/sourcify/blob/staging/services/server/test/chains/sources/storage-contract-chain-addresses.json).
 
 As of writing, **none of the three is deployed on Etica** — confirmed via
-`eth_getCode` against `https://eticamainnet.eticascan.org`:
+`eth_getCode` against `https://rpc2.etica-stats.org`:
 
 ```
 Multicall3   0xcA11…CA11   → 0x   (not deployed)
@@ -83,7 +83,7 @@ forge init /tmp/sourcify-storage && cd /tmp/sourcify-storage
 forge build --use 0.8.7 --optimize=false
 
 forge create \
-  --rpc-url https://eticamainnet.eticascan.org \
+  --rpc-url https://rpc2.etica-stats.org \
   --private-key "$DEPLOYER_PRIVATE_KEY" \
   src/Storage.sol:Storage
 ```
@@ -106,7 +106,7 @@ Paste this into `services/server/src/sourcify-chains-default.json` on the
     "sourcifyName": "Etica Mainnet",
     "supported": true,
     "rpc": [
-      "https://eticamainnet.eticascan.org",
+      "https://rpc2.etica-stats.org",
       "https://eticamainnet.eticaprotocol.org"
     ]
   }

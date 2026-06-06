@@ -60,7 +60,7 @@ forge install
 
 export DEPLOYER_PRIVATE_KEY=0x<your_key>
 export TREASURY_ADDRESS=0xB2B4bC9d02970A55efF64C2D84c622c87967C19D
-export RPC_URL=https://eticamainnet.eticascan.org
+export RPC_URL=https://rpc2.etica-stats.org
 
 forge script script/DeploySwap.s.sol \
   --rpc-url $RPC_URL \

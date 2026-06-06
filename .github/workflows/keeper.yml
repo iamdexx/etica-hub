@@ -31,7 +31,7 @@ jobs:
     # needed if you later wire a signer key for a non-dry-run keeper — not
     # used here.
     env:
-      KEEPER_RPC_URL: ${{ vars.KEEPER_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
+      KEEPER_RPC_URL: ${{ vars.KEEPER_RPC_URL || 'https://rpc2.etica-stats.org' }}
       KEEPER_CHAIN_ID: ${{ vars.KEEPER_CHAIN_ID || '61803' }}
       KEEPER_REACTOR_ADDRESS: ${{ vars.KEEPER_REACTOR_ADDRESS || '0xE2fc7EAcEB0146560bfcf46CC5B167df60E970B8' }}
       KEEPER_REGISTRY_ADDRESS: ${{ vars.KEEPER_REGISTRY_ADDRESS || '0xA6f3e48Cf31DcE3a8d36659f5bC6a61785c404a9' }}

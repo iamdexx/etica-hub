@@ -31,7 +31,7 @@
  *
  * Env:
  *   RESEARCH_SOURCIFY_RPC_URL    — Etica mainnet RPC, e.g.
- *                                  https://eticamainnet.eticaprotocol.org
+ *                                  https://rpc2.etica-stats.org
  *   RESEARCH_SOURCIFY_SERVER     — defaults to https://sourcify.dev/server
  *   RESEARCH_SOURCIFY_CHAIN_ID   — defaults to 61803
  *   RESEARCH_SOURCIFY_LOOKBACK   — block lookback window, defaults to
