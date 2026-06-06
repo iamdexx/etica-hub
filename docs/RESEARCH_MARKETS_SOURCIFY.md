@@ -117,7 +117,7 @@ calls public RPC + public Sourcify endpoints:
 
 | Variable                       | Default                              | Purpose                                                 |
 | ------------------------------ | ------------------------------------ | ------------------------------------------------------- |
-| `RESEARCH_SOURCIFY_RPC_URL`    | `https://eticamainnet.eticascan.org` | Etica RPC used to read `Launched` events                |
+| `RESEARCH_SOURCIFY_RPC_URL`    | `https://rpc2.etica-stats.org` | Etica RPC used to read `Launched` events                |
 | `RESEARCH_SOURCIFY_SERVER`     | `https://sourcify.dev/server`        | Sourcify v2 server base URL                             |
 | `RESEARCH_SOURCIFY_LOOKBACK`   | `50000`                              | Block window for event reads (~7d at 12s blocks)        |
 | `RESEARCH_SOURCIFY_SINGLETON`  | _empty_                              | Override addresses.ts singleton lookup (rarely needed)  |

@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: harvest-live
     env:
-      HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
+      HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
       HARVEST_CHAIN_ID: ${{ vars.HARVEST_CHAIN_ID || '61803' }}
       HARVEST_FACTORY_ADDRESS: ${{ vars.HARVEST_FACTORY_ADDRESS || '0xfc8dE5A5087c8825AA54E2C57B3FFe0e23784bc3' }}
       HARVEST_ROUTER_ADDRESS: ${{ vars.HARVEST_ROUTER_ADDRESS || '0xaefbf3fB975657a4C71ea0Fb644B4afE5F555723' }}

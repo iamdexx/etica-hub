@@ -98,7 +98,7 @@ export FEE_ROUTER_SPLIT_TIMELOCK=86400
 export VAULT_OP_TIMELOCK=172800
 
 forge script script/bridge/DeployBridgeEtica.s.sol \
-  --rpc-url https://eticamainnet.eticascan.org \
+  --rpc-url https://rpc2.etica-stats.org \
   --broadcast --slow
 ```
 

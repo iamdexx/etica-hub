@@ -34,7 +34,7 @@ BRIDGE_THRESHOLD=2
 RPC endpoints:
 
 ```bash
-ETICA_MAINNET_RPC=https://eticamainnet.eticascan.org
+ETICA_MAINNET_RPC=https://rpc2.etica-stats.org
 ETICA_CRUCIBLE_RPC=http://173.212.202.226:8545
 ETH_MAINNET_RPC=https://eth.llamarpc.com    # or your own Alchemy/Infura
 ETH_SEPOLIA_RPC=https://sepolia.drpc.org

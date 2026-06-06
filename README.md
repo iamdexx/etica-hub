@@ -46,7 +46,7 @@ To run the frontend against a local anvil fork of Etica mainnet, see
 
 | Chain | ID | RPC | Purpose |
 |---|---|---|---|
-| Etica mainnet | 61803 | https://eticamainnet.eticascan.org | production target |
+| Etica mainnet | 61803 | https://rpc2.etica-stats.org | production target |
 | Etica Crucible testnet | 61888 | http://173.212.202.226:8545 | optional testnet (no public faucet — see [FAQ](./docs/FAQ.md)) |
 | Local anvil fork | 31337 | http://127.0.0.1:8545 | default dev target |
 | Ethereum mainnet | 1 | any | bridge destination |

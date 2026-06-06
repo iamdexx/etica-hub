@@ -1016,7 +1016,7 @@ Etica mainnet (chain id `61803`). Canonical source: `packages/shared/src/address
 | Parameter | Value |
 |---|---|
 | Network name | Etica Mainnet |
-| RPC URL | `https://eticamainnet.eticascan.org` |
+| RPC URL | `https://rpc2.etica-stats.org` |
 | Chain ID | 61803 |
 | Native gas token | EGAZ |
 | Block explorer (EticaHub) | `https://eticahub.com/explorer` |

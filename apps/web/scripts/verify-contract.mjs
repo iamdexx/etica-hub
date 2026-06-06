@@ -39,8 +39,9 @@ const ETICA_MAINNET = defineChain({
   rpcUrls: {
     default: {
       http: [
-        'https://eticamainnet.eticascan.org',
+        'https://rpc2.etica-stats.org',
         'https://eticamainnet.eticaprotocol.org',
+        'https://eticamainnet.eticascan.org',
         'https://61803.rpc.thirdweb.com',
       ],
     },
