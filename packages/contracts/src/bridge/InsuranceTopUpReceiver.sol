@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
@@ -281,4 +283,24 @@ contract InsuranceTopUpReceiver is Ownable2Step {
     function pendingNativePerOrigin(uint32 origin) external view returns (uint128) {
         return lifetimeNativeReceived[origin] - lifetimeNativeSettled[origin];
     }
+
+    /* -------------------------------------------------------------------- */
+    /*                           RESCUE / RECOVERY                          */
+    /* -------------------------------------------------------------------- */
+
+    /// @notice Recover ERC-20 tokens accidentally sent to this contract.
+    function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert TopUpReceiver_ZeroAddress();
+        SafeERC20.safeTransfer(token, to, amount);
+    }
+
+    /// @notice Recover ETH accidentally sent to this contract.
+    function rescueETH(address payable to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert TopUpReceiver_ZeroAddress();
+        (bool ok,) = to.call{value: amount}("");
+        require(ok, "ETH transfer failed");
+    }
+
+    /// @notice Accept ETH (e.g. Hyperlane refunds or accidental sends).
+    receive() external payable {}
 }

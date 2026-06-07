@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -387,6 +389,7 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     error BridgeMinter_InsuranceTopUpUnconfigured();
     error BridgeMinter_UnexpectedValue(uint256 value);
     error BridgeMinter_BadInsuranceTopUpTarget();
+    error BridgeMinter_RescueLockedToken();
 
     /* -------------------------------------------------------------------- */
     /*                              CONSTRUCTOR                             */
@@ -703,6 +706,7 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     function burn(uint128 amount, uint32 destDomain, address recipient)
         external
         payable
+        nonReentrant
         whenNotPaused
         returns (bytes32 nonce)
     {
@@ -1138,4 +1142,16 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     /// via veto; raw transfers stay as `address(this).balance` and can be
     /// recovered via the insurance sweep path.
     receive() external payable {}
+
+    /* -------------------------------------------------------------------- */
+    /*                           RESCUE / RECOVERY                          */
+    /* -------------------------------------------------------------------- */
+
+    /// @notice Recover ERC-20 tokens accidentally sent to this contract.
+    ///         Cannot rescue the native wETX managed by the minter.
+    function rescueERC20(address token, address to, uint256 amount) external onlyOwner {
+        if (token == address(wetx)) revert BridgeMinter_RescueLockedToken();
+        if (to == address(0)) revert BridgeMinter_ZeroAddress();
+        SafeERC20.safeTransfer(IERC20(token), to, amount);
+    }
 }
