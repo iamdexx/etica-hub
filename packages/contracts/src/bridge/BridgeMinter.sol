@@ -389,6 +389,7 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     error BridgeMinter_InsuranceTopUpUnconfigured();
     error BridgeMinter_UnexpectedValue(uint256 value);
     error BridgeMinter_BadInsuranceTopUpTarget();
+    error BridgeMinter_RescueLockedToken();
 
     /* -------------------------------------------------------------------- */
     /*                              CONSTRUCTOR                             */
@@ -1149,7 +1150,7 @@ contract BridgeMinter is IBridgeMinter, Ownable2Step, ReentrancyGuard {
     /// @notice Recover ERC-20 tokens accidentally sent to this contract.
     ///         Cannot rescue the native wETX managed by the minter.
     function rescueERC20(address token, address to, uint256 amount) external onlyOwner {
-        if (token == address(wetx)) revert BridgeMinter_ZeroAddress();
+        if (token == address(wetx)) revert BridgeMinter_RescueLockedToken();
         if (to == address(0)) revert BridgeMinter_ZeroAddress();
         SafeERC20.safeTransfer(IERC20(token), to, amount);
     }

@@ -85,6 +85,7 @@ contract FeeRouter is Ownable2Step {
     error FeeRouter_TimelockNotElapsed(uint64 executableAt, uint64 nowTimestamp);
     error FeeRouter_AlreadyExecuted(uint256 id);
     error FeeRouter_AlreadyCancelled(uint256 id);
+    error FeeRouter_RescueLockedToken();
 
     modifier onlyBridgeVault() {
         if (msg.sender != bridgeVault) revert FeeRouter_OnlyBridgeVault(msg.sender);
@@ -226,7 +227,7 @@ contract FeeRouter is Ownable2Step {
     /// @notice Recover ERC-20 tokens accidentally sent to this contract.
     ///         Cannot rescue the managed ETX token — only unrelated tokens.
     function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner {
-        if (address(token) == address(etx)) revert FeeRouter_ZeroAddress();
+        if (address(token) == address(etx)) revert FeeRouter_RescueLockedToken();
         if (to == address(0)) revert FeeRouter_ZeroAddress();
         token.safeTransfer(to, amount);
     }
