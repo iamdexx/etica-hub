@@ -218,4 +218,16 @@ contract FeeRouter is Ownable2Step {
         s.cancelled = true;
         emit SplitChangeCancelled(id);
     }
+
+    /* -------------------------------------------------------------------- */
+    /*                           RESCUE / RECOVERY                          */
+    /* -------------------------------------------------------------------- */
+
+    /// @notice Recover ERC-20 tokens accidentally sent to this contract.
+    ///         Cannot rescue the managed ETX token — only unrelated tokens.
+    function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner {
+        if (address(token) == address(etx)) revert FeeRouter_ZeroAddress();
+        if (to == address(0)) revert FeeRouter_ZeroAddress();
+        token.safeTransfer(to, amount);
+    }
 }

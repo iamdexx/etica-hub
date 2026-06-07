@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {BridgeInsuranceFund} from "./BridgeInsuranceFund.sol";
 import {FeeRouter} from "./FeeRouter.sol";
 import {IMailbox} from "./IHyperlane.sol";
@@ -48,7 +49,7 @@ import {IMailbox} from "./IHyperlane.sol";
 ///         message handling are intentionally deferred to the Hyperlane
 ///         integration PR (PR 8) — they require cross-chain oracle plumbing
 ///         that depends on contracts not yet deployed.
-contract BridgeVault is Ownable2Step {
+contract BridgeVault is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /* -------------------------------------------------------------------- */
@@ -229,6 +230,7 @@ contract BridgeVault is Ownable2Step {
     error BridgeVault_OpAlreadyExecuted(uint256 id);
     error BridgeVault_OpAlreadyCancelled(uint256 id);
     error BridgeVault_OpTimelockNotElapsed(uint64 executableAt, uint64 nowTimestamp);
+    error BridgeVault_RescueLockedToken();
 
     /* -------------------------------------------------------------------- */
     /*                              MODIFIERS                               */
@@ -285,6 +287,7 @@ contract BridgeVault is Ownable2Step {
     function deposit(uint128 amount, uint32 destDomain, address recipient)
         external
         payable
+        nonReentrant
         whenNotPaused
         returns (bytes32 nonce)
     {
@@ -360,7 +363,7 @@ contract BridgeVault is Ownable2Step {
     /* -------------------------------------------------------------------- */
 
     /// @notice Settle a matured claim. Permissionless; subject to caps + rate limit.
-    function executeWithdraw(bytes32 nonce) external whenNotPaused {
+    function executeWithdraw(bytes32 nonce) external nonReentrant whenNotPaused {
         Claim storage c = claims[nonce];
         if (c.state != ClaimState.PENDING) revert BridgeVault_ClaimNotPending(nonce);
         if (block.timestamp < c.expiresAt) {
@@ -560,4 +563,28 @@ contract BridgeVault is Ownable2Step {
     function currentDailyCap() external view returns (uint128) {
         return uint128((uint256(tvlCapEtx) * dailyWithdrawCapBps) / TOTAL_BPS);
     }
+
+    /* -------------------------------------------------------------------- */
+    /*                           RESCUE / RECOVERY                          */
+    /* -------------------------------------------------------------------- */
+
+    /// @notice Recover ERC-20 tokens accidentally sent to this contract.
+    ///         Cannot rescue the locked ETX collateral — only unrelated tokens.
+    function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner {
+        if (address(token) == address(etx)) revert BridgeVault_RescueLockedToken();
+        if (to == address(0)) revert BridgeVault_ZeroAddress();
+        token.safeTransfer(to, amount);
+    }
+
+    /// @notice Recover ETH accidentally sent to this contract (e.g. leftover
+    ///         Hyperlane IGP refunds). Cannot be called while paused so the
+    ///         owner can't drain during an emergency window.
+    function rescueETH(address payable to, uint256 amount) external onlyOwner whenNotPaused {
+        if (to == address(0)) revert BridgeVault_ZeroAddress();
+        (bool ok,) = to.call{value: amount}("");
+        require(ok, "ETH transfer failed");
+    }
+
+    /// @notice Accept ETH (e.g. Hyperlane IGP refunds).
+    receive() external payable {}
 }
