@@ -144,6 +144,7 @@ export default function MarketPage() {
   const [sellTokenId, setSellTokenId] = useState('');
   const [sellPrice, setSellPrice] = useState('');
   const [sellStep, setSellStep] = useState<'idle' | 'approving' | 'listing'>('idle');
+  const [needsAutoList, setNeedsAutoList] = useState(false);
 
   // Check approval
   const { data: isApproved } = useReadContract({
@@ -202,6 +203,7 @@ export default function MarketPage() {
 
     if (!isApproved) {
       setSellStep('approving');
+      setNeedsAutoList(true);
       await approveAsync({
         address: nftAddr,
         abi: erc721Abi,
@@ -220,9 +222,10 @@ export default function MarketPage() {
     });
   }, [connected, marketplaceAddr, nftAddr, sellTokenId, sellPrice, isApproved, ensureChain, approveAsync, listAsync]);
 
-  // Auto-list after approval
+  // Auto-list after approval (only when the current flow went through approve)
   useEffect(() => {
-    if (sellStep === 'listing' && approveConfirmed && marketplaceAddr) {
+    if (sellStep === 'listing' && approveConfirmed && needsAutoList && marketplaceAddr) {
+      setNeedsAutoList(false);
       const tokenId = BigInt(sellTokenId);
       const price = parseEther(sellPrice);
       listAsync({
