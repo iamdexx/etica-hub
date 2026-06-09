@@ -93,18 +93,26 @@ async function fetchRecentPapers(topic: string, count: number = 5): Promise<Pape
     const retstart = Math.floor(Math.random() * 10);
     const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${count}&retstart=${retstart}&sort=relevance&term=${encodeURIComponent(
       topic,
-    )}`;
-    const searchRes = await politeGet(searchUrl, { signal: ctrl.signal, cache: 'no-store' });
-    if (!searchRes.ok) return [];
+    )}&_t=${Date.now()}`;
+    const searchRes = await politeGet(searchUrl, { signal: ctrl.signal });
+    if (!searchRes.ok) {
+      console.error(`[seed] PubMed search failed: ${searchRes.status} ${searchRes.statusText}`);
+      return [];
+    }
     const sj = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
     const ids = sj.esearchresult?.idlist ?? [];
-    if (ids.length === 0) return [];
+    if (ids.length === 0) {
+      console.error(`[seed] PubMed returned 0 IDs for topic: ${topic}`);
+      return [];
+    }
 
-    const sumRes = await politeGet(`${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`, {
+    const sumRes = await politeGet(`${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}&_t=${Date.now()}`, {
       signal: ctrl.signal,
-      cache: 'no-store',
     });
-    if (!sumRes.ok) return [];
+    if (!sumRes.ok) {
+      console.error(`[seed] PubMed summary failed: ${sumRes.status}`);
+      return [];
+    }
     const sumJson = (await sumRes.json()) as { result?: Record<string, unknown> };
     const result = sumJson.result ?? {};
 
@@ -130,7 +138,8 @@ async function fetchRecentPapers(topic: string, count: number = 5): Promise<Pape
       papers.push({ id, title, authors, journal, date });
     }
     return papers;
-  } catch {
+  } catch (err) {
+    console.error(`[seed] PubMed fetch error: ${err instanceof Error ? err.message : err}`);
     return [];
   } finally {
     clearTimeout(timeout);
@@ -147,7 +156,7 @@ async function fetchRandomProtein(): Promise<string | null> {
     // Random offset (0-50) — reviewed human proteome has ~20k entries, keep offset small for reliability
     const offset = Math.floor(Math.random() * 50);
     const url = `${UNIPROT_SEARCH}?query=reviewed:true+AND+organism_id:9606&format=json&size=1&offset=${offset}&fields=accession,protein_name,gene_names`;
-    const res = await politeGet(url, { signal: ctrl.signal, cache: 'no-store' });
+    const res = await politeGet(url, { signal: ctrl.signal });
     if (!res.ok) return null;
     const json = (await res.json()) as { results?: Array<Record<string, unknown>> };
     const entry = json.results?.[0];
@@ -166,7 +175,8 @@ async function fetchRandomProtein(): Promise<string | null> {
     if (name) return `${name}${genes ? ` (${genes})` : ''}`;
     if (genes) return genes;
     return entry.primaryAccession as string ?? null;
-  } catch {
+  } catch (err) {
+    console.error(`[seed] UniProt fetch error: ${err instanceof Error ? err.message : err}`);
     return null;
   } finally {
     clearTimeout(timeout);
@@ -203,9 +213,7 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     if (papers.length > 0 || protein) break;
   }
 
-  if (papers.length === 0 && !protein) return null;
-
-  // Build context for the LLM
+  // Build context for the LLM — if APIs failed, proceed with topic alone
   const contextParts: string[] = [];
   if (papers.length > 0) {
     contextParts.push('Recent PubMed papers:');
