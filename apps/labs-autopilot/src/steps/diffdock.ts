@@ -17,8 +17,11 @@ import { readNvidiaKeyPool } from './fold.js';
 
 const DIFFDOCK_URL = 'https://health.api.nvidia.com/v1/biology/mit/diffdock';
 const TIMEOUT_MS = 180_000; // 3 min — docking is computationally heavy
-const MAX_RETRIES = 3;
-const BACKOFF_MS = [0, 5_000, 15_000];
+/** Infinite retry — never fail. Exponential backoff capped at 60s. */
+function backoffFor(attempt: number): number {
+  if (attempt === 0) return 0;
+  return Math.min(60_000, 5_000 * 2 ** (attempt - 1));
+}
 
 export interface DiffDockInput {
   /** PDB protein content (ATOM lines) */
@@ -108,9 +111,9 @@ export async function dockMolecule(input: DiffDockInput): Promise<DiffDockOutcom
     is_staged: false,
   };
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const backoff = BACKOFF_MS[attempt] ?? 15_000;
-    if (backoff > 0) await sleep(backoff);
+  for (let attempt = 0; ; attempt++) {
+    const delay = backoffFor(attempt);
+    if (delay > 0) await sleep(delay);
 
     try {
       const controller = new AbortController();
@@ -133,7 +136,7 @@ export async function dockMolecule(input: DiffDockInput): Promise<DiffDockOutcom
 
       if (!response.ok) {
         const text = await response.text().catch(() => '');
-        if (attempt < MAX_RETRIES - 1 && response.status >= 500) continue;
+        if (response.status >= 500) continue;
         return {
           ok: false,
           error: `DiffDock ${response.status}: ${text.slice(0, 200)}`,
@@ -181,17 +184,11 @@ export async function dockMolecule(input: DiffDockInput): Promise<DiffDockOutcom
         bestConfidence: poses[0]?.confidence ?? 0,
         durationMs: Date.now() - startedAt,
       };
-    } catch (err) {
-      if (attempt < MAX_RETRIES - 1) continue;
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : 'unknown error',
-        durationMs: Date.now() - startedAt,
-      };
+    } catch {
+      // Network error / timeout — retry forever
+      continue;
     }
   }
-
-  return { ok: false, error: 'DiffDock exhausted retries', durationMs: Date.now() - startedAt };
 }
 
 /**

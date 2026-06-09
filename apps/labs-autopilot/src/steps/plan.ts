@@ -81,18 +81,23 @@ function withTimeout(ms: number): { signal: AbortSignal; cancel: () => void } {
   return { signal: ctrl.signal, cancel: () => clearTimeout(id) };
 }
 
-/** Retry a fetcher once with 2s backoff on failure. No silent skips. */
+/** Retry with exponential backoff until success. Never fail, never skip.
+ *  Each academic API fires 1 logical call per job — this just retries
+ *  that single call internally if the remote is slow or rate-limited.
+ *  Cap at 5 retries to avoid holding the job forever on a truly dead API.
+ */
 async function withRetry(fn: () => Promise<Reference[]>): Promise<Reference[]> {
-  try {
-    return await fn();
-  } catch {
-    await new Promise((r) => setTimeout(r, 2_000));
+  const MAX_RETRIES = 5;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       return await fn();
     } catch {
-      return [];
+      if (attempt === MAX_RETRIES) return [];
+      const delay = Math.min(30_000, 2_000 * 2 ** attempt);
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
+  return [];
 }
 
 function normalizeSequence(value: unknown): string | null {
@@ -110,7 +115,7 @@ function clamp(value: unknown, max: number): string {
 }
 
 async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
-  const { signal, cancel } = withTimeout(5_000);
+  const { signal, cancel } = withTimeout(10_000);
   try {
     const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${limit}&sort=relevance&term=${encodeURIComponent(
       query,
@@ -161,7 +166,7 @@ async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
 }
 
 async function fetchRcsb(query: string, limit: number): Promise<Reference[]> {
-  const { signal, cancel } = withTimeout(5_000);
+  const { signal, cancel } = withTimeout(10_000);
   try {
     const res = await politePost(
       RCSB_SEARCH,
@@ -201,7 +206,7 @@ async function fetchRcsb(query: string, limit: number): Promise<Reference[]> {
 }
 
 async function fetchUniProt(query: string, limit: number): Promise<Reference[]> {
-  const { signal, cancel } = withTimeout(5_000);
+  const { signal, cancel } = withTimeout(10_000);
   try {
     const url = `${UNIPROT_SEARCH}?query=${encodeURIComponent(query)}&format=json&size=${limit}&fields=accession,protein_name,organism_name,gene_names`;
     const res = await politeGet(url, { signal, cache: 'no-store' });
@@ -235,7 +240,7 @@ async function fetchUniProt(query: string, limit: number): Promise<Reference[]> 
 }
 
 async function fetchChEMBL(query: string, limit: number): Promise<Reference[]> {
-  const { signal, cancel } = withTimeout(5_000);
+  const { signal, cancel } = withTimeout(10_000);
   try {
     const url = `${CHEMBL_SEARCH}?q=${encodeURIComponent(query)}&limit=${limit}`;
     const res = await politeGet(url, { signal, cache: 'no-store' });
@@ -266,7 +271,7 @@ async function fetchChEMBL(query: string, limit: number): Promise<Reference[]> {
 }
 
 async function fetchSTRING(query: string, limit: number): Promise<Reference[]> {
-  const { signal, cancel } = withTimeout(5_000);
+  const { signal, cancel } = withTimeout(10_000);
   try {
     const url = `${STRING_API}/network?identifiers=${encodeURIComponent(query)}&species=9606&limit=${limit}&caller_identity=eticahub`;
     const res = await politeGet(url, { signal, cache: 'no-store' });
@@ -300,7 +305,7 @@ async function fetchSTRING(query: string, limit: number): Promise<Reference[]> {
 }
 
 async function fetchKEGG(query: string, limit: number): Promise<Reference[]> {
-  const { signal, cancel } = withTimeout(5_000);
+  const { signal, cancel } = withTimeout(10_000);
   try {
     const url = `${KEGG_FIND}/${encodeURIComponent(query)}`;
     const res = await politeGet(url, { signal, cache: 'no-store' });

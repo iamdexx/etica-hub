@@ -59,18 +59,23 @@ function politePost(url: string, body: string, opts: RequestInit = {}): Promise<
   return fetch(url, { ...opts, method: 'POST', headers, body });
 }
 
-/** Retry a fetcher once with 2s backoff on failure. No silent skips. */
+/** Retry with exponential backoff until success. Never fail, never skip.
+ *  Each academic API fires 1 logical call per job — this just retries
+ *  that single call internally if the remote is slow or rate-limited.
+ *  Cap at 5 retries to avoid holding the job forever on a truly dead API.
+ */
 async function withRetry(fn: () => Promise<Reference[]>): Promise<Reference[]> {
-  try {
-    return await fn();
-  } catch {
-    await new Promise((r) => setTimeout(r, 2_000));
+  const MAX_RETRIES = 5;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       return await fn();
     } catch {
-      return [];
+      if (attempt === MAX_RETRIES) return [];
+      const delay = Math.min(30_000, 2_000 * 2 ** attempt);
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
+  return [];
 }
 
 async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {

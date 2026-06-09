@@ -24,8 +24,11 @@ import { readNvidiaKeyPool } from './fold.js';
 
 const ESM2_URL = 'https://health.api.nvidia.com/v1/biology/meta/esm2-650m';
 const TIMEOUT_MS = 30_000; // 30s — embeddings are fast
-const MAX_RETRIES = 3;
-const BACKOFF_MS = [0, 2_000, 5_000];
+/** Infinite retry — never fail. Exponential backoff capped at 60s. */
+function backoffFor(attempt: number): number {
+  if (attempt === 0) return 0;
+  return Math.min(60_000, 2_000 * 2 ** (attempt - 1));
+}
 
 /** Valid amino acid characters for ESM2 input */
 const VALID_AA_REGEX = /^[ARNDCQEGHILKMFPSTWYVXBOU]+$/;
@@ -103,9 +106,9 @@ export async function computeEmbedding(input: ESM2Input): Promise<ESM2Outcome> {
     output_format: 'npz',
   };
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const backoff = BACKOFF_MS[attempt] ?? 5_000;
-    if (backoff > 0) await sleep(backoff);
+  for (let attempt = 0; ; attempt++) {
+    const delay = backoffFor(attempt);
+    if (delay > 0) await sleep(delay);
 
     try {
       const controller = new AbortController();
@@ -128,7 +131,7 @@ export async function computeEmbedding(input: ESM2Input): Promise<ESM2Outcome> {
 
       if (!response.ok) {
         const text = await response.text().catch(() => '');
-        if (attempt < MAX_RETRIES - 1 && response.status >= 500) continue;
+        if (response.status >= 500) continue;
         return {
           ok: false,
           error: `ESM2 ${response.status}: ${text.slice(0, 200)}`,
@@ -150,17 +153,11 @@ export async function computeEmbedding(input: ESM2Input): Promise<ESM2Outcome> {
         norm,
         durationMs: Date.now() - startedAt,
       };
-    } catch (err) {
-      if (attempt < MAX_RETRIES - 1) continue;
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : 'unknown error',
-        durationMs: Date.now() - startedAt,
-      };
+    } catch {
+      // Network error / timeout — retry forever
+      continue;
     }
   }
-
-  return { ok: false, error: 'ESM2 exhausted retries', durationMs: Date.now() - startedAt };
 }
 
 /**

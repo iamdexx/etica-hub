@@ -21,9 +21,15 @@ const HF_URL = 'https://router.huggingface.co/hf-inference/models/facebook/esmfo
 const POLL_INTERVAL_MS = 1_500;
 const POLL_BUDGET_MS = Number(process.env.LABS_AUTOPILOT_FOLD_TIMEOUT_MS ?? '60000');
 
-const PER_ENGINE_MAX_ATTEMPTS = 3;
+/** Infinite retry — never fail, just keep backing off. GitHub Actions
+ *  timeout (15 min) is the ultimate hard cap. */
+const PER_ENGINE_MAX_ATTEMPTS = Infinity;
 const PER_ATTEMPT_TIMEOUT_MS = 90_000;
-const BACKOFF_SCHEDULE_MS: readonly number[] = [0, 5_000, 30_000];
+/** Exponential: 0, 2s, 4s, 8s, 16s, 30s, 60s (cap). */
+function backoffFor(attempt: number): number {
+  if (attempt === 0) return 0;
+  return Math.min(60_000, 2_000 * 2 ** (attempt - 1));
+}
 
 /** Read NVIDIA key pool from NVIDIA_API_KEYS (comma-separated) and
  *  NVIDIA_API_KEY (single), deduped. */
@@ -223,9 +229,9 @@ async function runWithRetry(
   let last: FoldResult = { ok: false, error: 'no attempts run' };
   let attempts = 0;
 
-  for (let attempt = 0; attempt < PER_ENGINE_MAX_ATTEMPTS; attempt += 1) {
-    const backoff = BACKOFF_SCHEDULE_MS[attempt] ?? 30_000;
-    if (backoff > 0) await sleep(backoff);
+  for (let attempt = 0; ; attempt += 1) {
+    const delay = backoffFor(attempt);
+    if (delay > 0) await sleep(delay);
 
     attempts = attempt + 1;
     last = await callWithTimeout<FoldResult>(call(sequence), PER_ATTEMPT_TIMEOUT_MS, () => ({
@@ -235,6 +241,8 @@ async function runWithRetry(
 
     if (last.ok) break;
     if (isPermanentFailure(last.error)) break;
+    // GitHub Actions 15-min timeout is the ultimate hard cap; worker
+    // will be killed externally if this loop runs too long.
   }
 
   const durationMs = Date.now() - startedAt;
