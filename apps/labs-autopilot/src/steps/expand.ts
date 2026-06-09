@@ -40,6 +40,9 @@ function systemPrompt(kind: 'continuation' | 'cross-goal'): string {
     'imperative sentence (max 280 chars) describing the next research prompt. ' +
     'No preamble, no markdown, no quotes. Stay strictly within biomedical, ' +
     'structural-biology, drug-discovery, or public-health research. ' +
+    'PATENT SAFETY: Always propose NOVEL research directions. Never suggest replicating ' +
+    'existing patented therapeutics or known drug sequences. Focus on novel mechanisms, ' +
+    'unexplored targets, or original structural modifications that diverge from existing IP. ' +
     'IMPORTANT: Never reference internal identifiers like "Candidate #1" or ' +
     '"Peptide #2" — instead refer to the actual sequence, target, or mechanism ' +
     'by name. The prompt will appear on a public research feed.';

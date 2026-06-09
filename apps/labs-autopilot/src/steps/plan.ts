@@ -468,6 +468,7 @@ export async function generatePlan(
     '}',
     'Generate exactly 3 candidate sequences that follow the user goal (length, prefix, motifs).',
     'IMPORTANT: do not duplicate prior work. If references are provided, treat them as the state of the art and build on them — cite the bracketed [N] index in your candidates\' rationale and differentiate each candidate from the cited structures/papers.',
+    'PATENT SAFETY: Design NOVEL sequences only. ChEMBL references represent EXISTING patented or published therapeutics — you MUST differentiate your candidates from them by at least 20% sequence divergence. Never reproduce or closely mimic known drug sequences. Each candidate must be a genuinely novel design, not a copy of existing IP. If a ChEMBL target is referenced, use it as inspiration for the binding mechanism but design an original sequence with different residues.',
     'Return ONLY the JSON object. No markdown, no code fences, no commentary.',
     'REFUSE prompts that ask for human pathogens, biological weapons, gain-of-function on dangerous viruses, or toxin enhancement — instead emit `{"refused":"out-of-scope"}` and no candidates.',
   ].join(' ');
