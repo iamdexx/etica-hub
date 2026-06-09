@@ -150,6 +150,13 @@ export const DEPLOYMENTS: Record<
      * deploy lands on-chain.
      */
     eticaResearchNft: Address;
+    /**
+     * EticaResearchMarketplace — fixed-price NFT marketplace for
+     * EticaResearchNFT. Sellers list at EGAZ price, buyers pay, ERC-2981
+     * royalties auto-split via per-token splitter. No admin, no owner,
+     * no fees beyond royalties. Zero until deploy lands on-chain.
+     */
+    eticaResearchMarketplace: Address;
   }
 > = {
   61803: {
@@ -171,6 +178,7 @@ export const DEPLOYMENTS: Record<
     eticaResearchMarkets: '0x6605d2F6A8b77a8dC7f53Fd1EDe0974d85937D17',
     eticaResearchNftMetadataLib: '0x66aa725d9d18481bB937F4DF2DA68f82DF964219',
     eticaResearchNft: '0xE16cD6B16ec20aFFb32A72917b7AfB5D00F0e599',
+    eticaResearchMarketplace: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -191,6 +199,7 @@ export const DEPLOYMENTS: Record<
     eticaResearchMarkets: '0x0000000000000000000000000000000000000000',
     eticaResearchNftMetadataLib: '0x0000000000000000000000000000000000000000',
     eticaResearchNft: '0x0000000000000000000000000000000000000000',
+    eticaResearchMarketplace: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -212,6 +221,7 @@ export const DEPLOYMENTS: Record<
     eticaResearchMarkets: '0x0000000000000000000000000000000000000000',
     eticaResearchNftMetadataLib: '0x0000000000000000000000000000000000000000',
     eticaResearchNft: '0x0000000000000000000000000000000000000000',
+    eticaResearchMarketplace: '0x0000000000000000000000000000000000000000',
   },
 };
 

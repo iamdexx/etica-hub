@@ -506,19 +506,51 @@ export default function LabsPage() {
 
           <div className="flex flex-col gap-3">
             <div className="grid gap-3 sm:grid-cols-3">
-              <Metric label="LLM" value="Groq" />
-              <Metric label="Folding" value={foldEngine ?? 'Multi-engine'} />
-              <Metric label="Rendering" value="3Dmol.js" />
+              <Metric label="LLM" value="Nemotron 550B" />
+              <Metric label="Folding" value={foldEngine ?? 'ESMFold + MPNN'} />
+              <Metric label="APIs" value="7 Academic" />
             </div>
-            <Link
-              href="/labs/feed"
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-medium text-emerald-100 transition-colors hover:border-emerald-400/50 hover:bg-emerald-400/15"
-            >
-              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-              <span>View live research feed</span>
-            </Link>
           </div>
         </div>
+      </section>
+
+      {/* ── Navigation Grid ── */}
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Link
+          href="/labs/market"
+          className="group rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-5 transition hover:border-emerald-400/40 hover:bg-emerald-400/10"
+        >
+          <div className="mb-2 text-2xl">🧬</div>
+          <h3 className="text-sm font-semibold text-white group-hover:text-emerald-200">Marketplace</h3>
+          <p className="mt-1 text-xs text-white/40">Buy & sell research NFTs. Royalties auto-split to discoverers.</p>
+        </Link>
+        <Link
+          href="/labs/feed"
+          className="group rounded-2xl border border-sky-400/20 bg-sky-400/5 p-5 transition hover:border-sky-400/40 hover:bg-sky-400/10"
+        >
+          <div className="mb-2 flex items-center gap-2">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" />
+            <span className="text-[10px] uppercase tracking-wider text-sky-300">Live</span>
+          </div>
+          <h3 className="text-sm font-semibold text-white group-hover:text-sky-200">Research Feed</h3>
+          <p className="mt-1 text-xs text-white/40">Watch the AI agent work in real time. Fold, analyze, expand.</p>
+        </Link>
+        <Link
+          href="/labs/goals"
+          className="group rounded-2xl border border-violet-400/20 bg-violet-400/5 p-5 transition hover:border-violet-400/40 hover:bg-violet-400/10"
+        >
+          <div className="mb-2 text-2xl">🎯</div>
+          <h3 className="text-sm font-semibold text-white group-hover:text-violet-200">Research Goals</h3>
+          <p className="mt-1 text-xs text-white/40">Browse the tree of branching research directions.</p>
+        </Link>
+        <Link
+          href="/labs/moderation"
+          className="group rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5 transition hover:border-amber-400/40 hover:bg-amber-400/10"
+        >
+          <div className="mb-2 text-2xl">⚖️</div>
+          <h3 className="text-sm font-semibold text-white group-hover:text-amber-200">Peer Review</h3>
+          <p className="mt-1 text-xs text-white/40">Community moderation — stake on quality research.</p>
+        </Link>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
