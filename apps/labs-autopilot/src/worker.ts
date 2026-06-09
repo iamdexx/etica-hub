@@ -31,6 +31,7 @@ import {
   type PriorContext,
   type PriorContextCandidate,
   type PriorContextGoal,
+  type Reference,
   type ResearchPlan,
   type ServerGoalContext,
 } from './steps/plan.js';
@@ -89,13 +90,7 @@ type JobResult = {
     approach: string;
     successCriteria: string;
     risks: string;
-    references: Array<{
-      source: 'pubmed' | 'pdb';
-      id: string;
-      title: string;
-      detail: string;
-      url: string;
-    }>;
+    references: Reference[];
   };
   candidates: CandidateResult[];
   pdbBySequenceIndex: Record<number, string>;

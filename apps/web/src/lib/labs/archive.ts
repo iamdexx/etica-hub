@@ -238,48 +238,207 @@ export async function getArchiveCount(): Promise<number> {
 }
 
 /**
- * Search archive for prior art related to a prompt.
- * Returns archived research with matching keywords from goal titles.
- * Used by the worker's plan step to inject prior context.
+ * Full-text search across all archived research fields.
+ * Scores entries by keyword match density for relevance ranking.
+ * Used by the worker's plan step and by the encyclopedia UI.
+ *
+ * Searches across: goalTitle, disease, hypothesis, approach, summary,
+ * candidate rationales, candidate analyses, and references.
  */
 export async function searchPriorArt(
   keywords: string[],
   limit = 5,
 ): Promise<ArchivedResearch[]> {
   const store = labsStore();
-  // Search by disease keywords first
-  const results: ArchivedResearch[] = [];
+  const normalizedKw = keywords.map((k) => k.toLowerCase().trim()).filter((k) => k.length > 2);
+  if (normalizedKw.length === 0) return [];
+
+  // Phase 1: Direct disease index lookups (fast path)
+  const results: Array<{ entry: ArchivedResearch; score: number }> = [];
   const seen = new Set<string>();
 
-  for (const kw of keywords) {
-    if (results.length >= limit) break;
-    const ids = await store.zrevrange(ARCHIVE_DISEASE(kw), 0, limit - 1);
+  for (const kw of normalizedKw) {
+    const ids = await store.zrevrange(ARCHIVE_DISEASE(kw), 0, limit * 2);
     for (const id of ids) {
-      if (seen.has(id) || results.length >= limit) continue;
-      seen.add(id);
-      const raw = await store.get(ARCHIVE_KEY(id));
-      if (raw) results.push(JSON.parse(raw));
-    }
-  }
-
-  // If we didn't find enough by disease, search the global index
-  if (results.length < limit) {
-    const allIds = await store.zrevrange(ARCHIVE_INDEX, 0, 100);
-    for (const id of allIds) {
-      if (seen.has(id) || results.length >= limit) continue;
+      if (seen.has(id)) continue;
       seen.add(id);
       const raw = await store.get(ARCHIVE_KEY(id));
       if (!raw) continue;
       const entry: ArchivedResearch = JSON.parse(raw);
-      // Check if any keyword matches in title/hypothesis
-      const text = `${entry.goalTitle ?? ''} ${entry.hypothesis} ${entry.disease ?? ''}`.toLowerCase();
-      if (keywords.some((kw) => text.includes(kw.toLowerCase()))) {
-        results.push(entry);
+      const score = computeRelevanceScore(entry, normalizedKw);
+      results.push({ entry, score });
+    }
+  }
+
+  // Phase 2: Scan recent entries for full-text keyword matching
+  const scanLimit = Math.max(200, limit * 10);
+  const allIds = await store.zrevrange(ARCHIVE_INDEX, 0, scanLimit - 1);
+  for (const id of allIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const raw = await store.get(ARCHIVE_KEY(id));
+    if (!raw) continue;
+    const entry: ArchivedResearch = JSON.parse(raw);
+    const score = computeRelevanceScore(entry, normalizedKw);
+    if (score > 0) {
+      results.push({ entry, score });
+    }
+  }
+
+  // Sort by relevance score descending, then by recency
+  results.sort((a, b) => b.score - a.score || b.entry.completedAt - a.entry.completedAt);
+
+  return results.slice(0, limit).map((r) => r.entry);
+}
+
+/**
+ * Compute relevance score for a research entry against keywords.
+ * Higher score = more keyword matches in important fields.
+ */
+function computeRelevanceScore(entry: ArchivedResearch, keywords: string[]): number {
+  // Build searchable text from all fields with weights
+  const fields: Array<{ text: string; weight: number }> = [
+    { text: entry.disease ?? '', weight: 5 },
+    { text: entry.goalTitle ?? '', weight: 4 },
+    { text: entry.hypothesis, weight: 3 },
+    { text: entry.approach, weight: 2 },
+    { text: entry.summary, weight: 2 },
+    { text: entry.prompt, weight: 2 },
+    { text: entry.bestCandidate.rationale, weight: 1 },
+    { text: entry.bestCandidate.analysis ?? '', weight: 1 },
+    { text: entry.references.join(' '), weight: 1 },
+    ...entry.candidates.map((c) => ({ text: `${c.rationale} ${c.analysis ?? ''}`, weight: 0.5 })),
+  ];
+
+  let score = 0;
+  for (const kw of keywords) {
+    for (const field of fields) {
+      const lower = field.text.toLowerCase();
+      if (lower.includes(kw)) {
+        score += field.weight;
+        // Bonus for exact word boundary match
+        if (lower.split(/\s+/).includes(kw)) {
+          score += field.weight * 0.5;
+        }
       }
     }
   }
 
-  return results;
+  // Bonus for fold quality
+  if (entry.bestCandidate.score && entry.bestCandidate.score > 0.7) {
+    score *= 1.2;
+  }
+
+  return score;
+}
+
+/**
+ * Advanced search with faceted filtering and sorting.
+ * Powers the encyclopedia UI's search functionality.
+ */
+export interface ArchiveSearchOptions {
+  /** Free-text query (searches all fields) */
+  q?: string;
+  /** Filter by disease/condition */
+  disease?: string;
+  /** Filter by goal ID */
+  goalId?: string;
+  /** Only show minted entries */
+  mintedOnly?: boolean;
+  /** Minimum best candidate score */
+  minScore?: number;
+  /** Sort field */
+  sort?: 'relevance' | 'date' | 'score';
+  /** Pagination */
+  limit?: number;
+  offset?: number;
+}
+
+export interface ArchiveSearchResult {
+  results: ArchivedResearch[];
+  total: number;
+  facets: {
+    diseases: Array<{ name: string; count: number }>;
+    topScores: Array<{ id: string; score: number; disease?: string }>;
+  };
+}
+
+export async function searchArchive(opts: ArchiveSearchOptions): Promise<ArchiveSearchResult> {
+  const store = labsStore();
+  const limit = Math.min(opts.limit ?? 50, 200);
+  const offset = opts.offset ?? 0;
+  const sort = opts.sort ?? (opts.q ? 'relevance' : 'date');
+
+  // Determine which index to scan
+  let candidateIds: string[];
+  if (opts.disease) {
+    candidateIds = await store.zrevrange(ARCHIVE_DISEASE(opts.disease), 0, 500);
+  } else if (opts.goalId) {
+    candidateIds = await store.zrevrange(ARCHIVE_GOAL(opts.goalId), 0, 500);
+  } else {
+    candidateIds = await store.zrevrange(ARCHIVE_INDEX, 0, 500);
+  }
+
+  // Parse keywords from free-text query
+  const keywords = opts.q
+    ? opts.q.toLowerCase().split(/[\s,;.]+/).filter((w) => w.length > 2)
+    : [];
+
+  // Load and filter entries
+  const scored: Array<{ entry: ArchivedResearch; relevance: number }> = [];
+  const diseaseCounts = new Map<string, number>();
+
+  for (const id of candidateIds) {
+    const raw = await store.get(ARCHIVE_KEY(id));
+    if (!raw) continue;
+    const entry: ArchivedResearch = JSON.parse(raw);
+
+    // Apply filters
+    if (opts.mintedOnly && !entry.minted) continue;
+    if (opts.minScore && (entry.bestCandidate.score ?? 0) < opts.minScore) continue;
+
+    // Compute relevance if searching
+    const relevance = keywords.length > 0 ? computeRelevanceScore(entry, keywords) : 1;
+    if (keywords.length > 0 && relevance === 0) continue;
+
+    scored.push({ entry, relevance });
+
+    // Track disease facets
+    const d = entry.disease ?? 'Unknown';
+    diseaseCounts.set(d, (diseaseCounts.get(d) ?? 0) + 1);
+  }
+
+  // Sort
+  if (sort === 'relevance') {
+    scored.sort((a, b) => b.relevance - a.relevance || b.entry.completedAt - a.entry.completedAt);
+  } else if (sort === 'score') {
+    scored.sort(
+      (a, b) =>
+        (b.entry.bestCandidate.score ?? 0) - (a.entry.bestCandidate.score ?? 0) ||
+        b.entry.completedAt - a.entry.completedAt,
+    );
+  } else {
+    scored.sort((a, b) => b.entry.completedAt - a.entry.completedAt);
+  }
+
+  const total = scored.length;
+  const paged = scored.slice(offset, offset + limit).map((s) => s.entry);
+
+  // Build facets
+  const diseases = Array.from(diseaseCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20);
+
+  const topScores = scored
+    .slice(0, 10)
+    .map((s) => ({
+      id: s.entry.id,
+      score: s.entry.bestCandidate.score ?? 0,
+      disease: s.entry.disease,
+    }));
+
+  return { results: paged, total, facets: { diseases, topScores } };
 }
 
 /**
