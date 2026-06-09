@@ -7,6 +7,7 @@ import {
   useAccount,
   useChainId,
   useReadContract,
+  useReadContracts,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
@@ -139,6 +140,50 @@ export default function MarketPage() {
       listedAt: items[i]!.listedAt,
     }));
   }, [listingsData]);
+
+  // ─── Fetch user's owned NFTs ────────────────────────────────
+  const { data: userBalance } = useReadContract({
+    address: nftAddr ?? undefined,
+    abi: erc721Abi,
+    functionName: 'balanceOf',
+    args: connected ? [connected] : undefined,
+    query: { enabled: !!connected && !!nftAddr },
+  });
+
+  // Query ownerOf for token IDs 1..MAX_SCAN to find user's tokens.
+  // The contract uses sequential IDs starting at 1.
+  const MAX_TOKEN_SCAN = 200;
+  const ownerOfCalls = useMemo(() => {
+    if (!nftAddr || !connected || !userBalance || userBalance === 0n) return [];
+    return Array.from({ length: MAX_TOKEN_SCAN }, (_, i) => ({
+      address: nftAddr as Address,
+      abi: erc721Abi,
+      functionName: 'ownerOf' as const,
+      args: [BigInt(i + 1)],
+    }));
+  }, [nftAddr, connected, userBalance]);
+
+  const { data: ownerOfResults } = useReadContracts({
+    contracts: ownerOfCalls,
+    query: { enabled: ownerOfCalls.length > 0 },
+  });
+
+  // Filter to get token IDs owned by the connected wallet
+  const ownedTokenIds = useMemo<bigint[]>(() => {
+    if (!ownerOfResults || !connected) return [];
+    const ids: bigint[] = [];
+    for (let i = 0; i < ownerOfResults.length; i++) {
+      const result = ownerOfResults[i];
+      if (
+        result?.status === 'success' &&
+        typeof result.result === 'string' &&
+        result.result.toLowerCase() === connected.toLowerCase()
+      ) {
+        ids.push(BigInt(i + 1));
+      }
+    }
+    return ids;
+  }, [ownerOfResults, connected]);
 
   // ─── Sell flow state ──────────────────────────────────────────
   const [sellTokenId, setSellTokenId] = useState('');
@@ -310,18 +355,60 @@ export default function MarketPage() {
             {!connected ? (
               <p className="text-sm text-white/40">Connect wallet to list your research NFTs.</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
+                {/* ── User's NFTs ── */}
                 <div>
-                  <label className="mb-1 block text-xs text-white/50">Token ID</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={sellTokenId}
-                    onChange={(e) => setSellTokenId(e.target.value)}
-                    placeholder="e.g. 1"
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-sky-400/50 focus:outline-none"
-                  />
+                  <label className="mb-2 block text-xs font-medium text-white/60">
+                    Your Research NFTs
+                    {userBalance !== undefined && (
+                      <span className="ml-1 text-white/30">({Number(userBalance)})</span>
+                    )}
+                  </label>
+                  {ownedTokenIds.length === 0 ? (
+                    <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4 text-center">
+                      <p className="text-xs text-white/30">
+                        {userBalance === 0n
+                          ? 'You don\'t own any research NFTs yet.'
+                          : 'Loading your NFTs...'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {ownedTokenIds.map((tokenId) => {
+                        const isSelected = sellTokenId === tokenId.toString();
+                        const isListed = listings.some((l) => l.tokenId === tokenId);
+                        return (
+                          <button
+                            key={tokenId.toString()}
+                            disabled={isListed}
+                            onClick={() => setSellTokenId(tokenId.toString())}
+                            className={`relative rounded-lg border p-3 text-left transition ${
+                              isSelected
+                                ? 'border-sky-400/60 bg-sky-500/10'
+                                : isListed
+                                  ? 'cursor-not-allowed border-white/5 bg-white/[0.01] opacity-40'
+                                  : 'border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
+                            }`}
+                          >
+                            <span className="block text-xs font-bold text-emerald-300">
+                              RES #{tokenId.toString()}
+                            </span>
+                            {isListed && (
+                              <span className="mt-1 block text-[10px] text-amber-300/70">
+                                Already listed
+                              </span>
+                            )}
+                            {isSelected && (
+                              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-sky-400" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
+
+                {/* ── Price Input ── */}
                 <div>
                   <label className="mb-1 block text-xs text-white/50">Price (EGAZ)</label>
                   <input
@@ -332,6 +419,8 @@ export default function MarketPage() {
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-sky-400/50 focus:outline-none"
                   />
                 </div>
+
+                {/* ── List Button ── */}
                 <button
                   disabled={!sellTokenId || !sellPrice || sellStep !== 'idle'}
                   onClick={handleList}
@@ -342,8 +431,8 @@ export default function MarketPage() {
                     : sellStep === 'listing'
                       ? 'Listing...'
                       : !isApproved
-                        ? 'Approve & List'
-                        : 'List for Sale'}
+                        ? `Approve & List RES #${sellTokenId || '?'}`
+                        : `List RES #${sellTokenId || '?'} for Sale`}
                 </button>
               </div>
             )}
