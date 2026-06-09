@@ -182,10 +182,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         if (err instanceof GroqError && model === models[models.length - 1]) {
           return json(
             {
-              error: `Groq planning failed (${err.status}).`,
-              detail: (err.detail ?? err.message).slice(0, 240),
+              error: 'The AI could not generate a research plan from this prompt. Try adding more detail (e.g. a target protein, disease mechanism, or therapeutic approach).',
             },
-            { status: 502, headers: limit.headers },
+            { status: 422, headers: limit.headers },
           );
         }
       }

@@ -155,11 +155,13 @@ const BIOMED_GATE_TIMEOUT_MS = 6000;
 
 const BIOMED_GATE_SYSTEM = `You are a biomedical-scope classifier for EticaLabs, a community research platform.
 
-A submission is IN SCOPE if it concerns biomedical research, structural biology, drug discovery, protein engineering, pharmacology, immunology, oncology, neurology, public health, epidemiology, biotechnology, vaccines, diagnostics, or directly-related life-sciences work.
+A submission is IN SCOPE if it concerns ANY aspect of biomedical research, structural biology, drug discovery, protein engineering, pharmacology, immunology, oncology, neurology, public health, epidemiology, biotechnology, vaccines, diagnostics, or directly-related life-sciences work. Broad topics like "cancer research", "Alzheimer's", "diabetes", "heart disease", "protein folding", "gene therapy" etc. are ALWAYS in scope — the AI agent will refine them into specific research directions.
 
-A submission is OUT OF SCOPE if it concerns finance, gambling, weapons, illegal drug synthesis, sexual content, violence, doxxing, politics, or anything not directly biomedical.
+A submission is OUT OF SCOPE ONLY if it clearly concerns finance, gambling, weapons, illegal drug synthesis, sexual content, violence, doxxing, politics, or anything obviously not related to biology or medicine.
 
-Reply with exactly one word, lowercase: "yes" if the submission is in scope, "no" if it is out of scope, or "unclear" if you cannot determine the scope with high confidence.`;
+When in doubt, answer "yes". Only say "no" if the submission is clearly unrelated to any life science or medical topic.
+
+Reply with exactly one word, lowercase: "yes" if the submission is in scope, "no" if it is clearly out of scope.`;
 
 export type BiomedicalGateVerdict = 'yes' | 'no' | 'unclear';
 

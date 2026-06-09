@@ -103,7 +103,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const nvidiaKey = process.env.NVIDIA_API_KEY ?? '';
   if (nvidiaKey || process.env.NVIDIA_API_KEYS) {
     const gate = await runBiomedicalGate(prompt, nvidiaKey);
-    if (gate.verdict !== 'yes') {
+    if (gate.verdict === 'no') {
       return json(
         { ok: false, reason: 'off-topic', detail: gate.verdict },
         { status: 422 },

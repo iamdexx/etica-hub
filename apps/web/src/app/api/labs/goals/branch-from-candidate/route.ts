@@ -220,13 +220,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   const nvidiaKey = process.env.NVIDIA_API_KEY ?? '';
   if (nvidiaKey || process.env.NVIDIA_API_KEYS) {
     const gate = await runBiomedicalGate(combined, nvidiaKey);
-    if (gate.verdict !== 'yes') {
+    if (gate.verdict === 'no') {
       return json(
         {
-          error:
-            gate.verdict === 'no'
-              ? 'EticaLabs branches must be biomedical or life-sciences research.'
-              : 'Could not confirm this is a biomedical branch. Add more detail.',
+          error: 'EticaLabs branches must be biomedical or life-sciences research.',
         },
         { status: 403, headers: limit.headers },
       );

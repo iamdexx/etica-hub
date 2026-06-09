@@ -139,13 +139,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     const apiKey = process.env.NVIDIA_API_KEY ?? '';
     if (apiKey || process.env.NVIDIA_API_KEYS) {
       const gate = await runBiomedicalGate(prompt, apiKey);
-      if (gate.verdict !== 'yes') {
+      if (gate.verdict === 'no') {
         return json(
           {
-            error:
-              gate.verdict === 'no'
-                ? 'EticaLabs is for biomedical and life-sciences research. Please refine your prompt to a medical or biological objective.'
-                : 'Could not confirm this is a biomedical research prompt. Please refine your wording.',
+            error: 'EticaLabs is for biomedical and life-sciences research. Please refine your prompt to a medical or biological objective.',
           },
           { status: 403, headers: limit.headers },
         );
