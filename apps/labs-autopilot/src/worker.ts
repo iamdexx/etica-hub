@@ -997,9 +997,14 @@ async function main(): Promise<void> {
     }
     if (!job) {
       log('queue empty — attempting auto-seed from academic APIs');
-      const seed = await generateSeedPrompt();
+      let seed: Awaited<ReturnType<typeof generateSeedPrompt>> = null;
+      try {
+        seed = await generateSeedPrompt();
+      } catch (seedErr) {
+        log(`auto-seed threw: ${seedErr instanceof Error ? seedErr.message : seedErr}`);
+      }
       if (!seed) {
-        log('auto-seed failed (no academic data available); exiting');
+        log('auto-seed returned null (LLM unreachable or output rejected); exiting');
         break;
       }
       log(`auto-seed generated: "${seed.prompt}" (source: ${seed.source}, topic: ${seed.topic})`);
