@@ -217,9 +217,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 403, headers: limit.headers },
     );
   }
-  const groqKey = process.env.GROQ_API_KEY ?? '';
-  if (groqKey || process.env.GROQ_API_KEYS) {
-    const gate = await runBiomedicalGate(combined, groqKey);
+  const nvidiaKey = process.env.NVIDIA_API_KEY ?? '';
+  if (nvidiaKey || process.env.NVIDIA_API_KEYS) {
+    const gate = await runBiomedicalGate(combined, nvidiaKey);
     if (gate.verdict !== 'yes') {
       return json(
         {

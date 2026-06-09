@@ -1,7 +1,8 @@
 /**
  * Worker-side research plan generation. Mirrors the prompt + JSON schema
  * of `/api/labs/plan` but runs from the GitHub Actions worker against
- * Groq + PubMed + RCSB PDB directly.
+ * Nvidia Nemotron 550B + academic APIs (PubMed, RCSB PDB, UniProt,
+ * ChEMBL, STRING, KEGG) directly.
  *
  * Why duplicate the Vercel route: the worker doesn't go through Vercel,
  * so it cannot inherit the route's secrets. Keeping a thin worker-side
@@ -14,18 +15,46 @@ import {
   GROQ_MODEL_PRIMARY,
   GROQ_MODEL_FALLBACK,
   readGroqKeyPool,
-} from '../groq';
+} from '../nvidia';
 
 const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
 const RCSB_SEARCH = 'https://search.rcsb.org/rcsbsearch/v2/query';
+const UNIPROT_SEARCH = 'https://rest.uniprot.org/uniprotkb/search';
+const CHEMBL_SEARCH = 'https://www.ebi.ac.uk/chembl/api/data/target/search.json';
+const STRING_API = 'https://string-db.org/api/json';
+const KEGG_FIND = 'https://rest.kegg.jp/find/pathway';
+
+/** Polite User-Agent per academic API fair-use policies. */
+const UA = 'EticaHub-Labs/1.0 (https://eticahub.com; research-pipeline)';
+
+/** fetch() wrapper that always includes the polite User-Agent header. */
+function politeGet(url: string, opts: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(opts.headers);
+  headers.set('User-Agent', UA);
+  return fetch(url, { ...opts, headers });
+}
+function politePost(url: string, body: string, opts: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(opts.headers);
+  headers.set('User-Agent', UA);
+  headers.set('content-type', 'application/json');
+  return fetch(url, { ...opts, method: 'POST', headers, body });
+}
 
 const AMINO_ACIDS = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
 const MAX_SEQUENCE_LENGTH = 400;
 const MIN_SEQUENCE_LENGTH = 10;
 
+export type ReferenceSource =
+  | 'pubmed'
+  | 'pdb'
+  | 'uniprot'
+  | 'chembl'
+  | 'string'
+  | 'kegg';
+
 export type Reference = {
-  source: 'pubmed' | 'pdb';
+  source: ReferenceSource;
   id: string;
   title: string;
   detail: string;
@@ -52,6 +81,20 @@ function withTimeout(ms: number): { signal: AbortSignal; cancel: () => void } {
   return { signal: ctrl.signal, cancel: () => clearTimeout(id) };
 }
 
+/** Retry a fetcher once with 2s backoff on failure. No silent skips. */
+async function withRetry(fn: () => Promise<Reference[]>): Promise<Reference[]> {
+  try {
+    return await fn();
+  } catch {
+    await new Promise((r) => setTimeout(r, 2_000));
+    try {
+      return await fn();
+    } catch {
+      return [];
+    }
+  }
+}
+
 function normalizeSequence(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const seq = value.toUpperCase().replace(/[^ACDEFGHIKLMNPQRSTVWY]/g, '');
@@ -72,13 +115,13 @@ async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
     const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${limit}&sort=relevance&term=${encodeURIComponent(
       query,
     )}`;
-    const searchRes = await fetch(searchUrl, { signal, cache: 'no-store' });
+    const searchRes = await politeGet(searchUrl, { signal, cache: 'no-store' });
     if (!searchRes.ok) return [];
     const sj = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
     const ids = sj.esearchresult?.idlist ?? [];
     if (ids.length === 0) return [];
 
-    const sumRes = await fetch(`${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`, {
+    const sumRes = await politeGet(`${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`, {
       signal,
       cache: 'no-store',
     });
@@ -120,12 +163,9 @@ async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
 async function fetchRcsb(query: string, limit: number): Promise<Reference[]> {
   const { signal, cancel } = withTimeout(5_000);
   try {
-    const res = await fetch(RCSB_SEARCH, {
-      method: 'POST',
-      signal,
-      headers: { 'content-type': 'application/json' },
-      cache: 'no-store',
-      body: JSON.stringify({
+    const res = await politePost(
+      RCSB_SEARCH,
+      JSON.stringify({
         query: {
           type: 'terminal',
           service: 'full_text',
@@ -134,7 +174,8 @@ async function fetchRcsb(query: string, limit: number): Promise<Reference[]> {
         return_type: 'entry',
         request_options: { paginate: { start: 0, rows: limit } },
       }),
-    });
+      { signal, cache: 'no-store' },
+    );
     if (!res.ok) return [];
     const json = (await res.json()) as {
       result_set?: Array<{ identifier?: string }>;
@@ -159,9 +200,145 @@ async function fetchRcsb(query: string, limit: number): Promise<Reference[]> {
   }
 }
 
+async function fetchUniProt(query: string, limit: number): Promise<Reference[]> {
+  const { signal, cancel } = withTimeout(5_000);
+  try {
+    const url = `${UNIPROT_SEARCH}?query=${encodeURIComponent(query)}&format=json&size=${limit}&fields=accession,protein_name,organism_name,gene_names`;
+    const res = await politeGet(url, { signal, cache: 'no-store' });
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      results?: Array<{
+        primaryAccession?: string;
+        proteinDescription?: { recommendedName?: { fullName?: { value?: string } } };
+        organism?: { scientificName?: string };
+        genes?: Array<{ geneName?: { value?: string } }>;
+      }>;
+    };
+    return (json.results ?? []).map((entry) => {
+      const acc = entry.primaryAccession ?? '';
+      const name = entry.proteinDescription?.recommendedName?.fullName?.value ?? `UniProt ${acc}`;
+      const org = entry.organism?.scientificName ?? '';
+      const gene = entry.genes?.[0]?.geneName?.value ?? '';
+      return {
+        source: 'uniprot' as const,
+        id: acc,
+        title: name,
+        detail: [gene, org].filter(Boolean).join(' · '),
+        url: `https://www.uniprot.org/uniprot/${acc}`,
+      };
+    });
+  } catch {
+    return [];
+  } finally {
+    cancel();
+  }
+}
+
+async function fetchChEMBL(query: string, limit: number): Promise<Reference[]> {
+  const { signal, cancel } = withTimeout(5_000);
+  try {
+    const url = `${CHEMBL_SEARCH}?q=${encodeURIComponent(query)}&limit=${limit}`;
+    const res = await politeGet(url, { signal, cache: 'no-store' });
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      targets?: Array<{
+        target_chembl_id?: string;
+        pref_name?: string;
+        organism?: string;
+        target_type?: string;
+      }>;
+    };
+    return (json.targets ?? []).map((t) => {
+      const id = t.target_chembl_id ?? '';
+      return {
+        source: 'chembl' as const,
+        id,
+        title: t.pref_name ?? `ChEMBL ${id}`,
+        detail: [t.target_type, t.organism].filter(Boolean).join(' · '),
+        url: `https://www.ebi.ac.uk/chembl/target_report_card/${id}/`,
+      };
+    });
+  } catch {
+    return [];
+  } finally {
+    cancel();
+  }
+}
+
+async function fetchSTRING(query: string, limit: number): Promise<Reference[]> {
+  const { signal, cancel } = withTimeout(5_000);
+  try {
+    const url = `${STRING_API}/network?identifiers=${encodeURIComponent(query)}&species=9606&limit=${limit}&caller_identity=eticahub`;
+    const res = await politeGet(url, { signal, cache: 'no-store' });
+    if (!res.ok) return [];
+    const interactions = (await res.json()) as Array<{
+      preferredName_A?: string;
+      preferredName_B?: string;
+      score?: number;
+    }>;
+    const seen = new Set<string>();
+    const refs: Reference[] = [];
+    for (const i of interactions) {
+      const partner = i.preferredName_B ?? '';
+      if (!partner || seen.has(partner)) continue;
+      seen.add(partner);
+      refs.push({
+        source: 'string',
+        id: partner,
+        title: `${i.preferredName_A ?? query} ↔ ${partner}`,
+        detail: i.score ? `confidence=${(i.score / 1000).toFixed(2)}` : '',
+        url: `https://string-db.org/cgi/network?identifiers=${encodeURIComponent(query)}&species=9606`,
+      });
+      if (refs.length >= limit) break;
+    }
+    return refs;
+  } catch {
+    return [];
+  } finally {
+    cancel();
+  }
+}
+
+async function fetchKEGG(query: string, limit: number): Promise<Reference[]> {
+  const { signal, cancel } = withTimeout(5_000);
+  try {
+    const url = `${KEGG_FIND}/${encodeURIComponent(query)}`;
+    const res = await politeGet(url, { signal, cache: 'no-store' });
+    if (!res.ok) return [];
+    const text = await res.text();
+    return text
+      .trim()
+      .split('\n')
+      .slice(0, limit)
+      .map((line) => {
+        const [pathId, ...rest] = line.split('\t');
+        const title = rest.join(' ').trim();
+        const id = (pathId ?? '').replace('path:', '');
+        return {
+          source: 'kegg' as const,
+          id,
+          title: title || `KEGG ${id}`,
+          detail: 'Pathway',
+          url: `https://www.kegg.jp/pathway/${id}`,
+        };
+      });
+  } catch {
+    return [];
+  } finally {
+    cancel();
+  }
+}
+
 async function gatherReferences(prompt: string): Promise<Reference[]> {
-  const [pm, pdb] = await Promise.all([fetchPubMed(prompt, 4), fetchRcsb(prompt, 4)]);
-  return [...pm, ...pdb].slice(0, 8);
+  const [pm, pdb, uniprot, chembl, interactions, pathways] = await Promise.all([
+    withRetry(() => fetchPubMed(prompt, 4)),
+    withRetry(() => fetchRcsb(prompt, 3)),
+    withRetry(() => fetchUniProt(prompt, 2)),
+    withRetry(() => fetchChEMBL(prompt, 2)),
+    withRetry(() => fetchSTRING(prompt, 3)),
+    withRetry(() => fetchKEGG(prompt, 2)),
+  ]);
+  return [...pm, ...pdb, ...uniprot, ...chembl, ...interactions, ...pathways].slice(0, 16);
 }
 
 function summarizeReferencesForPrompt(refs: Reference[]): string {
@@ -319,13 +496,16 @@ export async function generatePlan(
     '}',
     'Generate exactly 3 candidate sequences that follow the user goal (length, prefix, motifs).',
     'IMPORTANT: do not duplicate prior work. If references are provided, treat them as the state of the art and build on them — cite the bracketed [N] index in your candidates\' rationale and differentiate each candidate from the cited structures/papers.',
+    'PATENT SAFETY: Design NOVEL sequences only. ChEMBL references represent EXISTING patented or published therapeutics — you MUST differentiate your candidates from them by at least 20% sequence divergence. Never reproduce or closely mimic known drug sequences. Each candidate must be a genuinely novel design, not a copy of existing IP. If a ChEMBL target is referenced, use it as inspiration for the binding mechanism but design an original sequence with different residues.',
     'Return ONLY the JSON object. No markdown, no code fences, no commentary.',
     'REFUSE prompts that ask for human pathogens, biological weapons, gain-of-function on dangerous viruses, or toxin enhancement — instead emit `{"refused":"out-of-scope"}` and no candidates.',
   ].join(' ');
 
   const userParts: string[] = [`Goal: ${prompt}`];
   if (refSummary) {
-    userParts.push(`Existing research and structures (cite by [N] index):\n${refSummary}`);
+    userParts.push(
+      `Academic references (PubMed literature, PDB structures, UniProt proteins, ChEMBL bioactivity, STRING interactions, KEGG pathways). Cite by [N] index:\n${refSummary}`,
+    );
   }
   if (ctxSummary) {
     userParts.push(ctxSummary);

@@ -16,8 +16,7 @@
  * Env:
  *   LABS_AUTOPILOT_BASE_URL   — e.g. https://eticahub.com
  *   LABS_AUTOPILOT_TOKEN      — shared secret; same value in Vercel env
- *   GROQ_API_KEY              — planning + analysis
- *   NVIDIA_API_KEY            — folding
+ *   NVIDIA_API_KEY             — Nemotron LLM (planning + analysis) + ESMFold
  *
  * Optional:
  *   LABS_AUTOPILOT_MAX_JOBS_PER_TICK   — default 1
@@ -32,6 +31,7 @@ import {
   type PriorContext,
   type PriorContextCandidate,
   type PriorContextGoal,
+  type Reference,
   type ResearchPlan,
   type ServerGoalContext,
 } from './steps/plan.js';
@@ -39,6 +39,9 @@ import { foldWithCascade } from './steps/fold.js';
 import { sequenceOnlyScore } from './steps/sequence-score.js';
 import { analyseStructure } from './steps/analyse.js';
 import { mutateSequence } from './steps/mutate.js';
+import { designSequences } from './steps/proteinmpnn.js';
+import { dockMolecule } from './steps/diffdock.js';
+import { validateSequence, quickSequenceQuality } from './steps/esm2.js';
 import { proposeBranchPlan, proposeNextDirection } from './steps/expand.js';
 
 type LabsJobStatus = 'pending' | 'running' | 'done' | 'error';
@@ -71,6 +74,8 @@ type CandidateResult = {
   analysis?: string;
   score?: number;
   error?: string;
+  /** DiffDock binding confidence (0-1) if docking was performed */
+  dockingConfidence?: number;
   /**
    * True when the cascade failed and we published the candidate with a
    * sequence-only score so mint is never blocked on a flaky fold host.
@@ -85,13 +90,7 @@ type JobResult = {
     approach: string;
     successCriteria: string;
     risks: string;
-    references: Array<{
-      source: 'pubmed' | 'pdb';
-      id: string;
-      title: string;
-      detail: string;
-      url: string;
-    }>;
+    references: Reference[];
   };
   candidates: CandidateResult[];
   pdbBySequenceIndex: Record<number, string>;
@@ -516,6 +515,41 @@ async function buildCandidateResult(
     peerSequences: readonly string[];
   },
 ): Promise<CandidateResult> {
+  // ESM2 pre-validation — reject sequences with invalid characters or
+  // extremely poor composition before wasting ESMFold compute.
+  const seqCheck = validateSequence(candidate.sequence);
+  if (!seqCheck.valid) {
+    events.push({
+      kind: 'sequence_rejected',
+      message: `Candidate ${index} rejected pre-fold: ${seqCheck.error}`,
+      meta: { index },
+    });
+    return {
+      index,
+      sequence: candidate.sequence,
+      rationale: candidate.rationale,
+      folded: false,
+      analysis: `Rejected: ${seqCheck.error}`,
+      score: 0,
+    };
+  }
+  const quality = quickSequenceQuality(candidate.sequence);
+  if (quality < 0.2) {
+    events.push({
+      kind: 'sequence_low_quality',
+      message: `Candidate ${index} has low composition quality (${quality.toFixed(2)}); skipping fold`,
+      meta: { index, quality },
+    });
+    return {
+      index,
+      sequence: candidate.sequence,
+      rationale: candidate.rationale,
+      folded: false,
+      analysis: `Low quality sequence (score ${quality.toFixed(2)})`,
+      score: quality * 0.1,
+    };
+  }
+
   log(`fold candidate[${index}] (${candidate.sequence.length} aa)`);
   const outcome = await foldWithCascade(candidate.sequence);
 
@@ -582,6 +616,22 @@ async function buildCandidateResult(
     });
   }
 
+  // DiffDock — attempt drug-protein docking if analysis suggests a binding
+  // target. This is non-blocking: failures don't prevent the candidate from
+  // being published. The docking data enriches the research archive.
+  let dockingConfidence: number | undefined;
+  if (analysis && analysis.score >= 0.6) {
+    // Only dock high-quality folds — docking a bad structure wastes compute.
+    // In the future, the ligand would come from the analysis step identifying
+    // a drug target. For now, this is a placeholder for the docking capability.
+    // The pipeline will use this when ligand data is available in the archive.
+    events.push({
+      kind: 'docking_ready',
+      message: `Candidate ${index} qualifies for docking (score ${analysis.score.toFixed(2)})`,
+      meta: { index, score: analysis.score },
+    });
+  }
+
   return {
     index,
     sequence: candidate.sequence,
@@ -590,6 +640,7 @@ async function buildCandidateResult(
     folded: true,
     analysis: analysis?.summary,
     score: analysis?.score,
+    dockingConfidence,
   };
 }
 
@@ -614,6 +665,57 @@ async function runJob(job: LabsJob): Promise<void> {
         meta: { goalId: job.goalId, selfPrior: selfN, related: relN },
       });
     }
+  }
+
+  // Search the permanent archive for prior art that relates to this prompt.
+  // This is the cascade mechanism: new research always builds on old findings.
+  try {
+    const keywords = job.prompt
+      .toLowerCase()
+      .split(/[\s,;.]+/)
+      .filter((w) => w.length > 3)
+      .slice(0, 10);
+    if (keywords.length > 0) {
+      const archiveRes = await fetch(`${BASE_URL}/api/labs/archive/search`, {
+        method: 'POST',
+        headers: {
+          'x-labs-worker-token': TOKEN,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ keywords, limit: 3 }),
+      });
+      if (archiveRes.ok) {
+        const { results } = (await archiveRes.json()) as {
+          results: Array<{
+            hypothesis: string;
+            summary: string;
+            bestCandidate: { sequence: string; score?: number };
+          }>;
+        };
+        if (results.length > 0) {
+          // Inject archived findings into prior context so the planner sees them
+          if (!priorContext) {
+            priorContext = { selfPriorCandidates: [], relatedGoals: [] };
+          }
+          for (const r of results) {
+            priorContext.selfPriorCandidates = priorContext.selfPriorCandidates ?? [];
+            priorContext.selfPriorCandidates.push({
+              jobId: 'archive',
+              sequence: r.bestCandidate.sequence,
+              score: r.bestCandidate.score,
+              analysis: `[Prior art] ${r.hypothesis}. ${r.summary}`,
+            });
+          }
+          events.push({
+            kind: 'goal_context',
+            message: `Loaded ${results.length} prior art reference(s) from archive`,
+            meta: { archiveHits: results.length },
+          });
+        }
+      }
+    }
+  } catch (err) {
+    log(`archive search failed (non-fatal): ${err instanceof Error ? err.message : err}`);
   }
 
   // Iteration 1 — plan + fold + analyse.
@@ -678,18 +780,68 @@ async function runJob(job: LabsJob): Promise<void> {
       });
       break;
     }
-    log(`iteration ${iter} — mutating candidate[${bestIndex}]`);
+    log(`iteration ${iter} — designing sequences from candidate[${bestIndex}]`);
 
-    const mutants = mutateSequence(best.sequence, 3);
-    for (const mutant of mutants) {
+    // Try ProteinMPNN first (AI-designed sequences from the 3D backbone).
+    // Falls back to deterministic point mutations if ProteinMPNN fails or
+    // if no PDB is available for the parent.
+    const parentPdb = pdbMap[bestIndex];
+    let designedMutants: Array<{ sequence: string; description: string }> = [];
+
+    if (parentPdb) {
+      const mpnnResult = await designSequences({
+        pdb: parentPdb,
+        samplingTemp: 0.2,
+        numSequences: 3,
+      }).catch((err) => {
+        log(`ProteinMPNN error: ${err instanceof Error ? err.message : err}`);
+        return null;
+      });
+
+      if (mpnnResult && mpnnResult.ok) {
+        events.push({
+          kind: 'proteinmpnn',
+          message: `ProteinMPNN designed ${mpnnResult.sequences.length} sequence(s) in ${mpnnResult.durationMs}ms`,
+          meta: { count: mpnnResult.sequences.length, durationMs: mpnnResult.durationMs },
+        });
+        for (const designed of mpnnResult.sequences) {
+          // Skip sequences identical to parent
+          if (designed.sequence === best.sequence) continue;
+          // ESM2 quick quality check
+          const quality = quickSequenceQuality(designed.sequence);
+          if (quality < 0.3) continue;
+          designedMutants.push({
+            sequence: designed.sequence,
+            description: `ProteinMPNN design (score=${designed.score.toFixed(2)}, recovery=${(designed.recoveryRate * 100).toFixed(0)}%)`,
+          });
+        }
+      } else {
+        const errMsg = mpnnResult && !mpnnResult.ok ? mpnnResult.error : 'not available';
+        events.push({
+          kind: 'proteinmpnn_fallback',
+          message: `ProteinMPNN unavailable (${errMsg}); using deterministic mutations`,
+        });
+      }
+    }
+
+    // Fallback to deterministic mutations if ProteinMPNN produced nothing
+    if (designedMutants.length === 0) {
+      const fallback = mutateSequence(best.sequence, 3);
+      designedMutants = fallback.map((m) => ({
+        sequence: m.sequence,
+        description: m.description,
+      }));
+    }
+
+    for (const mutant of designedMutants) {
       const idx = allCandidates.length;
       const candidate: PlanCandidate = {
         sequence: mutant.sequence,
-        rationale: `Mutated parent #${bestIndex} (${mutant.description})`,
+        rationale: `Designed from parent #${bestIndex} (${mutant.description})`,
       };
       events.push({
         kind: 'mutated',
-        message: `Generated mutant #${idx} from parent #${bestIndex}: ${mutant.description}`,
+        message: `Generated variant #${idx} from parent #${bestIndex}: ${mutant.description}`,
         meta: { parent: bestIndex, child: idx },
       });
       const result = await buildCandidateResult(job.id, idx, candidate, events, pdbMap, {
@@ -793,10 +945,6 @@ async function runJob(job: LabsJob): Promise<void> {
 async function main(): Promise<void> {
   if (!TOKEN) {
     console.error('LABS_AUTOPILOT_TOKEN is required.');
-    process.exit(1);
-  }
-  if (!process.env.GROQ_API_KEY && !process.env.GROQ_API_KEYS) {
-    console.error('GROQ_API_KEY (or comma-separated GROQ_API_KEYS) is required.');
     process.exit(1);
   }
   if (!process.env.NVIDIA_API_KEY && !process.env.NVIDIA_API_KEYS) {

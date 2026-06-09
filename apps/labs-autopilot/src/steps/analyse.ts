@@ -14,7 +14,7 @@ import {
   GROQ_MODEL_FALLBACK,
   GROQ_MODEL_PRIMARY,
   readGroqKeyPool,
-} from '../groq';
+} from '../nvidia';
 
 export type Analysis = {
   summary: string;

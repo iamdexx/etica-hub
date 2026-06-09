@@ -7,7 +7,7 @@ import {
   GROQ_MODEL_PRIMARY,
   GROQ_MODEL_FALLBACK,
   hasGroqKey,
-} from '@/lib/labs/groq';
+} from '@/lib/labs/nvidia';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
