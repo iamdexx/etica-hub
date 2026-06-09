@@ -182,9 +182,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         if (err instanceof NvidiaError && model === models[models.length - 1]) {
           return json(
             {
-              error: 'The AI could not generate a research plan from this prompt. Try adding more detail (e.g. a target protein, disease mechanism, or therapeutic approach).',
+              error: `Nvidia planning failed (${err.status}).`,
+              detail: (err.detail ?? err.message).slice(0, 240),
             },
-            { status: 422, headers: limit.headers },
+            { status: 502, headers: limit.headers },
           );
         }
       }
