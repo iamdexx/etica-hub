@@ -141,7 +141,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       `${title}\n${description}\n${firstPrompt}`,
       nvidiaKey,
     );
-    if (gate.verdict !== 'yes') {
+    if (gate.verdict === 'no') {
       return json(
         { ok: false, reason: 'off-topic', detail: gate.verdict },
         { status: 422 },

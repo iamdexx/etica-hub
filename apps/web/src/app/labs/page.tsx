@@ -750,8 +750,8 @@ export default function LabsPage() {
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
             <div className="font-medium text-white">Pipeline</div>
             <ol className="mt-3 space-y-2 text-white/60">
-              <li>1. Prompt &rarr; Groq research plan (optional)</li>
-              <li>2. Plan / Prompt &rarr; Groq sequence extraction</li>
+              <li>1. Prompt &rarr; Nvidia Nemotron research plan (optional)</li>
+              <li>2. Plan / Prompt &rarr; Nvidia sequence extraction</li>
               <li>3. Sequence &rarr; {selectedEngine === 'auto' ? 'Multi-engine cascade' : engines.find((e) => e.id === selectedEngine)?.label ?? selectedEngine}</li>
               <li>4. PDB &rarr; 3Dmol.js render</li>
               <li>5. Sequence &rarr; AI structural analysis</li>
@@ -887,7 +887,7 @@ export default function LabsPage() {
             <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
               <div className="text-xs uppercase tracking-wider text-white/40">System status</div>
               <div className="mt-3 space-y-2 text-sm text-white/70">
-                <div>Groq parsing: operational</div>
+                <div>Nvidia Nemotron: operational</div>
                 <div>
                   Engines:{' '}
                   {engines.length > 0

@@ -1,16 +1,19 @@
 /**
- * Worker-only endpoint: enqueue a system-originated follow-up job
- * spawned by the Autopilot loop when a prior job completes. Used to
- * drive the self-perpetuating research loop (auto-expansion +
- * cross-goal seeding).
+ * Worker-only endpoint: enqueue a system-originated job spawned by the
+ * Autopilot loop. Supports three kinds:
+ *
+ *   - `continuation` — follow-up on a completed job within the same goal.
+ *   - `cross-goal`   — seed a follow-up into a different goal.
+ *   - `auto-seed`    — generate a brand-new goal from academic API data
+ *                       when the job queue is empty (no goalId required).
  *
  * POST /api/labs/queue/spawn
  *   headers: { x-labs-worker-token: <LABS_AUTOPILOT_TOKEN> }
  *   body: {
- *     goalId: string,
+ *     goalId?: string,        // required for continuation/cross-goal
  *     prompt: string,
  *     parentJobId?: string,
- *     kind?: 'continuation' | 'cross-goal',
+ *     kind?: 'continuation' | 'cross-goal' | 'auto-seed',
  *     maxIterations?: number,
  *   }
  *   returns: { ok: true, id } | { ok: false, reason: <ExpansionDenyReason> }
@@ -25,7 +28,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 
-import { attachJobToGoal, getGoal, updateGoal } from '@/lib/labs/goal-store';
+import { attachJobToGoal, createGoal, getGoal, updateGoal } from '@/lib/labs/goal-store';
 import {
   evaluateExpansion,
   getDailyExpansionCount,
@@ -75,12 +78,14 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const goalId = typeof body.goalId === 'string' ? body.goalId.trim() : '';
   const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-  const kind = body.kind === 'cross-goal' ? 'cross-goal' : 'continuation';
+  const kind =
+    body.kind === 'cross-goal' ? 'cross-goal' : body.kind === 'auto-seed' ? 'auto-seed' : 'continuation';
   const parentJobId =
     typeof body.parentJobId === 'string' ? body.parentJobId.trim().slice(0, 80) : undefined;
   const maxIterations = clampIterations(body.maxIterations);
 
-  if (!goalId) return json({ ok: false, error: 'goalId is required.' }, { status: 400 });
+  // goalId is only required for continuation/cross-goal — auto-seeds create their own goal.
+  if (!goalId && kind !== 'auto-seed') return json({ ok: false, error: 'goalId is required.' }, { status: 400 });
   if (!prompt) return json({ ok: false, error: 'prompt is required.' }, { status: 400 });
   if (prompt.length > MAX_PROMPT_CHARS) {
     return json(
@@ -99,11 +104,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  // Layer 2 — biomedical gate. Cheap Groq call; fail-closed if Groq is down.
+  // Layer 2 — biomedical gate (Nvidia Nemotron). Fail-open on 'unclear'.
   const nvidiaKey = process.env.NVIDIA_API_KEY ?? '';
   if (nvidiaKey || process.env.NVIDIA_API_KEYS) {
     const gate = await runBiomedicalGate(prompt, nvidiaKey);
-    if (gate.verdict !== 'yes') {
+    if (gate.verdict === 'no') {
       return json(
         { ok: false, reason: 'off-topic', detail: gate.verdict },
         { status: 422 },
@@ -111,9 +116,67 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
-  // Caps gate — operator pause, daily-per-goal cap, global pending cap.
-  const goal = await getGoal(goalId);
   const queue = labsQueue();
+
+  // ── Auto-seed path: create a new goal from the prompt, enqueue directly ──
+  if (kind === 'auto-seed') {
+    const pendingCount = await queue.pendingCount().catch(() => 0);
+    // Don't auto-seed if the queue already has plenty of pending work
+    if (pendingCount >= 50) {
+      return json({ ok: false, reason: 'global-pending-cap', pendingCount }, { status: 200 });
+    }
+
+    const newGoal = await createGoal({
+      title: prompt.slice(0, 120),
+      description: `Auto-seeded from academic APIs. ${prompt}`,
+      submitterTag: 'autopilot-seed',
+      origin: 'user', // treated as a root goal
+    });
+
+    const now = Date.now();
+    const id = randomUUID();
+    const job: LabsJob = {
+      id,
+      prompt,
+      maxIterations,
+      iterations: 0,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+      submitterTag: 'autopilot-seed',
+      submitterWallet: undefined,
+      goalId: newGoal.id,
+      moderation: 'visible',
+      events: [
+        {
+          at: now,
+          kind: 'queued',
+          message: 'Auto-seeded from recent academic literature.',
+          meta: { kind: 'auto-seed' },
+        },
+      ],
+    };
+    const stamped = appendJobEvent(job, {
+      kind: 'note',
+      message: 'Research direction generated from random PubMed/UniProt data.',
+    });
+
+    try {
+      await queue.enqueue(stamped);
+    } catch (err) {
+      return json(
+        { ok: false, reason: 'enqueue-failed', detail: err instanceof Error ? err.message : String(err) },
+        { status: 503 },
+      );
+    }
+    await attachJobToGoal(newGoal.id, id, now);
+    await updateGoal(newGoal.id, { runCountDelta: 1, lastRunAt: now });
+
+    return json({ ok: true, id, goalId: newGoal.id, kind: 'auto-seed' });
+  }
+
+  // ── Standard expansion path (continuation / cross-goal) ──
+  const goal = await getGoal(goalId);
   const [dailyCount, pendingCount] = await Promise.all([
     getDailyExpansionCount(goalId),
     queue.pendingCount().catch(() => 0),

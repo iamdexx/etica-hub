@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
 import { consumeLabsRateLimit } from '@/lib/labs/rate-limit';
 import {
-  groqChat,
-  GroqError,
-  GROQ_MODEL_PRIMARY,
-  GROQ_MODEL_FALLBACK,
-  hasGroqKey,
+  nvidiaChat,
+  NvidiaError,
+  NVIDIA_MODEL_PRIMARY,
+  NVIDIA_MODEL_FALLBACK,
+  hasNvidiaKey,
 } from '@/lib/labs/nvidia';
 
 export const runtime = 'nodejs';
@@ -61,20 +61,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   // Always try the local extractor first — if the prompt already contains a
-  // raw amino-acid sequence we don't need to spend a Groq quota slot on it.
-  // This also acts as the ultimate fallback if Groq is unreachable.
+  // raw amino-acid sequence we don't need to spend an API call on it.
+  // This also acts as the ultimate fallback if Nvidia is unreachable.
   const localFallback = (): { sequence: string } | null => {
     const raw = fallbackExtractSequence(prompt);
     const seq = raw ? normalizeSequence(raw) : null;
     return seq ? { sequence: seq } : null;
   };
 
-  if (!hasGroqKey()) {
+  if (!hasNvidiaKey()) {
     const fallback = localFallback();
     if (!fallback) {
       return json(
         {
-          error: 'Groq is not configured yet and no raw amino-acid sequence could be extracted.',
+          error: 'Nvidia API key is not configured and no raw amino-acid sequence could be extracted.',
           comingSoon: true,
         },
         { status: 503, headers: limit.headers },
@@ -84,10 +84,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   try {
-    // Sequence extraction is short + deterministic, so prefer the 8B model
-    // (much higher daily cap). groqChat rotates keys and retries 429/5xx.
-    const result = await groqChat({
-      models: [GROQ_MODEL_FALLBACK, GROQ_MODEL_PRIMARY],
+    // nvidiaChat handles retry + backoff on 429/5xx.
+    const result = await nvidiaChat({
+      models: [NVIDIA_MODEL_FALLBACK, NVIDIA_MODEL_PRIMARY],
       temperature: 0,
       max_tokens: 256,
       timeoutMs: 20_000,
@@ -117,22 +116,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     return json(
-      { sequence, provider: 'groq', model: result.model },
+      { sequence, provider: 'nvidia', model: result.model },
       { headers: limit.headers },
     );
   } catch (err) {
-    // If Groq is fully exhausted, fall back to the local extractor before
+    // If Nvidia is fully exhausted, fall back to the local extractor before
     // giving up — prompts often contain raw sequences anyway.
     const fallback = localFallback();
     if (fallback) {
       return json({ ...fallback, provider: 'local-extractor' }, { headers: limit.headers });
     }
-    if (err instanceof GroqError) {
+    if (err instanceof NvidiaError) {
       return json(
-        { error: 'Groq sequence extraction failed.', detail: (err.detail ?? err.message).slice(0, 240) },
+        { error: 'Nvidia sequence extraction failed.', detail: (err.detail ?? err.message).slice(0, 240) },
         { status: 502, headers: limit.headers },
       );
     }
-    return json({ error: 'Groq request timed out or failed.' }, { status: 502, headers: limit.headers });
+    return json({ error: 'Nvidia request timed out or failed.' }, { status: 502, headers: limit.headers });
   }
 }

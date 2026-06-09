@@ -1,7 +1,7 @@
 /**
  * One-time admin endpoint: renames branch goals whose titles contain
  * vague internal references like "Candidate #N". Uses the goal's own
- * description to derive a meaningful scientific title via Groq.
+ * description to derive a meaningful scientific title via Nvidia Nemotron.
  *
  * POST /api/labs/admin/rename-goals
  *   headers: { x-labs-worker-token: <LABS_AUTOPILOT_TOKEN> }
@@ -209,7 +209,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     await updateGoal(goal.id, { title: newTitle });
     renamed.push({ id: goal.id, oldTitle: goal.title, newTitle });
-    // Small delay to avoid Groq rate limits
+    // Small delay to avoid Nvidia rate limits
     await new Promise((r) => setTimeout(r, 400));
   }
 

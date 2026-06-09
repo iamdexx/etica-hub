@@ -1,7 +1,7 @@
 /**
  * Nvidia NIM LLM client for EticaHub web API routes.
  *
- * Drop-in replacement for groq.ts — uses Nvidia Nemotron 3 Ultra 550B
+ * Nvidia NIM LLM client — uses Nvidia Nemotron 3 Ultra 550B
  * via the OpenAI-compatible NIM endpoint. Single key, retry + backoff.
  *
  * Env: NVIDIA_API_KEY (shared with ESMFold).
@@ -9,16 +9,16 @@
 
 const NVIDIA_CHAT_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
-export const GROQ_MODEL_PRIMARY = 'nvidia/nemotron-3-ultra-550b-a55b';
-export const GROQ_MODEL_FALLBACK = 'nvidia/nemotron-3-ultra-550b-a55b';
+export const NVIDIA_MODEL_PRIMARY = 'nvidia/nemotron-3-ultra-550b-a55b';
+export const NVIDIA_MODEL_FALLBACK = 'nvidia/nemotron-3-ultra-550b-a55b';
 
-export interface GroqMessage {
+export interface NvidiaMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
-export interface GroqChatRequest {
-  messages: GroqMessage[];
+export interface NvidiaChatRequest {
+  messages: NvidiaMessage[];
   models?: string[];
   temperature?: number;
   max_tokens?: number;
@@ -28,31 +28,31 @@ export interface GroqChatRequest {
   maxRetriesPerKey?: number;
 }
 
-export interface GroqChatResult {
+export interface NvidiaChatResult {
   content: string;
   model: string;
   keyIndex: number;
   attempts: number;
 }
 
-export class GroqError extends Error {
+export class NvidiaError extends Error {
   status: number;
   detail?: string;
   attempts: number;
   constructor(message: string, opts: { status?: number; detail?: string; attempts: number }) {
     super(message);
-    this.name = 'GroqError';
+    this.name = 'NvidiaError';
     this.status = opts.status ?? 0;
     this.detail = opts.detail;
     this.attempts = opts.attempts;
   }
 }
 
-export function hasGroqKey(): boolean {
-  return readGroqKeyPool().length > 0;
+export function hasNvidiaKey(): boolean {
+  return readNvidiaKeyPool().length > 0;
 }
 
-export function readGroqKeyPool(): string[] {
+export function readNvidiaKeyPool(): string[] {
   const pool = new Set<string>();
   const multi = process.env.NVIDIA_API_KEYS;
   if (multi) {
@@ -105,7 +105,7 @@ function composeSignal(external: AbortSignal | undefined, timeoutMs: number) {
 async function callOnce(
   apiKey: string,
   model: string,
-  req: GroqChatRequest,
+  req: NvidiaChatRequest,
   useJsonMode: boolean,
   signal: AbortSignal,
 ): Promise<{ ok: true; content: string } | { ok: false; status: number; detail: string }> {
@@ -135,12 +135,12 @@ async function callOnce(
   return { ok: true, content };
 }
 
-export async function groqChat(req: GroqChatRequest): Promise<GroqChatResult> {
-  const keys = readGroqKeyPool();
+export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResult> {
+  const keys = readNvidiaKeyPool();
   if (keys.length === 0) {
-    throw new GroqError('No Nvidia API key configured (NVIDIA_API_KEY).', { attempts: 0 });
+    throw new NvidiaError('No Nvidia API key configured (NVIDIA_API_KEY).', { attempts: 0 });
   }
-  const model = req.models && req.models.length > 0 ? req.models[0]! : GROQ_MODEL_PRIMARY;
+  const model = req.models && req.models.length > 0 ? req.models[0]! : NVIDIA_MODEL_PRIMARY;
   const timeoutMs = req.timeoutMs ?? 22_000;
   const maxRetries = Math.max(1, req.maxRetriesPerKey ?? 4);
   const composed = composeSignal(req.signal, timeoutMs);
@@ -168,7 +168,7 @@ export async function groqChat(req: GroqChatRequest): Promise<GroqChatResult> {
           }
         } catch (err) {
           if (composed.signal.aborted) {
-            throw new GroqError('Nvidia LLM request timed out.', { status: 408, detail: lastDetail, attempts });
+            throw new NvidiaError('Nvidia LLM request timed out.', { status: 408, detail: lastDetail, attempts });
           }
           lastStatus = 0;
           lastDetail = err instanceof Error ? err.message : String(err);
@@ -176,7 +176,7 @@ export async function groqChat(req: GroqChatRequest): Promise<GroqChatResult> {
         if (attempt < maxRetries - 1) {
           await sleep(backoffMs(attempt), composed.signal);
           if (composed.signal.aborted) {
-            throw new GroqError('Nvidia LLM request timed out.', { status: 408, detail: lastDetail, attempts });
+            throw new NvidiaError('Nvidia LLM request timed out.', { status: 408, detail: lastDetail, attempts });
           }
         }
       }
@@ -185,5 +185,5 @@ export async function groqChat(req: GroqChatRequest): Promise<GroqChatResult> {
     composed.clear();
   }
 
-  throw new GroqError(`Nvidia LLM exhausted retries (${lastStatus}).`, { status: lastStatus, detail: lastDetail, attempts });
+  throw new NvidiaError(`Nvidia LLM exhausted retries (${lastStatus}).`, { status: lastStatus, detail: lastDetail, attempts });
 }

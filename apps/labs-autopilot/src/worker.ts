@@ -4,9 +4,9 @@
  * Designed to run as a GitHub Actions cron job. On each tick we:
  *   1. POST /api/labs/queue/pop with the shared worker token. If 204, exit
  *      (queue is empty); if 200, we got a job to run.
- *   2. Generate a research plan with Groq from the user's prompt.
+ *   2. Generate a research plan with Nvidia Nemotron from the user's prompt.
  *   3. For each plan candidate, fold the sequence on NVIDIA NIM ESMFold
- *      and ask Groq for a short structural analysis.
+ *      and ask Nemotron for a short structural analysis.
  *   4. POST /api/labs/queue/[id]/update with the events + result + status.
  *
  * The worker is intentionally chatty — every step posts an event so the
@@ -43,6 +43,7 @@ import { designSequences } from './steps/proteinmpnn.js';
 import { dockMolecule } from './steps/diffdock.js';
 import { validateSequence, quickSequenceQuality } from './steps/esm2.js';
 import { proposeBranchPlan, proposeNextDirection } from './steps/expand.js';
+import { generateSeedPrompt } from './steps/seed.js';
 
 type LabsJobStatus = 'pending' | 'running' | 'done' | 'error';
 
@@ -413,7 +414,7 @@ async function maybeBranchHighScoreLead(
 }
 
 /**
- * Auto-expand a completed goal-attached job: ask Groq for the next
+ * Auto-expand a completed goal-attached job: ask Nvidia for the next
  * direction in the same problem space and (if score is strong enough)
  * also seed one cross-goal follow-up on the most-related goal.
  *
@@ -995,7 +996,40 @@ async function main(): Promise<void> {
       return;
     }
     if (!job) {
-      log('queue empty');
+      log('queue empty — attempting auto-seed from academic APIs');
+      const seed = await generateSeedPrompt();
+      if (!seed) {
+        log('auto-seed failed (no academic data available); exiting');
+        break;
+      }
+      log(`auto-seed generated: "${seed.prompt}" (source: ${seed.source}, topic: ${seed.topic})`);
+      // Enqueue the seed as a new research job via spawn endpoint
+      try {
+        const spawnRes = await fetch(`${BASE_URL}/api/labs/queue/spawn`, {
+          method: 'POST',
+          headers: {
+            'x-labs-worker-token': TOKEN,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            prompt: seed.prompt,
+            kind: 'auto-seed',
+            maxIterations: 3,
+          }),
+        });
+        if (spawnRes.ok) {
+          const spawnBody = (await spawnRes.json()) as { ok?: boolean; id?: string };
+          if (spawnBody.ok) {
+            log(`auto-seed job enqueued: ${spawnBody.id}`);
+            // Re-pop the newly enqueued job on the next iteration
+            continue;
+          }
+        }
+        const errText = await spawnRes.text().catch(() => '');
+        log(`auto-seed spawn rejected: ${spawnRes.status} ${errText.slice(0, 200)}`);
+      } catch (spawnErr) {
+        log(`auto-seed spawn error: ${spawnErr instanceof Error ? spawnErr.message : spawnErr}`);
+      }
       break;
     }
 

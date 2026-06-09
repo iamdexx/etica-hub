@@ -5,7 +5,7 @@
  * POST /api/labs/goals             — create a new goal. Open to anyone
  *                                    (no wallet required). Goes through
  *                                    Layer 1 (hard denylist) + Layer 2
- *                                    (Groq biomedical gate) at submit.
+ *                                    (Nvidia biomedical gate) at submit.
  *
  * Submission is wallet-gated (EIP-191 signature) but does NOT require
  * any token balance. Only the moderation surface (flag/vouch) requires
@@ -108,13 +108,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   const apiKey = process.env.NVIDIA_API_KEY ?? '';
   if (apiKey || process.env.NVIDIA_API_KEYS) {
     const gate = await runBiomedicalGate(combined, apiKey);
-    if (gate.verdict !== 'yes') {
+    if (gate.verdict === 'no') {
       return json(
         {
-          error:
-            gate.verdict === 'no'
-              ? 'EticaLabs goals must be biomedical or life-sciences research objectives.'
-              : 'Could not confirm this is a biomedical research goal. Please add more detail.',
+          error: 'EticaLabs goals must be biomedical or life-sciences research objectives.',
         },
         { status: 403, headers: limit.headers },
       );

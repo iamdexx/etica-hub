@@ -3,7 +3,7 @@
  *
  * After a goal-attached job finishes, the worker calls
  * {@link proposeNextDirection} with the goal title + the prompt that
- * just completed + a short summary of the best candidate. Groq returns
+ * just completed + a short summary of the best candidate. Nvidia returns
  * a single-sentence follow-up research prompt that the worker then
  * enqueues via POST /api/labs/queue/spawn.
  *
@@ -12,12 +12,12 @@
  * the whole space" prompts are far worse plans than narrow next-step
  * questions.
  *
- * Failure mode: if Groq is unreachable or returns garbage, we return
+ * Failure mode: if Nvidia is unreachable or returns garbage, we return
  * `null` and the worker skips the spawn. Better to no-op than enqueue
  * a malformed follow-up.
  */
 
-import { groqChat, GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK, readGroqKeyPool } from '../nvidia';
+import { nvidiaChat, NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK, readNvidiaLLMKeyPool } from '../nvidia';
 
 const MAX_PROMPT_CHARS = 280;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -95,14 +95,14 @@ function sanitize(raw: string): string | null {
   return s;
 }
 
-async function callGroq(
+async function callNvidia(
   model: string,
   system: string,
   user: string,
   maxTokens: number,
 ): Promise<string | null> {
   try {
-    const result = await groqChat({
+    const result = await nvidiaChat({
       models: [model],
       temperature: 0.5,
       max_tokens: maxTokens,
@@ -123,16 +123,16 @@ async function callGroq(
  * — the worker should treat null as "skip the expansion this round".
  */
 export async function proposeNextDirection(input: ExpansionInput): Promise<string | null> {
-  if (readGroqKeyPool().length === 0) return null;
+  if (readNvidiaLLMKeyPool().length === 0) return null;
   const system = systemPrompt(input.kind);
   const user = userPrompt(input);
 
-  const primary = await callGroq(GROQ_MODEL_PRIMARY, system, user, 200);
+  const primary = await callNvidia(NVIDIA_MODEL_PRIMARY, system, user, 200);
   if (primary) {
     const cleaned = sanitize(primary);
     if (cleaned) return cleaned;
   }
-  const fallback = await callGroq(GROQ_MODEL_FALLBACK, system, user, 200);
+  const fallback = await callNvidia(NVIDIA_MODEL_FALLBACK, system, user, 200);
   if (fallback) {
     const cleaned = sanitize(fallback);
     if (cleaned) return cleaned;
@@ -145,7 +145,7 @@ export async function proposeNextDirection(input: ExpansionInput): Promise<strin
  * ----------------------------------------------------------------- *
  * When a parent goal's job lands a high-scoring candidate, the       *
  * worker forks a dedicated child goal to drill into that specific    *
- * lead. We ask Groq for THREE outputs: a goal title, a short         *
+ * lead. We ask Nvidia for THREE outputs: a goal title, a short       *
  * description, and a first-job research prompt — all narrowly scoped *
  * to the winning sequence.                                           *
  * ----------------------------------------------------------------- */
@@ -268,16 +268,16 @@ function parseBranchPlan(raw: string): BranchPlan | null {
  * null on any failure — worker treats null as "skip branching".
  */
 export async function proposeBranchPlan(input: BranchInput): Promise<BranchPlan | null> {
-  if (readGroqKeyPool().length === 0) return null;
+  if (readNvidiaLLMKeyPool().length === 0) return null;
   const system = branchSystemPrompt();
   const user = branchUserPrompt(input);
 
-  const primary = await callGroq(GROQ_MODEL_PRIMARY, system, user, 600);
+  const primary = await callNvidia(NVIDIA_MODEL_PRIMARY, system, user, 600);
   if (primary) {
     const parsed = parseBranchPlan(primary);
     if (parsed) return parsed;
   }
-  const fallback = await callGroq(GROQ_MODEL_FALLBACK, system, user, 600);
+  const fallback = await callNvidia(NVIDIA_MODEL_FALLBACK, system, user, 600);
   if (fallback) {
     const parsed = parseBranchPlan(fallback);
     if (parsed) return parsed;
