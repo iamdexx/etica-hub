@@ -998,7 +998,8 @@ async function main(): Promise<void> {
     if (!job) {
       log('queue empty — requesting auto-seed from server');
       // Call the Vercel-side seed endpoint (Nvidia API is unreachable from GH Actions)
-      let seed: { ok: boolean; prompt?: string; topic?: string; source?: string; error?: string } | null = null;
+      interface SeedResponse { ok: boolean; prompt: string; topic: string; source: string; error?: string }
+      let seedData: SeedResponse | null = null;
       try {
         const seedRes = await fetch(`${BASE_URL}/api/labs/seed`, {
           method: 'POST',
@@ -1007,16 +1008,17 @@ async function main(): Promise<void> {
             'content-type': 'application/json',
           },
         });
-        seed = (await seedRes.json()) as typeof seed;
-        if (!seedRes.ok || !seed?.ok) {
-          log(`auto-seed server returned: ${seedRes.status} ${seed?.error ?? 'unknown'}`);
+        const parsed = (await seedRes.json()) as SeedResponse;
+        if (!seedRes.ok || !parsed.ok) {
+          log(`auto-seed server returned: ${seedRes.status} ${parsed.error ?? 'unknown'}`);
           break;
         }
+        seedData = parsed;
       } catch (seedErr) {
         log(`auto-seed fetch failed: ${seedErr instanceof Error ? seedErr.message : seedErr}`);
         break;
       }
-      log(`auto-seed generated: "${seed.prompt}" (source: ${seed.source}, topic: ${seed.topic})`);
+      log(`auto-seed generated: "${seedData.prompt}" (source: ${seedData.source}, topic: ${seedData.topic})`);
       // Enqueue the seed as a new research job via spawn endpoint
       try {
         const spawnRes = await fetch(`${BASE_URL}/api/labs/queue/spawn`, {
@@ -1026,8 +1028,8 @@ async function main(): Promise<void> {
             'content-type': 'application/json',
           },
           body: JSON.stringify({
-            prompt: seed.prompt,
-            title: seed.topic,
+            prompt: seedData.prompt,
+            title: seedData.topic,
             kind: 'auto-seed',
             maxIterations: 3,
           }),
