@@ -65,9 +65,11 @@ library EticaResearchNFTMetadata {
         pure
         returns (bytes memory)
     {
+        // Image = protein fold render served from the platform API.
+        // Falls back to the 3D viewer for marketplaces that support animation.
         return abi.encodePacked(
-            ',"image":"data:image/svg+xml;base64,',
-            Base64.encode(bytes(_buildSvg(tokenId, d))),
+            ',"image":"',
+            _foldRenderUrl(tokenId, baseUrl),
             '","external_url":"',
             _externalUrl(tokenId, baseUrl),
             '"'
@@ -205,6 +207,15 @@ library EticaResearchNFTMetadata {
         returns (string memory)
     {
         return string(abi.encodePacked(baseUrl, "/labs/research/", tokenId.toString(), "/viewer"));
+    }
+
+    /// @notice URL for the protein fold render (static PNG image of the 3D structure).
+    function _foldRenderUrl(uint256 tokenId, string memory baseUrl)
+        private
+        pure
+        returns (string memory)
+    {
+        return string(abi.encodePacked(baseUrl, "/api/labs/fold-render/", tokenId.toString()));
     }
 
     function _scoreDecimal(uint256 scoreBps) private pure returns (string memory) {

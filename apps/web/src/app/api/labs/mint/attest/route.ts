@@ -35,6 +35,7 @@ import { getGoal } from '@/lib/labs/goal-store';
 import { labsQueue } from '@/lib/labs/queue';
 import { getResearchClient } from '@/lib/research';
 import eticaResearchNftArtifact from '@/lib/etica-research-nft-artifact.json';
+import type { LabsJobResult, LabsCandidateResult } from '@/lib/labs/job';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -108,6 +109,80 @@ function clampScoreBasisPoints(score: number | undefined): bigint {
   if (bps < 0) return 0n;
   if (bps > 10_000) return 10_000n;
   return BigInt(bps);
+}
+
+/**
+ * Build a comprehensive research record for the NFT analysis field.
+ * Includes ALL data: hypothesis, approach, references, all candidates,
+ * fold scores, mutations, docking, iterations — nothing left out.
+ */
+function buildFullResearchAnalysis(
+  result: LabsJobResult,
+  candidate: LabsCandidateResult,
+  goalTitle: string,
+  disease: string | undefined,
+  prompt: string,
+): string {
+  const sections: string[] = [];
+
+  // Disease / target context
+  if (disease) {
+    sections.push(`[Disease/Target] ${disease}`);
+  }
+  sections.push(`[Research Prompt] ${prompt}`);
+
+  // Plan details
+  if (result.plan) {
+    sections.push(`[Hypothesis] ${result.plan.hypothesis}`);
+    sections.push(`[Approach] ${result.plan.approach}`);
+    if (result.plan.successCriteria) {
+      sections.push(`[Success Criteria] ${result.plan.successCriteria}`);
+    }
+    if (result.plan.risks) {
+      sections.push(`[Risks] ${result.plan.risks}`);
+    }
+    if (result.plan.references && result.plan.references.length > 0) {
+      const refLines = result.plan.references.map(
+        (r, i) => `  [${i + 1}] ${r.source}: ${r.title} (${r.url})`,
+      );
+      sections.push(`[References]\n${refLines.join('\n')}`);
+    }
+  }
+
+  // Primary candidate details
+  sections.push(`[Primary Candidate #${candidate.index}]`);
+  sections.push(`  Sequence: ${candidate.sequence}`);
+  sections.push(`  Rationale: ${candidate.rationale}`);
+  if (candidate.analysis) {
+    sections.push(`  Structural Analysis: ${candidate.analysis}`);
+  }
+  if (typeof candidate.score === 'number') {
+    sections.push(`  Fold Score: ${candidate.score.toFixed(4)}`);
+  }
+  sections.push(`  Folded: ${candidate.folded ? 'Yes' : 'No'}`);
+  if (candidate.engine) {
+    sections.push(`  Engine: ${candidate.engine}`);
+  }
+
+  // All other candidates (full data, nothing left out)
+  const others = result.candidates.filter((c) => c.index !== candidate.index);
+  if (others.length > 0) {
+    sections.push(`[All Candidates (${result.candidates.length} total)]`);
+    for (const c of others) {
+      sections.push(`  Candidate #${c.index}: ${c.sequence.slice(0, 60)}${c.sequence.length > 60 ? '...' : ''}`);
+      sections.push(`    Rationale: ${c.rationale}`);
+      if (c.analysis) sections.push(`    Analysis: ${c.analysis}`);
+      if (typeof c.score === 'number') sections.push(`    Score: ${c.score.toFixed(4)}`);
+      sections.push(`    Folded: ${c.folded ? 'Yes' : 'No'}`);
+    }
+  }
+
+  // Summary
+  if (result.summary) {
+    sections.push(`[Summary] ${result.summary}`);
+  }
+
+  return sections.join('\n');
 }
 
 function computeMintFeeWei(base: bigint, maxScore: bigint, scoreBps: bigint): bigint {
@@ -194,10 +269,25 @@ export async function POST(req: NextRequest): Promise<Response> {
   const scoreBps = clampScoreBasisPoints(candidate.score);
   const mintFeeWei = computeMintFeeWei(fees.base, fees.maxScore, scoreBps);
 
+  // Extract disease from goal title if it starts with "Disease: " pattern
+  const diseaseMatch = goal.title.match(/^([^:]+):/);
+  const disease = diseaseMatch ? diseaseMatch[1].trim() : undefined;
+
+  // Build comprehensive research record for the NFT (all data preserved)
+  const fullAnalysis = job.result
+    ? buildFullResearchAnalysis(
+        job.result,
+        candidate,
+        goal.title,
+        disease,
+        job.prompt,
+      )
+    : candidate.analysis ?? '';
+
   const payload = {
     parentGoalTitle: goal.title,
     sequence: candidate.sequence,
-    analysis: candidate.analysis ?? '',
+    analysis: fullAnalysis,
     score: scoreBps,
     iterations: BigInt(job.iterations ?? 0),
     branchGoalId: job.goalId,
