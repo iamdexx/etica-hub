@@ -25,6 +25,22 @@ const CHEMBL_SEARCH = 'https://www.ebi.ac.uk/chembl/api/data/target/search.json'
 const STRING_API = 'https://string-db.org/api/json';
 const KEGG_FIND = 'https://rest.kegg.jp/find/pathway';
 
+/** Polite User-Agent per academic API fair-use policies. */
+const UA = 'EticaHub-Labs/1.0 (https://eticahub.com; research-pipeline)';
+
+/** fetch() wrapper that always includes the polite User-Agent header. */
+function politeGet(url: string, opts: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(opts.headers);
+  headers.set('User-Agent', UA);
+  return fetch(url, { ...opts, headers });
+}
+function politePost(url: string, body: string, opts: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(opts.headers);
+  headers.set('User-Agent', UA);
+  headers.set('content-type', 'application/json');
+  return fetch(url, { ...opts, method: 'POST', headers, body });
+}
+
 const AMINO_ACIDS = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
 const MAX_SEQUENCE_LENGTH = 400;
 const MIN_SEQUENCE_LENGTH = 10;
@@ -99,13 +115,13 @@ async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
     const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${limit}&sort=relevance&term=${encodeURIComponent(
       query,
     )}`;
-    const searchRes = await fetch(searchUrl, { signal, cache: 'no-store' });
+    const searchRes = await politeGet(searchUrl, { signal, cache: 'no-store' });
     if (!searchRes.ok) return [];
     const sj = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
     const ids = sj.esearchresult?.idlist ?? [];
     if (ids.length === 0) return [];
 
-    const sumRes = await fetch(`${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`, {
+    const sumRes = await politeGet(`${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`, {
       signal,
       cache: 'no-store',
     });
@@ -147,12 +163,9 @@ async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
 async function fetchRcsb(query: string, limit: number): Promise<Reference[]> {
   const { signal, cancel } = withTimeout(5_000);
   try {
-    const res = await fetch(RCSB_SEARCH, {
-      method: 'POST',
-      signal,
-      headers: { 'content-type': 'application/json' },
-      cache: 'no-store',
-      body: JSON.stringify({
+    const res = await politePost(
+      RCSB_SEARCH,
+      JSON.stringify({
         query: {
           type: 'terminal',
           service: 'full_text',
@@ -161,7 +174,8 @@ async function fetchRcsb(query: string, limit: number): Promise<Reference[]> {
         return_type: 'entry',
         request_options: { paginate: { start: 0, rows: limit } },
       }),
-    });
+      { signal, cache: 'no-store' },
+    );
     if (!res.ok) return [];
     const json = (await res.json()) as {
       result_set?: Array<{ identifier?: string }>;
@@ -190,7 +204,7 @@ async function fetchUniProt(query: string, limit: number): Promise<Reference[]> 
   const { signal, cancel } = withTimeout(5_000);
   try {
     const url = `${UNIPROT_SEARCH}?query=${encodeURIComponent(query)}&format=json&size=${limit}&fields=accession,protein_name,organism_name,gene_names`;
-    const res = await fetch(url, { signal, cache: 'no-store' });
+    const res = await politeGet(url, { signal, cache: 'no-store' });
     if (!res.ok) return [];
     const json = (await res.json()) as {
       results?: Array<{
@@ -224,7 +238,7 @@ async function fetchChEMBL(query: string, limit: number): Promise<Reference[]> {
   const { signal, cancel } = withTimeout(5_000);
   try {
     const url = `${CHEMBL_SEARCH}?q=${encodeURIComponent(query)}&limit=${limit}`;
-    const res = await fetch(url, { signal, cache: 'no-store' });
+    const res = await politeGet(url, { signal, cache: 'no-store' });
     if (!res.ok) return [];
     const json = (await res.json()) as {
       targets?: Array<{
@@ -255,7 +269,7 @@ async function fetchSTRING(query: string, limit: number): Promise<Reference[]> {
   const { signal, cancel } = withTimeout(5_000);
   try {
     const url = `${STRING_API}/network?identifiers=${encodeURIComponent(query)}&species=9606&limit=${limit}&caller_identity=eticahub`;
-    const res = await fetch(url, { signal, cache: 'no-store' });
+    const res = await politeGet(url, { signal, cache: 'no-store' });
     if (!res.ok) return [];
     const interactions = (await res.json()) as Array<{
       preferredName_A?: string;
@@ -289,7 +303,7 @@ async function fetchKEGG(query: string, limit: number): Promise<Reference[]> {
   const { signal, cancel } = withTimeout(5_000);
   try {
     const url = `${KEGG_FIND}/${encodeURIComponent(query)}`;
-    const res = await fetch(url, { signal, cache: 'no-store' });
+    const res = await politeGet(url, { signal, cache: 'no-store' });
     if (!res.ok) return [];
     const text = await res.text();
     return text

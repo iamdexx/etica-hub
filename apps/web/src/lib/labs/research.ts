@@ -37,10 +37,26 @@ const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcg
 const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
 const RCSB_SEARCH = 'https://search.rcsb.org/rcsbsearch/v2/query';
 
+/** Polite User-Agent per academic API fair-use policies. */
+const UA = 'EticaHub-Labs/1.0 (https://eticahub.com; research-pipeline)';
+
 function withTimeout(ms: number): { signal: AbortSignal; cancel: () => void } {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);
   return { signal: ctrl.signal, cancel: () => clearTimeout(id) };
+}
+
+/** fetch() wrapper that always includes the polite User-Agent header. */
+function politeGet(url: string, opts: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(opts.headers);
+  headers.set('User-Agent', UA);
+  return fetch(url, { ...opts, headers });
+}
+function politePost(url: string, body: string, opts: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(opts.headers);
+  headers.set('User-Agent', UA);
+  headers.set('content-type', 'application/json');
+  return fetch(url, { ...opts, method: 'POST', headers, body });
 }
 
 /** Retry a fetcher once with 2s backoff on failure. No silent skips. */
@@ -63,7 +79,7 @@ async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
     const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${limit}&sort=relevance&term=${encodeURIComponent(
       query,
     )}`;
-    const searchRes = await fetch(searchUrl, { signal, cache: 'no-store' });
+    const searchRes = await politeGet(searchUrl, { signal, cache: 'no-store' });
     if (!searchRes.ok) return [];
     const searchJson = (await searchRes.json()) as {
       esearchresult?: { idlist?: string[] };
@@ -72,7 +88,7 @@ async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
     if (ids.length === 0) return [];
 
     const summaryUrl = `${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`;
-    const summaryRes = await fetch(summaryUrl, { signal, cache: 'no-store' });
+    const summaryRes = await politeGet(summaryUrl, { signal, cache: 'no-store' });
     if (!summaryRes.ok) return [];
     const summaryJson = (await summaryRes.json()) as {
       result?: Record<string, unknown>;
@@ -130,10 +146,7 @@ async function fetchPdb(query: string, limit: number): Promise<Reference[]> {
       },
       return_type: 'entry',
     };
-    const res = await fetch(RCSB_SEARCH, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+    const res = await politePost(RCSB_SEARCH, JSON.stringify(body), {
       signal,
       cache: 'no-store',
     });
@@ -150,7 +163,7 @@ async function fetchPdb(query: string, limit: number): Promise<Reference[]> {
     const refs: Reference[] = [];
     for (const id of ids) {
       try {
-        const entryRes = await fetch(`https://data.rcsb.org/rest/v1/core/entry/${id}`, {
+        const entryRes = await politeGet(`https://data.rcsb.org/rest/v1/core/entry/${id}`, {
           signal,
           cache: 'no-store',
         });
@@ -207,7 +220,7 @@ async function fetchUniProt(query: string, limit: number): Promise<Reference[]> 
   const { signal, cancel } = withTimeout(5_000);
   try {
     const url = `${UNIPROT_SEARCH}?query=${encodeURIComponent(query)}&format=json&size=${limit}&fields=accession,protein_name,organism_name,gene_names,length`;
-    const res = await fetch(url, { signal, cache: 'no-store' });
+    const res = await politeGet(url, { signal, cache: 'no-store' });
     if (!res.ok) return [];
     const json = (await res.json()) as {
       results?: Array<{
@@ -251,7 +264,7 @@ async function fetchChEMBL(query: string, limit: number): Promise<Reference[]> {
   const { signal, cancel } = withTimeout(5_000);
   try {
     const url = `${CHEMBL_SEARCH}?q=${encodeURIComponent(query)}&limit=${limit}`;
-    const res = await fetch(url, { signal, cache: 'no-store' });
+    const res = await politeGet(url, { signal, cache: 'no-store' });
     if (!res.ok) return [];
     const json = (await res.json()) as {
       targets?: Array<{
@@ -292,7 +305,7 @@ async function fetchAlphaFold(uniprotIds: string[]): Promise<Reference[]> {
   try {
     for (const uid of uniprotIds.slice(0, 3)) {
       try {
-        const res = await fetch(`${ALPHAFOLD_API}/prediction/${uid}`, {
+        const res = await politeGet(`${ALPHAFOLD_API}/prediction/${uid}`, {
           signal,
           cache: 'no-store',
         });
@@ -338,7 +351,7 @@ async function fetchSTRING(query: string, limit: number): Promise<Reference[]> {
   try {
     // STRING requires species ID; 9606 = Homo sapiens
     const url = `${STRING_API}/network?identifiers=${encodeURIComponent(query)}&species=9606&limit=${limit}&caller_identity=eticahub`;
-    const res = await fetch(url, { signal, cache: 'no-store' });
+    const res = await politeGet(url, { signal, cache: 'no-store' });
     if (!res.ok) return [];
     const interactions = (await res.json()) as Array<{
       preferredName_A?: string;
@@ -380,7 +393,7 @@ async function fetchKEGG(query: string, limit: number): Promise<Reference[]> {
   const { signal, cancel } = withTimeout(5_000);
   try {
     const url = `${KEGG_FIND}/${encodeURIComponent(query)}`;
-    const res = await fetch(url, { signal, cache: 'no-store' });
+    const res = await politeGet(url, { signal, cache: 'no-store' });
     if (!res.ok) return [];
     const text = await res.text();
     const lines = text.trim().split('\n').slice(0, limit);
