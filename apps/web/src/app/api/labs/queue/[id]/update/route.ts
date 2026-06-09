@@ -24,6 +24,7 @@ import {
   makeFoldRetryEntryId,
   nextRetryDelayMs,
 } from '@/lib/labs/fold-retry-queue';
+import { archiveResearch, extractDisease, type ArchivedResearch } from '@/lib/labs/archive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,11 @@ const VALID_EVENT_KINDS = new Set([
   're_fold_completed',
   'analysed',
   'mutated',
+  'proteinmpnn',
+  'proteinmpnn_fallback',
+  'docking_ready',
+  'sequence_rejected',
+  'sequence_low_quality',
   'iteration_done',
   'completed',
   'error',
@@ -234,6 +240,68 @@ export async function POST(
       }
     } catch (err) {
       console.error('[labs] fold-retry enqueue failed', err);
+    }
+  }
+
+  // Archive completed research permanently when job transitions to 'done'.
+  // This is fire-and-forget — a failure here must not break the worker.
+  if (statusUpdate === 'done' && existing.status !== 'done' && result) {
+    try {
+      const bestCandidate = result.candidates.reduce(
+        (best, c) => ((c.score ?? 0) > (best.score ?? 0) ? c : best),
+        result.candidates[0]!,
+      );
+      const archived: ArchivedResearch = {
+        id: `${id}-archive`,
+        jobId: id,
+        goalId: next.goalId,
+        goalTitle: undefined, // populated by goal lookup if needed
+        disease: undefined,
+        prompt: next.prompt,
+        completedAt: now,
+        hypothesis: result.plan.hypothesis,
+        approach: result.plan.approach,
+        successCriteria: result.plan.successCriteria,
+        bestCandidate: {
+          index: bestCandidate.index,
+          sequence: bestCandidate.sequence,
+          rationale: bestCandidate.rationale,
+          score: bestCandidate.score,
+          analysis: bestCandidate.analysis,
+          folded: bestCandidate.folded,
+          engine: bestCandidate.engine,
+        },
+        candidates: result.candidates.map((c) => ({
+          index: c.index,
+          sequence: c.sequence,
+          rationale: c.rationale,
+          score: c.score,
+          analysis: c.analysis,
+          folded: c.folded,
+          engine: c.engine,
+        })),
+        iterations: next.iterations,
+        summary: result.summary ?? '',
+        bestPdb: result.pdbBySequenceIndex?.[bestCandidate.index],
+        references: result.plan.references.map((r) => `${r.source}:${r.id} ${r.title}`),
+        minted: false,
+      };
+
+      // Try to resolve goal title and extract disease name
+      if (next.goalId) {
+        try {
+          const goalStore = await import('@/lib/labs/goal-store');
+          const goal = await goalStore.getGoal(next.goalId);
+          if (goal) {
+            archived.goalTitle = goal.title;
+            archived.disease = extractDisease(goal.title);
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      await archiveResearch(archived);
+    } catch (err) {
+      console.error('[labs] archive failed (non-fatal):', err);
     }
   }
 

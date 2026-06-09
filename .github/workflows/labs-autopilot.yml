@@ -3,9 +3,16 @@ name: Labs Autopilot
 # EticaLabs Autopilot worker tick.
 #
 # Pops the oldest pending Labs research job from Redis (via the website's
-# /api/labs/queue/pop endpoint), runs a Nvidia Nemotron plan -> NVIDIA
-# ESMFold fold -> Nemotron analyse -> mutate loop for up to maxIterations
-# rounds, and posts results back via /api/labs/queue/[id]/update.
+# /api/labs/queue/pop endpoint), runs the full Nvidia NIM biology pipeline:
+#
+#   Nemotron 550B plan → ESM2 quality check → ESMFold fold →
+#   Nemotron analyse → ProteinMPNN design → DiffDock dock →
+#   archive result → auto-expand next direction
+#
+# The pipeline never stops: each completed job auto-spawns follow-up
+# research directions, creating a perpetual cascade of discovery.
+# All models run on the same Nvidia NIM platform with a single API key.
+# Posts results back via /api/labs/queue/[id]/update.
 #
 # Runs every 10 minutes by default — GitHub free-tier shared runners
 # delay schedule events under load, so this is best-effort. The worker
