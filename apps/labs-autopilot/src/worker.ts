@@ -43,7 +43,7 @@ import { designSequences } from './steps/proteinmpnn.js';
 import { dockMolecule } from './steps/diffdock.js';
 import { validateSequence, quickSequenceQuality } from './steps/esm2.js';
 import { proposeBranchPlan, proposeNextDirection } from './steps/expand.js';
-import { generateSeedPrompt } from './steps/seed.js';
+// generateSeedPrompt now runs server-side via /api/labs/seed (Nvidia unreachable from GH Actions)
 
 type LabsJobStatus = 'pending' | 'running' | 'done' | 'error';
 
@@ -996,15 +996,24 @@ async function main(): Promise<void> {
       return;
     }
     if (!job) {
-      log('queue empty — attempting auto-seed from academic APIs');
-      let seed: Awaited<ReturnType<typeof generateSeedPrompt>> = null;
+      log('queue empty — requesting auto-seed from server');
+      // Call the Vercel-side seed endpoint (Nvidia API is unreachable from GH Actions)
+      let seed: { ok: boolean; prompt?: string; topic?: string; source?: string; error?: string } | null = null;
       try {
-        seed = await generateSeedPrompt();
+        const seedRes = await fetch(`${BASE_URL}/api/labs/seed`, {
+          method: 'POST',
+          headers: {
+            'x-labs-worker-token': TOKEN,
+            'content-type': 'application/json',
+          },
+        });
+        seed = (await seedRes.json()) as typeof seed;
+        if (!seedRes.ok || !seed?.ok) {
+          log(`auto-seed server returned: ${seedRes.status} ${seed?.error ?? 'unknown'}`);
+          break;
+        }
       } catch (seedErr) {
-        log(`auto-seed threw: ${seedErr instanceof Error ? seedErr.message : seedErr}`);
-      }
-      if (!seed) {
-        log('auto-seed returned null (LLM unreachable or output rejected); exiting');
+        log(`auto-seed fetch failed: ${seedErr instanceof Error ? seedErr.message : seedErr}`);
         break;
       }
       log(`auto-seed generated: "${seed.prompt}" (source: ${seed.source}, topic: ${seed.topic})`);
