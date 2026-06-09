@@ -246,40 +246,55 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     'Output ONE imperative research sentence:',
   ].join('\n');
 
-  try {
-    const result = await nvidiaChat({
-      models: [NVIDIA_MODEL_PRIMARY],
-      temperature: 0.7,
-      max_tokens: 200,
-      timeoutMs: 20_000,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    });
+  // Use multiple models for seed generation — the 550B model may be cold/down
+  const SEED_MODELS = [
+    NVIDIA_MODEL_PRIMARY,
+    'nvidia/nemotron-3-super-120b-a12b',
+    'nvidia/llama-3.3-nemotron-super-49b-v1',
+  ] as const;
 
-    let prompt = result.content.trim();
-    // Strip surrounding quotes / backticks
-    prompt = prompt.replace(/^["'`]+|["'`]+$/g, '').trim();
-    // Strip leading "- " from examples format
-    prompt = prompt.replace(/^-\s+/, '').trim();
-    // Take first line only
-    prompt = prompt.split('\n')[0]?.trim() ?? '';
-    // Truncate to 280 chars
-    if (prompt.length > 280) prompt = prompt.slice(0, 280).trim();
-    // Reject if too short (likely a refusal or junk)
-    if (prompt.length < 30) return null;
-    // Reject meta-descriptions (LLM echoing instructions instead of following them)
-    const metaPatterns = /^(the user wants|here is|this prompt|a research prompt|generate a (new |novel )?(research )?prompt|the prompt)/i;
-    if (metaPatterns.test(prompt)) return null;
-
-    return {
-      prompt,
-      topic,
-      source: papers.length > 0 && protein ? 'combined' : papers.length > 0 ? 'pubmed' : protein ? 'uniprot' : 'topic-only',
-      paperTitles: papers.map((p) => p.title),
-    };
-  } catch {
-    return null;
+  let result: { content: string } | null = null;
+  for (const model of SEED_MODELS) {
+    try {
+      result = await nvidiaChat({
+        models: [model],
+        temperature: 0.7,
+        max_tokens: 200,
+        timeoutMs: 20_000,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      });
+      break; // success
+    } catch (modelErr) {
+      console.error(`[seed] model ${model} failed: ${modelErr instanceof Error ? modelErr.message : modelErr}`);
+      continue; // try next model
+    }
   }
+  if (!result) {
+    throw new Error('All seed models exhausted (550B, 120B, 49B all failed)');
+  }
+
+  let prompt = result.content.trim();
+  // Strip surrounding quotes / backticks
+  prompt = prompt.replace(/^["'`]+|["'`]+$/g, '').trim();
+  // Strip leading "- " from examples format
+  prompt = prompt.replace(/^-\s+/, '').trim();
+  // Take first line only
+  prompt = prompt.split('\n')[0]?.trim() ?? '';
+  // Truncate to 280 chars
+  if (prompt.length > 280) prompt = prompt.slice(0, 280).trim();
+  // Reject if too short (likely a refusal or junk)
+  if (prompt.length < 30) return null;
+  // Reject meta-descriptions (LLM echoing instructions instead of following them)
+  const metaPatterns = /^(the user wants|here is|this prompt|a research prompt|generate a (new |novel )?(research )?prompt|the prompt)/i;
+  if (metaPatterns.test(prompt)) return null;
+
+  return {
+    prompt,
+    topic,
+    source: papers.length > 0 && protein ? 'combined' : papers.length > 0 ? 'pubmed' : protein ? 'uniprot' : 'topic-only',
+    paperTitles: papers.map((p) => p.title),
+  };
 }
