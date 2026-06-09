@@ -35,22 +35,16 @@ contract EtomicSwap {
     constructor() {}
 
     /// @notice Lock native coin (ETI/EGAZ) in an HTLC.
-    function ethPayment(
-        bytes32 id,
-        address receiver,
-        bytes20 secretHash,
-        uint64 lockTime
-    ) external payable {
+    function ethPayment(bytes32 id, address receiver, bytes20 secretHash, uint64 lockTime)
+        external
+        payable
+    {
         require(receiver != address(0), "Receiver cannot be the zero address");
         require(msg.value > 0, "Payment amount must be greater than 0");
-        require(
-            payments[id].state == PaymentState.Uninitialized,
-            "ETH payment already initialized"
-        );
+        require(payments[id].state == PaymentState.Uninitialized, "ETH payment already initialized");
 
-        bytes20 paymentHash = ripemd160(
-            abi.encodePacked(receiver, msg.sender, secretHash, address(0), msg.value)
-        );
+        bytes20 paymentHash =
+            ripemd160(abi.encodePacked(receiver, msg.sender, secretHash, address(0), msg.value));
 
         payments[id] = Payment(paymentHash, lockTime, PaymentState.PaymentSent);
 
@@ -70,13 +64,11 @@ contract EtomicSwap {
         require(tokenAddress != address(0), "Token address cannot be zero");
         require(amount > 0, "Payment amount must be greater than 0");
         require(
-            payments[id].state == PaymentState.Uninitialized,
-            "ERC20 payment already initialized"
+            payments[id].state == PaymentState.Uninitialized, "ERC20 payment already initialized"
         );
 
-        bytes20 paymentHash = ripemd160(
-            abi.encodePacked(receiver, msg.sender, secretHash, tokenAddress, amount)
-        );
+        bytes20 paymentHash =
+            ripemd160(abi.encodePacked(receiver, msg.sender, secretHash, tokenAddress, amount));
 
         payments[id] = Payment(paymentHash, lockTime, PaymentState.PaymentSent);
 
@@ -133,9 +125,8 @@ contract EtomicSwap {
             "Invalid payment state. Must be PaymentSent"
         );
 
-        bytes20 paymentHash = ripemd160(
-            abi.encodePacked(receiver, msg.sender, secretHash, tokenAddress, amount)
-        );
+        bytes20 paymentHash =
+            ripemd160(abi.encodePacked(receiver, msg.sender, secretHash, tokenAddress, amount));
         require(paymentHash == payments[id].paymentHash, "Invalid paymentHash");
         require(
             block.timestamp >= payments[id].lockTime,
