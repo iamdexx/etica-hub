@@ -65,6 +65,20 @@ function withTimeout(ms: number): { signal: AbortSignal; cancel: () => void } {
   return { signal: ctrl.signal, cancel: () => clearTimeout(id) };
 }
 
+/** Retry a fetcher once with 2s backoff on failure. No silent skips. */
+async function withRetry(fn: () => Promise<Reference[]>): Promise<Reference[]> {
+  try {
+    return await fn();
+  } catch {
+    await new Promise((r) => setTimeout(r, 2_000));
+    try {
+      return await fn();
+    } catch {
+      return [];
+    }
+  }
+}
+
 function normalizeSequence(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const seq = value.toUpperCase().replace(/[^ACDEFGHIKLMNPQRSTVWY]/g, '');
@@ -303,12 +317,12 @@ async function fetchKEGG(query: string, limit: number): Promise<Reference[]> {
 
 async function gatherReferences(prompt: string): Promise<Reference[]> {
   const [pm, pdb, uniprot, chembl, interactions, pathways] = await Promise.all([
-    fetchPubMed(prompt, 4),
-    fetchRcsb(prompt, 3),
-    fetchUniProt(prompt, 2),
-    fetchChEMBL(prompt, 2),
-    fetchSTRING(prompt, 3),
-    fetchKEGG(prompt, 2),
+    withRetry(() => fetchPubMed(prompt, 4)),
+    withRetry(() => fetchRcsb(prompt, 3)),
+    withRetry(() => fetchUniProt(prompt, 2)),
+    withRetry(() => fetchChEMBL(prompt, 2)),
+    withRetry(() => fetchSTRING(prompt, 3)),
+    withRetry(() => fetchKEGG(prompt, 2)),
   ]);
   return [...pm, ...pdb, ...uniprot, ...chembl, ...interactions, ...pathways].slice(0, 16);
 }

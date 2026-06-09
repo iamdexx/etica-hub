@@ -43,6 +43,20 @@ function withTimeout(ms: number): { signal: AbortSignal; cancel: () => void } {
   return { signal: ctrl.signal, cancel: () => clearTimeout(id) };
 }
 
+/** Retry a fetcher once with 2s backoff on failure. No silent skips. */
+async function withRetry(fn: () => Promise<Reference[]>): Promise<Reference[]> {
+  try {
+    return await fn();
+  } catch {
+    await new Promise((r) => setTimeout(r, 2_000));
+    try {
+      return await fn();
+    } catch {
+      return [];
+    }
+  }
+}
+
 async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
   const { signal, cancel } = withTimeout(4_000);
   try {
@@ -413,15 +427,15 @@ export async function gatherReferences(
   const keggLimit = opts.kegg ?? 2;
   const includeAlphaFold = opts.alphafold ?? true;
 
-  // Fire all academic API requests in parallel for speed
+  // Fire all academic API requests in parallel — each retries once on failure
   const [papers, structures, proteins, bioactivity, interactions, pathways] =
     await Promise.all([
-      fetchPubMed(query, pubmedLimit),
-      fetchPdb(query, pdbLimit),
-      fetchUniProt(query, uniprotLimit),
-      fetchChEMBL(query, chemblLimit),
-      fetchSTRING(query, stringLimit),
-      fetchKEGG(query, keggLimit),
+      withRetry(() => fetchPubMed(query, pubmedLimit)),
+      withRetry(() => fetchPdb(query, pdbLimit)),
+      withRetry(() => fetchUniProt(query, uniprotLimit)),
+      withRetry(() => fetchChEMBL(query, chemblLimit)),
+      withRetry(() => fetchSTRING(query, stringLimit)),
+      withRetry(() => fetchKEGG(query, keggLimit)),
     ]);
 
   // AlphaFold lookups depend on UniProt IDs from the UniProt results
