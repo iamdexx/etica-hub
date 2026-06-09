@@ -261,7 +261,7 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     // Reject if too short (likely a refusal or junk)
     if (prompt.length < 30) return null;
     // Reject meta-descriptions (LLM echoing instructions instead of following them)
-    const metaPatterns = /^(the user wants|here is|this prompt|a research prompt|generate a|the prompt)/i;
+    const metaPatterns = /^(the user wants|here is|this prompt|a research prompt|generate a (new |novel )?(research )?prompt|the prompt)/i;
     if (metaPatterns.test(prompt)) return null;
 
     return {
