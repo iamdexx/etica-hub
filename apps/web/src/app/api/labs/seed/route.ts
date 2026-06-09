@@ -197,42 +197,45 @@ export async function POST(req: NextRequest): Promise<Response> {
     'Output ONE imperative research sentence:',
   ].join('\n');
 
-  // Try each model in cascade
-  let resultContent: string | null = null;
-  for (const model of SEED_MODELS) {
-    try {
-      const result = await nvidiaChat({
-        models: [model],
-        temperature: 0.7,
-        max_tokens: 200,
-        timeoutMs: 20_000,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-      });
-      resultContent = result.content;
-      break;
-    } catch {
-      continue;
+  // Try each model in cascade, retry up to 3 times if LLM echoes instructions
+  const metaStart = /^(the user wants|here is|this prompt|a research prompt|generate a (new |novel )?(research )?prompt|the prompt|we need to output|we need to generate|i need to|output one|the topic|the goal)/i;
+  const metaBody = /max 280 characters|imperative research sentence|naming a specific protein/i;
+
+  let prompt = '';
+  let succeeded = false;
+
+  for (let retry = 0; retry < 3 && !succeeded; retry++) {
+    for (const model of SEED_MODELS) {
+      try {
+        const result = await nvidiaChat({
+          models: [model],
+          temperature: 0.7 + retry * 0.1, // increase randomness on retry
+          max_tokens: 200,
+          timeoutMs: 20_000,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+        });
+        let candidate = result.content.trim();
+        candidate = candidate.replace(/^["'`]+|["'`]+$/g, '').trim();
+        candidate = candidate.replace(/^-\s+/, '').trim();
+        candidate = candidate.split('\n')[0]?.trim() ?? '';
+        if (candidate.length > 280) candidate = candidate.slice(0, 280).trim();
+        if (candidate.length < 30) continue;
+        if (metaStart.test(candidate)) continue;
+        if (metaBody.test(candidate)) continue;
+        prompt = candidate;
+        succeeded = true;
+        break;
+      } catch {
+        continue;
+      }
     }
   }
 
-  if (!resultContent) {
-    return Response.json({ ok: false, error: 'All Nvidia models exhausted' }, { status: 502 });
-  }
-
-  let prompt = resultContent.trim();
-  prompt = prompt.replace(/^["'`]+|["'`]+$/g, '').trim();
-  prompt = prompt.replace(/^-\s+/, '').trim();
-  prompt = prompt.split('\n')[0]?.trim() ?? '';
-  if (prompt.length > 280) prompt = prompt.slice(0, 280).trim();
-  if (prompt.length < 30) {
-    return Response.json({ ok: false, error: 'Generated prompt too short' }, { status: 422 });
-  }
-  const metaPatterns = /^(the user wants|here is|this prompt|a research prompt|generate a (new |novel )?(research )?prompt|the prompt)/i;
-  if (metaPatterns.test(prompt)) {
-    return Response.json({ ok: false, error: 'LLM produced meta-description instead of research prompt' }, { status: 422 });
+  if (!succeeded) {
+    return Response.json({ ok: false, error: 'LLM failed to produce a valid research prompt after retries' }, { status: 422 });
   }
 
   const source = papers.length > 0 && protein ? 'combined' : papers.length > 0 ? 'pubmed' : protein ? 'uniprot' : 'topic-only';

@@ -1027,6 +1027,7 @@ async function main(): Promise<void> {
           },
           body: JSON.stringify({
             prompt: seed.prompt,
+            title: seed.topic,
             kind: 'auto-seed',
             maxIterations: 3,
           }),

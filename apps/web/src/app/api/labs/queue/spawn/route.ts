@@ -66,6 +66,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   let body: {
     goalId?: unknown;
     prompt?: unknown;
+    title?: unknown;
     parentJobId?: unknown;
     kind?: unknown;
     maxIterations?: unknown;
@@ -126,8 +127,18 @@ export async function POST(req: NextRequest): Promise<Response> {
       return json({ ok: false, reason: 'global-pending-cap', pendingCount }, { status: 200 });
     }
 
+    // Use the provided title (topic category) for the goal name, not the raw prompt
+    const rawTitle = typeof body.title === 'string' && body.title.trim()
+      ? body.title.trim()
+      : prompt;
+    // Title-case the topic for a clean display name
+    const goalTitle = rawTitle
+      .split(/[\s-]+/)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ')
+      .slice(0, 120);
     const newGoal = await createGoal({
-      title: prompt.slice(0, 120),
+      title: goalTitle,
       description: `Auto-seeded from academic APIs. ${prompt}`,
       submitterTag: 'autopilot-seed',
       origin: 'user', // treated as a root goal
