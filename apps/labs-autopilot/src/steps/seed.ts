@@ -186,7 +186,7 @@ async function fetchRandomProtein(): Promise<string | null> {
 export interface SeedResult {
   prompt: string;
   topic: string;
-  source: 'pubmed' | 'uniprot' | 'combined';
+  source: 'pubmed' | 'uniprot' | 'combined' | 'topic-only';
   paperTitles?: string[];
 }
 
@@ -194,7 +194,8 @@ export interface SeedResult {
  * Generate a novel research prompt by pulling random academic data and
  * asking Nvidia Nemotron to distill it into an actionable research direction.
  *
- * Returns null if seeding fails (no API responses, LLM unreachable).
+ * Falls back to topic-only generation if academic APIs are unreachable.
+ * Returns null only if LLM is unreachable or produces unusable output.
  */
 export async function generateSeedPrompt(): Promise<SeedResult | null> {
   if (readNvidiaLLMKeyPool().length === 0) return null;
@@ -275,7 +276,7 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     return {
       prompt,
       topic,
-      source: papers.length > 0 && protein ? 'combined' : papers.length > 0 ? 'pubmed' : 'uniprot',
+      source: papers.length > 0 && protein ? 'combined' : papers.length > 0 ? 'pubmed' : protein ? 'uniprot' : 'topic-only',
       paperTitles: papers.map((p) => p.title),
     };
   } catch {
