@@ -30,7 +30,7 @@ export default async function TxDetailPage({
 
   const fields = [
     { label: "Transaction Hash", value: tx.hash },
-    { label: "Status", value: tx.status === 1 || tx.status === "1" ? "Success" : tx.status === 0 ? "Failed" : "Pending", badge: true },
+    { label: "Status", value: tx.status === 1 || tx.status === "1" ? "Success" : tx.status === 0 || tx.status === "0" ? "Failed" : "Pending", badge: true },
     { label: "Block", value: String(tx.blocknumber || tx.blockNumber || ""), link: `/block/${tx.blocknumber || tx.blockNumber}` },
     { label: "Timestamp", value: tx.timestamp ? formatTimestamp(tx.timestamp) : tx.created_at ? formatTimestamp(tx.created_at) : "N/A" },
     { label: "From", value: tx.fromaddress || tx.from_address || "", link: `/address/${tx.fromaddress || tx.from_address}` },

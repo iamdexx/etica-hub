@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://104.248.193.164:6633";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://104.248.193.164";
 
 export async function fetchAPI(path: string, params?: Record<string, string>) {
   const url = new URL(`${API_BASE}${path}`);
