@@ -55,7 +55,9 @@ contract EticaResearchMarketplaceTest is Test {
     }
 
     function _sign(EticaResearchNFT.ClaimPayload memory p, uint256 pk)
-        internal view returns (bytes memory)
+        internal
+        view
+        returns (bytes memory)
     {
         bytes32 structHash = keccak256(
             abi.encode(
@@ -72,11 +74,19 @@ contract EticaResearchMarketplaceTest is Test {
                 keccak256(bytes(p.parentBranchGoalId))
             )
         );
-        (, string memory name, string memory version, uint256 chainId, address vc,,) = nft.eip712Domain();
-        bytes32 domainSep = keccak256(abi.encode(
-            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-            keccak256(bytes(name)), keccak256(bytes(version)), chainId, vc
-        ));
+        (, string memory name, string memory version, uint256 chainId, address vc,,) =
+            nft.eip712Domain();
+        bytes32 domainSep = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256(bytes(name)),
+                keccak256(bytes(version)),
+                chainId,
+                vc
+            )
+        );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSep, structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
         return abi.encodePacked(r, s, v);

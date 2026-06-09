@@ -48,7 +48,13 @@ contract EticaResearchMarketplace is ReentrancyGuard {
 
     event Listed(uint256 indexed tokenId, address indexed seller, uint128 price);
     event Unlisted(uint256 indexed tokenId, address indexed seller);
-    event Sold(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint128 price, uint256 royaltyPaid);
+    event Sold(
+        uint256 indexed tokenId,
+        address indexed seller,
+        address indexed buyer,
+        uint128 price,
+        uint256 royaltyPaid
+    );
 
     // ─── Errors ─────────────────────────────────────────────────────────
 
@@ -75,15 +81,12 @@ contract EticaResearchMarketplace is ReentrancyGuard {
         if (price == 0) revert PriceZero();
         if (nft.ownerOf(tokenId) != msg.sender) revert NotOwner();
         if (
-            !nft.isApprovedForAll(msg.sender, address(this)) &&
-            nft.getApproved(tokenId) != address(this)
+            !nft.isApprovedForAll(msg.sender, address(this))
+                && nft.getApproved(tokenId) != address(this)
         ) revert NotApproved();
 
-        listings[tokenId] = Listing({
-            seller: msg.sender,
-            price: price,
-            listedAt: uint64(block.timestamp)
-        });
+        listings[tokenId] =
+            Listing({seller: msg.sender, price: price, listedAt: uint64(block.timestamp)});
 
         // Add to enumerable set if not already present
         if (_listedIndex[tokenId] == 0) {
@@ -123,8 +126,7 @@ contract EticaResearchMarketplace is ReentrancyGuard {
         uint256 royaltyAmount = 0;
         address royaltyReceiver = address(0);
         try IERC2981(address(nft)).royaltyInfo(tokenId, l.price) returns (
-            address receiver,
-            uint256 amount
+            address receiver, uint256 amount
         ) {
             royaltyReceiver = receiver;
             royaltyAmount = amount;
@@ -138,20 +140,20 @@ contract EticaResearchMarketplace is ReentrancyGuard {
 
         // Pay royalty to splitter
         if (royaltyAmount > 0 && royaltyReceiver != address(0)) {
-            (bool royaltyOk, ) = royaltyReceiver.call{value: royaltyAmount}("");
+            (bool royaltyOk,) = royaltyReceiver.call{value: royaltyAmount}("");
             if (!royaltyOk) revert TransferFailed();
         }
 
         // Pay seller (price minus royalty)
         uint256 sellerProceeds = uint256(l.price) - royaltyAmount;
         if (sellerProceeds > 0) {
-            (bool sellerOk, ) = l.seller.call{value: sellerProceeds}("");
+            (bool sellerOk,) = l.seller.call{value: sellerProceeds}("");
             if (!sellerOk) revert TransferFailed();
         }
 
         // Refund excess payment
         if (msg.value > l.price) {
-            (bool refundOk, ) = msg.sender.call{value: msg.value - l.price}("");
+            (bool refundOk,) = msg.sender.call{value: msg.value - l.price}("");
             if (!refundOk) revert TransferFailed();
         }
 
