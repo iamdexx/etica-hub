@@ -16,8 +16,11 @@ import { readNvidiaKeyPool } from './fold.js';
 
 const PROTEINMPNN_URL = 'https://health.api.nvidia.com/v1/biology/ipd/proteinmpnn/predict';
 const TIMEOUT_MS = 120_000; // 2 min — structure design can be slow
-const MAX_RETRIES = 3;
-const BACKOFF_MS = [0, 3_000, 10_000];
+/** Infinite retry — never fail. Exponential backoff capped at 60s. */
+function backoffFor(attempt: number): number {
+  if (attempt === 0) return 0;
+  return Math.min(60_000, 3_000 * 2 ** (attempt - 1));
+}
 
 export interface ProteinMPNNInput {
   /** PDB content (ATOM lines) from ESMFold */
@@ -133,9 +136,9 @@ export async function designSequences(input: ProteinMPNNInput): Promise<ProteinM
     body.input_pdb_chains = input.chains;
   }
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const backoff = BACKOFF_MS[attempt] ?? 10_000;
-    if (backoff > 0) await sleep(backoff);
+  for (let attempt = 0; ; attempt++) {
+    const delay = backoffFor(attempt);
+    if (delay > 0) await sleep(delay);
 
     try {
       const controller = new AbortController();
@@ -161,7 +164,7 @@ export async function designSequences(input: ProteinMPNNInput): Promise<ProteinM
 
       if (!response.ok) {
         const text = await response.text().catch(() => '');
-        if (attempt < MAX_RETRIES - 1 && response.status >= 500) continue;
+        if (response.status >= 500) continue;
         return {
           ok: false,
           error: `ProteinMPNN ${response.status}: ${text.slice(0, 200)}`,
@@ -192,17 +195,11 @@ export async function designSequences(input: ProteinMPNNInput): Promise<ProteinM
       }
 
       return { ok: true, sequences, durationMs: Date.now() - startedAt };
-    } catch (err) {
-      if (attempt < MAX_RETRIES - 1) continue;
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : 'unknown error',
-        durationMs: Date.now() - startedAt,
-      };
+    } catch {
+      // Network error / timeout — retry forever
+      continue;
     }
   }
-
-  return { ok: false, error: 'ProteinMPNN exhausted retries', durationMs: Date.now() - startedAt };
 }
 
 /** 3-letter → 1-letter amino acid mapping */

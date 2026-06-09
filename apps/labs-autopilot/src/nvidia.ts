@@ -157,61 +157,62 @@ export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResu
   }
   const model =
     req.models && req.models.length > 0 ? req.models[0]! : NVIDIA_MODEL_PRIMARY;
-  const timeoutMs = req.timeoutMs ?? 60_000;
-  const maxRetries = Math.max(1, req.maxRetriesPerKey ?? 4);
-  const composed = composeSignal(req.signal, timeoutMs);
+  const perAttemptTimeout = req.timeoutMs ?? 120_000;
+  // Infinite retry — never fail. GitHub Actions 15-min timeout is the
+  // ultimate hard cap. The pipeline must never return an error.
   const apiKey = keys[0]!;
 
   let attempts = 0;
   let lastStatus = 0;
   let lastDetail = '';
 
-  try {
-    const jsonPasses = req.jsonMode ? [true, false] : [false];
-    for (const useJsonMode of jsonPasses) {
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        attempts++;
-        try {
-          const r = await callOnce(apiKey, model, req, useJsonMode, composed.signal);
-          if (r.ok) {
-            if (r.content) {
-              return { content: r.content, model, keyIndex: 0, attempts };
-            }
-            lastStatus = 200;
-            lastDetail = 'empty content';
-          } else {
-            lastStatus = r.status;
-            lastDetail = r.detail;
-            if (!isRetryableStatus(r.status)) break;
+  const jsonPasses = req.jsonMode ? [true, false] : [false];
+  for (const useJsonMode of jsonPasses) {
+    for (let attempt = 0; ; attempt++) {
+      attempts++;
+      const composed = composeSignal(req.signal, perAttemptTimeout);
+      try {
+        const r = await callOnce(apiKey, model, req, useJsonMode, composed.signal);
+        if (r.ok) {
+          if (r.content) {
+            return { content: r.content, model, keyIndex: 0, attempts };
           }
-        } catch (err) {
-          if (composed.signal.aborted) {
-            throw new NvidiaLLMError('Nvidia LLM request timed out.', {
-              status: 408,
-              detail: lastDetail,
-              attempts,
-            });
-          }
-          lastStatus = 0;
-          lastDetail = err instanceof Error ? err.message : String(err);
+          lastStatus = 200;
+          lastDetail = 'empty content';
+        } else {
+          lastStatus = r.status;
+          lastDetail = r.detail;
+          // Non-retryable HTTP status → break inner loop (try next jsonPass)
+          if (!isRetryableStatus(r.status)) break;
         }
-        if (attempt < maxRetries - 1) {
-          await sleep(backoffMs(attempt), composed.signal);
-          if (composed.signal.aborted) {
-            throw new NvidiaLLMError('Nvidia LLM request timed out.', {
-              status: 408,
-              detail: lastDetail,
-              attempts,
-            });
-          }
+      } catch (err) {
+        // If the external signal was aborted (caller gave up), propagate
+        if (req.signal?.aborted) {
+          throw new NvidiaLLMError('Nvidia LLM request aborted by caller.', {
+            status: 408,
+            detail: lastDetail,
+            attempts,
+          });
         }
+        lastStatus = 0;
+        lastDetail = err instanceof Error ? err.message : String(err);
+      } finally {
+        composed.clear();
+      }
+      // Back off and retry — infinite loop until success
+      await sleep(backoffMs(attempt), req.signal);
+      if (req.signal?.aborted) {
+        throw new NvidiaLLMError('Nvidia LLM request aborted by caller.', {
+          status: 408,
+          detail: lastDetail,
+          attempts,
+        });
       }
     }
-  } finally {
-    composed.clear();
   }
 
-  throw new NvidiaLLMError(`Nvidia LLM exhausted retries (${lastStatus}).`, {
+  // Unreachable in normal operation (infinite retry), but satisfies TS:
+  throw new NvidiaLLMError(`Nvidia LLM non-retryable error (${lastStatus}).`, {
     status: lastStatus,
     detail: lastDetail,
     attempts,
