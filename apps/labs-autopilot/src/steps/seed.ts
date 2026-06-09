@@ -218,23 +218,23 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
   }
 
   const system = [
-    'You are EticaLabs Autopilot, an autonomous biomedical research planner.',
-    'Given recent academic papers and/or a protein target, generate ONE specific,',
-    'actionable research prompt for protein engineering or drug design.',
-    'The prompt MUST be a single imperative sentence, max 280 characters.',
-    'It should propose a NOVEL research direction inspired by the data — not a summary.',
-    'Focus on: peptide/protein design, inhibitor design, structural optimization,',
-    'or mechanism exploration. Be specific (name targets, mechanisms, diseases).',
-    'PATENT SAFETY: propose novel designs, never replicate existing therapeutics.',
-    'Output ONLY the research prompt. No quotes, no markdown, no preamble.',
-  ].join(' ');
+    'You output a single imperative research sentence. Nothing else.',
+    'Rules: max 280 characters, must name a specific protein/target/disease,',
+    'must be a novel design direction (not summary of the input), patent-safe.',
+    'NEVER output meta-commentary like "The user wants" or "Here is a prompt".',
+    'NEVER describe what the prompt should be. Just output the prompt itself.',
+    '',
+    'Examples of CORRECT output:',
+    '- Design a cyclic peptide inhibitor targeting the PD-1/PD-L1 interface for melanoma immunotherapy',
+    '- Engineer a thermostable variant of human lysozyme with enhanced antimicrobial activity against MRSA',
+    '- Develop a stapled alpha-helical peptide blocking the MDM2-p53 interaction for glioblastoma treatment',
+  ].join('\n');
 
   const user = [
-    `Topic area: ${topic}`,
-    '',
+    `Topic: ${topic}`,
     ...contextParts,
     '',
-    'Generate ONE novel research prompt (imperative, ≤280 chars, specific target/mechanism):',
+    'Output ONE imperative research sentence:',
   ].join('\n');
 
   try {
@@ -252,12 +252,17 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     let prompt = result.content.trim();
     // Strip surrounding quotes / backticks
     prompt = prompt.replace(/^["'`]+|["'`]+$/g, '').trim();
+    // Strip leading "- " from examples format
+    prompt = prompt.replace(/^-\s+/, '').trim();
     // Take first line only
     prompt = prompt.split('\n')[0]?.trim() ?? '';
     // Truncate to 280 chars
     if (prompt.length > 280) prompt = prompt.slice(0, 280).trim();
     // Reject if too short (likely a refusal or junk)
     if (prompt.length < 30) return null;
+    // Reject meta-descriptions (LLM echoing instructions instead of following them)
+    const metaPatterns = /^(the user wants|here is|this prompt|a research prompt|generate a|the prompt)/i;
+    if (metaPatterns.test(prompt)) return null;
 
     return {
       prompt,
