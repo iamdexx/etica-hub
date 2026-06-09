@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
 import { consumeLabsRateLimit } from '@/lib/labs/rate-limit';
 import {
-  groqChat,
-  GroqError,
-  GROQ_MODEL_PRIMARY,
-  GROQ_MODEL_FALLBACK,
-  hasGroqKey,
+  nvidiaChat,
+  NvidiaError,
+  NVIDIA_MODEL_PRIMARY,
+  NVIDIA_MODEL_FALLBACK,
+  hasNvidiaKey,
 } from '@/lib/labs/nvidia';
 
 export const runtime = 'nodejs';
@@ -37,9 +37,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     return json({ error: 'Sequence is required.' }, { status: 400, headers: limit.headers });
   }
 
-  if (!hasGroqKey()) {
+  if (!hasNvidiaKey()) {
     return json(
-      { error: 'Groq API key is not configured.', comingSoon: true },
+      { error: 'Nvidia API key is not configured.', comingSoon: true },
       { status: 503, headers: limit.headers },
     );
   }
@@ -60,11 +60,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       ? `Original design prompt: "${prompt}"\n\nFolded sequence (${sequence.length} residues): ${sequence}`
       : `Folded sequence (${sequence.length} residues): ${sequence}`;
 
-    // Explanation is short and tolerant of model quality, so prefer the
-    // 8B model (much higher daily cap) and cascade up to 70B only if 8B
-    // burns through retries. groqChat rotates keys + retries 429/5xx.
-    const result = await groqChat({
-      models: [GROQ_MODEL_FALLBACK, GROQ_MODEL_PRIMARY],
+    // nvidiaChat handles retry + backoff on 429/5xx.
+    const result = await nvidiaChat({
+      models: [NVIDIA_MODEL_FALLBACK, NVIDIA_MODEL_PRIMARY],
       temperature: 0.3,
       max_tokens: 512,
       timeoutMs: 20_000,
@@ -80,7 +78,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     return json({ analysis: result.content, model: result.model }, { headers: limit.headers });
   } catch (err) {
-    if (err instanceof GroqError) {
+    if (err instanceof NvidiaError) {
       return json(
         { error: 'AI analysis failed.', detail: (err.detail ?? err.message).slice(0, 240) },
         { status: 502, headers: limit.headers },

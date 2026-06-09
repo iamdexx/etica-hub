@@ -10,11 +10,11 @@
  */
 
 import {
-  groqChat,
-  GroqError,
-  GROQ_MODEL_PRIMARY,
-  GROQ_MODEL_FALLBACK,
-  readGroqKeyPool,
+  nvidiaChat,
+  NvidiaLLMError,
+  NVIDIA_MODEL_PRIMARY,
+  NVIDIA_MODEL_FALLBACK,
+  readNvidiaLLMKeyPool,
 } from '../nvidia';
 
 const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
@@ -473,8 +473,8 @@ export async function generatePlan(
   prompt: string,
   priorContext?: PriorContext,
 ): Promise<ResearchPlan> {
-  if (readGroqKeyPool().length === 0) {
-    throw new Error('GROQ_API_KEY (or GROQ_API_KEYS) not set');
+  if (readNvidiaLLMKeyPool().length === 0) {
+    throw new Error('NVIDIA_API_KEY (or NVIDIA_API_KEYS) not set');
   }
 
   const references = await gatherReferences(prompt).catch(() => []);
@@ -515,14 +515,12 @@ export async function generatePlan(
   }
   const userContent = userParts.join('\n\n');
 
-  // groqChat does (key × model × jsonMode) cascade + retry on 429/5xx.
-  // Each model gets its own pass so we don't burn the 70B retry budget
-  // before trying the 8B fallback.
+  // nvidiaChat does (key × model × jsonMode) cascade + retry on 429/5xx.
   let lastErr = '';
-  const models = [GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK];
+  const models = [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK];
   for (const model of models) {
     try {
-      const result = await groqChat({
+      const result = await nvidiaChat({
         models: [model],
         temperature: 0.4,
         max_tokens: 1400,
@@ -540,8 +538,8 @@ export async function generatePlan(
       if (plan) return { ...plan, references };
       lastErr = 'Planner returned unparseable response';
     } catch (err) {
-      if (err instanceof GroqError) {
-        lastErr = `Groq plan ${err.status}: ${(err.detail ?? err.message).slice(0, 200)}`;
+      if (err instanceof NvidiaLLMError) {
+        lastErr = `Nvidia plan ${err.status}: ${(err.detail ?? err.message).slice(0, 200)}`;
         continue;
       }
       throw err;

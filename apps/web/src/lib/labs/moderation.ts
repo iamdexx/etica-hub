@@ -6,8 +6,8 @@
  *   1. {@link runHardDenylist} — sync, regex-based, illegal-content floor
  *      (CSAM, WMD synthesis, targeted violence). Hard reject; never
  *      revertable, even by the operator.
- *   2. {@link runBiomedicalGate} — Groq topic classifier; rejects
- *      non-biomedical submissions. Fail-closed if Groq is unreachable.
+ *   2. {@link runBiomedicalGate} — Nvidia Nemotron topic classifier;
+ *      rejects non-biomedical submissions. Fail-open on 'unclear'.
  *   3. Worker-side prompt hardening — see `apps/labs-autopilot`. Plan/
  *      analyse/mutate prompts refuse to drift off-scope.
  *   4. Community moderation — flag/vouch counters drive auto-hide /
@@ -15,7 +15,7 @@
  *      (`operator-hidden` / `operator-approved`).
  */
 
-import { groqChat, GroqError } from './nvidia';
+import { nvidiaChat, NvidiaError } from './nvidia';
 
 /* ------------------------------------------------------------------ */
 /*  Status                                                             */
@@ -174,22 +174,22 @@ export interface BiomedicalGateResult {
 }
 
 /**
- * Call Groq to classify whether the submission is in biomedical scope.
- * Fail-closed: any network/parse failure returns `unclear` so the
- * caller can reject the submission rather than letting it through.
+ * Call Nvidia Nemotron to classify whether the submission is in biomedical scope.
+ * Fail-open: any network/parse failure returns `unclear` which now passes through
+ * (only explicit 'no' rejects).
  */
 export async function runBiomedicalGate(
   prompt: string,
   apiKey: string,
 ): Promise<BiomedicalGateResult> {
-  // `apiKey` is still accepted for backwards compatibility, but groqChat
-  // reads the full key pool (GROQ_API_KEYS rotation + single-key fallbacks)
+  // `apiKey` is still accepted for backwards compatibility, but nvidiaChat
+  // reads the full key pool (NVIDIA_API_KEYS rotation + single-key fallbacks)
   // so we get multi-key rotation + retry + cascade for free here.
   if (!apiKey && !process.env.NVIDIA_API_KEYS && !process.env.NVIDIA_API_KEY) {
     return { verdict: 'unclear', error: 'missing-nvidia-key' };
   }
   try {
-    const result = await groqChat({
+    const result = await nvidiaChat({
       models: [BIOMED_GATE_MODEL, BIOMED_GATE_FALLBACK_MODEL],
       temperature: 0,
       max_tokens: 4,
@@ -205,8 +205,8 @@ export async function runBiomedicalGate(
     if (raw.startsWith('no')) return { verdict: 'no', raw };
     return { verdict: 'unclear', raw };
   } catch (err) {
-    if (err instanceof GroqError) {
-      return { verdict: 'unclear', error: `groq-${err.status || 'error'}` };
+    if (err instanceof NvidiaError) {
+      return { verdict: 'unclear', error: `nvidia-${err.status || 'error'}` };
     }
     return {
       verdict: 'unclear',

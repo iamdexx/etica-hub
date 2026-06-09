@@ -218,19 +218,4 @@ export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResu
   });
 }
 
-// ───────────────────────────────────────────────────────────────────────
-// Groq-compatible aliases so step files can swap with a single import
-// path change (from '../groq' → from '../nvidia').
-// ───────────────────────────────────────────────────────────────────────
-export {
-  nvidiaChat as groqChat,
-  NvidiaLLMError as GroqError,
-  NVIDIA_MODEL_PRIMARY as GROQ_MODEL_PRIMARY,
-  NVIDIA_MODEL_FALLBACK as GROQ_MODEL_FALLBACK,
-  readNvidiaLLMKeyPool as readGroqKeyPool,
-};
-export type {
-  NvidiaMessage as GroqMessage,
-  NvidiaChatRequest as GroqChatRequest,
-  NvidiaChatResult as GroqChatResult,
-};
+

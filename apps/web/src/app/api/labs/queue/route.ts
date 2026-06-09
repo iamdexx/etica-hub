@@ -11,7 +11,7 @@
  * Fully open per product decision: any submission runs. Abuse is bounded
  * by the existing labs IP rate-limit (5/hr per IP) and by Redis free-tier
  * command caps. Content moderation happens implicitly at planning time
- * (Groq's safety filter will refuse harmful prompts; the worker logs and
+ * (Nvidia's safety filter will refuse harmful prompts; the worker logs and
  * moves on).
  */
 

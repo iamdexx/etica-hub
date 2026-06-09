@@ -58,7 +58,7 @@ export interface LabsCandidateResult {
   engine?: string;
   /** Whether the fold attempt succeeded. */
   folded: boolean;
-  /** Short structural analysis from Groq (post-fold). */
+  /** Short structural analysis from Nvidia Nemotron (post-fold). */
   analysis?: string;
   /**
    * Optional numeric score in [0, 1] that the planner / scorer assigned

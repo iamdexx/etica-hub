@@ -2,8 +2,8 @@
  * Labs Autopilot job queue.
  *
  * The website pushes user-submitted research goals into Redis; a GitHub
- * Actions worker pops them on a cadence, runs the Groq plan -> NVIDIA fold
- * -> Groq analyse loop, and writes results back to the same Redis. The
+ * Actions worker pops them on a cadence, runs the Nvidia Nemotron plan ->
+ * ESMFold -> Nemotron analyse loop, and writes results back to the same Redis. The
  * public `/labs/feed` page reads from here too.
  *
  * Backends supported, in priority order:

@@ -7,7 +7,7 @@
  * the loop from running away:
  *
  *   • Per-goal daily cap (default 6 follow-ups / goal / day) so a single
- *     goal can't burn through Groq / NVIDIA quotas.
+ *     goal can't burn through Nvidia quotas.
  *   • Global pending-queue cap (default 50) so a viral surge of new
  *     submissions can't fan out infinitely.
  *   • Operator pause: any goal with moderation === 'operator-hidden'

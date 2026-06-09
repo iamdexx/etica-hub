@@ -15,7 +15,7 @@
  *
  * Moderation: every goal has the same lifecycle as a job — see
  * {@link ModerationStatus} in `./moderation`. Goals start `visible`
- * unless the hard denylist or Groq biomedical-gate trips at submit time.
+ * unless the hard denylist or biomedical-gate trips at submit time.
  */
 import type { ModerationStatus } from './moderation';
 

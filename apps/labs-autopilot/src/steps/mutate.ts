@@ -1,7 +1,7 @@
 /**
  * Deterministic point-mutation generator for autopilot iterations.
  *
- * We don't ask Groq to mutate — it's slow and adds non-determinism.
+ * We don't ask the LLM to mutate — it's slow and adds non-determinism.
  * Instead we pick three biophysically meaningful single-residue swaps:
  *   1. Random conservative swap (similar physicochemistry)
  *   2. Random radical swap (different physicochemistry)

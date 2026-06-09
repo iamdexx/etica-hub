@@ -99,7 +99,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  // Layer 2 — biomedical gate. Cheap Groq call; fail-closed if Groq is down.
+  // Layer 2 — biomedical gate (Nvidia Nemotron). Fail-open on 'unclear'.
   const nvidiaKey = process.env.NVIDIA_API_KEY ?? '';
   if (nvidiaKey || process.env.NVIDIA_API_KEYS) {
     const gate = await runBiomedicalGate(prompt, nvidiaKey);

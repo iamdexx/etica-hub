@@ -4,9 +4,9 @@
  * Designed to run as a GitHub Actions cron job. On each tick we:
  *   1. POST /api/labs/queue/pop with the shared worker token. If 204, exit
  *      (queue is empty); if 200, we got a job to run.
- *   2. Generate a research plan with Groq from the user's prompt.
+ *   2. Generate a research plan with Nvidia Nemotron from the user's prompt.
  *   3. For each plan candidate, fold the sequence on NVIDIA NIM ESMFold
- *      and ask Groq for a short structural analysis.
+ *      and ask Nemotron for a short structural analysis.
  *   4. POST /api/labs/queue/[id]/update with the events + result + status.
  *
  * The worker is intentionally chatty — every step posts an event so the
@@ -413,7 +413,7 @@ async function maybeBranchHighScoreLead(
 }
 
 /**
- * Auto-expand a completed goal-attached job: ask Groq for the next
+ * Auto-expand a completed goal-attached job: ask Nvidia for the next
  * direction in the same problem space and (if score is strong enough)
  * also seed one cross-goal follow-up on the most-related goal.
  *

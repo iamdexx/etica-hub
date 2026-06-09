@@ -1,19 +1,18 @@
 /**
- * Groq-powered structural analysis + a coarse score in [0, 1].
+ * Nvidia Nemotron structural analysis + a coarse score in [0, 1].
  *
  * The analysis prompt is intentionally small — we don't ship the full
- * PDB to Groq, just a short summary (length, ATOM count, B-factor mean,
+ * PDB to the LLM, just a short summary (length, ATOM count, B-factor mean,
  * range of pLDDT-ish confidence values where available). This keeps the
- * Groq call fast and free-tier friendly, and the analysis useful enough
- * to drive iteration ranking.
+ * call fast and the analysis useful enough to drive iteration ranking.
  */
 
 import {
-  groqChat,
-  GroqError,
-  GROQ_MODEL_FALLBACK,
-  GROQ_MODEL_PRIMARY,
-  readGroqKeyPool,
+  nvidiaChat,
+  NvidiaLLMError,
+  NVIDIA_MODEL_FALLBACK,
+  NVIDIA_MODEL_PRIMARY,
+  readNvidiaLLMKeyPool,
 } from '../nvidia';
 
 export type Analysis = {
@@ -82,7 +81,7 @@ function pdbConfidenceScore(s: PdbSummary): number {
 }
 
 function parseScoreFromText(text: string): number | null {
-  // Look for "score: 0.42" or "Score=0.42" — Groq is asked to emit one.
+  // Look for "score: 0.42" or "Score=0.42" — the LLM is asked to emit one.
   const m = text.match(/score\s*[:=]\s*(0(?:\.\d+)?|1(?:\.0+)?)/i);
   if (!m || !m[1]) return null;
   const n = parseFloat(m[1]);
@@ -90,8 +89,8 @@ function parseScoreFromText(text: string): number | null {
 }
 
 export async function analyseStructure(sequence: string, pdb: string): Promise<Analysis> {
-  if (readGroqKeyPool().length === 0) {
-    throw new Error('GROQ_API_KEY (or GROQ_API_KEYS) not set');
+  if (readNvidiaLLMKeyPool().length === 0) {
+    throw new Error('NVIDIA_API_KEY (or NVIDIA_API_KEYS) not set');
   }
 
   const s = summarizePdb(pdb);
@@ -118,12 +117,12 @@ export async function analyseStructure(sequence: string, pdb: string): Promise<A
     `HELIX records: ${s.helixHint}, SHEET records: ${s.sheetHint}`,
   ].join('\n');
 
-  // groqChat handles retry/key-rotation/model-cascade automatically. If
-  // Groq is fully exhausted we fall back to a deterministic objective-only
+  // nvidiaChat handles retry/model-cascade automatically. If
+  // Nvidia is fully exhausted we fall back to a deterministic objective-only
   // summary so analysis never blocks the worker pipeline.
   try {
-    const result = await groqChat({
-      models: [GROQ_MODEL_FALLBACK, GROQ_MODEL_PRIMARY],
+    const result = await nvidiaChat({
+      models: [NVIDIA_MODEL_FALLBACK, NVIDIA_MODEL_PRIMARY],
       temperature: 0.3,
       max_tokens: 350,
       timeoutMs: 25_000,
@@ -134,16 +133,16 @@ export async function analyseStructure(sequence: string, pdb: string): Promise<A
     });
     const raw = result.content;
     const parsed = parseScoreFromText(raw);
-    // Blend Groq's qualitative score with the objective pLDDT confidence
+    // Blend LLM's qualitative score with the objective pLDDT confidence
     // 60/40 so a low-confidence fold can't be talked up.
     const score = parsed === null ? confidence : parsed * 0.6 + confidence * 0.4;
     return { summary: raw.replace(/score\s*[:=].*$/i, '').trim(), score };
   } catch (err) {
-    if (err instanceof GroqError) {
-      // Worker must never block on Groq — emit an objective-only summary so
+    if (err instanceof NvidiaLLMError) {
+      // Worker must never block on Nvidia — emit an objective-only summary so
       // the candidate can still be ranked + published downstream.
       const fallback = [
-        `Objective summary only (Groq unavailable: ${err.status || 'network'}).`,
+        `Objective summary only (Nvidia unavailable: ${err.status || 'network'}).`,
         `Predicted ${s.length} residues, ${s.atomCount} atoms.`,
         `Mean pLDDT ${s.bMean.toFixed(1)} (range ${s.bMin.toFixed(1)}–${s.bMax.toFixed(1)}).`,
         `HELIX records: ${s.helixHint}, SHEET records: ${s.sheetHint}.`,

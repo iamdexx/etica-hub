@@ -2,11 +2,11 @@ import { NextRequest } from 'next/server';
 import { consumeLabsRateLimit } from '@/lib/labs/rate-limit';
 import { gatherReferences, summarizeReferencesForPrompt, type Reference } from '@/lib/labs/research';
 import {
-  groqChat,
-  GroqError,
-  GROQ_MODEL_PRIMARY,
-  GROQ_MODEL_FALLBACK,
-  hasGroqKey,
+  nvidiaChat,
+  NvidiaError,
+  NVIDIA_MODEL_PRIMARY,
+  NVIDIA_MODEL_FALLBACK,
+  hasNvidiaKey,
 } from '@/lib/labs/nvidia';
 
 export const runtime = 'nodejs';
@@ -115,9 +115,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  if (!hasGroqKey()) {
+  if (!hasNvidiaKey()) {
     return json(
-      { error: 'Groq API key is not configured.', comingSoon: true },
+      { error: 'Nvidia API key is not configured.', comingSoon: true },
       { status: 503, headers: limit.headers },
     );
   }
@@ -151,15 +151,15 @@ export async function POST(req: NextRequest): Promise<Response> {
       ? `Goal: ${prompt}\n\nExisting research and structures (cite by [N] index):\n${refSummary}`
       : prompt;
 
-    // groqChat handles the (key × model × jsonMode) cascade and retries
+    // nvidiaChat handles the (key × model × jsonMode) cascade and retries
     // on 429/5xx with exponential backoff. tryParsePlan is tolerant — it
     // pulls the outermost {...} substring — so we still get a plan back
-    // when Groq emits json_validate_failed.
+    // when the API emits json_validate_failed.
     let lastRaw = '';
-    const models = [GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK];
+    const models = [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK];
     for (const model of models) {
       try {
-        const result = await groqChat({
+        const result = await nvidiaChat({
           models: [model],
           temperature: 0.4,
           max_tokens: 1200,
@@ -174,12 +174,12 @@ export async function POST(req: NextRequest): Promise<Response> {
         const plan = tryParsePlan(result.content);
         if (plan) {
           return json(
-            { plan, references, provider: 'groq', model: result.model },
+            { plan, references, provider: 'nvidia', model: result.model },
             { headers: limit.headers },
           );
         }
       } catch (err) {
-        if (err instanceof GroqError && model === models[models.length - 1]) {
+        if (err instanceof NvidiaError && model === models[models.length - 1]) {
           return json(
             {
               error: 'The AI could not generate a research plan from this prompt. Try adding more detail (e.g. a target protein, disease mechanism, or therapeutic approach).',

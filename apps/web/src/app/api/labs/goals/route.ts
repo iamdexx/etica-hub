@@ -5,7 +5,7 @@
  * POST /api/labs/goals             — create a new goal. Open to anyone
  *                                    (no wallet required). Goes through
  *                                    Layer 1 (hard denylist) + Layer 2
- *                                    (Groq biomedical gate) at submit.
+ *                                    (Nvidia biomedical gate) at submit.
  *
  * Submission is wallet-gated (EIP-191 signature) but does NOT require
  * any token balance. Only the moderation surface (flag/vouch) requires
