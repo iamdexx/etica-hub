@@ -15,7 +15,7 @@
  *      (`operator-hidden` / `operator-approved`).
  */
 
-import { groqChat, GroqError } from './groq';
+import { groqChat, GroqError } from './nvidia';
 
 /* ------------------------------------------------------------------ */
 /*  Status                                                             */
@@ -146,11 +146,11 @@ export function runHardDenylist(text: string): DenylistResult {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Layer 2: biomedical-scope gate (Groq)                              */
+/*  Layer 2: biomedical-scope gate (Nvidia Nemotron)                   */
 /* ------------------------------------------------------------------ */
 
-const BIOMED_GATE_MODEL = 'llama-3.3-70b-versatile';
-const BIOMED_GATE_FALLBACK_MODEL = 'llama-3.1-8b-instant';
+const BIOMED_GATE_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
+const BIOMED_GATE_FALLBACK_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
 const BIOMED_GATE_TIMEOUT_MS = 6000;
 
 const BIOMED_GATE_SYSTEM = `You are a biomedical-scope classifier for EticaLabs, a community research platform.
@@ -183,8 +183,8 @@ export async function runBiomedicalGate(
   // `apiKey` is still accepted for backwards compatibility, but groqChat
   // reads the full key pool (GROQ_API_KEYS rotation + single-key fallbacks)
   // so we get multi-key rotation + retry + cascade for free here.
-  if (!apiKey && !process.env.GROQ_API_KEYS && !process.env.GROQ_API_KEY) {
-    return { verdict: 'unclear', error: 'missing-groq-key' };
+  if (!apiKey && !process.env.NVIDIA_API_KEYS && !process.env.NVIDIA_API_KEY) {
+    return { verdict: 'unclear', error: 'missing-nvidia-key' };
   }
   try {
     const result = await groqChat({

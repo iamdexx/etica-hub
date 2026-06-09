@@ -17,7 +17,7 @@
  * a malformed follow-up.
  */
 
-import { groqChat, GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK, readGroqKeyPool } from '../groq';
+import { groqChat, GROQ_MODEL_PRIMARY, GROQ_MODEL_FALLBACK, readGroqKeyPool } from '../nvidia';
 
 const MAX_PROMPT_CHARS = 280;
 const REQUEST_TIMEOUT_MS = 15_000;

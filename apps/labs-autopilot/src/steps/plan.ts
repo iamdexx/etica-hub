@@ -14,7 +14,7 @@ import {
   GROQ_MODEL_PRIMARY,
   GROQ_MODEL_FALLBACK,
   readGroqKeyPool,
-} from '../groq';
+} from '../nvidia';
 
 const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';

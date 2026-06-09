@@ -16,8 +16,7 @@
  * Env:
  *   LABS_AUTOPILOT_BASE_URL   — e.g. https://eticahub.com
  *   LABS_AUTOPILOT_TOKEN      — shared secret; same value in Vercel env
- *   GROQ_API_KEY              — planning + analysis
- *   NVIDIA_API_KEY            — folding
+ *   NVIDIA_API_KEY             — Nemotron LLM (planning + analysis) + ESMFold
  *
  * Optional:
  *   LABS_AUTOPILOT_MAX_JOBS_PER_TICK   — default 1
@@ -793,10 +792,6 @@ async function runJob(job: LabsJob): Promise<void> {
 async function main(): Promise<void> {
   if (!TOKEN) {
     console.error('LABS_AUTOPILOT_TOKEN is required.');
-    process.exit(1);
-  }
-  if (!process.env.GROQ_API_KEY && !process.env.GROQ_API_KEYS) {
-    console.error('GROQ_API_KEY (or comma-separated GROQ_API_KEYS) is required.');
     process.exit(1);
   }
   if (!process.env.NVIDIA_API_KEY && !process.env.NVIDIA_API_KEYS) {

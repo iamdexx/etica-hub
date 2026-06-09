@@ -132,12 +132,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     goalId = goal.id;
   }
 
-  // Layer 2: biomedical-scope gate via Groq. Skipped for goal-attached
+  // Layer 2: biomedical-scope gate via Nvidia Nemotron. Skipped for goal-attached
   // runs (the parent goal already passed the gate at creation time, and
   // the worker prompt-hardens follow-up iterations).
   if (!goalId) {
-    const apiKey = process.env.GROQ_API_KEY ?? '';
-    if (apiKey || process.env.GROQ_API_KEYS) {
+    const apiKey = process.env.NVIDIA_API_KEY ?? '';
+    if (apiKey || process.env.NVIDIA_API_KEYS) {
       const gate = await runBiomedicalGate(prompt, apiKey);
       if (gate.verdict !== 'yes') {
         return json(

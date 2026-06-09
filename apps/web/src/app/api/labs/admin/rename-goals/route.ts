@@ -41,9 +41,8 @@ async function generateTitle(
   parentDescription?: string,
 ): Promise<string | null> {
   const keys = (
-    process.env.GROQ_API_KEYS ??
-    process.env.GROQ_API_KEY ??
-    process.env.AIBOT_LLM_GROQ_API_KEY ??
+    process.env.NVIDIA_API_KEYS ??
+    process.env.NVIDIA_API_KEY ??
     ''
   )
     .split(',')
@@ -81,21 +80,21 @@ async function generateTitle(
     contextBlock;
 
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         authorization: `Bearer ${key}`,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: 'nvidia/nemotron-3-ultra-550b-a55b',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 80,
         temperature: 0.3,
       }),
     });
     if (!res.ok) {
-      console.error(`[rename-goals] Groq ${res.status}: ${await res.text().catch(() => '')}`);
+      console.error(`[rename-goals] Nvidia ${res.status}: ${await res.text().catch(() => '')}`);
       return null;
     }
     const data = (await res.json()) as {
@@ -155,17 +154,16 @@ export async function POST(req: NextRequest): Promise<Response> {
   const auth = requireWorkerAuth(req);
   if (!auth.ok) return json(auth.body, { status: auth.status });
 
-  // Check Groq key availability before starting
+  // Check Nvidia key availability before starting
   const hasKey = !!(
-    process.env.GROQ_API_KEYS ??
-    process.env.GROQ_API_KEY ??
-    process.env.AIBOT_LLM_GROQ_API_KEY
+    process.env.NVIDIA_API_KEYS ??
+    process.env.NVIDIA_API_KEY
   );
   if (!hasKey) {
     return json(
       {
         error:
-          'No Groq API key available (checked GROQ_API_KEYS, GROQ_API_KEY, AIBOT_LLM_GROQ_API_KEY)',
+          'No Nvidia API key available (checked NVIDIA_API_KEYS, NVIDIA_API_KEY)',
       },
       { status: 503 },
     );
