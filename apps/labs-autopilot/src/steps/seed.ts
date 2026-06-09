@@ -85,13 +85,13 @@ type PaperSummary = {
  * Fetch recent PubMed papers for a given topic. Uses a randomized
  * start offset so repeated calls get different papers.
  */
-async function fetchRecentPapers(topic: string, count: number = 3): Promise<PaperSummary[]> {
+async function fetchRecentPapers(topic: string, count: number = 5): Promise<PaperSummary[]> {
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 10_000);
+  const timeout = setTimeout(() => ctrl.abort(), 15_000);
   try {
-    // Random offset in the first 50 results for variety
-    const retstart = Math.floor(Math.random() * 50);
-    const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${count}&retstart=${retstart}&sort=date&term=${encodeURIComponent(
+    // Small random offset (0-9) to add variety while staying within result bounds
+    const retstart = Math.floor(Math.random() * 10);
+    const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${count}&retstart=${retstart}&sort=relevance&term=${encodeURIComponent(
       topic,
     )}`;
     const searchRes = await politeGet(searchUrl, { signal: ctrl.signal, cache: 'no-store' });
@@ -142,10 +142,10 @@ async function fetchRecentPapers(topic: string, count: number = 3): Promise<Pape
  */
 async function fetchRandomProtein(): Promise<string | null> {
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 8_000);
+  const timeout = setTimeout(() => ctrl.abort(), 15_000);
   try {
-    // Random offset for variety
-    const offset = Math.floor(Math.random() * 200);
+    // Random offset (0-50) — reviewed human proteome has ~20k entries, keep offset small for reliability
+    const offset = Math.floor(Math.random() * 50);
     const url = `${UNIPROT_SEARCH}?query=reviewed:true+AND+organism_id:9606&format=json&size=1&offset=${offset}&fields=accession,protein_name,gene_names`;
     const res = await politeGet(url, { signal: ctrl.signal, cache: 'no-store' });
     if (!res.ok) return null;
@@ -189,13 +189,19 @@ export interface SeedResult {
 export async function generateSeedPrompt(): Promise<SeedResult | null> {
   if (readNvidiaLLMKeyPool().length === 0) return null;
 
-  const topic = randomTopic();
+  // Try up to 3 different topics if the first fetch fails
+  let papers: PaperSummary[] = [];
+  let protein: string | null = null;
+  let topic = '';
 
-  // Fetch data from multiple sources in parallel
-  const [papers, protein] = await Promise.all([
-    fetchRecentPapers(topic, 3),
-    fetchRandomProtein(),
-  ]);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    topic = randomTopic();
+    [papers, protein] = await Promise.all([
+      fetchRecentPapers(topic, 5),
+      attempt === 0 ? fetchRandomProtein() : Promise.resolve(protein),
+    ]);
+    if (papers.length > 0 || protein) break;
+  }
 
   if (papers.length === 0 && !protein) return null;
 
