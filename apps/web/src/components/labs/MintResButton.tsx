@@ -166,6 +166,11 @@ export function MintResButton({
         return;
       }
       setTx({ kind: 'confirmed', attest, hash });
+      // Every platform mint cranks the treasury: settle a bounded batch of
+      // abandoned (past-7d) research to the treasury as a separate keeper
+      // tx. Fire-and-forget — the user pays nothing for this and a failure
+      // must never affect their successful mint.
+      void fetch('/api/labs/treasury/crank', { method: 'POST' }).catch(() => {});
     } catch (err) {
       setTx({ kind: 'error', message: shortError(err), attest });
     }

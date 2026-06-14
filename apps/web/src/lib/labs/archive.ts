@@ -61,6 +61,19 @@ export interface ArchivedResearch {
   /** Whether this has been minted as an NFT */
   minted: boolean;
   mintTxHash?: string;
+  /**
+   * Wallet that originated the research (goal submitter). Recorded so the
+   * treasury crank can preserve discoverer provenance in `submitterOf`
+   * when it force-mints an abandoned record. Undefined for auto-seeded
+   * goals with no human submitter.
+   */
+  submitterWallet?: string;
+  /**
+   * Parent branch-goal id, mirrored from the goal record. Lets the crank
+   * reconstruct the ancestor-cascade link (`parentBranchGoalId`) at
+   * force-mint time. Empty/undefined == root research record.
+   */
+  parentGoalId?: string;
 }
 
 export interface ArchiveStats {
@@ -175,6 +188,36 @@ export async function listArchive(
     if (raw) results.push(JSON.parse(raw));
   }
   return results;
+}
+
+/**
+ * List archived research whose completion is older than `cutoffMs` and
+ * which has not yet been marked minted — i.e. the abandoned records the
+ * treasury crank should settle on chain.
+ *
+ * The archive index is a ZSET scored by `completedAt`, so the oldest
+ * entries (lowest score) are exactly the ones most likely past their
+ * window. We scan the oldest `scanLimit` ids ascending and keep those
+ * under the cutoff that are still flagged unminted. On-chain
+ * `branchClaimed` is the authoritative dedupe and is checked by the
+ * caller; `minted` here is a cheap local pre-filter.
+ */
+export async function listExpiredUnminted(
+  cutoffMs: number,
+  scanLimit = 50,
+): Promise<ArchivedResearch[]> {
+  const store = labsStore();
+  const ids = await store.zrange(ARCHIVE_INDEX, 0, Math.max(0, scanLimit - 1));
+  const out: ArchivedResearch[] = [];
+  for (const id of ids) {
+    const raw = await store.get(ARCHIVE_KEY(id));
+    if (!raw) continue;
+    const entry = JSON.parse(raw) as ArchivedResearch;
+    if (entry.minted) continue;
+    if (entry.completedAt > cutoffMs) break; // ascending — nothing older follows
+    out.push(entry);
+  }
+  return out;
 }
 
 /**
