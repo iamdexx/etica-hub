@@ -146,22 +146,70 @@ export interface FoldRenderMeta {
   subtitle: string;
 }
 
+export interface CaTraceSegment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+}
+
+export interface CaTraceNode {
+  x: number;
+  y: number;
+  color: string;
+}
+
+export interface CaTraceLayout {
+  width: number;
+  height: number;
+  segments: CaTraceSegment[];
+  nodes: CaTraceNode[];
+  meanPlddt: number;
+  residues: number;
+}
+
+export interface CaTraceLayoutOpts {
+  /** Canvas width in user units (default 800). */
+  width?: number;
+  /** Canvas height in user units (default 500). */
+  height?: number;
+  /** Padding around the trace (default 70). */
+  pad?: number;
+  /** Vertical space reserved at the bottom for footer chrome (default 40). */
+  footer?: number;
+  /** Extra downward offset to clear header chrome (default 20). */
+  offsetY?: number;
+  /** Max residue node markers to emit (default 60). */
+  maxNodes?: number;
+}
+
 /**
- * Render the real Cα trace to an 800×500 SVG. Returns null if the PDB has
- * too few Cα atoms to draw a meaningful backbone (caller falls back).
+ * Project a PDB's Cα trace into 2D drawing coordinates (segments + nodes),
+ * coloured per-residue by pLDDT. Framework-agnostic: used by the server SVG
+ * renderer and by the client feed card (rendered as real React <svg> nodes,
+ * so it never touches WebGL and renders identically for every candidate).
+ * Returns null if there are too few Cα atoms to draw a meaningful backbone.
  */
-export function renderFoldTraceSvg(pdb: string, meta: FoldRenderMeta): string | null {
+export function buildCaTraceLayout(
+  pdb: string,
+  opts: CaTraceLayoutOpts = {},
+): CaTraceLayout | null {
   const trace = parseCaTrace(pdb);
   if (trace.length < 3) return null;
+
+  const W = opts.width ?? 800;
+  const H = opts.height ?? 500;
+  const PAD = opts.pad ?? 70;
+  const footer = opts.footer ?? 40;
+  const offsetY = opts.offsetY ?? 20;
+  const maxNodes = opts.maxNodes ?? 60;
 
   const proj = principalProjection(trace);
 
   // Fit projected coords into the drawing area.
-  const PAD = 70;
-  const W = 800;
-  const H = 500;
   const drawW = W - PAD * 2;
-  const drawH = H - PAD * 2 - 40; // leave room for footer
+  const drawH = H - PAD * 2 - footer;
   const us = proj.map((p) => p.u);
   const vs = proj.map((p) => p.v);
   const minU = Math.min(...us);
@@ -173,7 +221,7 @@ export function renderFoldTraceSvg(pdb: string, meta: FoldRenderMeta): string | 
   const scale = Math.min(drawW / spanU, drawH / spanV);
   // Centre within the canvas.
   const offX = PAD + (drawW - spanU * scale) / 2;
-  const offY = PAD + 20 + (drawH - spanV * scale) / 2;
+  const offY = PAD + offsetY + (drawH - spanV * scale) / 2;
 
   const pixels = proj.map((p) => ({
     x: offX + (p.u - minU) * scale,
@@ -182,27 +230,56 @@ export function renderFoldTraceSvg(pdb: string, meta: FoldRenderMeta): string | 
   }));
 
   // Backbone segments coloured by the mean pLDDT of their endpoints.
-  const segments: string[] = [];
+  const segments: CaTraceSegment[] = [];
   for (let i = 1; i < pixels.length; i++) {
     const a = pixels[i - 1]!;
     const b = pixels[i]!;
-    const c = plddtColor((a.plddt + b.plddt) / 2);
-    segments.push(
-      `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(
-        1,
-      )}" stroke="${c}" stroke-width="3.5" stroke-linecap="round"/>`,
-    );
+    segments.push({
+      x1: a.x,
+      y1: a.y,
+      x2: b.x,
+      y2: b.y,
+      color: plddtColor((a.plddt + b.plddt) / 2),
+    });
   }
 
-  // Sparse residue nodes (cap to keep the SVG light).
-  const step = Math.max(1, Math.floor(pixels.length / 60));
-  const nodes: string[] = [];
+  // Sparse residue nodes (cap to keep the output light).
+  const step = Math.max(1, Math.floor(pixels.length / maxNodes));
+  const nodes: CaTraceNode[] = [];
   for (let i = 0; i < pixels.length; i += step) {
     const p = pixels[i]!;
-    nodes.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.4" fill="${plddtColor(p.plddt)}"/>`);
+    nodes.push({ x: p.x, y: p.y, color: plddtColor(p.plddt) });
   }
 
   const meanPlddt = trace.reduce((s, p) => s + p.plddt, 0) / trace.length;
+
+  return { width: W, height: H, segments, nodes, meanPlddt, residues: trace.length };
+}
+
+/**
+ * Render the real Cα trace to an 800×500 SVG. Returns null if the PDB has
+ * too few Cα atoms to draw a meaningful backbone (caller falls back).
+ */
+export function renderFoldTraceSvg(pdb: string, meta: FoldRenderMeta): string | null {
+  const layout = buildCaTraceLayout(pdb);
+  if (!layout) return null;
+
+  const W = layout.width;
+  const H = layout.height;
+
+  const segments = layout.segments.map(
+    (s) =>
+      `<line x1="${s.x1.toFixed(1)}" y1="${s.y1.toFixed(1)}" x2="${s.x2.toFixed(
+        1,
+      )}" y2="${s.y2.toFixed(1)}" stroke="${s.color}" stroke-width="3.5" stroke-linecap="round"/>`,
+  );
+
+  const nodes = layout.nodes.map(
+    (n) =>
+      `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="2.4" fill="${n.color}"/>`,
+  );
+
+  const meanPlddt = layout.meanPlddt;
 
   // Confidence legend.
   const legend = [
