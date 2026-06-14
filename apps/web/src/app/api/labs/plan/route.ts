@@ -5,14 +5,15 @@ import {
   nvidiaChat,
   NvidiaError,
   NVIDIA_MODEL_PRIMARY,
-  NVIDIA_MODEL_FALLBACK,
   hasNvidiaKey,
 } from '@/lib/labs/nvidia';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// Vercel Pro plan ceiling. 550B can take 60-120s for a full 3-candidate
-// plan; the old 30s cap timed out every manual fold request.
+// Vercel Pro plan ceiling. A full 3-candidate 550B plan has highly
+// variable latency in production (~60s up to ~170s under load); the old
+// 30s cap timed out every manual fold request. 300s leaves headroom for
+// the 240s per-call budget plus response serialisation.
 export const maxDuration = 300;
 
 const MAX_PROMPT_CHARS = 400;
@@ -161,18 +162,23 @@ export async function POST(req: NextRequest): Promise<Response> {
     // pulls the outermost {...} substring — so we still get a plan back
     // when the API emits json_validate_failed.
     let lastRaw = '';
-    const models = [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK];
+    // Single 550B pass. nvidiaChat treats timeoutMs as a total budget across
+    // its internal retries, so a second identical-model pass would only
+    // double the wall-clock pressure against the 300s function ceiling.
+    // One pass with a 240s budget absorbs the observed latency variance
+    // (~60s up to ~170s) and still returns well inside maxDuration.
+    const models = [NVIDIA_MODEL_PRIMARY];
     for (const model of models) {
       try {
         const result = await nvidiaChat({
           models: [model],
           temperature: 0.4,
           // Ceiling, not a target: thinking-off + terse schema stop 550B at
-          // ~650 tok (~55s); 1400 only guards against truncating a valid plan
-          // with three long (≤400-residue) sequences, still within 150s.
+          // ~650 tok; 1400 only guards against truncating a valid plan with
+          // three long (≤400-residue) sequences.
           max_tokens: 1400,
           jsonMode: true,
-          timeoutMs: 150_000,
+          timeoutMs: 240_000,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userContent },

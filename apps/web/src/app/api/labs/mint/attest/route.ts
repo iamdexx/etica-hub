@@ -34,7 +34,7 @@ import { NextRequest } from 'next/server';
 import type { Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
-import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
+import { DEPLOYMENTS, TREASURY_ADDRESS, eticaMainnet } from '@etica-hub/shared';
 import { getGoal } from '@/lib/labs/goal-store';
 import { labsQueue } from '@/lib/labs/queue';
 import { getResearchClient } from '@/lib/research';
@@ -243,10 +243,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     return json({ error: 'Parent goal not found.' }, { status: 404 });
   }
 
-  const submitter = job.submitterWallet;
-  if (!isAddress(submitter)) {
-    return json({ error: 'Job is missing a submitter wallet.' }, { status: 409 });
-  }
+  // Auto-seeded research has no human originator (submitterWallet is
+  // undefined). There's no wallet to grant the tier-1 exclusive window to,
+  // so we attribute the discovery to the treasury and collapse the
+  // originator window below — the record is open-market mintable from the
+  // start, then forfeits to the treasury after the tier-2 window like any
+  // other discovery. The contract rejects a zero submitter, so the treasury
+  // address doubles as the non-zero attribution sentinel.
+  const hasOriginator = isAddress(job.submitterWallet);
+  const submitter: Hex = hasOriginator ? (job.submitterWallet as Hex) : TREASURY_ADDRESS;
 
   const chainId = eticaMainnet.id;
   const nftAddress = DEPLOYMENTS[chainId].eticaResearchNft;
@@ -264,7 +269,12 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const now = Date.now();
   const candidateAnchorMs = job.updatedAt || job.createdAt || now;
-  const exclusiveUntilMs = candidateAnchorMs + EXCLUSIVE_WINDOW_MS;
+  // No human originator => no tier-1 exclusive window. Collapse it to the
+  // anchor so the record is open-market immediately (anyone can mint to
+  // themselves) until the tier-2 window closes and it forfeits to treasury.
+  const exclusiveUntilMs = hasOriginator
+    ? candidateAnchorMs + EXCLUSIVE_WINDOW_MS
+    : candidateAnchorMs;
   const marketOpenUntilMs = candidateAnchorMs + MARKET_OPEN_WINDOW_MS;
   const expiresAtMs = now + SIGNATURE_VALIDITY_MS;
 

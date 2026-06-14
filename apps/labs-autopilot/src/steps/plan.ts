@@ -529,12 +529,16 @@ export async function generatePlan(
         models: [model],
         temperature: 0.4,
         // Ceiling, not a target: 'detailed thinking off' + the terse schema
-        // make 550B stop at ~650 tok (~55s). 1400 only guards against
-        // truncating a valid plan with three long (≤400-residue) sequences;
-        // worst-case full-cap completion (~117s) still fits the 150s budget.
+        // make 550B stop at ~650 tok. 1400 only guards against truncating a
+        // valid plan with three long (≤400-residue) sequences.
         max_tokens: 1400,
         jsonMode: true,
-        timeoutMs: 150_000,
+        // 550B plan latency is highly variable in production (measured
+        // ~60s up to ~170s under load). The Vercel proxy runs on the Pro
+        // plan (300s ceiling), so we give a single call 240s — enough to
+        // finish on the first attempt at the high end instead of aborting
+        // at 150s and burning a retry (which wastes the 40 RPM budget).
+        timeoutMs: 240_000,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
