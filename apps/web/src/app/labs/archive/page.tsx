@@ -109,7 +109,9 @@ export default function LabsArchivePage(): JSX.Element {
   const [disease, setDisease] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [mintedOnly, setMintedOnly] = useState(false);
-  const [sort, setSort] = useState<'date' | 'relevance' | 'score'>('date');
+  // 'auto' defers to the server's smart default (relevance when a keyword
+  // query is present, otherwise newest-first).
+  const [sort, setSort] = useState<'auto' | 'date' | 'relevance' | 'score'>('auto');
 
   const queryString = useMemo(() => {
     const p = new URLSearchParams();
@@ -118,7 +120,7 @@ export default function LabsArchivePage(): JSX.Element {
     if (disease) p.set('disease', disease);
     if (source) p.set('source', source);
     if (mintedOnly) p.set('minted', 'true');
-    p.set('sort', sort);
+    if (sort !== 'auto') p.set('sort', sort);
     p.set('limit', '60');
     return p.toString();
   }, [q, target, disease, source, mintedOnly, sort]);
@@ -208,9 +210,10 @@ export default function LabsArchivePage(): JSX.Element {
             </span>
             <select
               value={sort}
-              onChange={(e) => setSort(e.target.value as 'date' | 'relevance' | 'score')}
+              onChange={(e) => setSort(e.target.value as 'auto' | 'date' | 'relevance' | 'score')}
               className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-emerald-400/50 focus:outline-none"
             >
+              <option value="auto">Best match</option>
               <option value="date">Newest</option>
               <option value="score">Fold score</option>
               <option value="relevance">Relevance</option>

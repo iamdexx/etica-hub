@@ -522,9 +522,12 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
 
     scored.push({ entry, relevance });
 
-    // Track disease facets
-    const d = entry.disease ?? 'Unknown';
-    diseaseCounts.set(d, (diseaseCounts.get(d) ?? 0) + 1);
+    // Track disease facets. Only count entries that actually carry a disease —
+    // a synthetic 'Unknown' bucket would render as a clickable chip whose
+    // ?disease=Unknown lookup hits an empty Redis index (0 results).
+    if (entry.disease) {
+      diseaseCounts.set(entry.disease, (diseaseCounts.get(entry.disease) ?? 0) + 1);
+    }
     // Track academic-source facets
     for (const s of srcs) sourceCounts.set(s, (sourceCounts.get(s) ?? 0) + 1);
   }
