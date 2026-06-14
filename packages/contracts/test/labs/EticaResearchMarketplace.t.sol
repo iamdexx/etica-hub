@@ -7,7 +7,7 @@ import {EticaResearchMarketplace} from "../../src/labs/EticaResearchMarketplace.
 
 contract EticaResearchMarketplaceTest is Test {
     bytes32 internal constant CLAIM_TYPEHASH = keccak256(
-        "ClaimPayload(string parentGoalTitle,string sequence,string analysis,uint256 score,uint256 iterations,string branchGoalId,address submitter,uint64 expiresAt,uint64 exclusiveUntil,string parentBranchGoalId)"
+        "ClaimPayload(string parentGoalTitle,string sequence,string analysis,uint256 score,uint256 iterations,string branchGoalId,address submitter,uint64 expiresAt,uint64 exclusiveUntil,uint64 marketOpenUntil,string parentBranchGoalId)"
     );
 
     EticaResearchNFT internal nft;
@@ -45,7 +45,8 @@ contract EticaResearchMarketplaceTest is Test {
             branchGoalId: branchId,
             submitter: to,
             expiresAt: uint64(block.timestamp + 1 days),
-            exclusiveUntil: uint64(block.timestamp + 7 days),
+            exclusiveUntil: uint64(block.timestamp + 1 days),
+            marketOpenUntil: uint64(block.timestamp + 7 days),
             parentBranchGoalId: ""
         });
         bytes memory sig = _sign(p, attestorPk);
@@ -71,6 +72,7 @@ contract EticaResearchMarketplaceTest is Test {
                 p.submitter,
                 p.expiresAt,
                 p.exclusiveUntil,
+                p.marketOpenUntil,
                 keccak256(bytes(p.parentBranchGoalId))
             )
         );

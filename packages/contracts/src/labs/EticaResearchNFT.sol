@@ -72,18 +72,22 @@ import {EticaResearchNFTMetadata} from "./EticaResearchNFTMetadata.sol";
 ///            digest with the {ATTESTOR} private key.
 ///         3. The result is announced on the public lab feed with a
 ///            "Claim this research" button at /labs/research/<branchGoalId>.
-///         4. The original submitter calls {claim} during the
-///            exclusive window (default 7 days from discovery) with
-///            the payload + signature. They pay EGAZ gas. The contract
-///            verifies the signature, stores the Discovery, and mints
-///            the NFT to them.
-///         5. If they do NOT claim within the window, the research is
-///            **abandoned**. After `exclusiveUntil` anyone can call
-///            {claim}, but the contract force-mints the NFT to the
-///            immutable {treasury} address (msg.sender is ignored).
-///            A cron / community member pays gas to settle; treasury
-///            ends up as the first holder and may then list on
-///            /labs/market to forward the royalty stream to a buyer.
+///         4. The mint follows a three-tier window anchored to the
+///            discovery:
+///              - Tier 1 (t <= exclusiveUntil, default 24h): only the
+///                original submitter may {claim}, minting the NFT to
+///                themselves.
+///              - Tier 2 (exclusiveUntil < t <= marketOpenUntil,
+///                default up to 7d): open market — any wallet may
+///                {claim}, minting the NFT to the caller. The 1% / 5%
+///                royalty cascade still attributes the submitter.
+///              - Tier 3 (t > marketOpenUntil): the research is
+///                **abandoned**. Anyone may call {claim} but the NFT
+///                is force-minted to the immutable {treasury} address
+///                (msg.sender is ignored and the mint fee is waived).
+///                A platform "crank" / community member pays gas to
+///                settle; treasury becomes the first holder and may
+///                list on /labs/market to forward the royalty stream.
 ///
 ///         The contract does NOT pay for or subsidize claims. Treasury
 ///         bears zero recurring infrastructure cost — IPFS pinning,
@@ -101,6 +105,7 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
     error AttestationExpired();
     error BranchAlreadyClaimed();
     error SubmitterOnlyDuringExclusive();
+    error InvalidWindow();
     error ScoreTooHigh();
     error EmptyBranchId();
     error EmptyParentGoal();
@@ -159,7 +164,7 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
     ///         on the per-token splitter can walk up the chain at
     ///         release time. Empty string == root research (no parent).
     bytes32 private constant CLAIM_TYPEHASH = keccak256(
-        "ClaimPayload(string parentGoalTitle,string sequence,string analysis,uint256 score,uint256 iterations,string branchGoalId,address submitter,uint64 expiresAt,uint64 exclusiveUntil,string parentBranchGoalId)"
+        "ClaimPayload(string parentGoalTitle,string sequence,string analysis,uint256 score,uint256 iterations,string branchGoalId,address submitter,uint64 expiresAt,uint64 exclusiveUntil,uint64 marketOpenUntil,string parentBranchGoalId)"
     );
 
     /// @notice Maximum depth the ancestor cascade walks. Capped to
@@ -362,13 +367,19 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
 
         bytes32 branchHash = keccak256(bytes(payload.branchGoalId));
         if (branchClaimed[branchHash]) revert BranchAlreadyClaimed();
+        if (payload.marketOpenUntil < payload.exclusiveUntil) revert InvalidWindow();
 
-        // Exclusive window: discoverer-only claim. After the window
-        // closes the research record is treated as abandoned and the
-        // recipient is forced to the treasury (resolved below at mint
-        // time).
-        bool exclusive = block.timestamp <= payload.exclusiveUntil;
-        if (exclusive && msg.sender != payload.submitter) {
+        // Three-tier mint window:
+        //   t <= exclusiveUntil                   originator-only; mints
+        //                                          to the submitter.
+        //   exclusiveUntil < t <= marketOpenUntil  open market; anyone
+        //                                          may mint and the NFT
+        //                                          mints to the caller.
+        //   t > marketOpenUntil                    abandoned; force-mints
+        //                                          to the treasury
+        //                                          (recipient resolved
+        //                                          below at mint time).
+        if (block.timestamp <= payload.exclusiveUntil && msg.sender != payload.submitter) {
             revert SubmitterOnlyDuringExclusive();
         }
 
@@ -420,12 +431,13 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
             new EticaResearchRoyaltySplitter{salt: bytes32(tokenId)}(address(this), tokenId);
         splitterOf[tokenId] = address(splitter);
 
-        // During the exclusive window the discoverer mints to
+        // During the originator window the discoverer mints to
         // themselves (the prior `msg.sender == submitter` check
-        // already enforced this). After it closes, the research record
-        // is abandoned and the NFT is force-minted to the treasury
-        // regardless of who paid gas to trigger the call.
-        address recipient = exclusive ? msg.sender : treasury;
+        // already enforced this). During the open-market window any
+        // caller mints to themselves. Once the record is abandoned
+        // (past marketOpenUntil) the NFT is force-minted to the
+        // treasury regardless of who paid gas to trigger the call.
+        address recipient = block.timestamp > payload.marketOpenUntil ? treasury : msg.sender;
         _safeMint(recipient, tokenId);
 
         // Settle the per-mint EGAZ fee (or waiver) and surface the
@@ -683,6 +695,7 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
         address submitter;
         uint64 expiresAt;
         uint64 exclusiveUntil;
+        uint64 marketOpenUntil;
         string parentBranchGoalId;
     }
 
@@ -699,6 +712,7 @@ contract EticaResearchNFT is ERC721, ERC721Burnable, EIP712, IERC2981 {
                 p.submitter,
                 p.expiresAt,
                 p.exclusiveUntil,
+                p.marketOpenUntil,
                 keccak256(bytes(p.parentBranchGoalId))
             )
         );

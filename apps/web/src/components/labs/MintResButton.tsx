@@ -35,6 +35,7 @@ type AttestResponse = {
     submitter: Hex;
     expiresAt: string;
     exclusiveUntil: string;
+    marketOpenUntil: string;
     parentBranchGoalId: string;
   };
   signature: Hex;
@@ -44,7 +45,10 @@ type AttestResponse = {
   baseMintFeeWei: string;
   maxScoreMintFeeWei: string;
   exclusive: boolean;
+  marketOpen: boolean;
+  tier: 'originator' | 'market' | 'treasury';
   exclusiveUntil: string;
+  marketOpenUntil: string;
 };
 
 type AttestError = { error?: string };
@@ -144,6 +148,7 @@ export function MintResButton({
         submitter: attest.payload.submitter,
         expiresAt: BigInt(attest.payload.expiresAt),
         exclusiveUntil: BigInt(attest.payload.exclusiveUntil),
+        marketOpenUntil: BigInt(attest.payload.marketOpenUntil),
         parentBranchGoalId: attest.payload.parentBranchGoalId,
       } as const;
 
@@ -261,8 +266,12 @@ function MintConfirm({
 }): JSX.Element {
   const attest = status.attest;
   const exclusive = attest.exclusive;
+  const tier = attest.tier;
   const exclusiveUntilMs = Number(BigInt(attest.exclusiveUntil)) * 1000;
-  const remainingSec = Math.max(0, Math.floor((exclusiveUntilMs - Date.now()) / 1000));
+  const marketOpenUntilMs = Number(BigInt(attest.marketOpenUntil)) * 1000;
+  // Countdown to the end of the active window for this tier.
+  const windowEndMs = exclusive ? exclusiveUntilMs : marketOpenUntilMs;
+  const remainingSec = Math.max(0, Math.floor((windowEndMs - Date.now()) / 1000));
   const mintFeeEth = formatEther(BigInt(attest.mintFeeWei));
 
   const busy = status.kind === 'signing' || status.kind === 'pending';
@@ -279,13 +288,21 @@ function MintConfirm({
         </div>
         <div>
           <dt className="text-[10px] uppercase tracking-wider text-white/45">recipient</dt>
-          <dd>{exclusive ? 'your wallet (msg.sender)' : 'treasury (window expired)'}</dd>
+          <dd>
+            {tier === 'treasury'
+              ? 'treasury (window expired)'
+              : 'your wallet (msg.sender)'}
+          </dd>
         </div>
         <div>
           <dt className="text-[10px] uppercase tracking-wider text-white/45">
-            exclusive window
+            {tier === 'originator'
+              ? 'originator window'
+              : tier === 'market'
+                ? 'open market'
+                : 'window'}
           </dt>
-          <dd>{exclusive ? `${formatRemaining(remainingSec)} left` : 'expired'}</dd>
+          <dd>{tier === 'treasury' ? 'expired' : `${formatRemaining(remainingSec)} left`}</dd>
         </div>
         <div>
           <dt className="text-[10px] uppercase tracking-wider text-white/45">contract</dt>
@@ -293,17 +310,24 @@ function MintConfirm({
         </div>
       </dl>
 
-      {exclusive && !isSubmitterWallet && (
+      {tier === 'originator' && !isSubmitterWallet && (
         <p className="text-[11px] text-amber-200/85">
           Only the original submitter wallet ({attest.payload.submitter.slice(0, 6)}…
-          {attest.payload.submitter.slice(-4)}) can mint inside the exclusive window.
-          The mint will revert if you proceed from another wallet.
+          {attest.payload.submitter.slice(-4)}) can mint inside the first-24h originator
+          window. The mint will revert if you proceed from another wallet.
         </p>
       )}
 
-      {!exclusive && (
+      {tier === 'market' && (
+        <p className="text-[11px] text-emerald-200/85">
+          Open market — anyone can mint this discovery to their own wallet now. After
+          the window closes it auto-forfeits to the treasury.
+        </p>
+      )}
+
+      {tier === 'treasury' && (
         <p className="text-[11px] text-amber-200/85">
-          The 7-day exclusive window has expired. Anyone can call claim now, but the
+          The 7-day mint window has expired. Anyone can call claim now, but the
           NFT will be force-minted to the immutable treasury (mint fee is waived).
         </p>
       )}

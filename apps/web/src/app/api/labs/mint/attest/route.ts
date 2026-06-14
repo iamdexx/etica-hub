@@ -10,7 +10,11 @@
  *     mintFeeWei: string,          // base + score-indexed slice
  *     baseMintFeeWei: string,      // contract immutable
  *     maxScoreMintFeeWei: string,  // contract immutable
- *     exclusive: boolean,          // true iff caller can still claim
+ *     exclusive: boolean,          // true iff still originator-only (tier 1)
+ *     marketOpen: boolean,         // true iff open-market window (tier 2)
+ *     tier: 'originator'|'market'|'treasury',
+ *     exclusiveUntil: string,      // unix seconds, tier-1 end
+ *     marketOpenUntil: string,     // unix seconds, tier-2 end
  *   }
  *
  * The attestor private key (LABS_ATTESTOR_PRIVATE_KEY) only authorises
@@ -69,8 +73,14 @@ async function getMintFees(nftAddress: Hex): Promise<{ base: bigint; maxScore: b
 
 /** EIP-712 mint authorisation window (relative to now). */
 const SIGNATURE_VALIDITY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-/** Exclusive-claim window anchored to the candidate's job completion. */
-const EXCLUSIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+/**
+ * Three-tier mint window anchored to the candidate's job completion:
+ *   - tier 1 (originator-only): now .. exclusiveUntil  (first 24h)
+ *   - tier 2 (open market):     exclusiveUntil .. marketOpenUntil (up to 7d)
+ *   - tier 3 (treasury):        after marketOpenUntil (auto-forfeit)
+ */
+const EXCLUSIVE_WINDOW_MS = 24 * 60 * 60 * 1000; // 1 day (tier 1 end)
+const MARKET_OPEN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days (tier 2 end)
 
 const CLAIM_TYPES = {
   ClaimPayload: [
@@ -83,6 +93,7 @@ const CLAIM_TYPES = {
     { name: 'submitter', type: 'address' },
     { name: 'expiresAt', type: 'uint64' },
     { name: 'exclusiveUntil', type: 'uint64' },
+    { name: 'marketOpenUntil', type: 'uint64' },
     { name: 'parentBranchGoalId', type: 'string' },
   ],
 } as const;
@@ -254,6 +265,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const now = Date.now();
   const candidateAnchorMs = job.updatedAt || job.createdAt || now;
   const exclusiveUntilMs = candidateAnchorMs + EXCLUSIVE_WINDOW_MS;
+  const marketOpenUntilMs = candidateAnchorMs + MARKET_OPEN_WINDOW_MS;
   const expiresAtMs = now + SIGNATURE_VALIDITY_MS;
 
   let fees: { base: bigint; maxScore: bigint };
@@ -294,6 +306,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     submitter,
     expiresAt: BigInt(Math.floor(expiresAtMs / 1000)),
     exclusiveUntil: BigInt(Math.floor(exclusiveUntilMs / 1000)),
+    marketOpenUntil: BigInt(Math.floor(marketOpenUntilMs / 1000)),
     parentBranchGoalId: goal.parentGoalId ?? '',
   } as const;
 
@@ -321,6 +334,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       submitter: payload.submitter,
       expiresAt: payload.expiresAt.toString(),
       exclusiveUntil: payload.exclusiveUntil.toString(),
+      marketOpenUntil: payload.marketOpenUntil.toString(),
       parentBranchGoalId: payload.parentBranchGoalId,
     },
     signature,
@@ -330,6 +344,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     baseMintFeeWei: fees.base.toString(),
     maxScoreMintFeeWei: fees.maxScore.toString(),
     exclusive: now <= exclusiveUntilMs,
+    marketOpen: now > exclusiveUntilMs && now <= marketOpenUntilMs,
+    tier: now <= exclusiveUntilMs ? 'originator' : now <= marketOpenUntilMs ? 'market' : 'treasury',
     exclusiveUntil: payload.exclusiveUntil.toString(),
+    marketOpenUntil: payload.marketOpenUntil.toString(),
   });
 }
