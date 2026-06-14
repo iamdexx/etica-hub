@@ -24,7 +24,12 @@ import {
   makeFoldRetryEntryId,
   nextRetryDelayMs,
 } from '@/lib/labs/fold-retry-queue';
-import { archiveResearch, extractDisease, type ArchivedResearch } from '@/lib/labs/archive';
+import {
+  archiveResearch,
+  extractDisease,
+  storePdbForSequence,
+  type ArchivedResearch,
+} from '@/lib/labs/archive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -60,6 +65,33 @@ const MAX_ANALYSIS_CHARS = 4000;
 
 function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
+}
+
+/**
+ * Persist EVERY folded candidate's structure to the per-sequence archive so the
+ * NFT image and feed can render the real Cα trace for all candidates — not just
+ * the single one kept inline on the job result (MAX_PDB_PER_RESULT). The store
+ * keeps a compact Cα-only PDB keyed by sequence hash (deduped, ~2–16KB each),
+ * so this stays well within the Redis budget. Best-effort: never blocks the
+ * job update on an archive write.
+ */
+async function persistCandidatePdbs(rawResult: unknown, result: LabsJobResult): Promise<void> {
+  if (!rawResult || typeof rawResult !== 'object') return;
+  const rawPdb = (rawResult as { pdbBySequenceIndex?: unknown }).pdbBySequenceIndex;
+  if (!rawPdb || typeof rawPdb !== 'object') return;
+  const seqByIndex = new Map<number, string>();
+  for (const c of result.candidates) seqByIndex.set(c.index, c.sequence);
+  for (const [k, v] of Object.entries(rawPdb as Record<string, unknown>)) {
+    const idx = Number(k);
+    if (!Number.isFinite(idx) || typeof v !== 'string' || !v) continue;
+    const seq = seqByIndex.get(idx);
+    if (!seq) continue;
+    try {
+      await storePdbForSequence(seq, v);
+    } catch {
+      /* best-effort — archive write must never fail the job update */
+    }
+  }
 }
 
 function sanitizeEvents(raw: unknown): LabsJobEvent[] {
@@ -210,6 +242,17 @@ export async function POST(
     const payloadSize = JSON.stringify(next).length;
     console.error(`[labs/update] queue.put failed for ${id} (${payloadSize} bytes):`, msg);
     return json({ error: `queue.put failed (${payloadSize} bytes): ${msg}` }, { status: 502 });
+  }
+
+  // Persist every folded candidate's structure to the per-sequence archive so
+  // the NFT image + feed render the real Cα trace for ALL candidates (the
+  // inline result only keeps one). Best-effort, after the job is durably saved.
+  if (result?.candidates?.length) {
+    try {
+      await persistCandidatePdbs(body.result, result);
+    } catch (err) {
+      console.error('[labs] persistCandidatePdbs failed (non-fatal):', err);
+    }
   }
 
   // Auto-enqueue fold retries for any candidate the worker published
