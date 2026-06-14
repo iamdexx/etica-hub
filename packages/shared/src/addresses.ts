@@ -177,7 +177,7 @@ export const DEPLOYMENTS: Record<
     stableSwapHarvesterAdapter: '0x9Adc6298EFDcc1604CB95DaaB33331f866DDBe76',
     eticaResearchMarkets: '0x6605d2F6A8b77a8dC7f53Fd1EDe0974d85937D17',
     eticaResearchNftMetadataLib: '0x66aa725d9d18481bB937F4DF2DA68f82DF964219',
-    eticaResearchNft: '0xE16cD6B16ec20aFFb32A72917b7AfB5D00F0e599',
+    eticaResearchNft: '0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9',
     eticaResearchMarketplace: '0xe0b4e699ed84b2393CF149f19Cfd2DB10E2e46fF',
   },
   61888: {
