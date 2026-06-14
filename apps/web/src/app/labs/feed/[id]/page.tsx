@@ -132,6 +132,8 @@ function CandidateCard({
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const viewerInstanceRef = useRef<Viewer3D | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
+  const [archivedPdb, setArchivedPdb] = useState<string | null>(null);
+  const [archiveTried, setArchiveTried] = useState(false);
   const [copied, setCopied] = useState(false);
   const [refolding, setRefolding] = useState(false);
   const [refoldStatus, setRefoldStatus] = useState<string | null>(null);
@@ -140,8 +142,31 @@ function CandidateCard({
   const [branching, setBranching] = useState(false);
   const [branchError, setBranchError] = useState<string | null>(null);
 
+  // When the job result doesn't carry this candidate's PDB inline (only one is
+  // kept inline), fetch the real structure we archived per-sequence so every
+  // folded candidate still renders its actual fold — not just candidate #1.
   useEffect(() => {
-    if (!pdb || !viewerRef.current) return;
+    if (pdb || !candidate.folded || !candidate.sequence) return;
+    let cancelled = false;
+    fetch(`/api/labs/structure?seq=${encodeURIComponent(candidate.sequence)}`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ pdb?: string | null }>) : null))
+      .then((d) => {
+        if (cancelled) return;
+        setArchivedPdb(d?.pdb ?? null);
+        setArchiveTried(true);
+      })
+      .catch(() => {
+        if (!cancelled) setArchiveTried(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pdb, candidate.folded, candidate.sequence]);
+
+  const effectivePdb = pdb ?? archivedPdb ?? undefined;
+
+  useEffect(() => {
+    if (!effectivePdb || !viewerRef.current) return;
     let cancelled = false;
 
     load3Dmol()
@@ -155,7 +180,7 @@ function CandidateCard({
           setViewerError('3Dmol viewer failed to initialize.');
           return;
         }
-        viewer.addModel(pdb, 'pdb');
+        viewer.addModel(effectivePdb, 'pdb');
         viewer.setStyle({}, { cartoon: { color: 'spectrum' } });
         viewer.zoomTo();
         viewer.render();
@@ -173,7 +198,7 @@ function CandidateCard({
     return () => {
       cancelled = true;
     };
-  }, [pdb]);
+  }, [effectivePdb]);
 
   useEffect(() => {
     function onResize(): void {
@@ -294,7 +319,7 @@ function CandidateCard({
         </div>
       )}
 
-      {pdb ? (
+      {effectivePdb ? (
         <div className="mt-4 overflow-hidden rounded-lg border border-white/10 bg-[#020806]">
           <div
             ref={viewerRef}
@@ -307,6 +332,8 @@ function CandidateCard({
             </p>
           )}
         </div>
+      ) : candidate.folded && !archiveTried ? (
+        <p className="mt-4 text-[11px] text-white/45">Loading structure…</p>
       ) : candidate.folded ? (
         <p className="mt-4 text-[11px] text-white/45">
           Structure was generated but not retained in the feed snapshot.

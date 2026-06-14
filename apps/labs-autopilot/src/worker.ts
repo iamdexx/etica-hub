@@ -876,11 +876,18 @@ async function runJob(job: LabsJob): Promise<void> {
     bestIndex = newBest;
   }
 
-  // Trim PDB blobs we won't keep — only persist top 4 by score (and the
-  // first iteration's three so the user always sees the plan output).
+  // Keep PDB blobs for every folded candidate (up to a sane cap) so each one
+  // can render its real structure on the feed and as the minted NFT image. The
+  // update endpoint archives each PDB compactly per-sequence (Cα-only, deduped)
+  // and still keeps only one inline on the job result, so sending them all is
+  // cheap. Best scores + the first three are prioritised under the cap.
+  const MAX_KEEP_PDB = 12;
   const keepIndices = new Set<number>([0, 1, 2]);
   const scored = [...allCandidates].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-  for (const c of scored.slice(0, 4)) keepIndices.add(c.index);
+  for (const c of scored) {
+    if (keepIndices.size >= MAX_KEEP_PDB) break;
+    keepIndices.add(c.index);
+  }
   for (const k of Object.keys(pdbMap)) {
     if (!keepIndices.has(Number(k))) delete pdbMap[Number(k)];
   }
