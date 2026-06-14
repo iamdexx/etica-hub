@@ -11,7 +11,9 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+// Vercel Pro plan ceiling. 550B can take 60-120s for a full 3-candidate
+// plan; the old 30s cap timed out every manual fold request.
+export const maxDuration = 300;
 
 const MAX_PROMPT_CHARS = 400;
 const AMINO_ACIDS = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
@@ -129,7 +131,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   const refSummary = summarizeReferencesForPrompt(references);
 
   try {
-    const systemPrompt = [
+    // 'detailed thinking off' must be on its own line for the model to
+    // recognise the directive and skip its verbose chain-of-thought.
+    const systemPrompt = 'detailed thinking off\n' + [
       'You are a protein-engineering planner.',
       'Given a natural-language design goal, output a concise research plan as STRICT JSON with this exact schema:',
       '{',
@@ -145,6 +149,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       'Generate exactly 3 candidate sequences that follow the user goal (length, prefix, motifs).',
       'IMPORTANT: do not duplicate prior work. If references are provided below, treat them as the state of the art and build on them — cite the bracketed [N] index in your candidates\' rationale (e.g. "adapts the helix bundle of [2]") and differentiate each candidate from the cited structures/papers.',
       'Return ONLY the JSON object. No markdown, no code fences, no commentary.',
+      'BE TERSE: every text field must be a single short clause; rationales under 18 words. Output minified JSON and stop immediately after the closing brace — do not keep writing.',
     ].join(' ');
 
     const userContent = refSummary
@@ -162,9 +167,12 @@ export async function POST(req: NextRequest): Promise<Response> {
         const result = await nvidiaChat({
           models: [model],
           temperature: 0.4,
-          max_tokens: 1200,
+          // Ceiling, not a target: thinking-off + terse schema stop 550B at
+          // ~650 tok (~55s); 1400 only guards against truncating a valid plan
+          // with three long (≤400-residue) sequences, still within 150s.
+          max_tokens: 1400,
           jsonMode: true,
-          timeoutMs: 25_000,
+          timeoutMs: 150_000,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userContent },

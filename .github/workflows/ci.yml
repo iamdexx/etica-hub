@@ -16,6 +16,11 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+        env:
+          # Authenticate foundryup's GitHub API calls so the release-tag
+          # lookup is not rate-limited to 60 req/hr (anonymous), which
+          # intermittently returns HTTP 403 and fails the install.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build
         run: forge build --sizes
@@ -41,6 +46,11 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+        env:
+          # Authenticate foundryup's GitHub API calls so the release-tag
+          # lookup is not rate-limited to 60 req/hr (anonymous), which
+          # intermittently returns HTTP 403 and fails the install.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build
         run: forge build --sizes

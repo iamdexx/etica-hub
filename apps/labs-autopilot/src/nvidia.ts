@@ -6,8 +6,13 @@
  *
  * Uses only Nemotron 3 Ultra 550B as the sole reasoning model.
  *
- * Rate limiting: enforces 1.5s minimum gap between calls (40 RPM max).
+ * Rate limiting: enforces 1.6s minimum gap between calls (~37.5 RPM).
  * Env: LABS_AUTOPILOT_BASE_URL, LABS_AUTOPILOT_TOKEN
+ *
+ * NOTE: the worker no longer needs NVIDIA_API_KEY to reach the LLM — that
+ * lives on the Vercel proxy. NVIDIA_API_KEY is still required locally for the
+ * direct biology-NIM fold calls in fold.ts. LLM-dependent steps therefore gate
+ * on {@link hasLLMProxy} (proxy token), not on the Nvidia key pool.
  */
 
 export const NVIDIA_MODEL_PRIMARY = 'nvidia/nemotron-3-ultra-550b-a55b';
@@ -91,6 +96,15 @@ function enforceRateLimit(): Promise<void> {
 const BASE_URL = (process.env.LABS_AUTOPILOT_BASE_URL ?? 'https://eticahub.com').replace(/\/$/, '');
 const TOKEN = process.env.LABS_AUTOPILOT_TOKEN || '';
 
+/**
+ * True when the worker can reach the LLM proxy (LABS_AUTOPILOT_TOKEN set).
+ * LLM-dependent steps gate on this instead of the Nvidia key pool, since the
+ * actual Nvidia LLM credentials live server-side on the Vercel proxy.
+ */
+export function hasLLMProxy(): boolean {
+  return TOKEN.length > 0;
+}
+
 export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResult> {
   if (!TOKEN) {
     throw new NvidiaLLMError('LABS_AUTOPILOT_TOKEN not set — cannot proxy LLM calls.', { attempts: 0 });
@@ -102,20 +116,26 @@ export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResu
   let lastError = '';
   let attempts = 0;
 
+  // The Vercel proxy (/api/labs/llm) runs on the Pro plan with a 300s
+  // function ceiling, so we let a single 550B call use up to ~280s. The
+  // worker waits a touch longer than the budget we hand the proxy so the
+  // proxy can always respond first (clean error/JSON) before our own abort.
+  const proxyBudget = Math.min(req.timeoutMs ?? 120_000, 280_000);
+  const clientAbortMs = proxyBudget + 15_000;
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     await enforceRateLimit();
     attempts++;
 
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), clientAbortMs);
+    const onExternalAbort = () => { ctrl.abort(); };
+    if (req.signal) {
+      if (req.signal.aborted) ctrl.abort();
+      else req.signal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+
     try {
-      const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), req.timeoutMs ?? 55_000);
-
-      // Combine external signal
-      if (req.signal) {
-        if (req.signal.aborted) { clearTimeout(timeout); ctrl.abort(); }
-        else req.signal.addEventListener('abort', () => { clearTimeout(timeout); ctrl.abort(); }, { once: true });
-      }
-
       const res = await fetch(`${BASE_URL}/api/labs/llm`, {
         method: 'POST',
         headers: {
@@ -128,12 +148,10 @@ export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResu
           temperature: req.temperature ?? 0.4,
           max_tokens: req.max_tokens ?? 800,
           jsonMode: req.jsonMode ?? false,
-          timeoutMs: Math.min(req.timeoutMs ?? 55_000, 55_000),
+          timeoutMs: proxyBudget,
         }),
         signal: ctrl.signal,
       });
-
-      clearTimeout(timeout);
 
       const data = (await res.json()) as {
         ok: boolean;
@@ -155,8 +173,11 @@ export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResu
 
       lastError = data.error || `HTTP ${res.status}`;
 
-      // Don't retry non-retryable errors
-      if (res.status === 400 || res.status === 401) break;
+      // The proxy wraps the underlying Nvidia status in the JSON body
+      // (`data.status`) even when its own HTTP status differs. Use that to
+      // decide retryability so genuine 400/401s aren't retried needlessly.
+      const underlying = typeof data.status === 'number' ? data.status : res.status;
+      if (underlying === 400 || underlying === 401) break;
 
       // Retry on 429, 5xx, or proxy errors
       if (attempt < maxRetries - 1) {
@@ -172,6 +193,9 @@ export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResu
         const backoff = Math.min(15_000, 2000 * 2 ** attempt);
         await new Promise((r) => setTimeout(r, backoff));
       }
+    } finally {
+      clearTimeout(timeout);
+      req.signal?.removeEventListener('abort', onExternalAbort);
     }
   }
 

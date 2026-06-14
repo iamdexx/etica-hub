@@ -15,8 +15,12 @@
  *
  * Env:
  *   LABS_AUTOPILOT_BASE_URL   — e.g. https://eticahub.com
- *   LABS_AUTOPILOT_TOKEN      — shared secret; same value in Vercel env
- *   NVIDIA_API_KEY             — Nemotron LLM (planning + analysis) + ESMFold
+ *   LABS_AUTOPILOT_TOKEN      — shared secret; same value in Vercel env. Also
+ *                               authenticates the LLM proxy (planning/analysis
+ *                               /expansion route through Vercel).
+ *   NVIDIA_API_KEY             — biology NIM only (ESMFold/ESM2/ProteinMPNN/
+ *                               DiffDock); the Nemotron LLM is reached via the
+ *                               Vercel proxy, not directly from the worker.
  *
  * Optional:
  *   LABS_AUTOPILOT_MAX_JOBS_PER_TICK   — default 1
@@ -949,7 +953,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   if (!process.env.NVIDIA_API_KEY && !process.env.NVIDIA_API_KEYS) {
-    console.error('NVIDIA_API_KEY (or comma-separated NVIDIA_API_KEYS) is required.');
+    // Required for the direct biology-NIM fold calls (ESMFold/ESM2/etc).
+    // The Nemotron LLM is reached via the Vercel proxy (LABS_AUTOPILOT_TOKEN).
+    console.error('NVIDIA_API_KEY (or comma-separated NVIDIA_API_KEYS) is required for folding.');
     process.exit(1);
   }
 
@@ -978,6 +984,28 @@ async function main(): Promise<void> {
     }
   } catch (err) {
     log(`requeue-stale failed (non-fatal): ${err instanceof Error ? err.message : err}`);
+  }
+
+  // Requeue any jobs that previously ended in "error" so the now-fixed
+  // pipeline reprocesses them. No data is removed — status flips error ->
+  // pending and the existing events/results are preserved. Best-effort.
+  try {
+    const eRes = await fetch(`${BASE_URL}/api/labs/queue/requeue-errored`, {
+      method: 'POST',
+      headers: {
+        'x-labs-worker-token': TOKEN,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ limit: 50 }),
+    });
+    if (eRes.ok) {
+      const eBody = (await eRes.json()) as { count?: number };
+      if (eBody.count && eBody.count > 0) {
+        log(`requeued ${eBody.count} errored job(s) for reprocessing`);
+      }
+    }
+  } catch (err) {
+    log(`requeue-errored failed (non-fatal): ${err instanceof Error ? err.message : err}`);
   }
 
   const tickStart = Date.now();

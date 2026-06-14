@@ -14,10 +14,14 @@
  *   labs:archive:index             ZSET    member=id, score=completedAt
  *   labs:archive:goal:{goalId}     ZSET    member=id, score=completedAt
  *   labs:archive:disease:{disease} ZSET    member=id, score=completedAt
+ *   labs:archive:pdb:{seqHash}     STRING  raw PDB keyed by sequence hash
  *   labs:archive:stats             STRING  JSON cumulative counters
  */
 
+import { createHash } from 'node:crypto';
+
 import { labsStore } from './store';
+import { extractCaPdb } from './pdb-render';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -61,6 +65,19 @@ export interface ArchivedResearch {
   /** Whether this has been minted as an NFT */
   minted: boolean;
   mintTxHash?: string;
+  /**
+   * Wallet that originated the research (goal submitter). Recorded so the
+   * treasury crank can preserve discoverer provenance in `submitterOf`
+   * when it force-mints an abandoned record. Undefined for auto-seeded
+   * goals with no human submitter.
+   */
+  submitterWallet?: string;
+  /**
+   * Parent branch-goal id, mirrored from the goal record. Lets the crank
+   * reconstruct the ancestor-cascade link (`parentBranchGoalId`) at
+   * force-mint time. Empty/undefined == root research record.
+   */
+  parentGoalId?: string;
 }
 
 export interface ArchiveStats {
@@ -81,6 +98,31 @@ const ARCHIVE_INDEX = 'labs:archive:index';
 const ARCHIVE_GOAL = (goalId: string) => `labs:archive:goal:${goalId}`;
 const ARCHIVE_DISEASE = (disease: string) => `labs:archive:disease:${disease.toLowerCase()}`;
 const ARCHIVE_STATS = 'labs:archive:stats';
+/**
+ * PDB indexed by a hash of the residue sequence. Lets the NFT fold-render
+ * route — which only has the on-chain `sequence` for a token — recover the
+ * real predicted structure to draw the Cα trace.
+ */
+const ARCHIVE_PDB = (seqHash: string) => `labs:archive:pdb:${seqHash}`;
+
+/** Stable hash of a residue sequence, used to key its stored PDB. */
+export function sequenceHash(sequence: string): string {
+  return createHash('sha256').update(sequence.trim().toUpperCase()).digest('hex').slice(0, 32);
+}
+
+/** Persist a PDB (Cα-only trace) so it can be looked up later by its sequence. */
+export async function storePdbForSequence(sequence: string, pdb: string): Promise<void> {
+  if (!sequence || !pdb) return;
+  const ca = extractCaPdb(pdb);
+  if (!ca) return;
+  await labsStore().set(ARCHIVE_PDB(sequenceHash(sequence)), ca);
+}
+
+/** Fetch a previously stored PDB for a residue sequence, if any. */
+export async function getPdbForSequence(sequence: string): Promise<string | null> {
+  if (!sequence) return null;
+  return labsStore().get(ARCHIVE_PDB(sequenceHash(sequence)));
+}
 
 /* ------------------------------------------------------------------ */
 /*  Write                                                              */
@@ -109,6 +151,14 @@ export async function archiveResearch(research: ArchivedResearch): Promise<void>
   // Index by disease
   if (research.disease) {
     await store.zadd(ARCHIVE_DISEASE(research.disease), research.completedAt, research.id);
+  }
+
+  // Index the best candidate's real PDB by its sequence hash so the NFT
+  // fold-render can recover it from the on-chain sequence alone. Store the
+  // Cα-only trace — all the renderer needs, and a fraction of the size.
+  if (research.bestPdb && research.bestCandidate?.sequence) {
+    const ca = extractCaPdb(research.bestPdb);
+    if (ca) await store.set(ARCHIVE_PDB(sequenceHash(research.bestCandidate.sequence)), ca);
   }
 
   // Update cumulative stats
@@ -175,6 +225,74 @@ export async function listArchive(
     if (raw) results.push(JSON.parse(raw));
   }
   return results;
+}
+
+/**
+ * List archived research currently in the open-market (tier-2) mint
+ * window: the originator's 24h exclusive has lapsed but the 7-day market
+ * window has not, and the record is not yet minted. These are exactly the
+ * discoveries anyone may mint or branch from in the "Mintable" section.
+ *
+ * Anchored to `completedAt` (the same anchor /api/labs/mint/attest uses):
+ *   tier 2  ⇔  completedAt + 24h < now <= completedAt + 7d
+ *          ⇔  now - 7d <= completedAt < now - 24h
+ *
+ * Scans the newest `scanLimit` entries (descending) so recently-eligible
+ * records surface first, and returns up to `limit` matches.
+ */
+export async function listMintable(
+  nowMs: number,
+  opts: { exclusiveMs: number; marketMs: number; limit?: number; scanLimit?: number },
+): Promise<ArchivedResearch[]> {
+  const store = labsStore();
+  const limit = opts.limit ?? 50;
+  const scanLimit = opts.scanLimit ?? 200;
+  const olderThan = nowMs - opts.exclusiveMs; // completedAt must be before this (24h elapsed)
+  const newerThan = nowMs - opts.marketMs; // completedAt must be after this (within 7d)
+  const ids = await store.zrevrange(ARCHIVE_INDEX, 0, Math.max(0, scanLimit - 1));
+  const out: ArchivedResearch[] = [];
+  for (const id of ids) {
+    if (out.length >= limit) break;
+    const raw = await store.get(ARCHIVE_KEY(id));
+    if (!raw) continue;
+    const entry = JSON.parse(raw) as ArchivedResearch;
+    if (entry.minted) continue;
+    if (entry.completedAt >= olderThan) continue; // still in 24h exclusive window
+    if (entry.completedAt < newerThan) continue; // past the 7d market window
+    if (!entry.bestCandidate?.sequence) continue;
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
+ * List archived research whose completion is older than `cutoffMs` and
+ * which has not yet been marked minted — i.e. the abandoned records the
+ * treasury crank should settle on chain.
+ *
+ * The archive index is a ZSET scored by `completedAt`, so the oldest
+ * entries (lowest score) are exactly the ones most likely past their
+ * window. We scan the oldest `scanLimit` ids ascending and keep those
+ * under the cutoff that are still flagged unminted. On-chain
+ * `branchClaimed` is the authoritative dedupe and is checked by the
+ * caller; `minted` here is a cheap local pre-filter.
+ */
+export async function listExpiredUnminted(
+  cutoffMs: number,
+  scanLimit = 50,
+): Promise<ArchivedResearch[]> {
+  const store = labsStore();
+  const ids = await store.zrange(ARCHIVE_INDEX, 0, Math.max(0, scanLimit - 1));
+  const out: ArchivedResearch[] = [];
+  for (const id of ids) {
+    const raw = await store.get(ARCHIVE_KEY(id));
+    if (!raw) continue;
+    const entry = JSON.parse(raw) as ArchivedResearch;
+    if (entry.minted) continue;
+    if (entry.completedAt > cutoffMs) break; // ascending — nothing older follows
+    out.push(entry);
+  }
+  return out;
 }
 
 /**
@@ -341,6 +459,14 @@ export interface ArchiveSearchOptions {
   q?: string;
   /** Filter by disease/condition */
   disease?: string;
+  /** Filter by molecular target (matched against title/hypothesis/approach) */
+  target?: string;
+  /**
+   * Filter by academic source that fed the record (e.g. 'pubmed', 'pdb',
+   * 'uniprot', 'chembl', 'string', 'kegg', 'alphafold'). References are
+   * stored as `source:id title`, so the source is the token before ':'.
+   */
+  source?: string;
   /** Filter by goal ID */
   goalId?: string;
   /** Only show minted entries */
@@ -359,8 +485,24 @@ export interface ArchiveSearchResult {
   total: number;
   facets: {
     diseases: Array<{ name: string; count: number }>;
+    sources: Array<{ name: string; count: number }>;
     topScores: Array<{ id: string; score: number; disease?: string }>;
   };
+}
+
+/**
+ * Academic sources cited by a record, derived from its `references`
+ * (stored as `source:id title`). Lower-cased, de-duplicated.
+ */
+export function entrySources(entry: ArchivedResearch): string[] {
+  const out = new Set<string>();
+  for (const ref of entry.references ?? []) {
+    const colon = ref.indexOf(':');
+    if (colon <= 0) continue;
+    const src = ref.slice(0, colon).trim().toLowerCase();
+    if (src && /^[a-z]+$/.test(src)) out.add(src);
+  }
+  return Array.from(out);
 }
 
 export async function searchArchive(opts: ArchiveSearchOptions): Promise<ArchiveSearchResult> {
@@ -384,9 +526,13 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
     ? opts.q.toLowerCase().split(/[\s,;.]+/).filter((w) => w.length > 2)
     : [];
 
+  const target = opts.target?.trim().toLowerCase();
+  const source = opts.source?.trim().toLowerCase();
+
   // Load and filter entries
   const scored: Array<{ entry: ArchivedResearch; relevance: number }> = [];
   const diseaseCounts = new Map<string, number>();
+  const sourceCounts = new Map<string, number>();
 
   for (const id of candidateIds) {
     const raw = await store.get(ARCHIVE_KEY(id));
@@ -397,15 +543,30 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
     if (opts.mintedOnly && !entry.minted) continue;
     if (opts.minScore && (entry.bestCandidate.score ?? 0) < opts.minScore) continue;
 
+    // Target filter — match against the most target-bearing fields.
+    if (target) {
+      const hay = `${entry.goalTitle ?? ''} ${entry.hypothesis} ${entry.approach} ${entry.prompt}`.toLowerCase();
+      if (!hay.includes(target)) continue;
+    }
+
+    const srcs = entrySources(entry);
+    // Academic-source filter.
+    if (source && !srcs.includes(source)) continue;
+
     // Compute relevance if searching
     const relevance = keywords.length > 0 ? computeRelevanceScore(entry, keywords) : 1;
     if (keywords.length > 0 && relevance === 0) continue;
 
     scored.push({ entry, relevance });
 
-    // Track disease facets
-    const d = entry.disease ?? 'Unknown';
-    diseaseCounts.set(d, (diseaseCounts.get(d) ?? 0) + 1);
+    // Track disease facets. Only count entries that actually carry a disease —
+    // a synthetic 'Unknown' bucket would render as a clickable chip whose
+    // ?disease=Unknown lookup hits an empty Redis index (0 results).
+    if (entry.disease) {
+      diseaseCounts.set(entry.disease, (diseaseCounts.get(entry.disease) ?? 0) + 1);
+    }
+    // Track academic-source facets
+    for (const s of srcs) sourceCounts.set(s, (sourceCounts.get(s) ?? 0) + 1);
   }
 
   // Sort
@@ -430,6 +591,10 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
     .sort((a, b) => b.count - a.count)
     .slice(0, 20);
 
+  const sources = Array.from(sourceCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
   const topScores = scored
     .slice(0, 10)
     .map((s) => ({
@@ -438,7 +603,7 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
       disease: s.entry.disease,
     }));
 
-  return { results: paged, total, facets: { diseases, topScores } };
+  return { results: paged, total, facets: { diseases, sources, topScores } };
 }
 
 /**

@@ -14,7 +14,7 @@ import {
   NvidiaLLMError,
   NVIDIA_MODEL_PRIMARY,
   NVIDIA_MODEL_FALLBACK,
-  readNvidiaLLMKeyPool,
+  hasLLMProxy,
 } from '../nvidia';
 
 const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
@@ -473,15 +473,19 @@ export async function generatePlan(
   prompt: string,
   priorContext?: PriorContext,
 ): Promise<ResearchPlan> {
-  if (readNvidiaLLMKeyPool().length === 0) {
-    throw new Error('NVIDIA_API_KEY (or NVIDIA_API_KEYS) not set');
+  if (!hasLLMProxy()) {
+    throw new Error('LABS_AUTOPILOT_TOKEN not set — cannot reach LLM proxy');
   }
 
   const references = await gatherReferences(prompt).catch(() => []);
   const refSummary = summarizeReferencesForPrompt(references);
   const ctxSummary = summarizePriorContext(priorContext);
 
-  const systemPrompt = [
+  // Disable Nemotron's verbose chain-of-thought — without this the 550B
+  // model rambles to the token cap (~1400 tok / 130s) and the call times
+  // out. With it off + the terseness rules below it stops at ~650 tok/55s.
+  // Must be on its own line for the model to recognise the directive.
+  const systemPrompt = 'detailed thinking off\n' + [
     'You are a protein-engineering planner.',
     'Given a natural-language design goal, output a concise research plan as STRICT JSON with this exact schema:',
     '{',
@@ -498,6 +502,7 @@ export async function generatePlan(
     'IMPORTANT: do not duplicate prior work. If references are provided, treat them as the state of the art and build on them — cite the bracketed [N] index in your candidates\' rationale and differentiate each candidate from the cited structures/papers.',
     'PATENT SAFETY: Design NOVEL sequences only. ChEMBL references represent EXISTING patented or published therapeutics — you MUST differentiate your candidates from them by at least 20% sequence divergence. Never reproduce or closely mimic known drug sequences. Each candidate must be a genuinely novel design, not a copy of existing IP. If a ChEMBL target is referenced, use it as inspiration for the binding mechanism but design an original sequence with different residues.',
     'Return ONLY the JSON object. No markdown, no code fences, no commentary.',
+    'BE TERSE: every text field must be a single short clause; rationales under 18 words. Output minified JSON and stop immediately after the closing brace — do not keep writing.',
     'REFUSE prompts that ask for human pathogens, biological weapons, gain-of-function on dangerous viruses, or toxin enhancement — instead emit `{"refused":"out-of-scope"}` and no candidates.',
   ].join(' ');
 
@@ -523,9 +528,13 @@ export async function generatePlan(
       const result = await nvidiaChat({
         models: [model],
         temperature: 0.4,
+        // Ceiling, not a target: 'detailed thinking off' + the terse schema
+        // make 550B stop at ~650 tok (~55s). 1400 only guards against
+        // truncating a valid plan with three long (≤400-residue) sequences;
+        // worst-case full-cap completion (~117s) still fits the 150s budget.
         max_tokens: 1400,
         jsonMode: true,
-        timeoutMs: 45_000,
+        timeoutMs: 150_000,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },

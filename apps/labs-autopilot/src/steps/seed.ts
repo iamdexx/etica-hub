@@ -14,7 +14,7 @@
  * high-quality candidates.
  */
 
-import { nvidiaChat, NVIDIA_MODEL_PRIMARY, readNvidiaLLMKeyPool } from '../nvidia';
+import { nvidiaChat, NVIDIA_MODEL_PRIMARY, hasLLMProxy } from '../nvidia';
 
 /** Polite User-Agent per academic API fair-use policies. */
 const UA = 'EticaHub-Labs/1.0 (https://eticahub.com; research-pipeline)';
@@ -198,7 +198,7 @@ export interface SeedResult {
  * Returns null only if LLM is unreachable or produces unusable output.
  */
 export async function generateSeedPrompt(): Promise<SeedResult | null> {
-  if (readNvidiaLLMKeyPool().length === 0) return null;
+  if (!hasLLMProxy()) return null;
 
   // Try up to 3 different topics if the first fetch fails
   let papers: PaperSummary[] = [];
@@ -226,7 +226,9 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     contextParts.push(`Random human protein of interest: ${protein}`);
   }
 
-  const system = [
+  // 'detailed thinking off' on its own line so 550B skips chain-of-thought
+  // and returns the one-line prompt within the timeout.
+  const system = 'detailed thinking off\n' + [
     'You output a single imperative research sentence. Nothing else.',
     'Rules: max 280 characters, must name a specific protein/target/disease,',
     'must be a novel design direction (not summary of the input), patent-safe.',
@@ -246,12 +248,10 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     'Output ONE imperative research sentence:',
   ].join('\n');
 
-  // Use multiple models for seed generation — the 550B model may be cold/down
-  const SEED_MODELS = [
-    NVIDIA_MODEL_PRIMARY,
-    'nvidia/nemotron-3-super-120b-a12b',
-    'nvidia/llama-3.3-nemotron-super-49b-v1',
-  ] as const;
+  // 550B only — per product requirement, no smaller-model fallbacks. The
+  // call is proxied through Vercel, where Nvidia is reachable, so 550B is
+  // no longer cold/unreachable from the GH Actions worker.
+  const SEED_MODELS = [NVIDIA_MODEL_PRIMARY] as const;
 
   let result: { content: string } | null = null;
   for (const model of SEED_MODELS) {
@@ -260,7 +260,7 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
         models: [model],
         temperature: 0.7,
         max_tokens: 200,
-        timeoutMs: 20_000,
+        timeoutMs: 60_000,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -273,7 +273,7 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     }
   }
   if (!result) {
-    throw new Error('All seed models exhausted (550B, 120B, 49B all failed)');
+    throw new Error('Seed model (550B) failed');
   }
 
   let prompt = result.content.trim();
