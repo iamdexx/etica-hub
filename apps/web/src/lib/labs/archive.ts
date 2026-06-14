@@ -191,6 +191,44 @@ export async function listArchive(
 }
 
 /**
+ * List archived research currently in the open-market (tier-2) mint
+ * window: the originator's 24h exclusive has lapsed but the 7-day market
+ * window has not, and the record is not yet minted. These are exactly the
+ * discoveries anyone may mint or branch from in the "Mintable" section.
+ *
+ * Anchored to `completedAt` (the same anchor /api/labs/mint/attest uses):
+ *   tier 2  ⇔  completedAt + 24h < now <= completedAt + 7d
+ *          ⇔  now - 7d <= completedAt < now - 24h
+ *
+ * Scans the newest `scanLimit` entries (descending) so recently-eligible
+ * records surface first, and returns up to `limit` matches.
+ */
+export async function listMintable(
+  nowMs: number,
+  opts: { exclusiveMs: number; marketMs: number; limit?: number; scanLimit?: number },
+): Promise<ArchivedResearch[]> {
+  const store = labsStore();
+  const limit = opts.limit ?? 50;
+  const scanLimit = opts.scanLimit ?? 200;
+  const olderThan = nowMs - opts.exclusiveMs; // completedAt must be before this (24h elapsed)
+  const newerThan = nowMs - opts.marketMs; // completedAt must be after this (within 7d)
+  const ids = await store.zrevrange(ARCHIVE_INDEX, 0, Math.max(0, scanLimit - 1));
+  const out: ArchivedResearch[] = [];
+  for (const id of ids) {
+    if (out.length >= limit) break;
+    const raw = await store.get(ARCHIVE_KEY(id));
+    if (!raw) continue;
+    const entry = JSON.parse(raw) as ArchivedResearch;
+    if (entry.minted) continue;
+    if (entry.completedAt >= olderThan) continue; // still in 24h exclusive window
+    if (entry.completedAt < newerThan) continue; // past the 7d market window
+    if (!entry.bestCandidate?.sequence) continue;
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
  * List archived research whose completion is older than `cutoffMs` and
  * which has not yet been marked minted — i.e. the abandoned records the
  * treasury crank should settle on chain.

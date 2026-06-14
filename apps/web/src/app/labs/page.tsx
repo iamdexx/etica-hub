@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
 
 import { signSubmit } from '@/lib/labs/client-sig';
+import { MintableSection } from '@/components/labs/MintableSection';
 
 const MAX_PROMPT_CHARS = 400;
 const AMINO_ACIDS = 'ACDEFGHIKLMNPQRSTVWY';
@@ -552,6 +553,9 @@ export default function LabsPage() {
           <p className="mt-1 text-xs text-white/40">Community moderation — stake on quality research.</p>
         </Link>
       </section>
+
+      {/* ── Mintable now (open-market tier-2 discoveries) ── */}
+      <MintableSection />
 
       <section className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
         {/* ── Left column: prompt + controls ── */}

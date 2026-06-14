@@ -102,15 +102,18 @@ export function MintResButton({
   const [tx, setTx] = useState<TxStatus>({ kind: 'idle' });
 
   if (!hasSequence) return null;
-  if (!submitter) return null;
 
   const nftAddress = DEPLOYMENTS[eticaMainnet.id].eticaResearchNft;
   const notDeployed =
     !nftAddress || nftAddress === '0x0000000000000000000000000000000000000000';
 
   const onWrongChain = isConnected && chainId !== eticaMainnet.id;
+  // `submitter` is only used to label the originator wallet in the confirm
+  // dialog. It may be undefined for auto-seeded research with no human
+  // originator — minting is still allowed (the contract resolves the
+  // recipient + tier from the attestor payload, not this prop).
   const isSubmitterWallet =
-    !!address && address.toLowerCase() === submitter.toLowerCase();
+    !!address && !!submitter && address.toLowerCase() === submitter.toLowerCase();
 
   async function handleAttest(): Promise<void> {
     setTx({ kind: 'attesting' });

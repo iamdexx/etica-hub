@@ -14,6 +14,7 @@ import {
 } from 'wagmi';
 import { eticaMainnet } from '@etica-hub/shared/chains';
 import { DEPLOYMENTS, abis, isSupportedChainId } from '@etica-hub/shared';
+import { BranchFromButton } from '@/components/labs/BranchFromButton';
 
 // Minimal ERC-721 ABI for ownerOf / tokenURI / approve / setApprovalForAll
 const erc721Abi = [
@@ -434,6 +435,21 @@ export default function MarketPage() {
                         ? `Approve & List RES #${sellTokenId || '?'}`
                         : `List RES #${sellTokenId || '?'} for Sale`}
                 </button>
+
+                {/* ── Branch from the selected NFT (extend the cascade) ── */}
+                {sellTokenId && (
+                  <div className="border-t border-white/5 pt-3">
+                    <p className="mb-2 text-[11px] leading-relaxed text-white/45">
+                      Let others build on RES #{sellTokenId}. Branching spawns a child
+                      research thread linked to this NFT — when descendants are minted
+                      and traded, royalties cascade up to you.
+                    </p>
+                    <BranchFromButton
+                      tokenId={sellTokenId}
+                      label={`Branch from RES #${sellTokenId}`}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -533,6 +549,15 @@ function ListingCard({
       ) : (
         <p className="text-center text-xs text-white/30">Connect wallet to buy</p>
       )}
+
+      {/* Branch — extend the cascade from this discovery */}
+      <div className="mt-3 border-t border-white/5 pt-3">
+        <BranchFromButton
+          tokenId={listing.tokenId.toString()}
+          label="Branch from this"
+          compact
+        />
+      </div>
     </div>
   );
 }
