@@ -58,6 +58,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       max_tokens: body.max_tokens ?? 800,
       jsonMode: body.jsonMode ?? false,
       timeoutMs,
+      // Retries are owned by the rate-limited worker layer; doing a single
+      // attempt here avoids multiplicative retry amplification (worker
+      // retries × server retries) against the 40 RPM Nvidia budget.
+      maxRetriesPerKey: 1,
     });
 
     return Response.json({
@@ -68,7 +72,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const status = (err as { status?: number }).status ?? 502;
-    return Response.json({ ok: false, error: message, status }, { status: 502 });
+    const underlying = (err as { status?: number }).status ?? 0;
+    // Surface the real Nvidia status in the body AND mirror it as the HTTP
+    // status (clamped to a valid 4xx/5xx) so the worker can distinguish
+    // non-retryable 400/401 from retryable 429/5xx instead of always seeing 502.
+    const httpStatus = underlying >= 400 && underlying <= 599 ? underlying : 502;
+    return Response.json({ ok: false, error: message, status: underlying || httpStatus }, { status: httpStatus });
   }
 }

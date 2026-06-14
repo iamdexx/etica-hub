@@ -17,7 +17,7 @@
  * a malformed follow-up.
  */
 
-import { nvidiaChat, NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK, readNvidiaLLMKeyPool } from '../nvidia';
+import { nvidiaChat, NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK, hasLLMProxy } from '../nvidia';
 
 const MAX_PROMPT_CHARS = 280;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -123,7 +123,7 @@ async function callNvidia(
  * — the worker should treat null as "skip the expansion this round".
  */
 export async function proposeNextDirection(input: ExpansionInput): Promise<string | null> {
-  if (readNvidiaLLMKeyPool().length === 0) return null;
+  if (!hasLLMProxy()) return null;
   const system = systemPrompt(input.kind);
   const user = userPrompt(input);
 
@@ -268,7 +268,7 @@ function parseBranchPlan(raw: string): BranchPlan | null {
  * null on any failure — worker treats null as "skip branching".
  */
 export async function proposeBranchPlan(input: BranchInput): Promise<BranchPlan | null> {
-  if (readNvidiaLLMKeyPool().length === 0) return null;
+  if (!hasLLMProxy()) return null;
   const system = branchSystemPrompt();
   const user = branchUserPrompt(input);
 

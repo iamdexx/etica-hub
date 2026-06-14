@@ -12,7 +12,7 @@ import {
   NvidiaLLMError,
   NVIDIA_MODEL_FALLBACK,
   NVIDIA_MODEL_PRIMARY,
-  readNvidiaLLMKeyPool,
+  hasLLMProxy,
 } from '../nvidia';
 
 export type Analysis = {
@@ -89,8 +89,8 @@ function parseScoreFromText(text: string): number | null {
 }
 
 export async function analyseStructure(sequence: string, pdb: string): Promise<Analysis> {
-  if (readNvidiaLLMKeyPool().length === 0) {
-    throw new Error('NVIDIA_API_KEY (or NVIDIA_API_KEYS) not set');
+  if (!hasLLMProxy()) {
+    throw new Error('LABS_AUTOPILOT_TOKEN not set — cannot reach LLM proxy');
   }
 
   const s = summarizePdb(pdb);

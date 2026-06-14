@@ -14,7 +14,7 @@
  * high-quality candidates.
  */
 
-import { nvidiaChat, NVIDIA_MODEL_PRIMARY, readNvidiaLLMKeyPool } from '../nvidia';
+import { nvidiaChat, NVIDIA_MODEL_PRIMARY, hasLLMProxy } from '../nvidia';
 
 /** Polite User-Agent per academic API fair-use policies. */
 const UA = 'EticaHub-Labs/1.0 (https://eticahub.com; research-pipeline)';
@@ -198,7 +198,7 @@ export interface SeedResult {
  * Returns null only if LLM is unreachable or produces unusable output.
  */
 export async function generateSeedPrompt(): Promise<SeedResult | null> {
-  if (readNvidiaLLMKeyPool().length === 0) return null;
+  if (!hasLLMProxy()) return null;
 
   // Try up to 3 different topics if the first fetch fails
   let papers: PaperSummary[] = [];

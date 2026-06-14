@@ -14,7 +14,7 @@ import {
   NvidiaLLMError,
   NVIDIA_MODEL_PRIMARY,
   NVIDIA_MODEL_FALLBACK,
-  readNvidiaLLMKeyPool,
+  hasLLMProxy,
 } from '../nvidia';
 
 const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
@@ -473,8 +473,8 @@ export async function generatePlan(
   prompt: string,
   priorContext?: PriorContext,
 ): Promise<ResearchPlan> {
-  if (readNvidiaLLMKeyPool().length === 0) {
-    throw new Error('NVIDIA_API_KEY (or NVIDIA_API_KEYS) not set');
+  if (!hasLLMProxy()) {
+    throw new Error('LABS_AUTOPILOT_TOKEN not set — cannot reach LLM proxy');
   }
 
   const references = await gatherReferences(prompt).catch(() => []);
