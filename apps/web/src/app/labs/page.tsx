@@ -516,7 +516,7 @@ export default function LabsPage() {
       </section>
 
       {/* ── Navigation Grid ── */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Link
           href="/labs/market"
           className="group rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-5 transition hover:border-emerald-400/40 hover:bg-emerald-400/10"
@@ -543,6 +543,14 @@ export default function LabsPage() {
           <div className="mb-2 text-2xl">🎯</div>
           <h3 className="text-sm font-semibold text-white group-hover:text-violet-200">Research Goals</h3>
           <p className="mt-1 text-xs text-white/40">Browse the tree of branching research directions.</p>
+        </Link>
+        <Link
+          href="/labs/archive"
+          className="group rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-5 transition hover:border-cyan-400/40 hover:bg-cyan-400/10"
+        >
+          <div className="mb-2 text-2xl">📚</div>
+          <h3 className="text-sm font-semibold text-white group-hover:text-cyan-200">Archive</h3>
+          <p className="mt-1 text-xs text-white/40">Search every discovery by disease, target, keyword & source.</p>
         </Link>
         <Link
           href="/labs/moderation"

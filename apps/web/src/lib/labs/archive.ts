@@ -422,6 +422,14 @@ export interface ArchiveSearchOptions {
   q?: string;
   /** Filter by disease/condition */
   disease?: string;
+  /** Filter by molecular target (matched against title/hypothesis/approach) */
+  target?: string;
+  /**
+   * Filter by academic source that fed the record (e.g. 'pubmed', 'pdb',
+   * 'uniprot', 'chembl', 'string', 'kegg', 'alphafold'). References are
+   * stored as `source:id title`, so the source is the token before ':'.
+   */
+  source?: string;
   /** Filter by goal ID */
   goalId?: string;
   /** Only show minted entries */
@@ -440,8 +448,24 @@ export interface ArchiveSearchResult {
   total: number;
   facets: {
     diseases: Array<{ name: string; count: number }>;
+    sources: Array<{ name: string; count: number }>;
     topScores: Array<{ id: string; score: number; disease?: string }>;
   };
+}
+
+/**
+ * Academic sources cited by a record, derived from its `references`
+ * (stored as `source:id title`). Lower-cased, de-duplicated.
+ */
+export function entrySources(entry: ArchivedResearch): string[] {
+  const out = new Set<string>();
+  for (const ref of entry.references ?? []) {
+    const colon = ref.indexOf(':');
+    if (colon <= 0) continue;
+    const src = ref.slice(0, colon).trim().toLowerCase();
+    if (src && /^[a-z]+$/.test(src)) out.add(src);
+  }
+  return Array.from(out);
 }
 
 export async function searchArchive(opts: ArchiveSearchOptions): Promise<ArchiveSearchResult> {
@@ -465,9 +489,13 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
     ? opts.q.toLowerCase().split(/[\s,;.]+/).filter((w) => w.length > 2)
     : [];
 
+  const target = opts.target?.trim().toLowerCase();
+  const source = opts.source?.trim().toLowerCase();
+
   // Load and filter entries
   const scored: Array<{ entry: ArchivedResearch; relevance: number }> = [];
   const diseaseCounts = new Map<string, number>();
+  const sourceCounts = new Map<string, number>();
 
   for (const id of candidateIds) {
     const raw = await store.get(ARCHIVE_KEY(id));
@@ -478,6 +506,16 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
     if (opts.mintedOnly && !entry.minted) continue;
     if (opts.minScore && (entry.bestCandidate.score ?? 0) < opts.minScore) continue;
 
+    // Target filter — match against the most target-bearing fields.
+    if (target) {
+      const hay = `${entry.goalTitle ?? ''} ${entry.hypothesis} ${entry.approach} ${entry.prompt}`.toLowerCase();
+      if (!hay.includes(target)) continue;
+    }
+
+    const srcs = entrySources(entry);
+    // Academic-source filter.
+    if (source && !srcs.includes(source)) continue;
+
     // Compute relevance if searching
     const relevance = keywords.length > 0 ? computeRelevanceScore(entry, keywords) : 1;
     if (keywords.length > 0 && relevance === 0) continue;
@@ -487,6 +525,8 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
     // Track disease facets
     const d = entry.disease ?? 'Unknown';
     diseaseCounts.set(d, (diseaseCounts.get(d) ?? 0) + 1);
+    // Track academic-source facets
+    for (const s of srcs) sourceCounts.set(s, (sourceCounts.get(s) ?? 0) + 1);
   }
 
   // Sort
@@ -511,6 +551,10 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
     .sort((a, b) => b.count - a.count)
     .slice(0, 20);
 
+  const sources = Array.from(sourceCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
   const topScores = scored
     .slice(0, 10)
     .map((s) => ({
@@ -519,7 +563,7 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
       disease: s.entry.disease,
     }));
 
-  return { results: paged, total, facets: { diseases, topScores } };
+  return { results: paged, total, facets: { diseases, sources, topScores } };
 }
 
 /**

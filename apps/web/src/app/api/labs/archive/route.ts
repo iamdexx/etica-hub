@@ -4,6 +4,8 @@
  * Query params:
  *   ?q=TEXT         — full-text search across all fields (relevance-ranked)
  *   ?disease=NAME  — filter by disease/condition
+ *   ?target=NAME   — filter by molecular target (title/hypothesis/approach)
+ *   ?source=NAME   — filter by academic source (pubmed|pdb|uniprot|chembl|string|kegg|alphafold)
  *   ?goalId=ID     — filter by goal
  *   ?minted=true   — only show minted entries
  *   ?minScore=0.5  — minimum best candidate fold score
@@ -27,6 +29,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   const result = await searchArchive({
     q: url.searchParams.get('q') ?? undefined,
     disease: url.searchParams.get('disease') ?? undefined,
+    target: url.searchParams.get('target') ?? undefined,
+    source: url.searchParams.get('source') ?? undefined,
     goalId: url.searchParams.get('goalId') ?? undefined,
     mintedOnly: url.searchParams.get('minted') === 'true',
     minScore: url.searchParams.has('minScore')
