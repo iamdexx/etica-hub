@@ -348,7 +348,55 @@ function summarizeReferencesForPrompt(refs: Reference[]): string {
     .join('\n');
 }
 
-function tryParse(raw: string): ResearchPlan | null {
+/** Drop reasoning preambles / code fences so JSON extraction sees clean text. */
+function stripReasoning(raw: string): string {
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```(?:json)?/gi, '')
+    .trim();
+}
+
+/** Decode a JSON string body (the capture inside the quotes), tolerating bad escapes. */
+function decodeJsonString(body: string): string {
+  try {
+    return JSON.parse(`"${body}"`) as string;
+  } catch {
+    return body.replace(/\\"/g, '"').replace(/\\n/g, ' ').trim();
+  }
+}
+
+/** Pull a top-level string field by key(s) even from truncated/partial JSON. */
+function extractField(raw: string, keys: string[]): string {
+  for (const key of keys) {
+    const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(raw);
+    if (m && m[1] !== undefined) return decodeJsonString(m[1]);
+  }
+  return '';
+}
+
+/**
+ * Recover candidate sequences from raw text — works on truncated JSON because
+ * each completed `"sequence":"…"` pair is matched independently; an incomplete
+ * trailing sequence (no closing quote) simply isn't matched. Amino-acid strings
+ * never contain quotes, so a plain `[^"]*` body is safe.
+ */
+function salvageCandidates(raw: string): PlanCandidate[] {
+  const out: PlanCandidate[] = [];
+  const seqRe = /"sequence"\s*:\s*"([^"]*)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = seqRe.exec(raw)) && out.length < 3) {
+    const seq = normalizeSequence(m[1]);
+    if (!seq) continue;
+    const after = raw.slice(seqRe.lastIndex, seqRe.lastIndex + 600);
+    const ratM = /"rationale"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(after);
+    const rationale = ratM && ratM[1] !== undefined ? clamp(decodeJsonString(ratM[1]), 220) : '';
+    out.push({ sequence: seq, rationale });
+  }
+  return out;
+}
+
+/** Strict parse of the outermost {...} object. */
+function strictParse(raw: string): ResearchPlan | null {
   const first = raw.indexOf('{');
   const last = raw.lastIndexOf('}');
   if (first === -1 || last === -1 || last <= first) return null;
@@ -375,11 +423,31 @@ function tryParse(raw: string): ResearchPlan | null {
     if (candidates.length >= 3) break;
   }
   if (candidates.length === 0) return null;
+  return { hypothesis, approach, successCriteria, risks, candidates, references: [] };
+}
+
+/**
+ * Parse the planner response. Tries a strict JSON parse first; if the model's
+ * output was truncated at the token cap (common with three long sequences) or
+ * wrapped in reasoning text, falls back to a regex salvage that recovers the
+ * completed candidate sequences so the job still proceeds instead of erroring.
+ */
+function tryParse(raw0: string): ResearchPlan | null {
+  if (!raw0) return null;
+  const raw = stripReasoning(raw0);
+  const strict = strictParse(raw);
+  if (strict) return strict;
+
+  const candidates = salvageCandidates(raw);
+  if (candidates.length === 0) return null;
+  const hypothesis = clamp(extractField(raw, ['hypothesis']), 320);
+  const approach = clamp(extractField(raw, ['approach']), 480);
+  if (!hypothesis && !approach) return null;
   return {
     hypothesis,
     approach,
-    successCriteria,
-    risks,
+    successCriteria: clamp(extractField(raw, ['successCriteria', 'success_criteria']), 320),
+    risks: clamp(extractField(raw, ['risks']), 320),
     candidates,
     references: [],
   };
@@ -494,11 +562,12 @@ export async function generatePlan(
     '  "successCriteria": "<one sentence on how to recognize a successful candidate>",',
     '  "risks": "<one sentence on the biggest failure mode or off-target risk>",',
     '  "candidates": [',
-    '    { "sequence": "<one-letter amino acid codes, 10-400 residues, only ACDEFGHIKLMNPQRSTVWY>",',
+    '    { "sequence": "<one-letter amino acid codes, only ACDEFGHIKLMNPQRSTVWY>",',
     '      "rationale": "<one short sentence explaining this candidate; cite [N] references where relevant>" }',
     '  ]',
     '}',
     'Generate exactly 3 candidate sequences that follow the user goal (length, prefix, motifs).',
+    'Keep sequences COMPACT: 40-150 residues each; never exceed 250 residues. Compact designs keep the response within the token budget so it is not truncated.',
     'IMPORTANT: do not duplicate prior work. If references are provided, treat them as the state of the art and build on them — cite the bracketed [N] index in your candidates\' rationale and differentiate each candidate from the cited structures/papers.',
     'PATENT SAFETY: Design NOVEL sequences only. ChEMBL references represent EXISTING patented or published therapeutics — you MUST differentiate your candidates from them by at least 20% sequence divergence. Never reproduce or closely mimic known drug sequences. Each candidate must be a genuinely novel design, not a copy of existing IP. If a ChEMBL target is referenced, use it as inspiration for the binding mechanism but design an original sequence with different residues.',
     'Return ONLY the JSON object. No markdown, no code fences, no commentary.',
@@ -528,10 +597,12 @@ export async function generatePlan(
       const result = await nvidiaChat({
         models: [model],
         temperature: 0.4,
-        // Ceiling, not a target: 'detailed thinking off' + the terse schema
-        // make 550B stop at ~650 tok. 1400 only guards against truncating a
-        // valid plan with three long (≤400-residue) sequences.
-        max_tokens: 1400,
+        // Ceiling, not a target. The previous 1400 cap truncated the JSON when
+        // the model emitted three long sequences (→ parse failure → job error).
+        // 2048 + the "compact sequences" schema rule keep a full plan well under
+        // the cap (~600-900 tok typical); the salvage parser recovers candidates
+        // if the model still overruns. At ~10-12 tok/s this stays inside 240s.
+        max_tokens: 2048,
         jsonMode: true,
         // 550B plan latency is highly variable in production (measured
         // ~60s up to ~170s under load). The Vercel proxy runs on the Pro
