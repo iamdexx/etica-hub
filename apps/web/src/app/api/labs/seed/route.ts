@@ -17,7 +17,10 @@ import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// PubMed/UniProt prefetch (up to ~15s each) runs before the 550B seed call,
+// which itself can take up to 60s with retries; 300s (Pro plan) keeps the
+// whole request inside the function wall.
+export const maxDuration = 300;
 
 const UA = 'EticaHub-Labs/1.0 (https://eticahub.com; research-pipeline)';
 
@@ -58,11 +61,10 @@ const TOPIC_POOL = [
   'organoid disease model',
 ];
 
-const SEED_MODELS = [
-  NVIDIA_MODEL_PRIMARY,
-  'nvidia/nemotron-3-super-120b-a12b',
-  'nvidia/llama-3.3-nemotron-super-49b-v1',
-] as const;
+// 550B only — per product requirement, no smaller-model fallbacks. Nvidia
+// is reachable from Vercel (unlike the GH Actions worker), so 550B answers
+// reliably here.
+const SEED_MODELS = [NVIDIA_MODEL_PRIMARY] as const;
 
 function randomTopic(): string {
   return TOPIC_POOL[Math.floor(Math.random() * TOPIC_POOL.length)]!;
@@ -177,7 +179,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     contextParts.push(`Random human protein of interest: ${protein}`);
   }
 
-  const system = [
+  // 'detailed thinking off' on its own line so 550B skips chain-of-thought
+  // and returns the one-line prompt within the timeout.
+  const system = 'detailed thinking off\n' + [
     'You output a single imperative research sentence. Nothing else.',
     'Rules: max 280 characters, must name a specific protein/target/disease,',
     'must be a novel design direction (not summary of the input), patent-safe.',
@@ -211,7 +215,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           models: [model],
           temperature: 0.7 + retry * 0.1, // increase randomness on retry
           max_tokens: 200,
-          timeoutMs: 20_000,
+          timeoutMs: 60_000,
           messages: [
             { role: 'system', content: system },
             { role: 'user', content: user },

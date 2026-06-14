@@ -17,7 +17,10 @@ import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Vercel Pro plan ceiling. Nemotron 550B emits ~12 tokens/s, so a full
+// research-plan completion can take 60-120s; the old 60s cap guaranteed a
+// timeout on every plan call. 300s gives 550B room to finish.
+export const maxDuration = 300;
 
 interface LLMRequestBody {
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
@@ -48,7 +51,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const model = body.model || NVIDIA_MODEL_PRIMARY;
-  const timeoutMs = Math.min(body.timeoutMs ?? 55_000, 55_000);
+  // Keep a little headroom below the 300s function wall so we return a
+  // clean JSON error instead of being hard-killed mid-request.
+  const timeoutMs = Math.min(body.timeoutMs ?? 120_000, 285_000);
 
   try {
     const result = await nvidiaChat({

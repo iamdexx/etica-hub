@@ -20,7 +20,11 @@
 import { nvidiaChat, NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK, hasLLMProxy } from '../nvidia';
 
 const MAX_PROMPT_CHARS = 280;
-const REQUEST_TIMEOUT_MS = 15_000;
+// Nemotron 550B emits ~12 tokens/s, so even a short JSON branch plan
+// (~400 tokens) needs ~35s. The old 15s cap timed out every branch
+// proposal, which is why high-scoring leads never spawned child goals.
+const REQUEST_TIMEOUT_MS = 60_000;
+const BRANCH_TIMEOUT_MS = 120_000;
 
 export interface ExpansionInput {
   goalTitle: string;
@@ -34,6 +38,9 @@ export interface ExpansionInput {
 
 function systemPrompt(kind: 'continuation' | 'cross-goal'): string {
   const base =
+    // 'detailed thinking off' on its own line so 550B skips its verbose
+    // chain-of-thought and answers within the request timeout.
+    'detailed thinking off\n' +
     'You are EticaLabs Autopilot, an autonomous biomedical research planner. ' +
     'Given a research goal and the most recent finding, you propose the single most ' +
     'promising next research direction in the same space. Output ONLY one short ' +
@@ -100,13 +107,14 @@ async function callNvidia(
   system: string,
   user: string,
   maxTokens: number,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<string | null> {
   try {
     const result = await nvidiaChat({
       models: [model],
       temperature: 0.5,
       max_tokens: maxTokens,
-      timeoutMs: REQUEST_TIMEOUT_MS,
+      timeoutMs,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -172,6 +180,9 @@ const MAX_BRANCH_DESCRIPTION = 800;
 
 function branchSystemPrompt(): string {
   return (
+    // 'detailed thinking off' on its own line so 550B skips its verbose
+    // chain-of-thought and answers within BRANCH_TIMEOUT_MS.
+    'detailed thinking off\n' +
     'You are EticaLabs Autopilot, an autonomous biomedical research planner. ' +
     'A parent research goal has produced a high-scoring candidate worth a ' +
     'dedicated follow-up thread. You will design that branch goal. Reply ' +
@@ -272,12 +283,12 @@ export async function proposeBranchPlan(input: BranchInput): Promise<BranchPlan 
   const system = branchSystemPrompt();
   const user = branchUserPrompt(input);
 
-  const primary = await callNvidia(NVIDIA_MODEL_PRIMARY, system, user, 600);
+  const primary = await callNvidia(NVIDIA_MODEL_PRIMARY, system, user, 600, BRANCH_TIMEOUT_MS);
   if (primary) {
     const parsed = parseBranchPlan(primary);
     if (parsed) return parsed;
   }
-  const fallback = await callNvidia(NVIDIA_MODEL_FALLBACK, system, user, 600);
+  const fallback = await callNvidia(NVIDIA_MODEL_FALLBACK, system, user, 600, BRANCH_TIMEOUT_MS);
   if (fallback) {
     const parsed = parseBranchPlan(fallback);
     if (parsed) return parsed;

@@ -116,12 +116,19 @@ export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResu
   let lastError = '';
   let attempts = 0;
 
+  // The Vercel proxy (/api/labs/llm) runs on the Pro plan with a 300s
+  // function ceiling, so we let a single 550B call use up to ~280s. The
+  // worker waits a touch longer than the budget we hand the proxy so the
+  // proxy can always respond first (clean error/JSON) before our own abort.
+  const proxyBudget = Math.min(req.timeoutMs ?? 120_000, 280_000);
+  const clientAbortMs = proxyBudget + 15_000;
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     await enforceRateLimit();
     attempts++;
 
     const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), req.timeoutMs ?? 55_000);
+    const timeout = setTimeout(() => ctrl.abort(), clientAbortMs);
     const onExternalAbort = () => { ctrl.abort(); };
     if (req.signal) {
       if (req.signal.aborted) ctrl.abort();
@@ -141,7 +148,7 @@ export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResu
           temperature: req.temperature ?? 0.4,
           max_tokens: req.max_tokens ?? 800,
           jsonMode: req.jsonMode ?? false,
-          timeoutMs: Math.min(req.timeoutMs ?? 55_000, 55_000),
+          timeoutMs: proxyBudget,
         }),
         signal: ctrl.signal,
       });
