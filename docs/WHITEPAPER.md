@@ -1,16 +1,16 @@
 # EticaHub Whitepaper
 
-**Version 1.5 — Research Markets Edition**
+**Version 2.0 — Current Platform Edition**
 
 ---
 
 ## Abstract
 
-EticaHub is a community-built application layer on the Etica blockchain. It introduces **ETX** (ticker `ETX`, name `EticaHub`, supply 100,000,000, fixed), a hub-and-spoke decentralized exchange where every pair shares ETX as its reserve asset, a research subscription and tipping layer that reads Etica's native proposal contract, and a pre-designed (but not yet deployed) proposal-gated token launchpad that, when activated, will require every new token to open both a `token/ETX` and a `token/ETI` pool — structurally funnelling demand to both assets.
+EticaHub is a community-built application layer on the Etica blockchain. It introduces **ETX** (ticker `ETX`, name `EticaHub`, supply 100,000,000, fixed), a hub-and-spoke decentralized exchange where every pair shares ETX as its reserve asset, an on-chain research-proposal reader with direct author tipping that reads Etica's native proposal contract, and a permissionless research-token launchpad (**EticaResearchMarkets**) where every market trades against a shared, treasury-seeded singleton bonding curve.
 
-Since the v1 genesis launch, EticaHub has shipped several additional surfaces — all of them non-custodial, non-dilutive to the fixed ETX supply, and built on the same hub-and-spoke invariant: a UniswapX-style **Trading Stack** (limit, stop, DCA, bounded grid, Infinity Bot), an **ERC-4626 liquid staking vault (stETX)**, the **EticaStableSwap V3 pool** — a rate-aware Curve-style AMM (Phase 0) for stETX↔ETX with a 10-year-locked treasury seed and a live admin-fee adapter that flows back into the harvester, an on-chain **Treasury Harvester** that redistributes treasury LP-fee accruals via a deterministic 10/10/40/40 split with a permanent Protocol-Owned-Liquidity (POL) burn, an **ETXFarms** non-emissive LP-staking surface, a skinny **on-chain explorer** with Sourcify-backed contract verification, a public **market-data API**, a **community buy bot** that posts DEX swaps to Telegram, **EticaLabs** — an AI-native molecular intelligence workstation with a continuously-running autopilot research loop — and **EticaResearchMarkets** (§15), a permissionless launchpad for science-funding ERC-20s where every market trades against the shared 5M-ETX-seeded singleton on an internal constant-product curve with an 80/10/0/10 fee split, no withdrawable LP, a permanent floor-pull property, and auto-Sourcify verification of every minted token. All hosted on free-tier infrastructure. The **Phase 3 cross-chain bridge** stack — twelve audited-pattern contracts implementing an optimistic-veto design on Hyperlane rails, a 10M ETX insurance backstop, three custom ISMs, a free GitHub-Actions watcher, and the `/bridge` UI — is contract-complete in the repo and pending the live deploy of Hyperlane on Etica (Phase H). A frontend-only good-faith **jurisdictional gate** on `/stake` and `/farms` mirrors the same posture adopted by Uniswap and Aave; the underlying contracts remain permissionless.
+Since the v1 genesis launch, EticaHub has shipped several additional surfaces — all of them non-custodial, non-dilutive to the fixed ETX supply, and built on the same hub-and-spoke invariant: a UniswapX-style **Trading Stack** (limit, stop, DCA, bounded grid, Infinity Bot), an **ERC-4626 liquid staking vault (stETX)**, the **EticaStableSwap V3 pool** — a rate-aware Curve-style AMM for stETX↔ETX with a 10-year-locked treasury seed and a live admin-fee adapter that flows back into the harvester, an on-chain **Treasury Harvester** that redistributes treasury LP-fee accruals via a deterministic 10/10/40/40 split with a permanent Protocol-Owned-Liquidity (POL) burn, an **ETXFarms** non-emissive LP-staking surface, a skinny **on-chain explorer** with Sourcify-backed contract verification, a public **market-data API**, a **community buy bot** that posts DEX swaps to Telegram, **EticaLabs** — an AI-native molecular-intelligence workstation whose 24/7 autopilot loop (Nvidia Nemotron 550B planner + ESMFold) designs, folds, and analyses candidate proteins, mints each validated discovery as a **RES NFT** whose artwork is the real ESMFold-predicted structure, and lets anyone mint, branch from, and trade those discoveries — and **EticaResearchMarkets** (§15), a permissionless launchpad for science-funding ERC-20s where every market trades against the shared 5M-ETX-seeded singleton on an internal constant-product curve with an 80/10/0/10 fee split, no withdrawable LP, a permanent floor-pull property, and auto-Sourcify verification of every minted token. All hosted on free-tier infrastructure. A frontend-only good-faith **jurisdictional gate** on `/stake` and `/farms` mirrors the same posture adopted by Uniswap and Aave; the underlying contracts remain permissionless.
 
-This document describes what EticaHub is, what it is not, how the v1 mainnet launch works, what has shipped since, and what remains explicitly deferred to later phases.
+This document describes what EticaHub is, what it is not, and how every live surface of the site works today.
 
 ---
 
@@ -32,12 +32,12 @@ If you are evaluating EticaHub, evaluate it on its own merits as a community-bui
 
 ## 2. Design Goals
 
-1. **Make ETI more useful.** Etica's native asset is ETI. We build tools (a DEX, a research hub, a bridge, and eventually a launchpad) whose cash flows and demand vectors grow ETI's utility as a byproduct.
-2. **Introduce a reward / coordination token (ETX) without diluting ETI.** ETX is a separate asset for EticaHub-specific cash flow capture: swap fees, pool-creation fees, and (later) launchpad fees. It does not replace, fork, or compete with ETI.
+1. **Make ETI more useful.** Etica's native asset is ETI. We build tools (a DEX, a research hub, a research-token launchpad, and an autonomous AI research lab) whose cash flows and demand vectors grow ETI's utility as a byproduct.
+2. **Introduce a reward / coordination token (ETX) without diluting ETI.** ETX is a separate asset for EticaHub-specific cash flow capture: swap fees and pool-creation fees. It does not replace, fork, or compete with ETI.
 3. **Hub-and-spoke liquidity.** Rather than fragment liquidity across arbitrary pairs, the DEX enforces that every pair shares a common reserve (ETX). This turns ETX into the unit of DEX-wide convertibility.
 4. **Fair launch, no presale, no allocation.** ETX is seeded entirely via on-chain AMM pools opened by the EticaHub treasury with its own capital. There is no private round, public round, airdrop, team allocation, advisor allocation, vesting cliff, or unlock schedule for ETX supply.
-5. **No new emissions, ever.** Every redistribution surface (stETX yield, Harvester, farms, buybacks) must be funded from *existing* DEX cash flows — LP fees, swap protocol fees, subscription revenue — and never by minting more ETX.
-6. **Defer complexity with safety margins.** Features that materially touch user funds (launchpad, bridge) are contract-complete but deliberately not activated until there is organic depth and demand. Features that touch only the *treasury's own* capital (Harvester, POL burns, stETX yield) ship earlier because the blast radius is internal.
+5. **No new emissions, ever.** Every redistribution surface (stETX yield, Harvester, farms, buybacks) must be funded from *existing* DEX cash flows — LP fees and swap protocol fees — and never by minting more ETX.
+6. **Ship treasury-internal surfaces first.** Surfaces that touch only the *treasury's own* capital (Harvester, POL burns, stETX yield) shipped first because their blast radius is internal. Surfaces that touch user funds — the DEX, the trading stack, liquid staking, and the research-token launchpad — are live and permissionless, each shipped once the underlying liquidity could support it.
 
 ---
 
@@ -79,7 +79,7 @@ EticaSwap is a Uniswap V2–style automated market maker adapted to enforce a si
 
 | Contract | Purpose |
 |---|---|
-| `EticaSwapFactory` | Deploys pair contracts via CREATE2. Enforces ETX hub rule. Holds the optional `feeTo` treasury and the `trustedCreators` allow-list (§16). |
+| `EticaSwapFactory` | Deploys pair contracts via CREATE2. Enforces ETX hub rule. Holds the optional `feeTo` treasury and a `trustedCreators` allow-list that can exempt designated pool creators from the creation fee. |
 | `EticaSwapPair` | Constant-product pair (x·y=k), 0.30% swap fee, optional 0.05% protocol fee to treasury. |
 | `EticaSwapRouter` | User-facing router. Multi-hop swaps, add/remove liquidity, native-EGAZ wrapping via WEGAZ. |
 | `WEGAZ` | Canonical wrapped-EGAZ ERC-20, deposited/withdrawn at 1:1. Enables EGAZ to participate in ERC-20 pairs. |
@@ -95,7 +95,7 @@ EticaSwap is a Uniswap V2–style automated market maker adapted to enforce a si
 The pool-creation fee is charged in ETX, paid by the caller at the moment a new pair is created, and routed to `feeTo` (the treasury). Key properties:
 
 - The fee is **skipped when `feeTo == 0x0`**, so the factory can bootstrap before the treasury wallet is wired. This was used during launch day: the first two pools (ETI/ETX, EGAZ/ETX) were seeded free, then treasury wiring activated the fee for all subsequent pools.
-- Addresses in the `trustedCreators` allow-list are **exempt** from the fee. This exists so the future launchpad (§16) does not double-charge its creators, since the launchpad already collects its own 250 ETX + 250 ETI fee per launch.
+- Addresses in the `trustedCreators` allow-list are **exempt** from the fee, so designated protocol contracts that open pools are not double-charged.
 - The fee is **adjustable** by the `feeToSetter` governance key via `setPairCreationFee(uint256)`. It may be raised, lowered, or set to zero.
 - The router transparently forwards the fee on first-time pair creation: users simply approve a slightly larger ETX budget to the router, no extra transaction is required.
 
@@ -147,18 +147,17 @@ The full EticaHub frontend lives at [https://eticahub.com](https://eticahub.com)
 
 Deploy pages are gated behind `NEXT_PUBLIC_OPERATOR_UI=true` and are **not** part of the public navigation. They are kept in the repo so that the full launch path is reproducible from source. Deployment artifacts (bytecode + ABI) are committed to the repo.
 
-The public pages — `/swap`, `/pool`, `/trade`, `/stake`, `/bridge`, `/research`, `/explorer`, `/status`, `/whitepaper` — run against live mainnet contracts addressed from `packages/shared/src/addresses.ts` (canonical) and mirrored in Appendix A.
+The public pages — `/swap`, `/pool`, `/trade`, `/stake`, `/farms`, `/labs`, `/research`, `/research-markets`, `/explorer`, `/status`, `/whitepaper` — run against live mainnet contracts addressed from `packages/shared/src/addresses.ts` (canonical) and mirrored in Appendix A.
 
 ---
 
 ## 6. Research Hub
 
-Etica's native proposal contract (`EticaCoreProposals`) tracks medical-research proposals and their authors on-chain. EticaHub exposes these proposals through a reader UI at `/research/proposals` (shipped with Phase 2), and adds two auxiliary primitives:
+Etica's native proposal contract (`EticaCoreProposals`) tracks medical-research proposals and their authors on-chain. EticaHub exposes these proposals through a reader UI at `/research/proposals`, and adds direct author tipping:
 
-- **Tipping.** Visitors can tip a proposal author directly, in ETI or EGAZ, through a hosted contract that forwards to the author address recorded on-chain.
-- **Subscription.** A `ResearchSubscription` contract sells monthly subscriptions in ETI that grant access to gated content via a simple `isActive(subscriber)` view. Subscriptions are paid upfront, extensible, and non-transferable.
+- **Tipping.** From any proposal, a visitor can tip the author in ETI. The tip is a standard ERC-20 `transfer` straight to the author address recorded on-chain by `EticaCoreProposals` — EticaHub never custodies the funds and takes no cut.
 
-The Research Hub is live today, independent of the DEX, and does not require ETX to function. It is the first concrete revenue surface for EticaHub's treasury (subscription payments flow to treasury as ETI).
+The Research Hub is live today, independent of the DEX, and does not require ETX to function: anyone can browse proposals and tip authors in ETI without holding ETX.
 
 ---
 
@@ -222,7 +221,7 @@ EticaHub charges two structurally distinct fees, on two different trade surfaces
 
 A trade sent to `/swap` pays the AMM fee. A trade sent to `/trade` pays the UniswapX fee. Both fee streams are denominated in economically sensible units: LP fees settle in the pair's native tokens (so LPs keep the mix they signed up for), and the UniswapX protocol fee settles in ETX (every pool is ETX-paired, so one leg of every trade is already ETX — no extra swap hop is needed to collect the fee).
 
-The `EticaProtocolFeeController` owner (treasury wallet, rotating to the community multisig on the same schedule as `feeToSetter` in §4) can raise or lower the fee within a hard on-chain cap of 100 BPS (1%). It cannot exceed that cap under any circumstance. There is no owner path that can drain already-collected fees — the controller only decides what future fees *are*, not where existing balances go.
+The `EticaProtocolFeeController` owner (treasury wallet) can raise or lower the fee within a hard on-chain cap of 100 BPS (1%). It cannot exceed that cap under any circumstance. There is no owner path that can drain already-collected fees — the controller only decides what future fees *are*, not where existing balances go.
 
 ### 7.6 Keeper workflow
 
@@ -327,7 +326,7 @@ The 40% POL burn is the mechanism that makes every swap structurally accretive t
 
 The Harvester is **deployed, wired, and live on Etica mainnet** at `0x5d8B1138559fADc3Bb90e8317eB16922eAa076f5`. The keeper role was retired in favour of a permissionless v2 (PR #109) — any wallet may now call `harvest()`, gated only by a 1-day cooldown and a small caller-tip incentive. The daily GitHub Actions workflow (`.github/workflows/harvest-live.yml`) calls it on a 24h cadence; if it is ever down, anyone can poke the contract directly. There is also a manual "Harvest now" button on `/admin/harvester` for the treasury operator.
 
-A second fee feed was added in **§10 (Phase 0 — EticaStableSwap)**: the stableswap pool's admin-fee slice flows through `StableSwapHarvesterAdapter`, which redeems the stETX leg into ETX via the vault and forwards a pure ETX lump into `TreasuryHarvester.harvestExternal(amount)`. Same 10/10/40/40 split applies. The two feeds (V2 LP-burn and stableswap admin-fee) compose seamlessly because both terminate in the same harvester.
+A second fee feed comes from **§10 (EticaStableSwap)**: the stableswap pool's admin-fee slice flows through `StableSwapHarvesterAdapter`, which redeems the stETX leg into ETX via the vault and forwards a pure ETX lump into `TreasuryHarvester.harvestExternal(amount)`. Same 10/10/40/40 split applies. The two feeds (V2 LP-burn and stableswap admin-fee) compose seamlessly because both terminate in the same harvester.
 
 ### 9.5 Cron + manual fallback
 
@@ -360,17 +359,17 @@ Weights are `allocPoint` values (sum = 10,000 by convention). The owner can `add
 
 **No emissions, ever.** ETXFarms holds no mint authority on ETX (ETX is a fixed-supply ERC-20 with no minter). It can *only* distribute ETX that was transferred into the contract and then accounted for via `distributeRewards`. The total supply cap at 100M ETX is unaffected by farms going live — farms redistribute existing protocol fees, they do not create new supply.
 
-**Owner scope.** The contract owner can register new pools, retune weights, and set the fallback recipient. The owner *cannot* steal staked LP (`rescueToken` is explicitly guarded against rescuing any registered LP token or the reward token ETX). The owner *cannot* pause withdrawals. The owner *cannot* change reward semantics retroactively. Owner will be rotated to the same multisig that holds `feeToSetter` and `TreasuryHarvester.owner` as part of the near-term multisig migration (§20).
+**Owner scope.** The contract owner can register new pools, retune weights, and set the fallback recipient. The owner *cannot* steal staked LP (`rescueToken` is explicitly guarded against rescuing any registered LP token or the reward token ETX). The owner *cannot* pause withdrawals. The owner *cannot* change reward semantics retroactively. Owner is the treasury key, the same key that holds `feeToSetter` and `TreasuryHarvester.owner`.
 
-**Audit posture.** Forge unit tests cover: metadata and shape, owner-only gates, deposit/withdraw mechanics, accumulator math for the solo-staker and two-staker-pro-rata cases, multi-harvest sequencing, late-joiner protection, empty-pool fallback routing, emergency withdrawal, rescue guards, and permissionless `distributeRewards` parity. No external audit has been commissioned for v1.1 — same posture as stETX and the Harvester. External review will be scoped once the broader v1.1 surface stabilizes.
+**Audit posture.** Forge unit tests cover: metadata and shape, owner-only gates, deposit/withdraw mechanics, accumulator math for the solo-staker and two-staker-pro-rata cases, multi-harvest sequencing, late-joiner protection, empty-pool fallback routing, emergency withdrawal, rescue guards, and permissionless `distributeRewards` parity. No external audit has been commissioned — same posture as stETX and the Harvester.
 
 **Deployment.** Operators deploy via `/deploy/farms` (browser-based, signs from the connected wallet). Post-deploy: paste the address into `packages/shared/src/addresses.ts → DEPLOYMENTS[61803].etxFarms`, call `addPool(ETI/ETX LP, 5000)` and `addPool(EGAZ/ETX LP, 5000)`, then call `TreasuryHarvester.setFarms(etxFarms)` to route the 10% farms bucket. `/farms` will light up the moment the address is non-zero.
 
 ---
 
-## 10. EticaStableSwap (Phase 0 — the V3 pool)
+## 10. EticaStableSwap (the V3 pool)
 
-> Naming note: EticaSwap V1 was the original Etica-side AMM; EticaSwap V2 is the hub-and-spoke constant-product DEX described in §4 (still the venue for ETI/ETX, EGAZ/ETX, etc.); **EticaStableSwap is the protocol's V3 pool** — a separate, rate-aware Curve-style AMM dedicated to correlated assets (today stETX↔ETX, Phase 1 adds wETI/ETX). Where this paper says "V3 pool," it means EticaStableSwap.
+> Naming note: EticaSwap V1 was the original Etica-side AMM; EticaSwap V2 is the hub-and-spoke constant-product DEX described in §4 (still the venue for ETI/ETX, EGAZ/ETX, etc.); **EticaStableSwap is the protocol's V3 pool** — a separate, rate-aware Curve-style AMM dedicated to correlated assets (today stETX↔ETX). Where this paper says "V3 pool," it means EticaStableSwap.
 
 `EticaStableSwap` is a rate-aware, Curve-style AMM purpose-built for stETX↔ETX. It exists because a constant-product V2 pool quotes the wrong price the moment stETX's NAV drifts above 1.0 ETX, and a naïve Curve pool would drift out of range as the vault accrues yield. EticaStableSwap **reads `stETX.convertToAssets(1e18)` directly on every swap** so the curve auto-tracks NAV forever — no manual rebalancing, no LP rotation, no stale parameters.
 
@@ -394,7 +393,7 @@ The pool is seeded with **15,000,000 ETX + 15,000,000 stETX** (~30M ETX-equivale
 
 Key asymmetry: **the lock is on the treasury, not on public LPs.** Anyone can deposit on `/pool` and withdraw any time. The treasury chose to immobilize its own seed for 10 years; nobody else has to. This is the inverse of a typical "team unlock" schedule — the protocol's primary liquidity is *the most* locked, not *the least*.
 
-The seed is also **not** counted in circulating supply for market-cap purposes (§19 / `/api/v1/tokens`): the locked-LP wrapper + treasury holdings are subtracted, in line with CoinGecko/CMC convention.
+The seed is also **not** counted in circulating supply for market-cap purposes (§12 / `/api/v1/tokens`): the locked-LP wrapper + treasury holdings are subtracted, in line with CoinGecko/CMC convention.
 
 ### 10.3 Fees and flywheel
 
@@ -434,7 +433,7 @@ The two AMMs cohabit on `/swap`: stETX↔ETX direct routes through the stableswa
 
 ### 10.5 Public LPs (`/pool`)
 
-`/pool` shows two cards: the V2 add/remove-liquidity flow (existing) and a public stableswap card (new). Public LPs deposit ETX + stETX, receive LP shares directly to their wallet, and can withdraw at any time via `removeLiquidity` (pro-rata, both legs) or `removeLiquidityOneCoin` (single-asset, with curve-derived slippage). No emissions on this pool — public LPs earn from fees and stETX NAV drift only. (Phase 1 will introduce farm emissions on the wETI/ETX pool where volume justifies them.)
+`/pool` shows two cards: the V2 add/remove-liquidity flow (existing) and a public stableswap card (new). Public LPs deposit ETX + stETX, receive LP shares directly to their wallet, and can withdraw at any time via `removeLiquidity` (pro-rata, both legs) or `removeLiquidityOneCoin` (single-asset, with curve-derived slippage). No emissions on this pool — public LPs earn from fees and stETX NAV drift only.
 
 ### 10.6 Status surface
 
@@ -522,7 +521,7 @@ A WebSocket listener is the canonical architecture for a buy bot and is ~30s fas
 
 ## 14. EticaLabs — AI Molecular Intelligence Workstation
 
-EticaLabs (`/labs`) is a community-built molecular-design surface that turns a plain-English research goal into a folded 3D structure, an AI structural analysis, and a continuously-running research loop. It is built entirely on free infrastructure (Groq free tier, NVIDIA NIM free tier, Upstash Redis free tier, GitHub Actions free tier, Vercel free tier) and ships zero new emissions, zero treasury cost, and zero gated content — every surface is fully public.
+EticaLabs (`/labs`) is a community-built molecular-intelligence workstation. It turns a plain-English research goal into a folded 3D protein structure, an AI structural analysis, and a continuously-running research loop — and lets anyone mint a validated discovery as an on-chain **RES NFT** whose artwork is the *real* predicted structure. The research surface itself is free and wallet-less; minting, branching, and trading discoveries are optional on-chain actions. It runs entirely on free infrastructure: Nvidia-hosted Nemotron (LLM), NVIDIA NIM ESMFold (folding), Upstash Redis (queue + archive), GitHub Actions (worker cron), and Vercel (web + cron + LLM proxy).
 
 ### 14.1 The pipeline
 
@@ -530,69 +529,91 @@ EticaLabs (`/labs`) is a community-built molecular-design surface that turns a p
 prompt
   │
   ▼
-Groq llama-3.1-8b-instant ─── plan (hypothesis, approach,
-  │                            success criteria, risks,
-  │                            3 candidate sequences,
-  │                            references)
+Nvidia Nemotron 3 Ultra 550B ─── plan (hypothesis, approach,
+  │                              success criteria, risks,
+  │                              3 candidate sequences, references)
   ▼
-Engine cascade ─── ESMFold (HF) → ESMFold (NVIDIA) → Chai-1 → Boltz
-  │              (Auto picks first available; user can pin one)
+ESMFold cascade ─── NVIDIA NIM ESMFold → Hugging Face ESMFold
+  │                 (first engine to return a PDB wins)
   ▼
-PDB ─── 3Dmol.js (browser WebGL) → user view, mutate, export, share
+PDB ─── 3Dmol.js (browser WebGL) → view, mutate, export, share
   │
   ▼
-Groq analysis ─── secondary structure, residue patterns,
-                  predicted function, stability
+Nemotron analysis ─── secondary structure, residue patterns,
+                      predicted function, stability
 ```
 
-Each step is its own free API call. No paid services. No long-running infra.
+Every step is its own free API call. All LLM traffic (plan, analyse, mutate, seed) is proxied through a single Vercel route (`/api/labs/llm`) that enforces a shared **40 RPM** budget across the worker and the website and inherits the 300s Vercel Pro execution ceiling, so a slow 550B generation can finish without being aborted mid-plan.
 
 ### 14.2 Research planning layer
 
-Before any fold runs, `/api/labs/plan` fetches **PubMed** (NCBI E-utilities, free, no auth) and **RCSB PDB** (free public search) for the top-5 most relevant papers and solved structures. Both are passed into Groq's planning prompt so each candidate sequence cites prior work by `[N]` index and explicitly differentiates itself from cited references rather than inventing in a vacuum. The `/labs` UI surfaces both as a clickable **Related research** panel.
+Before any fold runs, `/api/labs/plan` fetches **PubMed** (NCBI E-utilities, free, no auth) and **RCSB PDB** (free public search) for the most relevant papers and solved structures. Both are passed into Nemotron's planning prompt so each candidate sequence cites prior work by `[N]` index and explicitly differentiates itself from cited references rather than inventing in a vacuum. The `/labs` UI surfaces both as a clickable **Related research** panel.
 
-### 14.3 Engine roster
+### 14.3 Fold engine cascade
 
-| Engine | Provider | Free-tier limit | Status |
-|---|---|---|---|
-| ESMFold (Hugging Face) | HF inference router | unlimited (when serving) | **Deprovisioned upstream**; cascade falls through automatically |
-| ESMFold (NVIDIA NIM) | build.nvidia.com | 1,000 calls/month | **Live**, default cascade target |
-| Chai-1 | Replicate | trial credits | Lights up when `REPLICATE_API_TOKEN` is set |
-| Boltz-1 | Replicate | trial credits | Lights up when `REPLICATE_API_TOKEN` is set |
+| Engine | Provider | Role |
+|---|---|---|
+| ESMFold (NVIDIA NIM) | health.api.nvidia.com | Primary — async 202-poll, most reliable host today |
+| ESMFold (Hugging Face) | HF inference router | Fallback — used when NVIDIA is unavailable |
 
-The fold endpoint reports an **engine trace** on every call (which engines were tried, their status, their duration) so users can see exactly where the cascade landed.
+Each engine gets up to 3 attempts with exponential backoff (0s, 5s, 30s) and a 90s per-attempt timeout. The cascade exits on the first successful PDB and reports an **engine trace** on every call (which engines were tried, their status, their duration) so users can see exactly where the cascade landed. If every engine exhausts its retries the candidate is still published "structure pending" with a sequence-only score, so a flaky fold host never blocks the rest of the pipeline.
 
 ### 14.4 EticaLabs Autopilot — public research feed
 
-`/labs` exposes a **"Run continuously on EticaLabs"** submit panel alongside the direct-fold and create-plan buttons. Submissions land in a Redis-backed queue (`labs:queue:pending` list, `labs:feed` sorted set, `labs:job:<id>` blobs with 30-day TTL). A GitHub Actions cron — `.github/workflows/labs-autopilot.yml`, every 10 minutes, free tier — wakes the worker, pops the oldest pending job, runs **plan → fold → analyse → mutate** for `N` iterations (1-5, user-selected), and writes results back to Redis. The worker endpoints (`POST /api/labs/queue/pop`, `POST /api/labs/queue/[id]/update`) are gated by a shared-secret bearer token (`LABS_AUTOPILOT_TOKEN`, constant-time compared).
+`/labs` exposes a **"Run continuously"** submit panel alongside the direct-fold and create-plan buttons. Submissions land in a Redis-backed queue (`labs:queue:pending` list, `labs:feed` sorted set, `labs:job:<id>` blobs with 30-day TTL). The worker pops the oldest pending job, runs **plan → fold → analyse → mutate** for `N` iterations (1–5, user-selected), seeds each iteration from the previous round's top scorer, and writes results back to Redis. When the queue is empty it **auto-seeds** a fresh research goal from live academic data so the lab never sits idle. The worker endpoints (`POST /api/labs/queue/pop`, `POST /api/labs/queue/[id]/update`) are gated by a shared-secret bearer token (`LABS_AUTOPILOT_TOKEN`, constant-time compared).
+
+The worker runs on GitHub Actions (`.github/workflows/labs-autopilot.yml`). Because GitHub throttles high-frequency `schedule` events on shared runners, a Vercel cron also pings `/api/labs/autopilot/dispatch` every minute, which fires a `workflow_dispatch` run — manual dispatches are not throttled, so the worker ticks reliably.
 
 | Surface | Behavior |
 |---|---|
 | `/labs/feed` | Public list of every submitted run with status (pending / running / done / error), prompt preview, relative timestamps, and the pending-queue depth. |
-| `/labs/feed/[id]` | Full run view: plan + references, every candidate as its own card with sequence, rationale, AI analysis, score, inline 3Dmol viewer, and per-candidate **Download PDB**. Event timeline (queued → started → planned → folded → analysed → mutated → iteration_done → completed). Auto-polls every 5s while pending/running, stops on terminal states. Share button copies a deep-linkable URL. |
+| `/labs/feed/[id]` | Full run view: plan + references, every candidate as its own card with sequence, rationale, AI analysis, score, inline 3Dmol viewer, and per-candidate **Download PDB**. Event timeline (queued → started → planned → folded → analysed → mutated → iteration_done → completed). Auto-polls every 5s while pending/running. Share button copies a deep-linkable URL. |
 
-Submissions are fully open — no auth, no payment, no whitelist. Per-IP rate limit (5 submissions/hour) and a 400-character prompt cap keep abuse bounded. Content safety is delegated to Groq's existing safety prompt at planning time; jobs whose plans fail safety simply error out and are visible as such on the public feed.
+Submissions are fully open — no auth, no payment, no whitelist. A per-IP rate limit (5 submissions/hour) and a 400-character prompt cap keep abuse bounded; plans that fail the safety prompt error out and are visible as such on the public feed.
 
-### 14.5 Why "run continuously" is the point
+### 14.5 Per-sequence structure archive
 
-The direct-fold UX (`/labs` → "Generate molecule") gives the user one folded structure per click. The autopilot loop turns the same prompt into **N rounds of plan → fold → analyse → mutate**, each iteration seeded from the previous round's top scorer. Mutations are score-blended (Groq structural fit 60% / pLDDT confidence 40%) with iteration early-stop when no further improvement is found. The result is a small ranked log of what the agent tried, persisted publicly for 30 days, so the lab feels *alive* — users coming back to `/labs/feed` see real work product, not a stale demo.
+Every folded candidate's backbone is stored as a compact **Cα-only PDB trace** (~2–16 KB) in Redis, keyed by `sha256(sequence)[:32]` and de-duplicated across jobs. This archive is what lets a minted NFT render the real structure for *any* candidate, not just the first. Older discoveries that folded before the archive existed — or that lost their inline structure — are **self-healing**: a manual re-fold (`/api/labs/fold/[id]/re-fold`) or the 5-minute cron drain re-runs the fold and writes the trace back, and every structureless candidate exposes a one-tap **Regenerate structure** button.
 
-### 14.6 Cost profile
+### 14.6 RES NFTs — minting a discovery
 
-Per autopilot run (3 iterations, 3 candidates per iteration):
+A validated discovery can be minted as a **RES** (Research Entity Structure) NFT — an ERC-721 at `0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9`. Two properties make it unusual:
 
-| Service | Calls | Free-tier headroom |
-|---|---|---|
-| Groq (planning + analysis + mutation) | ~12 | Groq free tier: 30 RPM, 14,400 RPD |
-| NVIDIA NIM (ESMFold) | ~9 | 1,000 calls/month |
-| Upstash Redis (queue + storage) | ~30 | 10,000 commands/day |
-| GitHub Actions (worker cron) | 1 job, ~60s | 2,000 minutes/month |
+- **The art is the science.** The image is the discovery's real ESMFold-predicted Cα backbone trace, coloured residue-by-residue by pLDDT confidence (deep blue ≥90 → orange <50) and projected onto the structure's principal axes — rendered live by `/api/labs/fold-render/[tokenId]` from the archived trace. It is a genuine fold, not a generative skin.
+- **The record is on-chain.** The full scientific record (sequence, AI analysis, pLDDT score, iteration count, and research lineage) is written once into the contract at claim time and never altered by transfers.
 
-Steady-state capacity at zero cost is roughly **~10-15 user submissions per day** before any free tier saturates — plenty of headroom for community-driven exploration, and the limits scale linearly with paid tiers if demand ever justifies it.
+Minting is permissionless and gated only by an **attestor-signed claim payload** (the attestor address is immutable; the server signs every legitimate discovery). The mint follows a **three-tier window** anchored to the discovery's timestamp:
 
-### 14.7 Non-custodial / non-financial posture
+- **Tier 1 — originator (0–24h).** Only the wallet that started the research may claim; the NFT mints to that wallet.
+- **Tier 2 — open market (24h–7d).** Anyone may claim, minting the NFT to themselves. The original discoverer is still credited in the royalty cascade.
+- **Tier 3 — treasury (after 7d).** The research is abandoned; anyone may settle it but the NFT is force-minted to the immutable treasury address (see §14.8).
 
-EticaLabs touches no user funds and creates no on-chain transactions. It is a pure research surface — Groq calls, ESMFold calls, public reads from PubMed/RCSB, and a Redis-backed queue. Nothing in EticaLabs interacts with ETX, stETX, the DEX, the harvester, or any treasury surface. It exists because EticaHub is community-built and the community wanted a research workstation; it stays free because the architecture is built on free tiers from day one.
+The per-claim mint fee is paid in native EGAZ: a flat base fee plus a score-indexed slice (a higher pLDDT score pays a higher fee, capped on-chain). The fee is split **79 / 20 / 1** (holder / ancestor cascade / treasury) through the same splitter described below, and is **waived** on the Tier-3 treasury auto-forfeit so the treasury never pays itself.
+
+### 14.7 The Mintable section + one-click cascade branching
+
+`/labs` surfaces a **Mintable** grid (`/api/labs/mintable`) of Tier-2 discoveries — past their 24h originator window, before the 7-day forfeit — each shown as a card with the fold image, score, and a live countdown to treasury forfeit. Every card carries two actions:
+
+- **Mint** — claim the RES NFT in one tap.
+- **Branch from this** — spawn a child research goal seeded from the parent discovery's context. Branching links the child's `parentGoalId` to the parent's on-chain `branchGoalId`, so the lineage is recorded. You can also branch directly from any RES NFT you hold or any active marketplace listing.
+
+**Royalty cascade.** Each token gets its own royalty splitter, deployed via CREATE2 with the tokenId as salt and immutable thereafter. The token's 5% ERC-2981 secondary royalty (and its mint fee) flow into that splitter and are released **79% to the current holder, 20% up the ancestor lineage, 1% to the treasury**. The ancestor leg is geometric — each ancestor takes 80% of the running pool and passes the remaining 20% up the chain, capped at 25 levels — so when a descendant discovery sells, every ancestor holder above it earns. A reverting ancestor wallet can never brick a release; its slice falls through to the current holder. Selling a RES therefore transfers its entire future royalty stream to the buyer.
+
+### 14.8 Treasury crank
+
+Discoveries left unminted past their 7-day window forfeit to the treasury automatically. A server-side keeper (`/api/labs/treasury/crank`) fires on **every mint anywhere on the platform**, plus an autopilot safety-net pass, and settles a batch of expired records by submitting the attestor-signed claim that force-mints them to the treasury. The settlement is a **separate transaction** the platform pays gas on — a minter never pays to settle someone else's forfeit — and the mint fee is waived on this path. The treasury becomes the first holder and can list the token on the marketplace to forward its royalty stream.
+
+### 14.9 Secondary marketplace
+
+`EticaResearchMarketplace` (`0x4D1eb3884927A9ad0d77E1627698f1153AAd5aDC`, bound immutably to the RES NFT) is a minimal, non-custodial fixed-price market at `/labs/market`: a holder lists a RES for a native EGAZ price; a buyer pays it; the contract auto-deducts the 5% ERC-2981 royalty, routes it to the token's splitter, and pays the seller the remainder. There is **no admin, no owner, no pause, and no platform fee beyond the ERC-2981 royalty**.
+
+### 14.10 Research encyclopedia
+
+`/labs/archive` indexes every completed discovery into a searchable encyclopedia, filterable by disease / target / keyword and by academic source (PubMed, PDB, UniProt, ChEMBL, STRING, KEGG, AlphaFold), so the lab's accumulated output stays browsable rather than scrolling away on the feed.
+
+### 14.11 Non-custodial / non-financial posture
+
+The research surface — planning, folding, analysis, the feed, and the archive — touches no funds and needs no wallet. The optional on-chain layer is fully non-custodial: claims are attestor-signed but always minted to the caller (or, on forfeit, to the treasury); the marketplace escrows nothing beyond the active listing; and EticaHub takes no cut beyond the on-chain mint fee and the fixed 1% treasury royalty slice. No new ETX is ever minted by any of this — EticaLabs creates ERC-721 records and routes EGAZ, never ETX supply.
 
 ---
 
@@ -602,9 +623,7 @@ EticaLabs touches no user funds and creates no on-chain transactions. It is a pu
 
 ### 15.1 Why a separate launchpad for research
 
-The deferred launchpad described in §16 (`ProposalTokenFactory`) is a **curated** surface — only the proposer of an Etica Protocol research proposal can launch a token, the supply is split across `token/ETX` and `token/ETI` pools, and there is a 250 ETX + 250 ETI launch fee. That model is appropriate for established proposals with author identity and on-chain provenance, but it is not appropriate for the long tail of small, exploratory, or independent research efforts. EticaResearchMarkets is the complement to that design: **permissionless launch, evidence-required at deploy time, singleton liquidity, no LP positions for anyone to extract, and a fee split engineered so the curve's floor only rises**.
-
-The two coexist. `ProposalTokenFactory` (§16) remains the on-chain author-attested launch path when it activates. EticaResearchMarkets is the open path that lives alongside it.
+Most token launchpads either gate who is allowed to launch or spin up a fresh AMM pool per token — fragmenting liquidity and leaving extractable LP positions behind. EticaResearchMarkets takes the opposite approach, aimed at the long tail of small, exploratory, and independent research efforts: **permissionless launch, evidence-required at deploy time, singleton liquidity, no LP positions for anyone to extract, and a fee split engineered so the curve's floor only rises**.
 
 ### 15.2 Architecture — one singleton, many markets
 
@@ -705,7 +724,6 @@ Image upload in the launch wizard goes through a server-side Pinata proxy at `/a
 
 - **It is not a 1:1 ETX wrapper.** Tokens are priced on a constant-product curve, not redeemed at parity. A 1:1 wrapper would have no price discovery, no upside for early supporters, and no launchpad utility.
 - **It does not migrate to an external pool at graduation.** Graduation is UI-only (§15.7).
-- **It does not retire or alter the `ProposalTokenFactory` design (§16).** The two launchpads coexist.
 - **It does not give the protocol operator a withdrawal authority.** There is no admin function that can pull ETX out of any curve or out of the free pool. The 5M ETX seed and every accrued ETX is locked behind the contract's deliberate absence of a withdrawal path.
 - **It does not pay the treasury.** The 0% treasury slice is deliberate. The launchpad pays researchers and pays the ETI LP burn; treasury revenue from this surface would conflict with the floor-pull property and the no-protocol-cut posture for science funding.
 
@@ -719,129 +737,18 @@ Image upload in the launch wizard goes through a server-side Pinata proxy at `/a
 
 ---
 
-## 16. Launchpad (Design Preview, Deferred to v2)
+## 16. Governance and Treasury
 
-A creator-gated token launchpad (`ProposalTokenFactory`) is **designed, implemented, and unit-tested in the repo**, but **deliberately not deployed on mainnet as part of v1**. It will be activated as v2, once the base DEX and ETX have established a reliable price and sufficient liquidity depth.
-
-### 16.1 Why
-
-A launchpad is most useful once (a) the ETX pool has real depth, (b) the ETI/ETX pool has real depth, and (c) the DEX has seen meaningful organic volume. Launching the launchpad simultaneously with ETX itself would create paper-thin pools for every proposal token and serve no one well. We ship base infrastructure first.
-
-### 16.2 Design summary (for v2 reference)
-
-| Aspect | Decision |
-|---|---|
-| Who can launch | Only the wallet address recorded as `proposer` on the corresponding Etica proposal |
-| One token per proposal | Yes, enforced on-chain |
-| Supply split (BPS) | 25% LP → `token/ETX` pool, 25% LP → `token/ETI` pool, 25% liquid to author, 25% vested to author over 90 days |
-| Launch fee | 250 ETX + 250 ETI to treasury |
-| Minimum author-provided LP | 100 ETX + 50 ETI (per side) |
-| Vesting | 90-day linear, via `ProposalTokenVesting` |
-| Pool-creation fee (factory) | Exempt (launchpad is in `trustedCreators` allow-list) |
-
-### 16.3 Why dual-pairing (token/ETX + token/ETI)
-
-An earlier single-hub design (ETX-only) was rejected by the community on the grounds that every launched token would concentrate demand onto ETX at ETI's expense. The dual-pairing requirement makes every launch an ETI demand sink: each launch must supply at least 50 ETI plus a 250 ETI fee, and a `token/ETI` pool is opened alongside the `token/ETX` pool. The launchpad is structurally accretive to **both** ETX and ETI, not a dilutive substitute for ETI.
-
-### 16.4 v1 does not include
-
-- `/deploy/launchpad` page (operator-only)
-- `/launch/token` author-facing UI
-- Any mainnet deploy of `ProposalTokenFactory`, `ProposalToken`, or `ProposalTokenVesting`
-- Any `factory.setTrustedCreator(launchpad, true)` call
-
-All of the above are deferred. When activated, a separate announcement and documentation update will precede it.
-
----
-
-## 17. Bridge (Phase 3 — Contract-Complete, Deploy Gated on Hyperlane-on-Etica)
-
-The Phase 3 cross-chain bridge is **contract-complete in the repo** (PRs #157–#173, twelve contracts plus the supporting Hyperlane-on-Etica infrastructure-as-code bundle) and **pending only the live deploy of Hyperlane on the Etica L1** (Phase H — community-funded validator + relayer on a small VPS, see [`docs/HYPERLANE_ON_ETICA.md`](./HYPERLANE_ON_ETICA.md)). Once the Hyperlane mailbox is live on Etica, deploys follow [`docs/BRIDGE_DEPLOY_WALKTHROUGH.md`](./BRIDGE_DEPLOY_WALKTHROUGH.md).
-
-The bridge supersedes the earlier multisig-validator design (PR #5) entirely. The new architecture replaces a trusted k-of-n validator set with an **optimistic-veto model** on Hyperlane's already-deployed validator/relayer rails: any honest party can submit a claim, the protocol operator (or any community member with a Merkle proof) has a 48-hour challenge window to veto a fraudulent claim before it mints, and a 10M ETX insurance fund underwrites the worst case.
-
-### 17.1 Architecture
-
-Messages move on Hyperlane (industry-standard interchain message protocol). Asset custody and minting live in EticaHub-authored contracts that consume Hyperlane as transport:
-
-| Contract | Side | Role |
-|---|---|---|
-| `BridgeVault` | Etica | Custodies deposited ETX. Emits `Deposit` events that Hyperlane relays. Authorizes withdrawals only on validated burn-receipts from the destination chain. |
-| `BridgeMinter` | Eth + BSC (one per chain) | Receives Hyperlane messages from the Etica vault, opens a claim, runs the 48h challenge window, then mints `WrappedETX` on success. Also accepts user-initiated burns to round-trip back to Etica. |
-| `WrappedETX` | Eth + BSC | Restricted-mint ERC-20Permit. Only `BridgeMinter` can mint or burn. Standard `permit` for gasless approvals on the destination side. |
-| `BridgeInsuranceFund` | Etica | 10M ETX backstop with timelocked withdrawals. Pays out on a validated successful veto or on operator-acknowledged shortfall. Funded from the FeeRouter's 20% insurance slice. |
-| `FeeRouter` | Etica | Splits bridge fees 20/80 between the insurance fund and the existing `TreasuryHarvester` (§9). Split changes are 24h-timelocked. |
-| `OptimisticVetoModule` | Eth + BSC | Operator veto authority wrapper. Holds the operator's veto key and rate-limits veto submissions so a compromised key can't grief liveness. |
-| `FraudProverModule` | Eth + BSC | Community Merkle-proof veto path. Anyone with a valid proof of the Etica state at the disputed block can independently veto a fraudulent claim. The operator is not the only line of defence. |
-| `InsuranceTopUpReceiver` | Etica | Closes the cross-chain audit trail when an Eth/BSC-side veto needs an Etica-side insurance payout. Records each notice; operator settles the ETX leg off-chain and calls `markSettled`. |
-| `HeartbeatISM` | Eth + BSC | Custom Hyperlane Interchain Security Module. Requires a recent operator heartbeat (≤4h) before any message validates. Auto-pauses the bridge if the operator goes dark. |
-| `TVLCapISM` | Eth + BSC | Caps the total per-chain wrapped supply against a configurable ceiling. Refuses messages that would breach the cap (defence against runaway minting). |
-| `RateLimitISM` | Eth + BSC | Per-day mint throughput cap with a 1h–7d timelock on cap changes. Bounds the worst-case loss from a successful exploit to one day's cap. |
-| `IHyperlane` interface | shared | Single source of truth for `IMailbox` + `IMessageRecipient`, byte-for-byte mirroring the Hyperlane V3 stdlib. |
-
-### 17.2 Optimistic-veto flow
-
-1. **Deposit.** A user calls `BridgeVault.deposit(amount, destinationChain, recipient)` on Etica. The vault locks the ETX, computes a `claimId`, and dispatches a Hyperlane message to the destination `BridgeMinter`.
-2. **Claim open.** Hyperlane relays the message. `BridgeMinter.submitClaim()` opens a claim with a 48-hour `challengeEnd` timestamp.
-3. **Challenge window.** During the 48h window, anyone can submit a veto via `OptimisticVetoModule.veto()` (operator key) or `FraudProverModule.veto()` (community Merkle proof against Etica state at the deposit block).
-4. **Execute.** After the window passes with no veto, anyone (including the recipient) calls `BridgeMinter.executeClaim()` to mint `WrappedETX` to the recipient. Up to that moment, the funds remain locked on Etica and recoverable.
-5. **Round-trip.** To return, the user burns `WrappedETX` on Eth/BSC via `BridgeMinter.burn()`. The minter dispatches a Hyperlane message back to Etica, the vault validates it, and the user (or any keeper) calls `executeWithdraw()` after the symmetric 48h window.
-
-### 17.3 Bond, fees, and insurance
-
-- **Submitter bond:** 25% of the claim notional, in ETX. Slashed on a successful veto (50% goes to the veto submitter, 25% goes to the insurance fund, 25% is burned). Returned on successful execution.
-- **Bridge fee:** 0.1% of the claim notional, in ETX, routed through `FeeRouter` (20% insurance, 80% harvester).
-- **Per-day cap:** `RateLimitISM` defaults to 1M ETX/chain/day, ramped from 100k → 1M → 10M over a 30/60/90-day post-launch schedule.
-- **Insurance fund:** seeded with 10M ETX from the treasury, top-able via `BridgeInsuranceFund.deposit()` or via the FeeRouter's 20% slice. Per-veto payout cap = 5% of fund balance; per-day payout cap = 1% of fund balance.
-- **Heartbeat cadence:** operator signs an on-chain heartbeat every 15min (free GitHub Actions cron in `apps/bridge-watcher`). After 4h of silence the bridge auto-pauses; after 90 days of continuous silence the heartbeat key can be rotated via the successor-key recovery path.
-
-### 17.4 Watcher (free, runs on GitHub Actions)
-
-`apps/bridge-watcher/` ships three independent GitHub Actions workflows that together replace the paid "$20/mo VPS bot" most bridges run:
-
-- **Heartbeat (15min cadence)** — signs the on-chain heartbeat on each remote chain.
-- **Monitor (5min cadence)** — pulls fresh `ClaimSubmitted` events, runs sanity checks against the Etica RPC, posts to Telegram on any suspicious claim. **Alert-only.** Manual veto stays on the operator's hardware wallet — the bot never holds the veto key.
-- **Auto-execute (30min cadence)** — calls `executeClaim()` on matured legitimate claims so recipients don't have to pay destination-chain gas.
-
-All three workflows skip cleanly when bridge contract addresses are unset, so CI is green from day-zero through deploy day. Operational cost: $0/mo.
-
-### 17.5 Custom ISMs
-
-Hyperlane lets each recipient contract specify its own Interchain Security Module. The bridge stacks three custom ISMs in AGGREGATION mode on top of the standard `MultisigISM`:
-
-- `HeartbeatISM` — blocks message validation if the operator hasn't pinged in 4h.
-- `TVLCapISM` — blocks message validation if executing the claim would exceed the per-chain wrapped supply cap.
-- `RateLimitISM` — blocks message validation if today's running total + this claim would exceed the per-day cap.
-
-All three are stateless to the relayer (they read on-chain state, sign nothing) and ship with timelocked parameter knobs so a compromised admin can't widen caps without warning.
-
-### 17.6 `/bridge` UI
-
-`apps/web/src/app/bridge/page.tsx` ships a read-only baseline today (status banner, address book, locked parameters, the "how a deposit moves" explainer) and the same components automatically light up with live TVL, pending claims, and heartbeat status the moment addresses populate in `packages/shared/src/addresses.ts`. The page is non-custodial — no signing flows are wired until the contracts are live, and even then every flow routes through the user's wallet (Permit2 on Etica, `WrappedETX.permit` on Eth/BSC).
-
-### 17.7 Status
-
-Contracts are deployment-ready. Operational dependencies for the live deploy:
-
-- **Hyperlane mailbox on Etica** — requires Phase H (validator + relayer on a community-funded VPS). Plan in [`docs/HYPERLANE_ON_ETICA.md`](./HYPERLANE_ON_ETICA.md). Estimated cost ~$5-10/mo recurring, ~$5-10 one-time gas. Funded from the harvester's 80% treasury slice once live.
-- **Bond + insurance seed** — 10M ETX from treasury to `BridgeInsuranceFund` at deploy time.
-- **Operator hardware wallet** — owns `BridgeMinter` on each remote chain, owns `OptimisticVetoModule`. Multisig migration is a post-launch task.
-- **Audit.** Sherlock contest scoped after Phase H lands. Estimated 3–4 weeks of lead time.
-
----
-
-## 18. Governance and Treasury
-
-### 18.1 Treasury wallet
+### 16.1 Treasury wallet
 
 The EticaHub treasury is an EOA at `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`. It holds:
 
 - Essentially all of the ETX supply at genesis (minus the amount seeded into pools).
-- LP tokens for the initial ETI/ETX and EGAZ/ETX pools (less whatever fraction has been moved through the future TreasuryHarvester POL-burn path, which permanently locks LP tokens to the burn sink).
-- Any subscription revenue, swap protocol fees (after `feeTo` is set), and pool-creation fees.
-- Any undistributed portion of the 10% farm bucket from the Harvester (parked in treasury until `ETXFarms` is live).
+- LP tokens for the initial ETI/ETX and EGAZ/ETX pools (less whatever fraction has been moved through the TreasuryHarvester POL-burn path, which permanently locks LP tokens to the burn sink).
+- Swap protocol fees (after `feeTo` is set) and pool-creation fees.
+- Any undistributed portion of the 10% farm bucket from the Harvester, held in treasury for `ETXFarms` distributions.
 
-### 18.2 Administrative keys
+### 16.2 Administrative keys
 
 | Contract | Key | Capabilities |
 |---|---|---|
@@ -855,72 +762,37 @@ The EticaHub treasury is an EOA at `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`.
 | `LiquidityTimelock10y` — `owner` | Treasury wallet | Can withdraw the locked LP only after the 2036-05-01 unlock timestamp; the contract has no early-unlock path. |
 | `StableSwapHarvesterAdapter` | **no owner** | Permissionless `harvest()`. Anyone can poke it; output is fixed by the on-chain 50/50 admin-fee math. |
 | `ETXFarms` — `owner` | Treasury wallet | Can register new pools, retune weights, set fallback recipient. `rescueToken` is guarded against registered LP tokens and the reward token (ETX). Cannot pause withdrawals, cannot retroactively change reward semantics. |
-| `BridgeVault` — `owner` (post-deploy) | Hardware wallet → multisig | Configures `BridgeMinter` addresses per remote chain, sets the per-chain cap. Cannot bypass the 48h challenge window. |
-| `BridgeMinter` — `owner` (post-deploy) | Hardware wallet → multisig | Wires up ISMs, configures the FeeRouter and InsuranceFund addresses, and holds the operator veto authority via `OptimisticVetoModule`. Cannot mint outside the validated-claim path. |
-| `BridgeInsuranceFund` — `owner` (post-deploy) | Hardware wallet → multisig | Approves payouts within the on-chain 5%/1% per-veto/per-day caps. Cannot mint, cannot drain — only routes already-deposited funds. |
+| `EticaResearchNFT` | **no owner** | No `Ownable`. The only privileged write is the attestor-signed `claim`; the attestor address is immutable and cannot redirect royalties, edit records, or admin-burn. |
+| `EticaResearchMarketplace` | **no owner** | No admin, no pause, no fee beyond the ERC-2981 royalty. |
+| `EticaResearchMarkets` — `owner` | Treasury wallet | Parameter knobs on the launchpad singleton only; cannot touch per-market reserves or the shared free pool beyond the contract-enforced math. |
 
-The `feeToSetter` key is intentionally low-ceremony at launch (EOA) to minimize operational risk during the first few weeks. It will be migrated to a multi-signature wallet as a follow-up, announced separately.
+The treasury-held owner keys (`feeToSetter`, `feeTo`, and the various contract `owner` roles listed above) are externally-owned accounts controlled by the treasury wallet, chosen for low operational ceremony. None of them can drain user funds, mint ETX, or alter already-collected balances — their authority is bounded by the contract-enforced caps described in each row.
 
-### 18.3 On-chain authority of ETX
+### 16.3 On-chain authority of ETX
 
 ETX itself has no admin — no pause, no mint, no blacklist, no upgrade. Governance in the "change the token" sense is impossible because the contract has no mutable configuration. All governance discretion is exercised over the DEX and treasury, not over ETX.
 
 ---
 
-## 19. Security
+## 17. Security
 
-- **Foundry test coverage:** 500+ tests across swap, research, launchpad, UniswapX reactor wiring, stETX, TreasuryHarvester, ETXFarms, EticaStableSwap, and the full Phase 3 bridge stack (vault, minter, insurance fund, fee router, optimistic-veto, fraud-prover, custom ISMs, cross-chain top-up). All passing in CI; aggregated across `packages/contracts` and `packages/trading-contracts`.
+- **Foundry test coverage:** 500+ tests across swap, research, launchpad, UniswapX reactor wiring, stETX, TreasuryHarvester, ETXFarms, and EticaStableSwap. All passing in CI; aggregated across `packages/contracts` and `packages/trading-contracts`.
 - **Pinned dependencies:** OpenZeppelin v5.1.0 (pinned specifically to avoid Cancun-only `mcopy` on Etica's Paris-EVM).
 - **No upgradeability / no proxies:** Every contract is deployed at its final implementation. There is no upgrade path that could silently change logic.
 - **No admin mints:** ETX supply is fixed at deploy. stETX shares can only be minted in exchange for ETX deposits.
 - **No custody paths:** `StakedETX` has no owner at all — `distributeRewards` is permissionless and can only *increase* the exchange rate. Harvester keeper can only perform the 10/10/40/40 redistribution. Reactor owner can only toggle a capped protocol fee. No key in the system can unilaterally drain user funds.
-- **No external audits at launch.** v1 ships without a third-party audit. Users should size their exposure accordingly. Audits are on the roadmap (§20) and will be announced once scoped.
+- **No external audits.** EticaHub ships without a third-party audit. Users should size their exposure accordingly.
 
 ---
 
-## 20. Roadmap
-
-Timeline is indicative, not committed.
-
-### Shipped
-
-- **v1 — ETX genesis:** ETX deployed, EticaSwap deployed, ETI/ETX and EGAZ/ETX pools seeded, hub-and-spoke invariant active, pool-creation fee switch activated by setting `feeTo`. `eticahub.com` routes swaps through the new contracts.
-- **v1 — Research Hub:** `/research/proposals` reader, tipping, subscription contract.
-- **v1.1 — Trading Stack:** Permit2 + UniswapX DutchOrderReactor + EticaProtocolFeeController + OrderRegistry + off-chain order book + reference keeper. Market, Limit, Stop, DCA, bounded Grid, and Infinity Bot modes all live on `/trade/[token]`.
-- **v1.1 — Explorer:** `/explorer` with blocks, txs, addresses, ERC-20 token pages, gas tracker, Sourcify-backed verification, JSONL indexer.
-- **v1.1 — Market Data API:** `/api/v1/*` pools, pairs, candles, tokens, health endpoints. Aggregator submission briefs.
-- **v1.1 — Staking (stETX):** ERC-4626 liquid staking vault, `/stake` UI with deposit, withdraw, 7d APY, exchange-rate chart.
-- **v1.1 — TreasuryHarvester:** 10/10/40/40 split + POL burn. Permissionless v2 (PR #109) deployed and live at `0x5d8B…76f5`; daily GitHub Actions cron + manual `/admin/harvester` button; first live harvest executed.
-- **v1.1 — Community Buy Bot:** Vercel-cron Telegram posts for all ETX-pair swaps with KV-based dedup. Circulating-supply MC registry (PR #151) anchors ETX market cap to CoinGecko/CMC convention; redundant stETX MC line dropped.
-- **v1.1 — ETXFarms:** non-emissive LP-staking contract live at `0xEBAf…c6aD`; `/farms` UI shipped, three-pool weighted emissions wired (60/25/15).
-- **v1.1 — Mobile wallet UX:** MetaMask deep-link + WalletConnect v2 connector.
-- **v1.1 — Addresses & docs:** deployed addresses wired into `packages/shared/src/addresses.ts`; launch parameters and harvester runbook frozen in `docs/`.
-- **v1.2 — EticaLabs:** `/labs` AI molecular workstation with Groq plan → engine-cascade fold (HF ESMFold / NVIDIA NIM ESMFold / Chai-1 / Boltz) → Groq structural analysis → mutate + export + share. Research-aware planner pulls PubMed + RCSB PDB references. **EticaLabs Autopilot** — `/labs/feed` public research feed backed by a Redis queue + GitHub Actions worker on a 10-minute cron — runs plan → fold → analyse → mutate for N iterations on every public submission. Built entirely on free tiers.
-- **v1.2 — EticaStableSwap (Phase 0):** rate-aware AMM live at `0xbbf5…036E`; 30M ETX-equivalent treasury seed locked 10y in `LiquidityTimelock10y` (`0xFdf9…d739`, unlocks 2036-05-01); `StableSwapHarvesterAdapter` (`0x9Adc…Be76`) bridges admin fees into the existing 10/10/40/40 flywheel; `/swap` auto-routes direct stETX↔ETX through the pool; public LP card on `/pool`; live `/api/v1/tvl` and `/api/v1/liquidity-flow` count the seed.
-- **v1.3 — EticaResearchMarkets:** singleton launchpad live (PR #199), `/deploy/research-markets` browser deployer (PR #200), `/research-markets` launchpad UI with tabbed Live / Pending / Graduated / Sunset views and per-market detail pages with buy/sell card + IPFS image upload (PR #201), graduated tokens wired into `/swap` and `/trade/[address]` (PR #202), singleton upgraded to 80/10/0/10 fee split with permanent floor pull (PR #203), auto-Sourcify cron + canonical bundle + live status badge (PR #204). Treasury seeds the singleton with 5M ETX as the free-pool backstop. See §15.
-
-### Near-term
-
-- **Phase 1 — wETI/ETX rate-aware (or concentrated-liquidity) pool.** Reuses the same AMM contract and harvester adapter pattern; this is the actual volume engine of the protocol. Once depth justifies it, ETXFarms emissions on the wETI/ETX pool are a candidate to attract public LPs.
-- **Multisig treasury migration:** `feeToSetter`, `DutchOrderReactor` owner, `EticaProtocolFeeController` owner, `TreasuryHarvester` owner, `EticaStableSwap` owner, `LiquidityTimelock10y` owner, and `StableSwapHarvesterAdapter` owner all rotated from the launch EOA to a multi-sig. (`StakedETX` has no owner — nothing to rotate.)
-- **Aggregator listings:** CoinGecko / CMC / DEX Screener / GeckoTerminal submissions reflecting the deeper Phase 0 TVL and the corrected circulating supply.
-
-### Mid-term
-
-- **Launchpad activation (v2):** `ProposalTokenFactory` deployed to mainnet, `factory.setTrustedCreator(launchpad, true)` wired, `/launch/token` UI shipped. Dependent on ETX establishing meaningful depth and community signal.
-- **Bridge activation (v3 — contract-complete, see §17):** the twelve-contract optimistic-veto bridge stack is repo-complete and CI-green. The remaining work is operational, not architectural: Phase H (deploy Hyperlane on Etica — community-funded validator + relayer on a small VPS), then the bridge deploy walkthrough proper, then a Sherlock contest before the per-chain rate-limit ramp. `/bridge` UI is already shipped in read-only mode and lights up the moment addresses are wired.
-- **External audits:** Sherlock contest scoped for the bridge stack post-Phase-H. Earlier surfaces (stETX, harvester, farms, stableswap) audited next as TVL justifies it.
-
----
-
-## 21. Risks
+## 18. Risks
 
 This section is non-exhaustive. ETX and EticaHub are **experimental software** and exposure should be sized accordingly.
 
 - **Liquidity risk.** The launch pools were intentionally small (~$6 total at NonKYC reference prices). Trades of even a few dollars move price substantially. Depth grows only as organic volume, LPs, and (future) POL-burn harvests arrive.
 - **Smart-contract risk.** v1 ships without a third-party audit. Every surface (DEX, Trading Stack, stETX, Harvester, ETXFarms, EticaStableSwap + Timelock + adapter) is tested but unaudited.
 - **Regulatory risk.** Despite the fair-launch structure (no sale, no allocation, no vesting, no promises), any token that has a market value is subject to interpretation by various regulators in various jurisdictions. ETX is not offered for sale anywhere; users who acquire it on EticaSwap do so at their own risk and on their own legal assessment. stETX is likewise not sold; it is minted 1:1 against deposited ETX. Two layered frontend access policies are applied as a good-faith gesture mirroring the posture adopted by Uniswap, Aave, and similar Western DeFi frontends:
-  1. **Comprehensively sanctioned jurisdictions (KP / SY / CU / IR).** The entire EticaHub frontend is rewritten to a compliance notice for visitors whose IP geolocates to North Korea, Syria, Cuba, or Iran. Every path on the site (including `/swap`, `/pool`, `/trade`, `/bridge`, `/explorer`, `/whitepaper`) is unavailable.
+  1. **Comprehensively sanctioned jurisdictions (KP / SY / CU / IR).** The entire EticaHub frontend is rewritten to a compliance notice for visitors whose IP geolocates to North Korea, Syria, Cuba, or Iran. Every path on the site (including `/swap`, `/pool`, `/trade`, `/labs`, `/explorer`, `/whitepaper`) is unavailable.
   2. **United States.** The stETX-related surfaces are suppressed: `/stake` and `/farms` rewrite to the compliance notice; on `/swap` stETX is removed from both pickers; on `/pool` the stETX/ETX stableswap LP card is hidden, stETX is rejected as a custom ERC20 in the V2 pair selector, and any user-held LP position whose underlying tokens include stETX is filtered out of the positions list. There is no exit affordance — the gate is a single uniform suppression of stETX from the frontend rather than a "no new entry, free exit" posture.
 
   The underlying smart contracts remain permissionless, open-source, and reachable on-chain regardless of jurisdiction; both layers are frontend access policies, not protocol-level restrictions. See [`apps/web/src/lib/geoBlock.ts`](../apps/web/src/lib/geoBlock.ts), [`apps/web/src/lib/geoBlockServer.ts`](../apps/web/src/lib/geoBlockServer.ts), and [`apps/web/src/middleware.ts`](../apps/web/src/middleware.ts).
@@ -931,7 +803,7 @@ This section is non-exhaustive. ETX and EticaHub are **experimental software** a
 
 ---
 
-## 22. FAQ
+## 19. FAQ
 
 **Is ETX the same as ETI?**
 No. ETI is Etica Protocol's native asset. ETX is EticaHub's own ERC-20, unrelated at the token level. They are connected only by the fact that EticaSwap trades them as the first-opened pool.
@@ -951,17 +823,14 @@ No. stETX is a pure redistribution vault. Every stETX yield dollar comes from LP
 **What is the POL burn?**
 Every Harvester cycle permanently locks 40% of the harvested fee tranche (paired with ETI/EGAZ) as LP in the ETI/ETX and EGAZ/ETX pools, then sends the resulting LP tokens to the burn sink. The depth stays in the pool forever and can never be withdrawn. See §9.3.
 
-**When does the launchpad open?**
-Not v1. See §16 and §20. No date committed.
-
-**When does the bridge open?**
-The twelve-contract bridge stack is feature-complete in the repo and CI-green. What remains is operational: deploy Hyperlane on Etica (Phase H — a small community-funded validator + relayer VPS), then the bridge deploy walkthrough, then a Sherlock contest before raising the per-chain rate-limit caps. See §17 and [`docs/BRIDGE_DEPLOY_WALKTHROUGH.md`](./BRIDGE_DEPLOY_WALKTHROUGH.md).
+**How do I launch a research token?**
+Go to `/research-markets/launch`, fill in the token's metadata and the required evidence link (PubMed DOI, arXiv preprint, RCSB PDB ID, an EticaLabs Autopilot run, an IPFS-pinned preprint, or an ORCID-signed attestation), and deploy. The token lists immediately on its own bonding curve against ETX, with auto-Sourcify verification of its bytecode. See §15.
 
 **Why is stETX hidden if I'm in the US?**
-Frontend good-faith gesture. Same posture as Uniswap and Aave. For visitors geolocating to the United States the EticaHub website suppresses every stETX-related surface uniformly: `/stake` and `/farms` rewrite to a compliance notice, stETX is removed from `/swap` pickers, the stETX/ETX stableswap LP card is hidden on `/pool`, stETX is rejected as a custom ERC20 in the `/pool` pair selector, and stETX-containing positions are filtered out of the `/pool` positions list. The underlying smart contracts remain permissionless and reachable on-chain; this is a frontend access policy, not a protocol-level restriction. See §21 (Risks → Regulatory).
+Frontend good-faith gesture. Same posture as Uniswap and Aave. For visitors geolocating to the United States the EticaHub website suppresses every stETX-related surface uniformly: `/stake` and `/farms` rewrite to a compliance notice, stETX is removed from `/swap` pickers, the stETX/ETX stableswap LP card is hidden on `/pool`, stETX is rejected as a custom ERC20 in the `/pool` pair selector, and stETX-containing positions are filtered out of the `/pool` positions list. The underlying smart contracts remain permissionless and reachable on-chain; this is a frontend access policy, not a protocol-level restriction. See §18 (Risks → Regulatory).
 
 **Why is the entire site unavailable in my region?**
-If you are visiting from North Korea, Syria, Cuba, or Iran (the comprehensive-sanctions list) the EticaHub frontend is unavailable site-wide as a good-faith compliance measure. The underlying smart contracts remain permissionless on the Etica network; this is a frontend access policy, not a protocol-level restriction. See §21 (Risks → Regulatory).
+If you are visiting from North Korea, Syria, Cuba, or Iran (the comprehensive-sanctions list) the EticaHub frontend is unavailable site-wide as a good-faith compliance measure. The underlying smart contracts remain permissionless on the Etica network; this is a frontend access policy, not a protocol-level restriction. See §18 (Risks → Regulatory).
 
 **Is the buy bot official? Is it custodial?**
 Yes, operated by EticaHub. Non-custodial: the bot reads on-chain `Swap` logs and posts messages. It holds no funds, signs no transactions, and has no privileged access. See §13.
@@ -996,16 +865,10 @@ Etica mainnet (chain id `61803`). Canonical source: `packages/shared/src/address
 | `EticaStableSwap` (stETX/ETX) | `0xbbf5814C1EA0531Cb07541b80c547ee7878C036E` |
 | `LiquidityTimelock10y` | `0xFdf919673570Cea9c513461604450D003716d739` (unlocks 2036-05-01) |
 | `StableSwapHarvesterAdapter` | `0x9Adc6298EFDcc1604CB95DaaB33331f866DDBe76` |
-| `BridgeVault` (Etica) | *pending Phase H deploy* |
-| `BridgeInsuranceFund` (Etica) | *pending Phase H deploy* |
-| `FeeRouter` (Etica) | *pending Phase H deploy* |
-| `InsuranceTopUpReceiver` (Etica) | *pending Phase H deploy* |
-| `BridgeMinter` (Ethereum mainnet) | *pending Phase H deploy* |
-| `BridgeMinter` (BNB Chain) | *pending Phase H deploy* |
-| `WrappedETX` (Ethereum mainnet) | *pending Phase H deploy* |
-| `WrappedETX` (BNB Chain) | *pending Phase H deploy* |
-| Hyperlane mailbox (Etica) | *pending Phase H deploy* |
-| `ResearchSubscription` | *pending deploy* |
+| `EticaResearchMarkets` (launchpad singleton) | `0x6605d2F6A8b77a8dC7f53Fd1EDe0974d85937D17` |
+| `EticaResearchNftMetadataLib` | `0x66aa725d9d18481bB937F4DF2DA68f82DF964219` |
+| `EticaResearchNft` (RES — 3-tier mint) | `0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9` |
+| `EticaResearchMarketplace` (RES secondary market) | `0x4D1eb3884927A9ad0d77E1627698f1153AAd5aDC` |
 | ETI (Etica protocol, external) | `0x34c61EA91bAcdA647269d4e310A86b875c09946f` |
 | Treasury wallet | `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D` |
 
