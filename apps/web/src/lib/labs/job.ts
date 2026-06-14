@@ -113,6 +113,14 @@ export interface LabsJob {
   goalId?: string;
   /** Community moderation status. Defaults to 'visible' on legacy jobs. */
   moderation?: ModerationStatus;
+  /**
+   * How many times this job has been auto-requeued from `error` back to
+   * `pending` by /api/labs/queue/requeue-errored. Bounded so a
+   * persistently-failing job stops looping error -> pending forever
+   * (which would burn the 40 RPM Nvidia budget every tick). Its data is
+   * never removed — once the cap is hit the job simply stays in `error`.
+   */
+  requeueCount?: number;
 }
 
 /** Lightweight projection used by the public /labs/feed index. */
