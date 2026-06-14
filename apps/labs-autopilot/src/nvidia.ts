@@ -1,14 +1,14 @@
 /**
- * Nvidia NIM LLM client for the labs-autopilot worker.
+ * Nvidia LLM client for the labs-autopilot worker.
  *
- * Uses Nvidia's OpenAI-compatible chat endpoint (Nemotron 3 Ultra 550B)
- * as the sole reasoning engine for plan/analyze/mutate steps.
+ * All LLM calls are proxied through the Vercel `/api/labs/llm` endpoint
+ * because Nvidia's API is unreachable from GitHub Actions runners.
  *
- * Single key with retry + backoff. No fallback providers.
- * Env: NVIDIA_API_KEY or NVIDIA_API_KEYS (same key pool used for fold).
+ * Uses only Nemotron 3 Ultra 550B as the sole reasoning model.
+ *
+ * Rate limiting: enforces 1.5s minimum gap between calls (40 RPM max).
+ * Env: LABS_AUTOPILOT_BASE_URL, LABS_AUTOPILOT_TOKEN
  */
-
-const NVIDIA_CHAT_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
 export const NVIDIA_MODEL_PRIMARY = 'nvidia/nemotron-3-ultra-550b-a55b';
 export const NVIDIA_MODEL_FALLBACK = 'nvidia/nemotron-3-ultra-550b-a55b';
@@ -49,7 +49,7 @@ export class NvidiaLLMError extends Error {
   }
 }
 
-/** Read the Nvidia key pool — shared with fold.ts. */
+/** Read the Nvidia key pool — kept for compatibility with fold.ts which calls Nvidia directly. */
 export function readNvidiaLLMKeyPool(): string[] {
   const pool = new Set<string>();
   const multi = process.env.NVIDIA_API_KEYS;
@@ -64,158 +64,120 @@ export function readNvidiaLLMKeyPool(): string[] {
   return [...pool];
 }
 
-const BACKOFF_BASE_MS = 2000;
-function backoffMs(attempt: number): number {
-  return Math.min(15_000, BACKOFF_BASE_MS * 2 ** attempt);
+// ─── Rate limiting ───
+// Nvidia LLM (integrate.api.nvidia.com) is capped at 40 RPM. A 1.6s gap
+// holds us at ~37.5 RPM, leaving headroom so timing jitter can't push us
+// over the limit. The worker runs as a single process (the workflow's
+// concurrency group prevents overlapping ticks), so this module-level
+// pacing globally bounds the LLM request rate.
+const MIN_INTERVAL_MS = 1600;
+
+// Serialize the gate through a promise chain so that even concurrent
+// callers (e.g. Promise.all of several LLM calls) are spaced apart and
+// can never burst past the limit by all reading the timestamp at once.
+let gate: Promise<void> = Promise.resolve();
+
+function enforceRateLimit(): Promise<void> {
+  const prev = gate;
+  gate = (async () => {
+    await prev;
+    await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS));
+  })();
+  return prev;
 }
 
-function isRetryableStatus(status: number): boolean {
-  return status === 429 || status === 408 || (status >= 500 && status < 600);
-}
+// ─── Proxy-based nvidiaChat ───
 
-async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (ms <= 0) return;
-  await new Promise<void>((resolve) => {
-    const t = setTimeout(resolve, ms);
-    if (signal) {
-      const onAbort = () => {
-        clearTimeout(t);
-        resolve();
-      };
-      if (signal.aborted) onAbort();
-      else signal.addEventListener('abort', onAbort, { once: true });
-    }
-  });
-}
-
-function composeSignal(external: AbortSignal | undefined, timeoutMs: number) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  let cleared = false;
-  const onExternal = () => {
-    if (!cleared) ctrl.abort();
-  };
-  if (external) {
-    if (external.aborted) ctrl.abort();
-    else external.addEventListener('abort', onExternal, { once: true });
-  }
-  return {
-    signal: ctrl.signal,
-    clear: () => {
-      cleared = true;
-      clearTimeout(t);
-      if (external) external.removeEventListener('abort', onExternal);
-    },
-  };
-}
-
-async function callOnce(
-  apiKey: string,
-  model: string,
-  req: NvidiaChatRequest,
-  useJsonMode: boolean,
-  signal: AbortSignal,
-): Promise<
-  | { ok: true; content: string }
-  | { ok: false; status: number; detail: string }
-> {
-  const body: Record<string, unknown> = {
-    model,
-    temperature: req.temperature ?? 0.4,
-    max_tokens: req.max_tokens ?? 800,
-    messages: req.messages,
-  };
-  if (useJsonMode) body.response_format = { type: 'json_object' };
-
-  const res = await fetch(NVIDIA_CHAT_URL, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal,
-    cache: 'no-store',
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    return { ok: false, status: res.status, detail: detail.slice(0, 400) };
-  }
-  const payload = (await res.json().catch(() => ({}))) as {
-    choices?: Array<{ message?: { content?: string | null } }>;
-  };
-  const content = payload.choices?.[0]?.message?.content?.trim() ?? '';
-  return { ok: true, content };
-}
+const BASE_URL = (process.env.LABS_AUTOPILOT_BASE_URL ?? 'https://eticahub.com').replace(/\/$/, '');
+const TOKEN = process.env.LABS_AUTOPILOT_TOKEN || '';
 
 export async function nvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChatResult> {
-  const keys = readNvidiaLLMKeyPool();
-  if (keys.length === 0) {
-    throw new NvidiaLLMError('No Nvidia API key configured (NVIDIA_API_KEY or NVIDIA_API_KEYS).', {
-      attempts: 0,
-    });
+  if (!TOKEN) {
+    throw new NvidiaLLMError('LABS_AUTOPILOT_TOKEN not set — cannot proxy LLM calls.', { attempts: 0 });
   }
-  const model =
-    req.models && req.models.length > 0 ? req.models[0]! : NVIDIA_MODEL_PRIMARY;
-  const timeoutMs = req.timeoutMs ?? 60_000;
-  const maxRetries = Math.max(1, req.maxRetriesPerKey ?? 4);
-  const composed = composeSignal(req.signal, timeoutMs);
-  const apiKey = keys[0]!;
 
+  const model = req.models && req.models.length > 0 ? req.models[0]! : NVIDIA_MODEL_PRIMARY;
+  const maxRetries = Math.max(1, req.maxRetriesPerKey ?? 3);
+
+  let lastError = '';
   let attempts = 0;
-  let lastStatus = 0;
-  let lastDetail = '';
 
-  try {
-    const jsonPasses = req.jsonMode ? [true, false] : [false];
-    for (const useJsonMode of jsonPasses) {
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        attempts++;
-        try {
-          const r = await callOnce(apiKey, model, req, useJsonMode, composed.signal);
-          if (r.ok) {
-            if (r.content) {
-              return { content: r.content, model, keyIndex: 0, attempts };
-            }
-            lastStatus = 200;
-            lastDetail = 'empty content';
-          } else {
-            lastStatus = r.status;
-            lastDetail = r.detail;
-            if (!isRetryableStatus(r.status)) break;
-          }
-        } catch (err) {
-          if (composed.signal.aborted) {
-            throw new NvidiaLLMError('Nvidia LLM request timed out.', {
-              status: 408,
-              detail: lastDetail,
-              attempts,
-            });
-          }
-          lastStatus = 0;
-          lastDetail = err instanceof Error ? err.message : String(err);
-        }
-        if (attempt < maxRetries - 1) {
-          await sleep(backoffMs(attempt), composed.signal);
-          if (composed.signal.aborted) {
-            throw new NvidiaLLMError('Nvidia LLM request timed out.', {
-              status: 408,
-              detail: lastDetail,
-              attempts,
-            });
-          }
-        }
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    await enforceRateLimit();
+    attempts++;
+
+    try {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), req.timeoutMs ?? 55_000);
+
+      // Combine external signal
+      if (req.signal) {
+        if (req.signal.aborted) { clearTimeout(timeout); ctrl.abort(); }
+        else req.signal.addEventListener('abort', () => { clearTimeout(timeout); ctrl.abort(); }, { once: true });
+      }
+
+      const res = await fetch(`${BASE_URL}/api/labs/llm`, {
+        method: 'POST',
+        headers: {
+          'x-labs-worker-token': TOKEN,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: req.messages,
+          model,
+          temperature: req.temperature ?? 0.4,
+          max_tokens: req.max_tokens ?? 800,
+          jsonMode: req.jsonMode ?? false,
+          timeoutMs: Math.min(req.timeoutMs ?? 55_000, 55_000),
+        }),
+        signal: ctrl.signal,
+      });
+
+      clearTimeout(timeout);
+
+      const data = (await res.json()) as {
+        ok: boolean;
+        content?: string;
+        model?: string;
+        attempts?: number;
+        error?: string;
+        status?: number;
+      };
+
+      if (data.ok && data.content) {
+        return {
+          content: data.content,
+          model: data.model || model,
+          keyIndex: 0,
+          attempts,
+        };
+      }
+
+      lastError = data.error || `HTTP ${res.status}`;
+
+      // Don't retry non-retryable errors
+      if (res.status === 400 || res.status === 401) break;
+
+      // Retry on 429, 5xx, or proxy errors
+      if (attempt < maxRetries - 1) {
+        const backoff = Math.min(15_000, 2000 * 2 ** attempt);
+        await new Promise((r) => setTimeout(r, backoff));
+      }
+    } catch (err) {
+      if (req.signal?.aborted) {
+        throw new NvidiaLLMError('Request aborted by caller.', { status: 408, attempts });
+      }
+      lastError = err instanceof Error ? err.message : String(err);
+      if (attempt < maxRetries - 1) {
+        const backoff = Math.min(15_000, 2000 * 2 ** attempt);
+        await new Promise((r) => setTimeout(r, backoff));
       }
     }
-  } finally {
-    composed.clear();
   }
 
-  throw new NvidiaLLMError(`Nvidia LLM exhausted retries (${lastStatus}).`, {
-    status: lastStatus,
-    detail: lastDetail,
+  throw new NvidiaLLMError(`Nvidia LLM proxy failed: ${lastError}`, {
+    status: 502,
+    detail: lastError,
     attempts,
   });
 }
-
-
