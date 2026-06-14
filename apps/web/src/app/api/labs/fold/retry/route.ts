@@ -23,6 +23,7 @@
 
 import type { NextRequest } from 'next/server';
 
+import { getPdbForSequence, storePdbForSequence } from '@/lib/labs/archive';
 import { foldWithCascade } from '@/lib/labs/engines/registry';
 import {
   FOLD_RETRY_MAX_ATTEMPTS,
@@ -103,8 +104,8 @@ async function processEntry(
   }
 
   const candidate = result.candidates.find((c) => c.index === entry.candidateIndex);
-  if (!candidate || !candidate.structurePending) {
-    // Already healed (manual re-fold, race) or never existed. Drop.
+  if (!candidate) {
+    // Candidate never existed. Drop.
     await retryQ.remove(entry.id);
     return {
       id: entry.id,
@@ -114,29 +115,70 @@ async function processEntry(
       outcome: 'stale',
     };
   }
+  // Process a candidate that's still pending OR one that claims to be folded
+  // but has no retrievable structure (inline or archived) — the latter heals
+  // pre-archive jobs. If a structure already exists, the entry is stale.
+  if (!candidate.structurePending) {
+    const inline = result.pdbBySequenceIndex?.[entry.candidateIndex];
+    let hasStructure = typeof inline === 'string' && inline.length > 0;
+    if (!hasStructure) {
+      try {
+        hasStructure = Boolean(await getPdbForSequence(entry.sequence));
+      } catch {
+        hasStructure = false;
+      }
+    }
+    if (hasStructure) {
+      await retryQ.remove(entry.id);
+      return {
+        id: entry.id,
+        jobId: entry.jobId,
+        candidateIndex: entry.candidateIndex,
+        attempts: entry.attempts,
+        outcome: 'stale',
+      };
+    }
+  }
 
   const outcome = await foldWithCascade(entry.sequence);
   const nextAttempts = entry.attempts + 1;
 
   if (outcome.ok) {
-    const patchedResult: LabsJobResult = {
-      ...result,
-      candidates: result.candidates.map((c) =>
-        c.index === entry.candidateIndex
-          ? {
-              ...c,
-              folded: true,
-              engine: outcome.engine,
-              structurePending: undefined,
-              error: undefined,
-            }
-          : c,
-      ),
-      pdbBySequenceIndex: {
-        ...result.pdbBySequenceIndex,
-        [entry.candidateIndex]: outcome.pdb,
-      },
-    };
+    // Always persist the Cα trace to the per-sequence archive so the feed and
+    // the NFT renderer can recover this candidate's structure even though only
+    // one PDB is carried inline on the job result. Best-effort: never fail the
+    // drain over an archive write.
+    try {
+      await storePdbForSequence(entry.sequence, outcome.pdb);
+    } catch (err) {
+      console.error('[labs] fold-retry archive write failed (non-fatal)', err);
+    }
+
+    // Only flip pending candidates inline (clear the badge + carry one PDB).
+    // A candidate that was already folded but lost its structure is healed by
+    // the archive write above — the feed lazy-fetches it — so we leave the job
+    // blob's inline PDBs untouched to avoid re-bloating it (Redis OOM guard).
+    const wasPending = candidate.structurePending === true;
+    const patchedResult: LabsJobResult = wasPending
+      ? {
+          ...result,
+          candidates: result.candidates.map((c) =>
+            c.index === entry.candidateIndex
+              ? {
+                  ...c,
+                  folded: true,
+                  engine: outcome.engine,
+                  structurePending: undefined,
+                  error: undefined,
+                }
+              : c,
+          ),
+          pdbBySequenceIndex: {
+            ...result.pdbBySequenceIndex,
+            [entry.candidateIndex]: outcome.pdb,
+          },
+        }
+      : result;
     const event: LabsJobEvent = {
       at: now,
       kind: 're_fold_completed',

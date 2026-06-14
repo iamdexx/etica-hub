@@ -17,6 +17,7 @@
 
 import type { NextRequest } from 'next/server';
 
+import { getPdbForSequence } from '@/lib/labs/archive';
 import {
   foldRetryQueue,
   makeFoldRetryEntryId,
@@ -80,11 +81,27 @@ export async function POST(
       { status: 404, headers: limit.headers },
     );
   }
+  // Allow a re-fold when the candidate is still pending OR when it claims to
+  // be folded but no structure is actually retrievable — inline on the job
+  // result (only one is kept) nor in the per-sequence archive. This heals
+  // pre-archive jobs whose per-candidate PDBs were dropped. If a structure
+  // already exists, there's nothing to re-fold.
   if (!candidate.structurePending) {
-    return json(
-      { error: 'Candidate already has a folded structure.' },
-      { status: 409, headers: limit.headers },
-    );
+    const inlinePdb = job.result?.pdbBySequenceIndex?.[candidateIndex];
+    let hasStructure = typeof inlinePdb === 'string' && inlinePdb.length > 0;
+    if (!hasStructure) {
+      try {
+        hasStructure = Boolean(await getPdbForSequence(candidate.sequence));
+      } catch {
+        hasStructure = false;
+      }
+    }
+    if (hasStructure) {
+      return json(
+        { error: 'Candidate already has a folded structure.' },
+        { status: 409, headers: limit.headers },
+      );
+    }
   }
 
   const retryQ = foldRetryQueue();

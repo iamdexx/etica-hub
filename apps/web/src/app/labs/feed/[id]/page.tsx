@@ -165,6 +165,34 @@ function CandidateCard({
 
   const effectivePdb = pdb ?? archivedPdb ?? undefined;
 
+  const requestRefold = useCallback(async () => {
+    setRefolding(true);
+    setRefoldStatus(null);
+    try {
+      const res = await fetch(
+        `/api/labs/fold/${encodeURIComponent(jobId)}/re-fold`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ candidateIndex: candidate.index }),
+        },
+      );
+      if (res.status === 202) {
+        setRefoldStatus('Re-fold queued. New attempt within ~5 min.');
+        onRefoldQueued();
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setRefoldStatus(body.error ?? `Re-fold request failed (${res.status}).`);
+      }
+    } catch (err) {
+      setRefoldStatus(
+        err instanceof Error ? err.message : 'Re-fold request failed.',
+      );
+    } finally {
+      setRefolding(false);
+    }
+  }, [jobId, candidate.index, onRefoldQueued]);
+
   useEffect(() => {
     if (!effectivePdb || !viewerRef.current) return;
     let cancelled = false;
@@ -335,9 +363,23 @@ function CandidateCard({
       ) : candidate.folded && !archiveTried ? (
         <p className="mt-4 text-[11px] text-white/45">Loading structure…</p>
       ) : candidate.folded ? (
-        <p className="mt-4 text-[11px] text-white/45">
-          Structure was generated but not retained in the feed snapshot.
-        </p>
+        <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+          <p className="text-[11px] text-white/55">
+            This candidate had its structure dropped before archiving —
+            regenerate it to render the real fold (and mint it as the NFT image).
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={refolding}
+              onClick={requestRefold}
+              className="rounded border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-emerald-100 transition-colors hover:border-emerald-200/60 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {refolding ? 'queuing…' : 'regenerate structure'}
+            </button>
+            {refoldStatus && <span className="text-[11px] text-white/70">{refoldStatus}</span>}
+          </div>
+        </div>
       ) : candidate.structurePending ? (
         <div className="mt-4 rounded-lg border border-amber-400/20 bg-amber-400/[0.04] p-3">
           <p className="text-[11px] text-amber-200/90">
@@ -349,37 +391,7 @@ function CandidateCard({
             <button
               type="button"
               disabled={refolding}
-              onClick={async () => {
-                setRefolding(true);
-                setRefoldStatus(null);
-                try {
-                  const res = await fetch(
-                    `/api/labs/fold/${encodeURIComponent(jobId)}/re-fold`,
-                    {
-                      method: 'POST',
-                      headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({ candidateIndex: candidate.index }),
-                    },
-                  );
-                  if (res.status === 202) {
-                    setRefoldStatus('Re-fold queued. New attempt within ~5 min.');
-                    onRefoldQueued();
-                  } else {
-                    const body = (await res.json().catch(() => ({}))) as {
-                      error?: string;
-                    };
-                    setRefoldStatus(
-                      body.error ?? `Re-fold request failed (${res.status}).`,
-                    );
-                  }
-                } catch (err) {
-                  setRefoldStatus(
-                    err instanceof Error ? err.message : 'Re-fold request failed.',
-                  );
-                } finally {
-                  setRefolding(false);
-                }
-              }}
+              onClick={requestRefold}
               className="rounded border border-amber-300/40 bg-amber-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-amber-100 transition-colors hover:border-amber-200/60 hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {refolding ? 'queuing…' : 're-fold this RES'}
