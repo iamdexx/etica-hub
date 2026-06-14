@@ -248,7 +248,11 @@ export async function POST(
   // the NFT image + feed render the real Cα trace for ALL candidates (the
   // inline result only keeps one). Best-effort, after the job is durably saved.
   if (result?.candidates?.length) {
-    await persistCandidatePdbs(body.result, result);
+    try {
+      await persistCandidatePdbs(body.result, result);
+    } catch (err) {
+      console.error('[labs] persistCandidatePdbs failed (non-fatal):', err);
+    }
   }
 
   // Auto-enqueue fold retries for any candidate the worker published
