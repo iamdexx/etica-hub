@@ -227,6 +227,7 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
   }
 
   const system = [
+    'detailed thinking off',
     'You output a single imperative research sentence. Nothing else.',
     'Rules: max 280 characters, must name a specific protein/target/disease,',
     'must be a novel design direction (not summary of the input), patent-safe.',
@@ -246,12 +247,10 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     'Output ONE imperative research sentence:',
   ].join('\n');
 
-  // Use multiple models for seed generation — the 550B model may be cold/down
-  const SEED_MODELS = [
-    NVIDIA_MODEL_PRIMARY,
-    'nvidia/nemotron-3-super-120b-a12b',
-    'nvidia/llama-3.3-nemotron-super-49b-v1',
-  ] as const;
+  // 550B only — per product requirement, no smaller-model fallbacks. The
+  // call is proxied through Vercel, where Nvidia is reachable, so 550B is
+  // no longer cold/unreachable from the GH Actions worker.
+  const SEED_MODELS = [NVIDIA_MODEL_PRIMARY] as const;
 
   let result: { content: string } | null = null;
   for (const model of SEED_MODELS) {
@@ -260,7 +259,7 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
         models: [model],
         temperature: 0.7,
         max_tokens: 200,
-        timeoutMs: 20_000,
+        timeoutMs: 60_000,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },

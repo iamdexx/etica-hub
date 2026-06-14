@@ -97,6 +97,7 @@ export async function analyseStructure(sequence: string, pdb: string): Promise<A
   const confidence = pdbConfidenceScore(s);
 
   const systemPrompt = [
+    'detailed thinking off',
     'You are a structural biologist reviewing an ESMFold prediction.',
     'Given a peptide sequence and a short PDB summary, write a 2-3 sentence analysis covering:',
     '(a) likely secondary structure (helix/sheet/loop balance),',
@@ -125,7 +126,7 @@ export async function analyseStructure(sequence: string, pdb: string): Promise<A
       models: [NVIDIA_MODEL_FALLBACK, NVIDIA_MODEL_PRIMARY],
       temperature: 0.3,
       max_tokens: 350,
-      timeoutMs: 25_000,
+      timeoutMs: 60_000,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: summary },

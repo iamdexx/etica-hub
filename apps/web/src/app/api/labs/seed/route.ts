@@ -58,11 +58,8 @@ const TOPIC_POOL = [
   'organoid disease model',
 ];
 
-const SEED_MODELS = [
-  NVIDIA_MODEL_PRIMARY,
-  'nvidia/nemotron-3-super-120b-a12b',
-  'nvidia/llama-3.3-nemotron-super-49b-v1',
-] as const;
+// 550B only — per product requirement, no smaller-model fallbacks.
+const SEED_MODELS = [NVIDIA_MODEL_PRIMARY] as const;
 
 function randomTopic(): string {
   return TOPIC_POOL[Math.floor(Math.random() * TOPIC_POOL.length)]!;
@@ -178,6 +175,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const system = [
+    'detailed thinking off',
     'You output a single imperative research sentence. Nothing else.',
     'Rules: max 280 characters, must name a specific protein/target/disease,',
     'must be a novel design direction (not summary of the input), patent-safe.',
@@ -211,7 +209,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           models: [model],
           temperature: 0.7 + retry * 0.1, // increase randomness on retry
           max_tokens: 200,
-          timeoutMs: 20_000,
+          timeoutMs: 60_000,
           messages: [
             { role: 'system', content: system },
             { role: 'user', content: user },

@@ -482,6 +482,10 @@ export async function generatePlan(
   const ctxSummary = summarizePriorContext(priorContext);
 
   const systemPrompt = [
+    // Disable Nemotron's verbose chain-of-thought — without this the 550B
+    // model rambles to the token cap (~1400 tok / 130s) and the call times
+    // out. With it off + the terseness rules below it stops at ~650 tok/55s.
+    'detailed thinking off',
     'You are a protein-engineering planner.',
     'Given a natural-language design goal, output a concise research plan as STRICT JSON with this exact schema:',
     '{',
@@ -498,6 +502,7 @@ export async function generatePlan(
     'IMPORTANT: do not duplicate prior work. If references are provided, treat them as the state of the art and build on them — cite the bracketed [N] index in your candidates\' rationale and differentiate each candidate from the cited structures/papers.',
     'PATENT SAFETY: Design NOVEL sequences only. ChEMBL references represent EXISTING patented or published therapeutics — you MUST differentiate your candidates from them by at least 20% sequence divergence. Never reproduce or closely mimic known drug sequences. Each candidate must be a genuinely novel design, not a copy of existing IP. If a ChEMBL target is referenced, use it as inspiration for the binding mechanism but design an original sequence with different residues.',
     'Return ONLY the JSON object. No markdown, no code fences, no commentary.',
+    'BE TERSE: every text field must be a single short clause; rationales under 18 words. Output minified JSON and stop immediately after the closing brace — do not keep writing.',
     'REFUSE prompts that ask for human pathogens, biological weapons, gain-of-function on dangerous viruses, or toxin enhancement — instead emit `{"refused":"out-of-scope"}` and no candidates.',
   ].join(' ');
 
@@ -523,9 +528,9 @@ export async function generatePlan(
       const result = await nvidiaChat({
         models: [model],
         temperature: 0.4,
-        max_tokens: 1400,
+        max_tokens: 900,
         jsonMode: true,
-        timeoutMs: 45_000,
+        timeoutMs: 150_000,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
