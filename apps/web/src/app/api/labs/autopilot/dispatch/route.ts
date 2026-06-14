@@ -31,10 +31,11 @@ import { NextRequest } from 'next/server';
 
 import { labsQueue } from '@/lib/labs/queue';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
+import { runTreasuryCrank } from '@/lib/labs/treasury-crank';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 15;
+export const maxDuration = 30;
 
 const DEFAULT_REPO = 'iamdexx/etica-hub';
 const DEFAULT_WORKFLOW = 'labs-autopilot.yml';
@@ -63,6 +64,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     if (!auth.ok) return json(auth.body, { status: auth.status });
   }
 
+  // Safety-net treasury crank: even with zero mint activity, settle a
+  // bounded batch of abandoned (past-7d) research to the treasury every
+  // tick. Never throws; never blocks dispatch on failure.
+  const crank = await runTreasuryCrank().catch(() => null);
+
   // Skip the dispatch if the pending queue is empty — saves a GitHub
   // API call and reduces Actions invocations during quiet periods.
   const queue = labsQueue();
@@ -74,7 +80,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     pending = 1;
   }
   if (pending <= 0) {
-    return json({ ok: true, dispatched: false, reason: 'queue-empty' });
+    return json({ ok: true, dispatched: false, reason: 'queue-empty', crank });
   }
 
   const token = process.env.GITHUB_DISPATCH_TOKEN ?? '';
@@ -121,7 +127,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   // 204 No Content = success per the GitHub Actions API.
   if (res.status === 204) {
-    return json({ ok: true, dispatched: true, repo, workflow, ref, pending });
+    return json({ ok: true, dispatched: true, repo, workflow, ref, pending, crank });
   }
   const text = await res.text().catch(() => '');
   return json(

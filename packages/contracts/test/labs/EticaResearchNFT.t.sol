@@ -37,7 +37,7 @@ contract EticaResearchNFTTest is Test {
     // EIP-712 typehash (mirrors contract).
     // ---------------------------------------------------------------
     bytes32 internal constant CLAIM_TYPEHASH = keccak256(
-        "ClaimPayload(string parentGoalTitle,string sequence,string analysis,uint256 score,uint256 iterations,string branchGoalId,address submitter,uint64 expiresAt,uint64 exclusiveUntil,string parentBranchGoalId)"
+        "ClaimPayload(string parentGoalTitle,string sequence,string analysis,uint256 score,uint256 iterations,string branchGoalId,address submitter,uint64 expiresAt,uint64 exclusiveUntil,uint64 marketOpenUntil,string parentBranchGoalId)"
     );
 
     // ---------------------------------------------------------------
@@ -87,7 +87,8 @@ contract EticaResearchNFTTest is Test {
             branchGoalId: "branch_001",
             submitter: submitter,
             expiresAt: uint64(block.timestamp + 1 days),
-            exclusiveUntil: uint64(block.timestamp + 7 days),
+            exclusiveUntil: uint64(block.timestamp + 1 days),
+            marketOpenUntil: uint64(block.timestamp + 7 days),
             parentBranchGoalId: ""
         });
     }
@@ -113,6 +114,7 @@ contract EticaResearchNFTTest is Test {
                 p.submitter,
                 p.expiresAt,
                 p.exclusiveUntil,
+                p.marketOpenUntil,
                 keccak256(bytes(p.parentBranchGoalId))
             )
         );
@@ -292,15 +294,35 @@ contract EticaResearchNFTTest is Test {
         nft.claim{value: _expectedFee(p.score)}(p, sig);
     }
 
-    function test_claim_anyoneCanClaimAfterExclusiveWindow() public {
+    function test_claim_openMarketWindowMintsToCaller() public {
         EticaResearchNFT.ClaimPayload memory p = _basePayload();
-        // Push exclusive expiry into the past; keep attestation alive.
+        // Tier 2: exclusive window closed, market window still open.
         p.exclusiveUntil = uint64(block.timestamp - 1);
+        p.marketOpenUntil = uint64(block.timestamp + 7 days);
         p.expiresAt = uint64(block.timestamp + 1 days);
         bytes memory sig = _sign(p, attestorPk);
 
-        // Post-7d auto-forfeit: NFT force-minted to treasury regardless
-        // of who pays gas. Fee is waived on this path.
+        // Open market: any wallet may mint, paying the full fee, and
+        // the NFT is minted to the caller (not the treasury).
+        uint256 fee = _expectedFee(p.score);
+        vm.prank(stranger);
+        uint256 tokenId = nft.claim{value: fee}(p, sig);
+
+        assertEq(nft.ownerOf(tokenId), stranger, "owner is caller (open market)");
+        // submitterOf stays the ORIGINAL submitter (attribution only).
+        assertEq(nft.submitterOf(tokenId), submitter, "submitterOf");
+    }
+
+    function test_claim_abandonedAfterMarketWindowMintsToTreasury() public {
+        EticaResearchNFT.ClaimPayload memory p = _basePayload();
+        // Tier 3: both windows closed -> abandoned.
+        p.exclusiveUntil = uint64(block.timestamp - 2);
+        p.marketOpenUntil = uint64(block.timestamp - 1);
+        p.expiresAt = uint64(block.timestamp + 1 days);
+        bytes memory sig = _sign(p, attestorPk);
+
+        // Post-market auto-forfeit: NFT force-minted to treasury
+        // regardless of who pays gas. Fee is waived on this path.
         vm.prank(stranger);
         uint256 tokenId = nft.claim(p, sig);
 
@@ -308,6 +330,18 @@ contract EticaResearchNFTTest is Test {
         assertEq(nft.ownerOf(tokenId), treasury, "owner is treasury (auto-forfeit)");
         // submitterOf stays the ORIGINAL submitter (attribution only).
         assertEq(nft.submitterOf(tokenId), submitter, "submitterOf");
+    }
+
+    function test_claim_invalidWindowReverts() public {
+        EticaResearchNFT.ClaimPayload memory p = _basePayload();
+        // marketOpenUntil < exclusiveUntil is a malformed window.
+        p.exclusiveUntil = uint64(block.timestamp + 7 days);
+        p.marketOpenUntil = uint64(block.timestamp + 1 days);
+        bytes memory sig = _sign(p, attestorPk);
+
+        vm.prank(submitter);
+        vm.expectRevert(EticaResearchNFT.InvalidWindow.selector);
+        nft.claim{value: _expectedFee(p.score)}(p, sig);
     }
 
     // ---------------------------------------------------------------
@@ -497,7 +531,8 @@ contract EticaResearchNFTTest is Test {
         // Cure with an exclusive window that is ALREADY closed at
         // call time but with a still-live attestation.
         EticaResearchNFT.ClaimPayload memory p = _basePayload();
-        p.exclusiveUntil = uint64(block.timestamp - 1);
+        p.exclusiveUntil = uint64(block.timestamp - 2);
+        p.marketOpenUntil = uint64(block.timestamp - 1);
         p.expiresAt = uint64(block.timestamp + 1 days);
         bytes memory sig = _sign(p, attestorPk);
 
@@ -533,7 +568,8 @@ contract EticaResearchNFTTest is Test {
 
     function test_postSevenDay_refundsAccidentalValue() public {
         EticaResearchNFT.ClaimPayload memory p = _basePayload();
-        p.exclusiveUntil = uint64(block.timestamp - 1);
+        p.exclusiveUntil = uint64(block.timestamp - 2);
+        p.marketOpenUntil = uint64(block.timestamp - 1);
         p.expiresAt = uint64(block.timestamp + 1 days);
         bytes memory sig = _sign(p, attestorPk);
 
@@ -725,7 +761,8 @@ contract EticaResearchNFTTest is Test {
     function test_mintFee_waivedOnTreasuryAutoForfeit() public {
         // Closed-window cure — anyone can call, NFT auto-mints to treasury.
         EticaResearchNFT.ClaimPayload memory p = _basePayload();
-        p.exclusiveUntil = uint64(block.timestamp - 1);
+        p.exclusiveUntil = uint64(block.timestamp - 2);
+        p.marketOpenUntil = uint64(block.timestamp - 1);
         p.expiresAt = uint64(block.timestamp + 1 days);
         bytes memory sig = _sign(p, attestorPk);
 

@@ -15,6 +15,8 @@ import type { Hex } from 'viem';
 
 import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 import { getResearchClient } from '@/lib/research';
+import { getPdbForSequence } from '@/lib/labs/archive';
+import { renderFoldTraceSvg } from '@/lib/labs/pdb-render';
 import eticaResearchNftArtifact from '@/lib/etica-research-nft-artifact.json';
 
 export const runtime = 'nodejs';
@@ -149,7 +151,26 @@ export async function GET(
       return new Response('Token not found or has no sequence', { status: 404 });
     }
 
-    const svg = buildFoldSvg(tokenId, d);
+    // Prefer the real ESMFold structure: if we persisted a PDB for this
+    // exact sequence, draw the actual Cα trace coloured by pLDDT. Fall back
+    // to the stylised card for older tokens with no stored structure.
+    let svg: string | null = null;
+    try {
+      const pdb = await getPdbForSequence(d.sequence);
+      if (pdb) {
+        svg = renderFoldTraceSvg(pdb, {
+          tokenId,
+          title: truncate(d.parentGoalTitle, 55),
+          scoreStr: scoreDecimal(d.score),
+          seqLen: d.sequence.length,
+          subtitle: `${d.iterations.toString()} iterations · block #${d.blockNumber.toString()}`,
+        });
+      }
+    } catch {
+      /* fall through to stylised card */
+    }
+    if (!svg) svg = buildFoldSvg(tokenId, d);
+
     return new Response(svg, {
       status: 200,
       headers: {

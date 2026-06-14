@@ -350,14 +350,16 @@ export function DeployResearchNftCard() {
         <h2 className="mb-3 text-lg font-semibold">Key properties</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-white/70">
           <li>
-            <span className="font-mono">claim(payload, sig)</span> mints a new RES.
-            Discoverer (in the 30-min exclusive window) pays{' '}
+            <span className="font-mono">claim(payload, sig)</span> mints a new RES through a
+            three-tier window: <strong>(1)</strong> first 24h — only the original submitter may
+            mint, to their own wallet; <strong>(2)</strong> 24h–7d — open market, any wallet may
+            mint to itself; <strong>(3)</strong> after 7d — abandoned, anyone may call to
+            force-mint to treasury. In tiers 1–2 the caller pays{' '}
             <span className="font-mono">
               BASE_MINT_FEE_WEI + MAX_SCORE_MINT_FEE_WEI × score / 10000
             </span>{' '}
-            in <span className="font-mono">msg.value</span>; overpayment is refunded. After
-            the exclusive window expires, anyone can call to force-mint to treasury — the fee
-            is fully waived on that auto-forfeit path.
+            in <span className="font-mono">msg.value</span>; overpayment is refunded. The fee
+            is fully waived on the tier-3 auto-forfeit path.
           </li>
           <li>
             <span className="font-mono">tokenURI</span> renders a fully on-chain SVG card +

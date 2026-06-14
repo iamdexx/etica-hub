@@ -285,6 +285,7 @@ export async function POST(
         bestPdb: result.pdbBySequenceIndex?.[bestCandidate.index],
         references: result.plan.references.map((r) => `${r.source}:${r.id} ${r.title}`),
         minted: false,
+        submitterWallet: next.submitterWallet,
       };
 
       // Try to resolve goal title and extract disease name
@@ -295,6 +296,7 @@ export async function POST(
           if (goal) {
             archived.goalTitle = goal.title;
             archived.disease = extractDisease(goal.title);
+            archived.parentGoalId = goal.parentGoalId;
           }
         } catch { /* non-fatal */ }
       }
