@@ -140,9 +140,7 @@ function strictParsePlan(raw: string): ResearchPlan | null {
  * text, fall back to a regex salvage that recovers the completed candidates so
  * the request still returns a usable plan instead of a 422.
  */
-function tryParsePlan(raw0: string): ResearchPlan | null {
-  if (!raw0) return null;
-  const raw = stripReasoning(raw0);
+function parseVariant(raw: string): ResearchPlan | null {
   const strict = strictParsePlan(raw);
   if (strict) return strict;
 
@@ -158,6 +156,21 @@ function tryParsePlan(raw0: string): ResearchPlan | null {
     risks: clampText(extractField(raw, ['risks']), 320),
     candidates,
   };
+}
+
+function tryParsePlan(raw0: string): ResearchPlan | null {
+  if (!raw0) return null;
+  const raw = stripReasoning(raw0);
+  const direct = parseVariant(raw);
+  if (direct) return direct;
+  // `json_object` responses sometimes come back with every quote
+  // backslash-escaped (`{\"hypothesis\":\"…`); unescaping restores valid
+  // structure. Sequences/rationales never contain quotes, so this is lossless.
+  if (raw.includes('\\"')) {
+    const unescaped = parseVariant(raw.replace(/\\"/g, '"'));
+    if (unescaped) return unescaped;
+  }
+  return null;
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -199,26 +212,16 @@ export async function POST(req: NextRequest): Promise<Response> {
   const refSummary = summarizeReferencesForPrompt(references);
 
   try {
-    // 'detailed thinking off' must be on its own line for the model to
-    // recognise the directive and skip its verbose chain-of-thought.
-    const systemPrompt = 'detailed thinking off\n' + [
-      'You are a protein-engineering planner.',
-      'Given a natural-language design goal, output a concise research plan as STRICT JSON with this exact schema:',
-      '{',
-      '  "hypothesis": "<1-2 sentences on the structural/functional hypothesis>",',
-      '  "approach": "<2-3 sentences on the design strategy: motifs, scaffolds, residue choices>",',
-      '  "successCriteria": "<one sentence on how to recognize a successful candidate>",',
-      '  "risks": "<one sentence on the biggest failure mode or off-target risk>",',
-      '  "candidates": [',
-      '    { "sequence": "<one-letter amino acid codes, only ACDEFGHIKLMNPQRSTVWY>",',
-      '      "rationale": "<one short sentence explaining this candidate; cite [N] references where relevant>" }',
-      '  ]',
-      '}',
-      'Generate exactly 3 candidate sequences that follow the user goal (length, prefix, motifs).',
-      'Keep sequences COMPACT: 40-150 residues each; never exceed 250 residues. Compact designs keep the response within the token budget so it is not truncated.',
-      'IMPORTANT: do not duplicate prior work. If references are provided below, treat them as the state of the art and build on them — cite the bracketed [N] index in your candidates\' rationale (e.g. "adapts the helix bundle of [2]") and differentiate each candidate from the cited structures/papers.',
-      'Return ONLY the JSON object. No markdown, no code fences, no commentary.',
-      'BE TERSE: every text field must be a single short clause; rationales under 18 words. Output minified JSON and stop immediately after the closing brace — do not keep writing.',
+    // Nemotron 550B only honours the reasoning switch when it is its OWN
+    // system message — concatenated with other text it narrates to the token
+    // cap and the JSON never closes. A compact schema + forcing the reply to
+    // start at `{` makes it emit minified JSON immediately instead of prose.
+    const THINKING_OFF = 'detailed thinking off';
+    const instructions = [
+      'You are a protein-engineering planner. Output ONLY a single minified JSON object — no prose, no reasoning, no markdown, no code fences. Begin your reply with { and write nothing before it.',
+      'The object has keys: "hypothesis" (1 short sentence), "approach" (1-2 short sentences), "successCriteria" (1 sentence), "risks" (1 sentence), and "candidates" (an array of exactly 3 objects, each {"sequence","rationale"}). "sequence" = one-letter amino acids only from ACDEFGHIKLMNPQRSTVWY, 40-120 residues. "rationale" = under 15 words and may cite a [N] reference.',
+      'Design NOVEL sequences; never copy known or patented drug sequences. If references are provided, build on them and cite the [N] index.',
+      'End your reply with } and write nothing after it.',
     ].join(' ');
 
     const userContent = refSummary
@@ -246,10 +249,13 @@ export async function POST(req: NextRequest): Promise<Response> {
           // a full plan well under the cap, and the salvage parser recovers
           // candidates if it still overruns.
           max_tokens: 2048,
-          jsonMode: true,
+          // Plain mode: `json_object` makes this model emit mangled/over-escaped
+          // JSON. With the forceful prompt it returns clean minified JSON.
+          jsonMode: false,
           timeoutMs: 240_000,
           messages: [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: THINKING_OFF },
+            { role: 'system', content: instructions },
             { role: 'user', content: userContent },
           ],
         });

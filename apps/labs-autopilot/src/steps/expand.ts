@@ -37,10 +37,9 @@ export interface ExpansionInput {
 }
 
 function systemPrompt(kind: 'continuation' | 'cross-goal'): string {
+  // The 'detailed thinking off' directive is sent as its OWN system message by
+  // callNvidia — concatenating it here makes 550B ignore it and narrate.
   const base =
-    // 'detailed thinking off' on its own line so 550B skips its verbose
-    // chain-of-thought and answers within the request timeout.
-    'detailed thinking off\n' +
     'You are EticaLabs Autopilot, an autonomous biomedical research planner. ' +
     'Given a research goal and the most recent finding, you propose the single most ' +
     'promising next research direction in the same space. Output ONLY one short ' +
@@ -116,6 +115,9 @@ async function callNvidia(
       max_tokens: maxTokens,
       timeoutMs,
       messages: [
+        // Directive on its own line so 550B recognises it and skips its
+        // verbose chain-of-thought (it ignores the switch when concatenated).
+        { role: 'system', content: 'detailed thinking off' },
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
@@ -179,14 +181,14 @@ const MAX_BRANCH_TITLE = 140;
 const MAX_BRANCH_DESCRIPTION = 800;
 
 function branchSystemPrompt(): string {
+  // The 'detailed thinking off' directive is sent as its OWN system message by
+  // callNvidia — concatenating it here makes 550B ignore it and narrate.
   return (
-    // 'detailed thinking off' on its own line so 550B skips its verbose
-    // chain-of-thought and answers within BRANCH_TIMEOUT_MS.
-    'detailed thinking off\n' +
     'You are EticaLabs Autopilot, an autonomous biomedical research planner. ' +
     'A parent research goal has produced a high-scoring candidate worth a ' +
-    'dedicated follow-up thread. You will design that branch goal. Reply ' +
-    'with STRICT JSON only (no markdown, no preamble) matching this schema: ' +
+    'dedicated follow-up thread. You will design that branch goal. ' +
+    'Output ONLY the JSON object — no prose, no reasoning, no markdown. Begin your reply with {. ' +
+    'It must match this schema: ' +
     '{"title": <string, ≤80 chars>, "description": <string, ≤800 chars>, ' +
     '"firstPrompt": <string, ≤280 chars>}. Stay strictly within biomedical, ' +
     'structural-biology, drug-discovery, or public-health research.\n\n' +
