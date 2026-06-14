@@ -233,26 +233,30 @@ export async function POST(req: NextRequest): Promise<Response> {
     // pulls the outermost {...} substring — so we still get a plan back
     // when the API emits json_validate_failed.
     let lastRaw = '';
-    // Single 550B pass. nvidiaChat treats timeoutMs as a total budget across
-    // its internal retries, so a second identical-model pass would only
-    // double the wall-clock pressure against the 300s function ceiling.
-    // One pass with a 240s budget absorbs the observed latency variance
-    // (~60s up to ~170s) and still returns well inside maxDuration.
-    const models = [NVIDIA_MODEL_PRIMARY];
-    for (const model of models) {
+    let lastErr: NvidiaError | null = null;
+    // The 'detailed thinking off' switch is stochastic — a minority of samples
+    // narrate a reasoning preamble that eats the token budget and truncates the
+    // JSON before `candidates`, which the salvage parser can't recover. Retry
+    // within a wall-clock deadline so a bad sample doesn't surface as a 422.
+    // Each pass is one shot (maxRetriesPerKey: 1) capped so two passes stay
+    // under the 300s function ceiling; a clean plan returns in ~120-145s.
+    const deadline = Date.now() + 290_000;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining < 60_000) break; // not enough budget for another full pass
       try {
         const result = await nvidiaChat({
-          models: [model],
+          models: [NVIDIA_MODEL_PRIMARY],
           temperature: 0.4,
-          // Ceiling, not a target. 1400 truncated the JSON when the model
-          // emitted three long sequences; 2048 + the compact-sequence rule keep
-          // a full plan well under the cap, and the salvage parser recovers
-          // candidates if it still overruns.
+          // Ceiling, not a target. A clean minified 3-sequence plan lands at
+          // ~600-1550 tokens; 2048 leaves headroom and the salvage parser
+          // recovers candidates if a response still overruns.
           max_tokens: 2048,
           // Plain mode: `json_object` makes this model emit mangled/over-escaped
           // JSON. With the forceful prompt it returns clean minified JSON.
           jsonMode: false,
-          timeoutMs: 240_000,
+          timeoutMs: Math.min(145_000, remaining),
+          maxRetriesPerKey: 1, // one shot per pass; the loop drives the retries
           messages: [
             { role: 'system', content: THINKING_OFF },
             { role: 'system', content: instructions },
@@ -268,16 +272,18 @@ export async function POST(req: NextRequest): Promise<Response> {
           );
         }
       } catch (err) {
-        if (err instanceof NvidiaError && model === models[models.length - 1]) {
-          return json(
-            {
-              error: `Nvidia planning failed (${err.status}).`,
-              detail: (err.detail ?? err.message).slice(0, 240),
-            },
-            { status: 502, headers: limit.headers },
-          );
-        }
+        if (err instanceof NvidiaError) lastErr = err;
       }
+    }
+
+    if (lastErr && !lastRaw) {
+      return json(
+        {
+          error: `Nvidia planning failed (${lastErr.status}).`,
+          detail: (lastErr.detail ?? lastErr.message).slice(0, 240),
+        },
+        { status: 502, headers: limit.headers },
+      );
     }
 
     return json(
