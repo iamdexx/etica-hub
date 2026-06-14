@@ -481,11 +481,11 @@ export async function generatePlan(
   const refSummary = summarizeReferencesForPrompt(references);
   const ctxSummary = summarizePriorContext(priorContext);
 
-  const systemPrompt = [
-    // Disable Nemotron's verbose chain-of-thought — without this the 550B
-    // model rambles to the token cap (~1400 tok / 130s) and the call times
-    // out. With it off + the terseness rules below it stops at ~650 tok/55s.
-    'detailed thinking off',
+  // Disable Nemotron's verbose chain-of-thought — without this the 550B
+  // model rambles to the token cap (~1400 tok / 130s) and the call times
+  // out. With it off + the terseness rules below it stops at ~650 tok/55s.
+  // Must be on its own line for the model to recognise the directive.
+  const systemPrompt = 'detailed thinking off\n' + [
     'You are a protein-engineering planner.',
     'Given a natural-language design goal, output a concise research plan as STRICT JSON with this exact schema:',
     '{',
@@ -528,7 +528,11 @@ export async function generatePlan(
       const result = await nvidiaChat({
         models: [model],
         temperature: 0.4,
-        max_tokens: 900,
+        // Ceiling, not a target: 'detailed thinking off' + the terse schema
+        // make 550B stop at ~650 tok (~55s). 1400 only guards against
+        // truncating a valid plan with three long (≤400-residue) sequences;
+        // worst-case full-cap completion (~117s) still fits the 150s budget.
+        max_tokens: 1400,
         jsonMode: true,
         timeoutMs: 150_000,
         messages: [

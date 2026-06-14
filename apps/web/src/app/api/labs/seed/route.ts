@@ -17,7 +17,10 @@ import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// PubMed/UniProt prefetch (up to ~15s each) runs before the 550B seed call,
+// which itself can take up to 60s with retries; 300s (Pro plan) keeps the
+// whole request inside the function wall.
+export const maxDuration = 300;
 
 const UA = 'EticaHub-Labs/1.0 (https://eticahub.com; research-pipeline)';
 

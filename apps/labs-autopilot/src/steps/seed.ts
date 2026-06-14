@@ -272,7 +272,7 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     }
   }
   if (!result) {
-    throw new Error('All seed models exhausted (550B, 120B, 49B all failed)');
+    throw new Error('Seed model (550B) failed');
   }
 
   let prompt = result.content.trim();
