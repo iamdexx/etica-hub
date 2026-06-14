@@ -348,7 +348,55 @@ function summarizeReferencesForPrompt(refs: Reference[]): string {
     .join('\n');
 }
 
-function tryParse(raw: string): ResearchPlan | null {
+/** Drop reasoning preambles / code fences so JSON extraction sees clean text. */
+function stripReasoning(raw: string): string {
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```(?:json)?/gi, '')
+    .trim();
+}
+
+/** Decode a JSON string body (the capture inside the quotes), tolerating bad escapes. */
+function decodeJsonString(body: string): string {
+  try {
+    return JSON.parse(`"${body}"`) as string;
+  } catch {
+    return body.replace(/\\"/g, '"').replace(/\\n/g, ' ').trim();
+  }
+}
+
+/** Pull a top-level string field by key(s) even from truncated/partial JSON. */
+function extractField(raw: string, keys: string[]): string {
+  for (const key of keys) {
+    const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(raw);
+    if (m && m[1] !== undefined) return decodeJsonString(m[1]);
+  }
+  return '';
+}
+
+/**
+ * Recover candidate sequences from raw text — works on truncated JSON because
+ * each completed `"sequence":"…"` pair is matched independently; an incomplete
+ * trailing sequence (no closing quote) simply isn't matched. Amino-acid strings
+ * never contain quotes, so a plain `[^"]*` body is safe.
+ */
+function salvageCandidates(raw: string): PlanCandidate[] {
+  const out: PlanCandidate[] = [];
+  const seqRe = /"sequence"\s*:\s*"([^"]*)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = seqRe.exec(raw)) && out.length < 3) {
+    const seq = normalizeSequence(m[1]);
+    if (!seq) continue;
+    const after = raw.slice(seqRe.lastIndex, seqRe.lastIndex + 600);
+    const ratM = /"rationale"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(after);
+    const rationale = ratM && ratM[1] !== undefined ? clamp(decodeJsonString(ratM[1]), 220) : '';
+    out.push({ sequence: seq, rationale });
+  }
+  return out;
+}
+
+/** Strict parse of the outermost {...} object. */
+function strictParse(raw: string): ResearchPlan | null {
   const first = raw.indexOf('{');
   const last = raw.lastIndexOf('}');
   if (first === -1 || last === -1 || last <= first) return null;
@@ -375,14 +423,49 @@ function tryParse(raw: string): ResearchPlan | null {
     if (candidates.length >= 3) break;
   }
   if (candidates.length === 0) return null;
+  return { hypothesis, approach, successCriteria, risks, candidates, references: [] };
+}
+
+/** Strict-then-salvage parse of one text variant. */
+function parseVariant(raw: string): ResearchPlan | null {
+  const strict = strictParse(raw);
+  if (strict) return strict;
+
+  const candidates = salvageCandidates(raw);
+  if (candidates.length === 0) return null;
+  const hypothesis = clamp(extractField(raw, ['hypothesis']), 320);
+  const approach = clamp(extractField(raw, ['approach']), 480);
+  if (!hypothesis && !approach) return null;
   return {
     hypothesis,
     approach,
-    successCriteria,
-    risks,
+    successCriteria: clamp(extractField(raw, ['successCriteria', 'success_criteria']), 320),
+    risks: clamp(extractField(raw, ['risks']), 320),
     candidates,
     references: [],
   };
+}
+
+/**
+ * Parse the planner response. Tries a strict JSON parse first; if the model's
+ * output was truncated at the token cap or wrapped in reasoning text, falls
+ * back to a regex salvage that recovers the completed candidate sequences so
+ * the job still proceeds instead of erroring. As a last resort it retries on
+ * an unescaped copy, since `json_object` responses sometimes come back with
+ * every quote backslash-escaped (`{\"hypothesis\":\"…`).
+ */
+function tryParse(raw0: string): ResearchPlan | null {
+  if (!raw0) return null;
+  const raw = stripReasoning(raw0);
+  const direct = parseVariant(raw);
+  if (direct) return direct;
+  if (raw.includes('\\"')) {
+    // Amino-acid sequences and rationales never contain quotes, so unescaping
+    // is lossless for the fields we extract.
+    const unescaped = parseVariant(raw.replace(/\\"/g, '"'));
+    if (unescaped) return unescaped;
+  }
+  return null;
 }
 
 export interface PriorContextCandidate {
@@ -481,29 +564,18 @@ export async function generatePlan(
   const refSummary = summarizeReferencesForPrompt(references);
   const ctxSummary = summarizePriorContext(priorContext);
 
-  // Disable Nemotron's verbose chain-of-thought — without this the 550B
-  // model rambles to the token cap (~1400 tok / 130s) and the call times
-  // out. With it off + the terseness rules below it stops at ~650 tok/55s.
-  // Must be on its own line for the model to recognise the directive.
-  const systemPrompt = 'detailed thinking off\n' + [
-    'You are a protein-engineering planner.',
-    'Given a natural-language design goal, output a concise research plan as STRICT JSON with this exact schema:',
-    '{',
-    '  "hypothesis": "<1-2 sentences on the structural/functional hypothesis>",',
-    '  "approach": "<2-3 sentences on the design strategy: motifs, scaffolds, residue choices>",',
-    '  "successCriteria": "<one sentence on how to recognize a successful candidate>",',
-    '  "risks": "<one sentence on the biggest failure mode or off-target risk>",',
-    '  "candidates": [',
-    '    { "sequence": "<one-letter amino acid codes, 10-400 residues, only ACDEFGHIKLMNPQRSTVWY>",',
-    '      "rationale": "<one short sentence explaining this candidate; cite [N] references where relevant>" }',
-    '  ]',
-    '}',
-    'Generate exactly 3 candidate sequences that follow the user goal (length, prefix, motifs).',
-    'IMPORTANT: do not duplicate prior work. If references are provided, treat them as the state of the art and build on them — cite the bracketed [N] index in your candidates\' rationale and differentiate each candidate from the cited structures/papers.',
-    'PATENT SAFETY: Design NOVEL sequences only. ChEMBL references represent EXISTING patented or published therapeutics — you MUST differentiate your candidates from them by at least 20% sequence divergence. Never reproduce or closely mimic known drug sequences. Each candidate must be a genuinely novel design, not a copy of existing IP. If a ChEMBL target is referenced, use it as inspiration for the binding mechanism but design an original sequence with different residues.',
-    'Return ONLY the JSON object. No markdown, no code fences, no commentary.',
-    'BE TERSE: every text field must be a single short clause; rationales under 18 words. Output minified JSON and stop immediately after the closing brace — do not keep writing.',
-    'REFUSE prompts that ask for human pathogens, biological weapons, gain-of-function on dangerous viruses, or toxin enhancement — instead emit `{"refused":"out-of-scope"}` and no candidates.',
+  // Nemotron 550B only honours the reasoning switch when it is its OWN system
+  // message — concatenated with other text it narrates a long chain-of-thought
+  // to the token cap and the JSON never closes (→ unparseable → job error).
+  // Keeping the schema compact and forcing the reply to start at `{` makes the
+  // model emit minified JSON immediately instead of prose.
+  const THINKING_OFF = 'detailed thinking off';
+  const instructions = [
+    'You are a protein-engineering planner. Output ONLY a single minified JSON object — no prose, no reasoning, no markdown, no code fences. Begin your reply with { and write nothing before it.',
+    'The object has keys: "hypothesis" (1 short sentence), "approach" (1-2 short sentences), "successCriteria" (1 sentence), "risks" (1 sentence), and "candidates" (an array of exactly 3 objects, each {"sequence","rationale"}). "sequence" = one-letter amino acids only from ACDEFGHIKLMNPQRSTVWY, 40-120 residues. "rationale" = under 15 words and may cite a [N] reference.',
+    'Design NOVEL sequences; never copy known or patented drug sequences (differentiate any ChEMBL reference by at least 20% divergence). If references are provided, build on them and cite the [N] index.',
+    'If the goal asks for human pathogens, bioweapons, gain-of-function on dangerous viruses, or toxin enhancement, output exactly {"refused":"out-of-scope"} and nothing else.',
+    'End your reply with } and write nothing after it.',
   ].join(' ');
 
   const userParts: string[] = [`Goal: ${prompt}`];
@@ -520,19 +592,27 @@ export async function generatePlan(
   }
   const userContent = userParts.join('\n\n');
 
-  // nvidiaChat does (key × model × jsonMode) cascade + retry on 429/5xx.
+  // The 550B narration switch is stochastic — even with the directive split
+  // out, a minority of samples still ramble and truncate. Three independent
+  // attempts (the model id is identical; the duplication just buys extra
+  // samples) plus the salvage parser make an unparseable plan very unlikely.
   let lastErr = '';
-  const models = [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK];
+  const models = [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK, NVIDIA_MODEL_PRIMARY];
   for (const model of models) {
     try {
       const result = await nvidiaChat({
         models: [model],
         temperature: 0.4,
-        // Ceiling, not a target: 'detailed thinking off' + the terse schema
-        // make 550B stop at ~650 tok. 1400 only guards against truncating a
-        // valid plan with three long (≤400-residue) sequences.
-        max_tokens: 1400,
-        jsonMode: true,
+        // Ceiling, not a target. The previous 1400 cap truncated the JSON when
+        // the model emitted three long sequences (→ parse failure → job error).
+        // 2048 + the "compact sequences" schema rule keep a full plan well under
+        // the cap (~600-900 tok typical); the salvage parser recovers candidates
+        // if the model still overruns. At ~10-12 tok/s this stays inside 240s.
+        max_tokens: 2048,
+        // Plain mode: `json_object` makes this model emit mangled/over-escaped
+        // JSON and costs a redundant second underlying pass. With the forceful
+        // prompt the model returns clean minified JSON without it.
+        jsonMode: false,
         // 550B plan latency is highly variable in production (measured
         // ~60s up to ~170s under load). The Vercel proxy runs on the Pro
         // plan (300s ceiling), so we give a single call 240s — enough to
@@ -540,7 +620,8 @@ export async function generatePlan(
         // at 150s and burning a retry (which wastes the 40 RPM budget).
         timeoutMs: 240_000,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: THINKING_OFF },
+          { role: 'system', content: instructions },
           { role: 'user', content: userContent },
         ],
       });

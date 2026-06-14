@@ -226,9 +226,9 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
     contextParts.push(`Random human protein of interest: ${protein}`);
   }
 
-  // 'detailed thinking off' on its own line so 550B skips chain-of-thought
-  // and returns the one-line prompt within the timeout.
-  const system = 'detailed thinking off\n' + [
+  // The 'detailed thinking off' directive is sent as its OWN system message
+  // below — concatenated with other text 550B ignores it and narrates.
+  const system = [
     'You output a single imperative research sentence. Nothing else.',
     'Rules: max 280 characters, must name a specific protein/target/disease,',
     'must be a novel design direction (not summary of the input), patent-safe.',
@@ -262,6 +262,7 @@ export async function generateSeedPrompt(): Promise<SeedResult | null> {
         max_tokens: 200,
         timeoutMs: 60_000,
         messages: [
+          { role: 'system', content: 'detailed thinking off' },
           { role: 'system', content: system },
           { role: 'user', content: user },
         ],
