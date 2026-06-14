@@ -14,10 +14,14 @@
  *   labs:archive:index             ZSET    member=id, score=completedAt
  *   labs:archive:goal:{goalId}     ZSET    member=id, score=completedAt
  *   labs:archive:disease:{disease} ZSET    member=id, score=completedAt
+ *   labs:archive:pdb:{seqHash}     STRING  raw PDB keyed by sequence hash
  *   labs:archive:stats             STRING  JSON cumulative counters
  */
 
+import { createHash } from 'node:crypto';
+
 import { labsStore } from './store';
+import { extractCaPdb } from './pdb-render';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -94,6 +98,31 @@ const ARCHIVE_INDEX = 'labs:archive:index';
 const ARCHIVE_GOAL = (goalId: string) => `labs:archive:goal:${goalId}`;
 const ARCHIVE_DISEASE = (disease: string) => `labs:archive:disease:${disease.toLowerCase()}`;
 const ARCHIVE_STATS = 'labs:archive:stats';
+/**
+ * PDB indexed by a hash of the residue sequence. Lets the NFT fold-render
+ * route — which only has the on-chain `sequence` for a token — recover the
+ * real predicted structure to draw the Cα trace.
+ */
+const ARCHIVE_PDB = (seqHash: string) => `labs:archive:pdb:${seqHash}`;
+
+/** Stable hash of a residue sequence, used to key its stored PDB. */
+export function sequenceHash(sequence: string): string {
+  return createHash('sha256').update(sequence.trim().toUpperCase()).digest('hex').slice(0, 32);
+}
+
+/** Persist a PDB (Cα-only trace) so it can be looked up later by its sequence. */
+export async function storePdbForSequence(sequence: string, pdb: string): Promise<void> {
+  if (!sequence || !pdb) return;
+  const ca = extractCaPdb(pdb);
+  if (!ca) return;
+  await labsStore().set(ARCHIVE_PDB(sequenceHash(sequence)), ca);
+}
+
+/** Fetch a previously stored PDB for a residue sequence, if any. */
+export async function getPdbForSequence(sequence: string): Promise<string | null> {
+  if (!sequence) return null;
+  return labsStore().get(ARCHIVE_PDB(sequenceHash(sequence)));
+}
 
 /* ------------------------------------------------------------------ */
 /*  Write                                                              */
@@ -122,6 +151,14 @@ export async function archiveResearch(research: ArchivedResearch): Promise<void>
   // Index by disease
   if (research.disease) {
     await store.zadd(ARCHIVE_DISEASE(research.disease), research.completedAt, research.id);
+  }
+
+  // Index the best candidate's real PDB by its sequence hash so the NFT
+  // fold-render can recover it from the on-chain sequence alone. Store the
+  // Cα-only trace — all the renderer needs, and a fraction of the size.
+  if (research.bestPdb && research.bestCandidate?.sequence) {
+    const ca = extractCaPdb(research.bestPdb);
+    if (ca) await store.set(ARCHIVE_PDB(sequenceHash(research.bestCandidate.sequence)), ca);
   }
 
   // Update cumulative stats
