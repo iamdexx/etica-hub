@@ -59,8 +59,6 @@ const VALID_EVENT_KINDS = new Set([
   'goal_context',
 ]);
 const MAX_EVENTS_PER_UPDATE = 50;
-const MAX_PDB_PER_RESULT = 1;
-const MAX_PDB_CHARS = 50_000; // ~50KB per PDB; trimmed beyond this
 const MAX_ANALYSIS_CHARS = 4000;
 
 function json(data: unknown, init?: ResponseInit): Response {
@@ -68,12 +66,12 @@ function json(data: unknown, init?: ResponseInit): Response {
 }
 
 /**
- * Persist EVERY folded candidate's structure to the per-sequence archive so the
- * NFT image and feed can render the real Cα trace for all candidates — not just
- * the single one kept inline on the job result (MAX_PDB_PER_RESULT). The store
- * keeps a compact Cα-only PDB keyed by sequence hash (deduped, ~2–16KB each),
- * so this stays well within the Redis budget. Best-effort: never blocks the
- * job update on an archive write.
+ * Persist EVERY folded candidate's structure to the per-sequence archive — the
+ * single source of truth the NFT image and feed read from. No structure is kept
+ * inline on the job record: full PDBs are ~30–50KB and, multiplied across the
+ * hundreds of jobs in the 7-day window, exhausted the Redis budget (OOM). The
+ * archive keeps a compact Cα-only PDB keyed by sequence hash (deduped, ~2–16KB
+ * each). Best-effort: never blocks the job update on an archive write.
  */
 async function persistCandidatePdbs(rawResult: unknown, result: LabsJobResult): Promise<void> {
   if (!rawResult || typeof rawResult !== 'object') return;
@@ -149,20 +147,6 @@ function sanitizeResult(raw: unknown): LabsJobResult | undefined {
     });
   }
 
-  const pdbMap: Record<number, string> = {};
-  const rawPdb = rec.pdbBySequenceIndex as Record<string, unknown> | undefined;
-  if (rawPdb && typeof rawPdb === 'object') {
-    let kept = 0;
-    for (const [k, v] of Object.entries(rawPdb)) {
-      if (kept >= MAX_PDB_PER_RESULT) break;
-      const idx = Number(k);
-      if (!Number.isFinite(idx) || idx < 0) continue;
-      if (typeof v !== 'string') continue;
-      pdbMap[idx] = v.length > MAX_PDB_CHARS ? v.slice(0, MAX_PDB_CHARS) : v;
-      kept += 1;
-    }
-  }
-
   return {
     plan: {
       hypothesis: typeof plan.hypothesis === 'string' ? plan.hypothesis.slice(0, 600) : '',
@@ -175,7 +159,10 @@ function sanitizeResult(raw: unknown): LabsJobResult | undefined {
         : [],
     },
     candidates,
-    pdbBySequenceIndex: pdbMap,
+    // No structure is stored inline — folded candidates' Cα traces live in the
+    // per-sequence archive (see persistCandidatePdbs). The feed + NFT render
+    // resolve them from there via /api/labs/structure, keeping job records small.
+    pdbBySequenceIndex: {},
     summary: typeof rec.summary === 'string' ? rec.summary.slice(0, 1200) : undefined,
   };
 }
