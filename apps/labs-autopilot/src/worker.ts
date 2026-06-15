@@ -149,18 +149,59 @@ function log(message: string, meta?: Record<string, unknown>): void {
   }
 }
 
-async function popJob(): Promise<LabsJob | null> {
-  const res = await fetch(`${BASE_URL}/api/labs/queue/pop`, {
-    method: 'POST',
-    headers: { 'x-labs-worker-token': TOKEN },
-  });
-  if (res.status === 204) return null;
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`pop failed: ${res.status} ${text.slice(0, 200)}`);
+/** Error from popping the queue. `retryable` distinguishes transient
+ * infrastructure noise (5xx / 408 / 429 / network — a Redis hiccup, brief
+ * OOM, or Vercel cold start) from a genuine config/auth error (other 4xx,
+ * e.g. a revoked worker token) that the owner must actually fix. */
+class PopError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message);
+    this.name = 'PopError';
   }
-  const json = (await res.json()) as { job: LabsJob };
-  return json.job;
+}
+
+function isRetryablePopStatus(status: number): boolean {
+  return status >= 500 || status === 429 || status === 408;
+}
+
+async function popOnce(): Promise<LabsJob | null> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/api/labs/queue/pop`, {
+      method: 'POST',
+      headers: { 'x-labs-worker-token': TOKEN },
+    });
+  } catch (err) {
+    // Network/DNS error — transient.
+    throw new PopError(`pop failed: network ${err instanceof Error ? err.message : err}`, true);
+  }
+  if (res.status === 204) return null;
+  if (res.ok) {
+    const json = (await res.json()) as { job: LabsJob };
+    return json.job;
+  }
+  const text = await res.text().catch(() => '');
+  throw new PopError(`pop failed: ${res.status} ${text.slice(0, 200)}`, isRetryablePopStatus(res.status));
+}
+
+async function popJob(): Promise<LabsJob | null> {
+  const maxAttempts = 4;
+  let lastErr: PopError | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await popOnce();
+    } catch (err) {
+      const pe = err instanceof PopError ? err : new PopError(String(err), true);
+      // A non-retryable (config/auth) error won't self-heal — surface now.
+      if (!pe.retryable) throw pe;
+      lastErr = pe;
+      if (attempt < maxAttempts) {
+        log(`pop attempt ${attempt}/${maxAttempts} failed, retrying: ${pe.message}`);
+        await new Promise((r) => setTimeout(r, attempt * 1500));
+      }
+    }
+  }
+  throw lastErr ?? new PopError('pop failed: unknown', true);
 }
 
 type UpdatePayload = {
@@ -1026,8 +1067,20 @@ async function main(): Promise<void> {
     try {
       job = await popJob();
     } catch (err) {
-      console.error('Pop failed:', err);
-      process.exitCode = 1;
+      if (err instanceof PopError && !err.retryable) {
+        // Genuine config/auth failure (e.g. revoked worker token, bad base
+        // URL). It won't self-heal and nothing will ever run until it's
+        // fixed, so fail the run loudly — the owner SHOULD be alerted.
+        console.error('Pop failed (non-retryable config/auth error):', err.message);
+        process.exitCode = 1;
+        return;
+      }
+      // Transient infrastructure noise (Redis hiccup, brief OOM, Vercel
+      // cold-start 5xx) that already survived in-tick retries. Failing the
+      // run on it emails the owner ("Run failed: Labs Autopilot") every
+      // tick, turning a momentary blip into alert spam. The job stays
+      // pending and the next dispatch retries, so exit the tick cleanly.
+      log(`pop failed (transient — exiting tick cleanly, will retry next dispatch): ${err instanceof Error ? err.message : err}`);
       return;
     }
     if (!job) {
@@ -1104,7 +1157,10 @@ async function main(): Promise<void> {
         console.error('Could not mark job errored:', updateErr);
       }
       if (job.goalId) await touchGoal(job.goalId, false);
-      process.exitCode = 1;
+      // The job is already recorded as `error` (visible on the dashboard and
+      // auto-requeued up to 3×). A single crashed job must not fail the whole
+      // workflow run — that emails the repo owner on every tick. Keep
+      // processing the rest of the batch and exit the tick cleanly.
     }
   }
   log(`tick end; processed ${processed} job(s)`);
