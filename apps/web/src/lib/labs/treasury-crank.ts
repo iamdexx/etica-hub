@@ -14,6 +14,7 @@ import eticaResearchNftArtifact from '@/lib/etica-research-nft-artifact.json';
 import { getResearchClient } from '@/lib/research';
 import { listExpiredUnminted, markAsMinted } from '@/lib/labs/archive';
 import type { ArchivedResearch } from '@/lib/labs/archive';
+import { discoveryBranchId, parentDiscoveryBranchId } from '@/lib/labs/discovery-id';
 
 /**
  * Server-side treasury crank (Option A).
@@ -170,24 +171,33 @@ async function settleOne(
     walletClient: ReturnType<typeof createWalletClient>;
   },
 ): Promise<CrankSettlement> {
-  const branchGoalId = entry.goalId;
-  if (!branchGoalId) {
+  const goalId = entry.goalId;
+  if (!goalId) {
     return { archiveId: entry.id, branchGoalId: '', status: 'skipped', reason: 'no goalId' };
   }
   const sequence = entry.bestCandidate?.sequence;
   if (!sequence) {
-    return { archiveId: entry.id, branchGoalId, status: 'skipped', reason: 'no sequence' };
+    return { archiveId: entry.id, branchGoalId: goalId, status: 'skipped', reason: 'no sequence' };
   }
+  // Force-mint the best candidate under its per-candidate branch id, matching
+  // the user-mint attest scheme so the on-chain dedupe stays consistent.
+  const branchGoalId = discoveryBranchId(goalId, entry.bestCandidate.index);
 
   try {
-    const branchHash = keccak256(stringToBytes(branchGoalId));
-    const claimed = (await ctx.publicClient.readContract({
-      abi: eticaResearchNftArtifact.abi,
-      address: ctx.nftAddress,
-      functionName: 'branchClaimed',
-      args: [branchHash],
-    })) as boolean;
-    if (claimed) {
+    const isClaimed = async (id: string): Promise<boolean> =>
+      (await ctx.publicClient.readContract({
+        abi: eticaResearchNftArtifact.abi,
+        address: ctx.nftAddress,
+        functionName: 'branchClaimed',
+        args: [keccak256(stringToBytes(id))],
+      })) as boolean;
+    // Dedupe against both the per-candidate id and the legacy bare goal id, so
+    // records minted before per-candidate ids are never force-minted twice.
+    const [claimed, legacyClaimed] = await Promise.all([
+      isClaimed(branchGoalId),
+      isClaimed(goalId),
+    ]);
+    if (claimed || legacyClaimed) {
       // Already settled on chain (by an open-market mint or a prior crank).
       // Reconcile the local archive flag so we stop re-scanning it.
       await markAsMinted(entry.id, '').catch(() => {});
@@ -209,7 +219,7 @@ async function settleOne(
       expiresAt: BigInt(nowSec + 24 * 60 * 60),
       exclusiveUntil: BigInt(nowSec - 2),
       marketOpenUntil: BigInt(nowSec - 1),
-      parentBranchGoalId: entry.parentGoalId ?? '',
+      parentBranchGoalId: parentDiscoveryBranchId(entry.parentGoalId, entry.parentCandidateIndex),
     } as const;
 
     const signature = await ctx.attestor.signTypedData({

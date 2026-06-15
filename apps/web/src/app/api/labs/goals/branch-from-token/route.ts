@@ -35,6 +35,7 @@ import type { Hex } from 'viem';
 
 import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 import { attachJobToGoal, createGoal, updateGoal } from '@/lib/labs/goal-store';
+import { parseDiscoveryBranchId } from '@/lib/labs/discovery-id';
 import {
   EXPAND_PENDING_CAP,
   incrDailyExpansionCount,
@@ -173,6 +174,11 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 422, headers: limit.headers },
     );
   }
+  // The on-chain branch id is `${goalId}#${candidateIndex}` (or a bare goal id
+  // for legacy discoveries). Split it so the child goal nests under the plain
+  // parent goal id while still recording the exact ancestor candidate for the
+  // royalty cascade.
+  const parsedParent = parseDiscoveryBranchId(parentBranchGoalId);
   const parentTitle = discovery.parentGoalTitle || `RES #${tokenIdRaw}`;
 
   // Moderation Layers 1 + 2 on the fresh user prompt + parent context.
@@ -232,7 +238,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     description: branchDescription,
     submitterTag: submitterTag(req),
     submitterWallet: auth.wallet,
-    parentGoalId: parentBranchGoalId,
+    parentGoalId: parsedParent.goalId,
+    parentCandidateIndex: parsedParent.candidateIndex,
     origin: 'branch',
   });
 

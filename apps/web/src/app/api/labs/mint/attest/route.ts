@@ -31,11 +31,12 @@
  */
 
 import { NextRequest } from 'next/server';
-import type { Hex } from 'viem';
+import { keccak256, stringToBytes, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 import { DEPLOYMENTS, TREASURY_ADDRESS, eticaMainnet } from '@etica-hub/shared';
 import { getGoal } from '@/lib/labs/goal-store';
+import { discoveryBranchId, parentDiscoveryBranchId } from '@/lib/labs/discovery-id';
 import { labsQueue } from '@/lib/labs/queue';
 import { getResearchClient } from '@/lib/research';
 import eticaResearchNftArtifact from '@/lib/etica-research-nft-artifact.json';
@@ -43,7 +44,12 @@ import type { LabsJobResult, LabsCandidateResult } from '@/lib/labs/job';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 15;
+// Generous ceiling (Vercel Pro allows up to 300s). The signing itself is
+// instant; the only variable cost is the one-time on-chain mint-fee read on a
+// cold lambda. A tight 15s limit turned a transiently-slow RPC into a 504 —
+// the fallback transport in getResearchClient now fails over fast, and this
+// headroom guarantees the read never trips the function ceiling.
+export const maxDuration = 60;
 
 /**
  * Cached on-chain fee constants. Both are immutable per deployed
@@ -69,6 +75,57 @@ async function getMintFees(nftAddress: Hex): Promise<{ base: bigint; maxScore: b
   ]);
   _cachedFees = { base, maxScore };
   return _cachedFees;
+}
+
+/**
+ * Guard against re-minting a discovery that was already minted under the
+ * *legacy* bare-goal-id scheme (pre per-candidate branch ids). Those tokens
+ * hashed `keccak256(goalId)`, which never collides with a per-candidate id
+ * `goalId#index` — so without this check the very same discovery could be
+ * minted twice (once legacy, once per-candidate).
+ *
+ * It only does the extra on-chain reads when a legacy claim actually exists
+ * for the goal (a tiny fixed set of early tokens) and compares the on-chain
+ * sequence to this candidate's, so the genuinely-distinct candidates the
+ * per-candidate fix is meant to unblock still mint freely.
+ *
+ * Best-effort: any read failure fails open (the contract stays the final
+ * arbiter for per-candidate ids) so a transient RPC blip never blocks a
+ * legitimate mint. Cheap enough to run in parallel with {@link getMintFees}.
+ */
+async function legacyMintHasSameSequence(
+  nftAddress: Hex,
+  goalId: string,
+  candidateSequence: string,
+): Promise<boolean> {
+  try {
+    const client = getResearchClient();
+    const legacyHash = keccak256(stringToBytes(goalId));
+    const claimed = (await client.readContract({
+      abi: eticaResearchNftArtifact.abi,
+      address: nftAddress,
+      functionName: 'branchClaimed',
+      args: [legacyHash],
+    })) as boolean;
+    if (!claimed) return false;
+    const tokenId = (await client.readContract({
+      abi: eticaResearchNftArtifact.abi,
+      address: nftAddress,
+      functionName: 'tokenIdOfBranch',
+      args: [legacyHash],
+    })) as bigint;
+    // discoveryOf returns the Discovery struct positionally; index 1 is the
+    // protein sequence (parentGoalTitle, sequence, analysis, …).
+    const discovery = (await client.readContract({
+      abi: eticaResearchNftArtifact.abi,
+      address: nftAddress,
+      functionName: 'discoveryOf',
+      args: [tokenId],
+    })) as readonly [string, string, ...unknown[]];
+    return discovery[1] === candidateSequence;
+  } catch {
+    return false;
+  }
 }
 
 /** EIP-712 mint authorisation window (relative to now). */
@@ -279,12 +336,22 @@ export async function POST(req: NextRequest): Promise<Response> {
   const expiresAtMs = now + SIGNATURE_VALIDITY_MS;
 
   let fees: { base: bigint; maxScore: bigint };
+  let legacyDuplicate = false;
   try {
-    fees = await getMintFees(nftAddress);
+    [fees, legacyDuplicate] = await Promise.all([
+      getMintFees(nftAddress),
+      legacyMintHasSameSequence(nftAddress, job.goalId, candidate.sequence),
+    ]);
   } catch (err) {
     return json(
       { error: `Failed to read mint fees from contract: ${err instanceof Error ? err.message : err}` },
       { status: 502 },
+    );
+  }
+  if (legacyDuplicate) {
+    return json(
+      { error: 'This discovery has already been minted on-chain.' },
+      { status: 409 },
     );
   }
 
@@ -312,12 +379,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     analysis: fullAnalysis,
     score: scoreBps,
     iterations: BigInt(job.iterations ?? 0),
-    branchGoalId: job.goalId,
+    // Per-candidate branch id: a goal yields many independently-mintable
+    // candidates, so keying every one on the bare goal id would let only the
+    // first candidate ever claim (the rest revert with BranchAlreadyClaimed).
+    branchGoalId: discoveryBranchId(job.goalId, candidate.index),
     submitter,
     expiresAt: BigInt(Math.floor(expiresAtMs / 1000)),
     exclusiveUntil: BigInt(Math.floor(exclusiveUntilMs / 1000)),
     marketOpenUntil: BigInt(Math.floor(marketOpenUntilMs / 1000)),
-    parentBranchGoalId: goal.parentGoalId ?? '',
+    // Anchor the royalty cascade to the exact ancestor candidate this goal
+    // branched from (falls back to the bare parent goal id for legacy parents).
+    parentBranchGoalId: parentDiscoveryBranchId(goal.parentGoalId, goal.parentCandidateIndex),
   } as const;
 
   const account = privateKeyToAccount(privateKey);

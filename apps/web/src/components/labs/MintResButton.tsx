@@ -73,9 +73,27 @@ function formatRemaining(seconds: number): string {
   return `${seconds}s`;
 }
 
+/**
+ * Plain-English copy for each EticaResearchNFT custom revert. Surfaced in
+ * place of the opaque "Mint tx reverted on chain" so a non-technical user
+ * understands *why* a mint can't go through (e.g. someone already minted this
+ * discovery, or the originator-only window is still open).
+ */
+const CLAIM_REVERT_MESSAGES: Record<string, string> = {
+  BranchAlreadyClaimed: 'This discovery has already been minted — each one can only be minted once.',
+  SubmitterOnlyDuringExclusive:
+    'Only the original researcher can mint this during the first 24 hours. The open-market window opens after that.',
+  AttestationExpired: 'This mint authorisation expired. Reopen the mint to get a fresh one.',
+  InvalidSignature: 'The mint authorisation was rejected. Reopen the mint to get a fresh one.',
+  InsufficientMintFee: 'The mint fee sent was too low. Reopen the mint to refresh the current fee.',
+};
+
 function shortError(err: unknown): string {
   if (err instanceof Error) {
     const msg = err.message;
+    for (const [name, friendly] of Object.entries(CLAIM_REVERT_MESSAGES)) {
+      if (msg.includes(name)) return friendly;
+    }
     const shortMatch = /reverted with the following reason:\s*(.+?)\n/.exec(msg);
     if (shortMatch) return shortMatch[1];
     return msg.length > 240 ? `${msg.slice(0, 240)}…` : msg;
@@ -154,6 +172,19 @@ export function MintResButton({
         marketOpenUntil: BigInt(attest.payload.marketOpenUntil),
         parentBranchGoalId: attest.payload.parentBranchGoalId,
       } as const;
+
+      // Pre-flight the claim so a guaranteed revert (already minted,
+      // originator-only window, expired attestation, …) is surfaced as a
+      // clear message *before* the wallet prompt — no wasted gas, no opaque
+      // "reverted on chain".
+      await publicClient.simulateContract({
+        account: walletClient.account,
+        address: attest.nftAddress,
+        abi: eticaResearchNftArtifact.abi,
+        functionName: 'claim',
+        args: [payloadTuple, attest.signature],
+        value: BigInt(attest.mintFeeWei),
+      });
 
       const hash = await walletClient.writeContract({
         address: attest.nftAddress,

@@ -270,6 +270,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     submitterWallet: auth.wallet,
     parentGoalId,
     parentJobId,
+    // Record the exact parent candidate so the NFT royalty cascade can anchor
+    // to its specific discovery token (branchGoalId `${parentGoalId}#${idx}`).
+    parentCandidateIndex: candidateIndex,
     origin: 'branch',
   });
 

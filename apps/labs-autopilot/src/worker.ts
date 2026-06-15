@@ -376,6 +376,7 @@ async function callBranchEndpoint(payload: {
   title: string;
   description: string;
   firstPrompt: string;
+  candidateIndex: number;
 }): Promise<BranchOutcome> {
   try {
     const res = await fetch(`${BASE_URL}/api/labs/goals/branch`, {
@@ -448,6 +449,8 @@ async function maybeBranchHighScoreLead(
     title: plan.title,
     description: plan.description,
     firstPrompt: plan.firstPrompt,
+    // Anchor the child's royalty cascade to the exact winning candidate.
+    candidateIndex: winner.index,
   });
   if (outcome.ok) {
     log(

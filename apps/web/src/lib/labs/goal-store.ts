@@ -44,6 +44,7 @@ export function summariseGoal(g: LabsGoal): LabsGoalSummary {
     submitterWallet: g.submitterWallet,
     parentGoalId: g.parentGoalId,
     parentJobId: g.parentJobId,
+    parentCandidateIndex: g.parentCandidateIndex,
     origin: g.origin,
   };
 }
@@ -72,6 +73,10 @@ function parseGoal(json: string | null): LabsGoal | null {
         typeof obj.parentGoalId === 'string' && obj.parentGoalId ? obj.parentGoalId : undefined,
       parentJobId:
         typeof obj.parentJobId === 'string' && obj.parentJobId ? obj.parentJobId : undefined,
+      parentCandidateIndex:
+        typeof obj.parentCandidateIndex === 'number' && Number.isFinite(obj.parentCandidateIndex)
+          ? obj.parentCandidateIndex
+          : undefined,
       origin:
         obj.origin === 'branch' || obj.origin === 'user' ? obj.origin : undefined,
     };
@@ -105,6 +110,7 @@ export interface CreateGoalInput {
   submitterWallet?: string;
   parentGoalId?: string;
   parentJobId?: string;
+  parentCandidateIndex?: number;
   origin?: 'user' | 'branch';
 }
 
@@ -128,6 +134,7 @@ export async function createGoal(input: CreateGoalInput): Promise<LabsGoal> {
     moderation: 'visible',
     parentGoalId: input.parentGoalId,
     parentJobId: input.parentJobId,
+    parentCandidateIndex: input.parentCandidateIndex,
     origin: input.origin ?? (input.parentGoalId ? 'branch' : 'user'),
   };
   await persistGoal(goal, { newKeywords: keywords, oldKeywords: [] });

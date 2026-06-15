@@ -11,6 +11,7 @@
  *     title: string,          // child goal title
  *     description: string,    // child goal description (incl. seq + analysis)
  *     firstPrompt: string,    // initial research prompt to enqueue
+ *     candidateIndex?: number,// parent candidate this lead came from (cascade)
  *     maxIterations?: number,
  *   }
  *   returns: { ok: true, goalId, jobId } | { ok: false, reason }
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     title?: unknown;
     description?: unknown;
     firstPrompt?: unknown;
+    candidateIndex?: unknown;
     maxIterations?: unknown;
   };
   try {
@@ -91,6 +93,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       ? body.description.trim().slice(0, MAX_GOAL_DESCRIPTION)
       : '';
   const firstPrompt = typeof body.firstPrompt === 'string' ? body.firstPrompt.trim() : '';
+  const parentCandidateIndex =
+    typeof body.candidateIndex === 'number' && Number.isFinite(body.candidateIndex)
+      ? Math.max(0, Math.floor(body.candidateIndex))
+      : undefined;
   const maxIterations = clampIterations(body.maxIterations);
 
   if (!parentGoalId) {
@@ -177,6 +183,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     submitterWallet: parent.submitterWallet,
     parentGoalId,
     parentJobId,
+    // The exact parent candidate that scored the lead, so the NFT royalty
+    // cascade anchors to its specific discovery token.
+    parentCandidateIndex,
     origin: 'branch',
   });
 
