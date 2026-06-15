@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCaTrace, extractCaPdb, renderFoldTraceSvg, plddtColor } from '../src/lib/labs/pdb-render';
+import { parseCaTrace, extractCaPdb, buildRibbonSvg, plddtColor } from '../src/lib/labs/pdb-render';
 
 // A tiny synthetic ESMFold-style PDB: 6 CA atoms with pLDDT in B-factor col,
 // plus some non-CA atoms that must be ignored.
@@ -38,24 +38,27 @@ describe('pdb-render', () => {
     expect(plddtColor(40)).toBe('#ff7d45');
   });
 
-  it('renders a valid SVG with backbone segments', () => {
-    const svg = renderFoldTraceSvg(PDB, {
-      tokenId: '7',
-      title: 'Test peptide inhibitor',
-      scoreStr: '0.88',
-      seqLen: 6,
-      subtitle: '3 iterations · block #100',
+  it('renders a 3D cartoon-ribbon SVG with backbone tube segments', () => {
+    const render = buildRibbonSvg(PDB, {
+      meta: {
+        tokenId: '7',
+        title: 'Test peptide inhibitor',
+        scoreStr: '0.88',
+        seqLen: 6,
+        subtitle: '3 iterations · block #100',
+      },
     });
-    expect(svg).not.toBeNull();
-    expect(svg!.startsWith('<svg')).toBe(true);
-    expect(svg!).toContain('#0053d6'); // high-confidence colour present
-    expect((svg!.match(/<line /g) ?? []).length).toBe(5); // 6 CAs → 5 segments
-    expect(svg!).toContain('ESMFold Cα');
+    expect(render).not.toBeNull();
+    expect(render!.residues).toBe(6);
+    expect(render!.svg.startsWith('<svg')).toBe(true);
+    // Spline subdivision turns 6 CAs into many smooth tube segments.
+    expect((render!.svg.match(/<line /g) ?? []).length).toBeGreaterThan(5);
+    // NFT-card chrome includes the token id + spectrum legend.
+    expect(render!.svg).toContain('ETICA RESEARCH NFT');
+    expect(render!.svg).toContain('#7');
   });
 
   it('returns null for a PDB with too few CA atoms', () => {
-    expect(renderFoldTraceSvg('ATOM      2  CA  MET A   1      1.0 1.0 1.0  1.00 95.0', {
-      tokenId: '1', title: 't', scoreStr: '0.5', seqLen: 1, subtitle: '',
-    })).toBeNull();
+    expect(buildRibbonSvg('ATOM      2  CA  MET A   1       1.000   1.000   1.000  1.00 95.00')).toBeNull();
   });
 });
