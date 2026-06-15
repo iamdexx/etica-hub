@@ -78,6 +78,13 @@ export interface ArchivedResearch {
    * force-mint time. Empty/undefined == root research record.
    */
   parentGoalId?: string;
+  /**
+   * Index of the parent candidate this research branched from, mirrored from
+   * the goal. Combined with {@link parentGoalId} it reconstructs the exact
+   * ancestor discovery id (`${parentGoalId}#${parentCandidateIndex}`) for the
+   * royalty cascade at force-mint time.
+   */
+  parentCandidateIndex?: number;
 }
 
 export interface ArchiveStats {

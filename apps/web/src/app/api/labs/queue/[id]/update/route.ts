@@ -327,6 +327,7 @@ export async function POST(
             archived.goalTitle = goal.title;
             archived.disease = extractDisease(goal.title);
             archived.parentGoalId = goal.parentGoalId;
+            archived.parentCandidateIndex = goal.parentCandidateIndex;
           }
         } catch { /* non-fatal */ }
       }

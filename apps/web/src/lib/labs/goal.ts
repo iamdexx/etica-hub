@@ -47,6 +47,14 @@ export interface LabsGoal {
   /** The job-id that triggered this branch (parent's winning run). */
   parentJobId?: string;
   /**
+   * Index of the specific parent candidate this goal branched from. Combined
+   * with {@link parentGoalId} it reconstructs the parent discovery's on-chain
+   * `branchGoalId` (`${parentGoalId}#${parentCandidateIndex}`) so the NFT
+   * royalty cascade anchors to the exact ancestor token. Undefined for root
+   * goals and for branches off legacy (pre per-candidate) discoveries.
+   */
+  parentCandidateIndex?: number;
+  /**
    * Origin marker. 'user' = submitted directly; 'branch' = auto-spawned
    * from a strong-scoring parent candidate. Used by the UI to render
    * branch trees and by the worker to attribute autopilot expansions.
@@ -66,6 +74,7 @@ export interface LabsGoalSummary {
   submitterWallet?: string;
   parentGoalId?: string;
   parentJobId?: string;
+  parentCandidateIndex?: number;
   origin?: 'user' | 'branch';
 }
 
