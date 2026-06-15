@@ -15,7 +15,14 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
 
 import { signSubmit } from '@/lib/labs/client-sig';
@@ -26,7 +33,33 @@ import type {
   LabsJobStatus,
 } from '@/lib/labs/job';
 import { buildRibbonSvg } from '@/lib/labs/pdb-render';
+import {
+  buildPlainSummary,
+  confidenceTier,
+  looksLikeNarration,
+  scoreLabel,
+} from '@/lib/labs/plain-summary';
 import { MintResButton } from '@/components/labs/MintResButton';
+
+const GLOSSARY = {
+  pLDDT:
+    'pLDDT — the fold model’s confidence score (0–100) for how reliable the predicted 3D shape is. Higher is better.',
+  ESMFold:
+    'ESMFold — an AI model that predicts a protein’s 3D shape directly from its amino-acid sequence.',
+  residues: 'Residues — the individual amino-acid building blocks along the protein chain.',
+} as const;
+
+/** Inline glossary term: dotted-underline label with a hover/tap definition. */
+function Term({ def, children }: { def: string; children: ReactNode }): JSX.Element {
+  return (
+    <abbr
+      title={def}
+      className="cursor-help border-b border-dotted border-white/35 no-underline"
+    >
+      {children}
+    </abbr>
+  );
+}
 
 const REFRESH_MS = 5_000;
 
@@ -251,6 +284,7 @@ function CandidateCard({
   const [branching, setBranching] = useState(false);
   const [branchError, setBranchError] = useState<string | null>(null);
   const [show3D, setShow3D] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
 
   // When the job result doesn't carry this candidate's PDB inline (only one is
   // kept inline), fetch the real structure we archived per-sequence so every
@@ -282,6 +316,24 @@ function CandidateCard({
     () => (effectivePdb ? buildRibbonSvg(effectivePdb, { width: 440, height: 300, pad: 24 }) : null),
     [effectivePdb],
   );
+
+  const tier = ribbon ? confidenceTier(ribbon.meanPlddt) : null;
+
+  // Lead with a jargon-free sentence built from the facts we trust (length +
+  // fold confidence). Only fall back to a stored analysis if it isn't the old
+  // leaked model reasoning ("The user wants me to…").
+  const plainSummary = ribbon
+    ? buildPlainSummary({
+        residues: ribbon.residues,
+        meanPlddt: ribbon.meanPlddt,
+        minPlddt: ribbon.minPlddt,
+        maxPlddt: ribbon.maxPlddt,
+      })
+    : candidate.analysis && !looksLikeNarration(candidate.analysis)
+      ? candidate.analysis
+      : null;
+
+  const hasCleanNotes = !!candidate.analysis && !looksLikeNarration(candidate.analysis);
 
   const requestRefold = useCallback(async () => {
     setRefolding(true);
@@ -374,16 +426,21 @@ function CandidateCard({
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-white/15 bg-white/[0.04] px-2.5 py-0.5 text-xs text-white/80">
             candidate #{candidate.index + 1}
           </span>
-          {candidate.engine && (
-            <span className="text-[11px] text-white/45">via {candidate.engine}</span>
+          {tier && (
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[11px] ${tier.badgeClass}`}
+              title={`Fold-model confidence (mean pLDDT) ${tier.score} out of 100`}
+            >
+              {tier.label} confidence
+            </span>
           )}
           {typeof candidate.score === 'number' && (
-            <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] text-emerald-200">
-              score {candidate.score.toFixed(2)}
+            <span className="rounded-full border border-white/15 bg-white/[0.04] px-2 py-0.5 text-[11px] text-white/70">
+              score {candidate.score.toFixed(2)} · {scoreLabel(candidate.score)}
             </span>
           )}
         </div>
@@ -415,10 +472,12 @@ function CandidateCard({
         </p>
       </div>
 
-      {candidate.analysis && (
-        <div className="mt-3 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-xs text-white/70">
-          <p className="text-[10px] uppercase tracking-wider text-white/40">analysis</p>
-          <p className="mt-1 text-sm text-white/80">{candidate.analysis}</p>
+      {plainSummary && (
+        <div className="mt-3 rounded-lg border border-white/5 bg-white/[0.02] p-3">
+          <p className="text-[10px] uppercase tracking-wider text-white/40">
+            What this is
+          </p>
+          <p className="mt-1 text-sm text-white/85">{plainSummary}</p>
         </div>
       )}
 
@@ -436,8 +495,9 @@ function CandidateCard({
           </div>
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-white/5 px-3 py-2 text-[10px] text-white/45">
             <span>
-              real ESMFold cartoon · {ribbon.residues} residues · mean pLDDT{' '}
-              {Math.round(ribbon.meanPlddt)}
+              real <Term def={GLOSSARY.ESMFold}>ESMFold</Term> shape ·{' '}
+              {ribbon.residues} <Term def={GLOSSARY.residues}>residues</Term> ·{' '}
+              <Term def={GLOSSARY.pLDDT}>confidence</Term> {Math.round(ribbon.meanPlddt)}/100
             </span>
             <span className="flex items-center gap-1.5">
               <span className="text-white/40">N</span>
@@ -499,6 +559,61 @@ function CandidateCard({
         <p className="mt-4 text-[11px] text-rose-300/85">
           {candidate.error ? `Fold failed: ${candidate.error}` : 'Not folded yet.'}
         </p>
+      )}
+
+      {(ribbon || hasCleanNotes) && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowDetail((v) => !v)}
+            className="text-[11px] uppercase tracking-wider text-white/40 transition-colors hover:text-white/75"
+          >
+            {showDetail ? '− Hide scientific detail' : '+ Show scientific detail'}
+          </button>
+          {showDetail && (
+            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-white/5 bg-black/20 p-3 text-xs">
+              {ribbon && (
+                <>
+                  <div>
+                    <dt className="text-white/40">Length</dt>
+                    <dd className="text-white/80">
+                      {ribbon.residues} <Term def={GLOSSARY.residues}>residues</Term>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-white/40">
+                      <Term def={GLOSSARY.pLDDT}>pLDDT</Term> confidence
+                    </dt>
+                    <dd className="text-white/80">
+                      mean {Math.round(ribbon.meanPlddt)} · range{' '}
+                      {Math.round(ribbon.minPlddt)}–{Math.round(ribbon.maxPlddt)}
+                    </dd>
+                  </div>
+                </>
+              )}
+              {typeof candidate.score === 'number' && (
+                <div>
+                  <dt className="text-white/40">Score</dt>
+                  <dd className="text-white/80">
+                    {candidate.score.toFixed(2)} — {scoreLabel(candidate.score)}
+                  </dd>
+                </div>
+              )}
+              {candidate.engine && (
+                <div>
+                  <dt className="text-white/40">Fold engine</dt>
+                  <dd className="text-white/80">{candidate.engine}</dd>
+                </div>
+              )}
+              {hasCleanNotes && (
+                <div className="col-span-2 border-t border-white/5 pt-2">
+                  <dt className="text-white/40">Model notes</dt>
+                  <dd className="mt-1 leading-relaxed text-white/70">{candidate.analysis}</dd>
+                </div>
+              )}
+            </dl>
+          )}
+        </div>
       )}
 
       <MintResButton
@@ -594,32 +709,107 @@ function CandidateCard({
   );
 }
 
+/** Human-readable labels for the timeline — keeps the feed jargon-free. */
+const EVENT_LABELS: Partial<Record<LabsJobEvent['kind'], string>> = {
+  queued: 'Queued',
+  started: 'Started',
+  planned: 'Research plan created',
+  folded: 'Structure predicted',
+  structure_pending: 'Structure pending',
+  analysed: 'Analysed',
+  mutated: 'New variant designed',
+  proteinmpnn: 'Sequence redesigned',
+  docking_ready: 'Ready for docking',
+  iteration_done: 'Round complete',
+  completed: 'Research complete',
+  error: 'Error',
+  note: 'Note',
+};
+
+/**
+ * Internal/maintenance events that are noise to a reader (re-fold retries,
+ * rejected drafts, goal-context bookkeeping). Hidden by default; a toggle
+ * reveals them for anyone who wants the full trace.
+ */
+const INTERNAL_EVENT_KINDS = new Set<LabsJobEvent['kind']>([
+  're_fold_requested',
+  're_fold_completed',
+  'fold_attempt_failed',
+  'proteinmpnn_fallback',
+  'sequence_rejected',
+  'sequence_low_quality',
+  'goal_context',
+  'skipped',
+]);
+
+function friendlyKind(kind: LabsJobEvent['kind']): string {
+  return EVENT_LABELS[kind] ?? kind.replace(/_/g, ' ');
+}
+
+interface CollapsedEvent {
+  event: LabsJobEvent;
+  count: number;
+}
+
+/** Fold consecutive identical events (same kind + message) into one row. */
+function collapseEvents(events: LabsJobEvent[]): CollapsedEvent[] {
+  const out: CollapsedEvent[] = [];
+  for (const event of events) {
+    const last = out[out.length - 1];
+    if (last && last.event.kind === event.kind && last.event.message === event.message) {
+      last.count += 1;
+      last.event = event; // keep the most recent timestamp
+    } else {
+      out.push({ event, count: 1 });
+    }
+  }
+  return out;
+}
+
 function EventTimeline({ events }: { events: LabsJobEvent[] }): JSX.Element {
+  const [showAll, setShowAll] = useState(false);
   if (events.length === 0) {
     return <p className="text-sm text-white/50">No events recorded yet.</p>;
   }
+  const hiddenCount = events.filter((e) => INTERNAL_EVENT_KINDS.has(e.kind)).length;
+  const visible = showAll ? events : events.filter((e) => !INTERNAL_EVENT_KINDS.has(e.kind));
+  const rows = collapseEvents(visible);
   return (
-    <ol className="space-y-2">
-      {events.map((event, i) => (
-        <li
-          key={`${event.at}-${i}`}
-          className="flex items-start gap-3 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-sm"
-        >
-          <div className="mt-0.5 flex-shrink-0">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-white/60" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-white/55">
-                {event.kind}
-              </span>
-              <span className="text-[11px] text-white/40">{relativeTime(event.at)}</span>
+    <>
+      <ol className="space-y-2">
+        {rows.map(({ event, count }, i) => (
+          <li
+            key={`${event.at}-${i}`}
+            className="flex items-start gap-3 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-sm"
+          >
+            <div className="mt-0.5 flex-shrink-0">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-white/60" />
             </div>
-            <p className="mt-1 text-sm text-white/80">{event.message}</p>
-          </div>
-        </li>
-      ))}
-    </ol>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-white/55">
+                  {friendlyKind(event.kind)}
+                  {count > 1 && <span className="ml-1 text-white/40">×{count}</span>}
+                </span>
+                <span className="text-[11px] text-white/40">{relativeTime(event.at)}</span>
+              </div>
+              <p className="mt-1 text-sm text-white/80">{event.message}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-3 text-[11px] uppercase tracking-wider text-white/40 transition-colors hover:text-white/75"
+        >
+          {showAll
+            ? 'Hide maintenance events'
+            : `Show ${hiddenCount} maintenance event${hiddenCount === 1 ? '' : 's'}`}
+        </button>
+      )}
+    </>
   );
 }
 

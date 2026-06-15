@@ -80,6 +80,38 @@ function pdbConfidenceScore(s: PdbSummary): number {
   return Math.max(0, Math.min(1, s.bMean / 100));
 }
 
+function sizeNoun(residues: number): string {
+  if (residues < 50) return 'small designed protein';
+  if (residues < 150) return 'designed protein';
+  return 'large designed protein';
+}
+
+/**
+ * A short, jargon-free description of a folded candidate, built only from
+ * facts we can trust (length + mean pLDDT). This is what the feed shows.
+ *
+ * We deliberately do NOT store the LLM's prose: Nemotron 550B narrates its
+ * reasoning ("The user wants me to…") even with "detailed thinking off", and
+ * that leaked verbatim into the feed. Keep this in sync with the web copy at
+ * apps/web/src/lib/labs/plain-summary.ts.
+ */
+function buildPlainSummary(s: PdbSummary): string {
+  const residues = s.length;
+  const mean = Math.round(s.bMean);
+  const confidenceClause =
+    s.bMean >= 80
+      ? 'The AI fold model is highly confident in the predicted 3D shape'
+      : s.bMean >= 60
+        ? 'The AI fold model is moderately confident in the predicted 3D shape'
+        : 'The AI fold model has low confidence in the predicted 3D shape, so treat it as an early lead';
+
+  let out = `A ${sizeNoun(residues)}, ${residues} amino acids long. ${confidenceClause} (${mean}/100).`;
+  if (s.bMin < 50 && s.bMean >= 60) {
+    out += ' Part of the chain is less certain and may be flexible.';
+  }
+  return out;
+}
+
 function parseScoreFromText(text: string): number | null {
   // Look for "score: 0.42" or "Score=0.42" — the LLM is asked to emit one.
   const m = text.match(/score\s*[:=]\s*(0(?:\.\d+)?|1(?:\.0+)?)/i);
@@ -96,20 +128,20 @@ export async function analyseStructure(sequence: string, pdb: string): Promise<A
   const s = summarizePdb(pdb);
   const confidence = pdbConfidenceScore(s);
 
-  // The 'detailed thinking off' directive is sent as its OWN system message
-  // below — concatenated with other text 550B ignores it and narrates.
+  // What the feed shows is ALWAYS this clean, deterministic sentence — never
+  // the model's prose. The LLM below is used only to refine the numeric score.
+  const summary = buildPlainSummary(s);
+
+  // Ask only for a score, on a single line. 'detailed thinking off' is sent as
+  // its OWN system message — concatenated with other text 550B ignores it.
   const systemPrompt = [
-    'You are a structural biologist reviewing an ESMFold prediction.',
-    'Given a peptide sequence and a short PDB summary, write a 2-3 sentence analysis covering:',
-    '(a) likely secondary structure (helix/sheet/loop balance),',
-    '(b) overall confidence (high/medium/low) based on pLDDT,',
-    '(c) any obvious structural risk (kink, exposed hydrophobic, etc.).',
-    'End your analysis with a single line: `Score: <number from 0 to 1>` where',
-    '0 means useless and 1 means a publication-quality prediction.',
-    'Be terse. No markdown, no JSON.',
+    'You are a structural biologist scoring an ESMFold prediction.',
+    'Given a peptide sequence and a short PDB summary, judge how usable the predicted structure is.',
+    'Reply with ONLY one line: `Score: <number from 0 to 1>` where 0 means useless',
+    'and 1 means a publication-quality prediction. No prose, no explanation, no markdown.',
   ].join(' ');
 
-  const summary = [
+  const factSummary = [
     `Sequence (${sequence.length} aa): ${sequence}`,
     `Residues in PDB: ${s.length}`,
     `Atoms: ${s.atomCount}`,
@@ -119,38 +151,29 @@ export async function analyseStructure(sequence: string, pdb: string): Promise<A
     `HELIX records: ${s.helixHint}, SHEET records: ${s.sheetHint}`,
   ].join('\n');
 
-  // nvidiaChat handles retry/model-cascade automatically. If
-  // Nvidia is fully exhausted we fall back to a deterministic objective-only
-  // summary so analysis never blocks the worker pipeline.
+  // nvidiaChat handles retry/model-cascade automatically. If Nvidia is fully
+  // exhausted we keep the deterministic summary and fall back to the objective
+  // pLDDT confidence as the score, so analysis never blocks the pipeline.
   try {
     const result = await nvidiaChat({
       models: [NVIDIA_MODEL_FALLBACK, NVIDIA_MODEL_PRIMARY],
       temperature: 0.3,
-      max_tokens: 350,
+      max_tokens: 60,
       timeoutMs: 60_000,
       messages: [
         { role: 'system', content: 'detailed thinking off' },
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: summary },
+        { role: 'user', content: factSummary },
       ],
     });
-    const raw = result.content;
-    const parsed = parseScoreFromText(raw);
-    // Blend LLM's qualitative score with the objective pLDDT confidence
+    const parsed = parseScoreFromText(result.content);
+    // Blend the LLM's qualitative score with the objective pLDDT confidence
     // 60/40 so a low-confidence fold can't be talked up.
     const score = parsed === null ? confidence : parsed * 0.6 + confidence * 0.4;
-    return { summary: raw.replace(/score\s*[:=].*$/i, '').trim(), score };
+    return { summary, score };
   } catch (err) {
     if (err instanceof NvidiaLLMError) {
-      // Worker must never block on Nvidia — emit an objective-only summary so
-      // the candidate can still be ranked + published downstream.
-      const fallback = [
-        `Objective summary only (Nvidia unavailable: ${err.status || 'network'}).`,
-        `Predicted ${s.length} residues, ${s.atomCount} atoms.`,
-        `Mean pLDDT ${s.bMean.toFixed(1)} (range ${s.bMin.toFixed(1)}–${s.bMax.toFixed(1)}).`,
-        `HELIX records: ${s.helixHint}, SHEET records: ${s.sheetHint}.`,
-      ].join(' ');
-      return { summary: fallback, score: confidence };
+      return { summary, score: confidence };
     }
     throw err;
   }
