@@ -1,0 +1,30 @@
+{
+  "name": "@etica-hub/wres-keeper",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "keeper": "tsx src/index.ts",
+    "keeper:once": "tsx src/dry-run.ts --once",
+    "dry-run": "tsx src/dry-run.ts",
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo 'no lint'",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@etica-hub/shared": "workspace:*",
+    "dotenv": "^16.4.5",
+    "tronweb": "^6.3.0",
+    "viem": "^2.21.44"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
