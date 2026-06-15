@@ -15,7 +15,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
 
 import { signSubmit } from '@/lib/labs/client-sig';
@@ -25,7 +25,7 @@ import type {
   LabsJobEvent,
   LabsJobStatus,
 } from '@/lib/labs/job';
-import { buildCaTraceLayout, type CaTraceLayout } from '@/lib/labs/pdb-render';
+import { buildRibbonSvg } from '@/lib/labs/pdb-render';
 import { MintResButton } from '@/components/labs/MintResButton';
 
 const REFRESH_MS = 5_000;
@@ -113,53 +113,20 @@ function statusLabel(status: LabsJobStatus): string {
   }
 }
 
-const PLDDT_LEGEND: ReadonlyArray<{ color: string; label: string }> = [
-  { color: '#0053d6', label: '≥90' },
-  { color: '#65cbf3', label: '70+' },
-  { color: '#ffdb13', label: '50+' },
-  { color: '#ff7d45', label: '<50' },
-];
-
 /**
- * Renders a candidate's real ESMFold Cα backbone as a static SVG, projected
- * onto its principal axes and coloured per-residue by pLDDT — the same trace
- * that becomes the minted NFT image. Pure SVG (no WebGL), so every candidate
- * paints reliably regardless of grid position.
+ * Renders a candidate's real ESMFold Cα backbone as a 3D cartoon ribbon
+ * (rainbow N→C) — the exact image that mints as the NFT. Pure SVG (no WebGL),
+ * so every candidate paints reliably regardless of grid position.
  */
-function FoldTraceSvg({ layout }: { layout: CaTraceLayout }): JSX.Element {
-  const gradientId = useId();
+function FoldRibbon({ svg }: { svg: string }): JSX.Element {
   return (
-    <svg
-      viewBox={`0 0 ${layout.width} ${layout.height}`}
+    <div
       className="block h-full w-full"
       role="img"
-      aria-label="ESMFold Cα backbone trace coloured by pLDDT confidence"
-      preserveAspectRatio="xMidYMid meet"
-    >
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#070d18" />
-          <stop offset="100%" stopColor="#0f1b2e" />
-        </linearGradient>
-      </defs>
-      <rect width={layout.width} height={layout.height} fill={`url(#${gradientId})`} />
-      <g strokeLinecap="round">
-        {layout.segments.map((s, i) => (
-          <line
-            key={i}
-            x1={s.x1}
-            y1={s.y1}
-            x2={s.x2}
-            y2={s.y2}
-            stroke={s.color}
-            strokeWidth={3}
-          />
-        ))}
-      </g>
-      {layout.nodes.map((n, i) => (
-        <circle key={i} cx={n.x} cy={n.y} r={2} fill={n.color} />
-      ))}
-    </svg>
+      aria-label="ESMFold Cα backbone rendered as a 3D cartoon ribbon, coloured N→C"
+      // SVG is generated server-side-identically by buildRibbonSvg (no user input).
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
   );
 }
 
@@ -308,20 +275,11 @@ function CandidateCard({
 
   const effectivePdb = pdb ?? archivedPdb ?? undefined;
 
-  // Project the real Cα trace to 2D once per structure. Rendered as plain SVG
-  // (see FoldTraceSvg) so every candidate's fold paints reliably.
-  const foldLayout = useMemo(
-    () =>
-      effectivePdb
-        ? buildCaTraceLayout(effectivePdb, {
-            width: 440,
-            height: 300,
-            pad: 28,
-            footer: 0,
-            offsetY: 0,
-            maxNodes: 90,
-          })
-        : null,
+  // Render the real Cα backbone as a 3D cartoon ribbon once per structure —
+  // the same image that mints as the NFT (see FoldRibbon). Pure SVG, so every
+  // candidate's fold paints reliably regardless of grid position.
+  const ribbon = useMemo(
+    () => (effectivePdb ? buildRibbonSvg(effectivePdb, { width: 440, height: 300, pad: 24 }) : null),
     [effectivePdb],
   );
 
@@ -464,10 +422,10 @@ function CandidateCard({
         </div>
       )}
 
-      {effectivePdb && foldLayout ? (
+      {effectivePdb && ribbon ? (
         <div className="mt-4 overflow-hidden rounded-lg border border-white/10 bg-[#020806]">
           <div className="relative h-72 w-full">
-            <FoldTraceSvg layout={foldLayout} />
+            <FoldRibbon svg={ribbon.svg} />
             <button
               type="button"
               onClick={() => setShow3D(true)}
@@ -478,19 +436,19 @@ function CandidateCard({
           </div>
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-white/5 px-3 py-2 text-[10px] text-white/45">
             <span>
-              real ESMFold Cα trace · {foldLayout.residues} residues · mean pLDDT{' '}
-              {Math.round(foldLayout.meanPlddt)}
+              real ESMFold cartoon · {ribbon.residues} residues · mean pLDDT{' '}
+              {Math.round(ribbon.meanPlddt)}
             </span>
-            <span className="flex items-center gap-2">
-              {PLDDT_LEGEND.map((seg) => (
-                <span key={seg.color} className="flex items-center gap-1">
-                  <span
-                    className="inline-block h-2 w-2 rounded-sm"
-                    style={{ backgroundColor: seg.color }}
-                  />
-                  {seg.label}
-                </span>
-              ))}
+            <span className="flex items-center gap-1.5">
+              <span className="text-white/40">N</span>
+              <span
+                className="inline-block h-2 w-16 rounded-sm"
+                style={{
+                  background:
+                    'linear-gradient(90deg,#1f4ff0,#19c3c9,#3fd14d,#ffd11a,#ff3b30)',
+                }}
+              />
+              <span className="text-white/40">C</span>
             </span>
           </div>
         </div>

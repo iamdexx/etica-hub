@@ -1,15 +1,18 @@
 /**
- * Render a real ESMFold structure (a PDB string) to an SVG Cα-backbone
- * trace, coloured per-residue by pLDDT confidence (the value ESMFold writes
- * into the B-factor column).
+ * Render a real ESMFold structure (a PDB string) as a 3D cartoon-ribbon image,
+ * the same visual style as the in-browser 3Dmol viewer (`cartoon: spectrum`).
  *
- * The 2D layout is the structure's best view: we project the Cα coordinates
- * onto their top-2 principal axes (PCA via power iteration), so the trace
- * spreads across the canvas instead of collapsing onto an arbitrary plane.
+ * The Cα backbone is smoothed with a Catmull-Rom spline, oriented via PCA and
+ * tilted into a 3/4 view, then drawn as a depth-shaded tube: far segments are
+ * darker, near segments brighter, with a glossy highlight on the near face —
+ * so a helix reads as a rainbow corkscrew and a loop as a flowing 3D ribbon.
  *
- * Colour scheme matches the AlphaFold/ESMFold pLDDT convention:
- *   ≥90 very high (dark blue) · 70–90 confident (cyan) ·
- *   50–70 low (yellow) · <50 very low (orange)
+ * Two colour modes:
+ *   spectrum — rainbow N→C (3Dmol default, the minted NFT look)
+ *   plddt    — AlphaFold/ESMFold confidence bands
+ *
+ * Pure string output (no DOM/WebGL), so the identical render is produced
+ * server-side for the NFT `image` and client-side in the research feed.
  */
 
 export interface CaPoint {
@@ -67,6 +70,19 @@ export function plddtColor(plddt: number): string {
 
 type Vec3 = [number, number, number];
 
+function dot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function norm(v: Vec3): Vec3 {
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
 function matVec(m: number[][], v: Vec3): Vec3 {
   return [
     m[0]![0]! * v[0] + m[0]![1]! * v[1] + m[0]![2]! * v[2],
@@ -75,58 +91,51 @@ function matVec(m: number[][], v: Vec3): Vec3 {
   ];
 }
 
-function norm(v: Vec3): Vec3 {
-  const len = Math.hypot(v[0], v[1], v[2]) || 1;
-  return [v[0] / len, v[1] / len, v[2] / len];
-}
-
 function powerIteration(m: number[][], seed: Vec3): { vec: Vec3; val: number } {
   let v = norm(seed);
   let val = 0;
-  for (let i = 0; i < 64; i++) {
+  for (let i = 0; i < 80; i++) {
     const mv = matVec(m, v);
     const next = norm(mv);
-    val = mv[0] * next[0] + mv[1] * next[1] + mv[2] * next[2];
+    val = dot(mv, next);
     v = next;
   }
   return { vec: v, val };
 }
 
-/** Project Cα points onto their two principal axes → centred 2D coords. */
-function principalProjection(pts: CaPoint[]): Array<{ u: number; v: number; plddt: number }> {
+/** Orthonormal principal-axis frame (e1 longest → e3 thinnest) + centroid. */
+function pcaFrame(pts: CaPoint[]): { c: Vec3; e1: Vec3; e2: Vec3; e3: Vec3 } {
   const n = pts.length;
-  const cx = pts.reduce((s, p) => s + p.x, 0) / n;
-  const cy = pts.reduce((s, p) => s + p.y, 0) / n;
-  const cz = pts.reduce((s, p) => s + p.z, 0) / n;
+  const c: Vec3 = [0, 0, 0];
+  for (const p of pts) {
+    c[0] += p.x;
+    c[1] += p.y;
+    c[2] += p.z;
+  }
+  c[0] /= n;
+  c[1] /= n;
+  c[2] /= n;
 
-  // Covariance matrix of centred coords.
   const cov = [
     [0, 0, 0],
     [0, 0, 0],
     [0, 0, 0],
   ];
   for (const p of pts) {
-    const d: Vec3 = [p.x - cx, p.y - cy, p.z - cz];
+    const d: Vec3 = [p.x - c[0], p.y - c[1], p.z - c[2]];
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) cov[i]![j]! += d[i] * d[j];
   }
   for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) cov[i]![j]! /= n;
 
   const a1 = powerIteration(cov, [1, 0.3, 0.1]);
-  // Deflate the dominant component, then extract the second axis.
-  const l1 = a1.val;
   const e1 = a1.vec;
-  const cov2 = cov.map((row, i) => row.map((val, j) => val - l1 * e1[i]! * e1[j]!));
+  const cov2 = cov.map((row, i) => row.map((val, j) => val - a1.val * e1[i]! * e1[j]!));
   const a2 = powerIteration(cov2, [0.1, 1, 0.3]);
-  const e2 = a2.vec;
-
-  return pts.map((p) => {
-    const d: Vec3 = [p.x - cx, p.y - cy, p.z - cz];
-    return {
-      u: d[0] * e1[0] + d[1] * e1[1] + d[2] * e1[2],
-      v: d[0] * e2[0] + d[1] * e2[1] + d[2] * e2[2],
-      plddt: p.plddt,
-    };
-  });
+  // Re-orthogonalise e2 against e1, then complete the right-handed frame.
+  const proj = dot(a2.vec, e1);
+  const e2 = norm([a2.vec[0] - proj * e1[0], a2.vec[1] - proj * e1[1], a2.vec[2] - proj * e1[2]]);
+  const e3 = cross(e1, e2);
+  return { c, e1, e2, e3 };
 }
 
 function xmlEscape(s: string): string {
@@ -138,6 +147,68 @@ function xmlEscape(s: string): string {
     .replace(/'/g, '&apos;');
 }
 
+/** HSL (h∈[0,360), s,l∈[0,1]) → #rrggbb. */
+function hslHex(h: number, s: number, l: number): string {
+  h = ((h % 360) + 360) % 360;
+  s = Math.max(0, Math.min(1, s));
+  l = Math.max(0, Math.min(1, l));
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const to = (v: number) =>
+    Math.round((v + m) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
+interface SplineNode {
+  u: number;
+  v: number;
+  d: number;
+  f: number;
+  plddt: number;
+}
+
+/** Catmull-Rom subdivision of the backbone for a smooth ribbon. */
+function splineNodes(arr: SplineNode[], per: number): SplineNode[] {
+  const n = arr.length;
+  const get = (i: number): SplineNode => arr[Math.max(0, Math.min(n - 1, i))]!;
+  const out: SplineNode[] = [];
+  const interp = (p0: number, p1: number, p2: number, p3: number, t: number, t2: number, t3: number) =>
+    0.5 *
+    (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = get(i - 1);
+    const p1 = get(i);
+    const p2 = get(i + 1);
+    const p3 = get(i + 2);
+    for (let s = 0; s < per; s++) {
+      const t = s / per;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      out.push({
+        u: interp(p0.u, p1.u, p2.u, p3.u, t, t2, t3),
+        v: interp(p0.v, p1.v, p2.v, p3.v, t, t2, t3),
+        d: interp(p0.d, p1.d, p2.d, p3.d, t, t2, t3),
+        f: interp(p0.f, p1.f, p2.f, p3.f, t, t2, t3),
+        plddt: interp(p0.plddt, p1.plddt, p2.plddt, p3.plddt, t, t2, t3),
+      });
+    }
+  }
+  out.push(arr[n - 1]!);
+  return out;
+}
+
 export interface FoldRenderMeta {
   tokenId: string;
   title: string;
@@ -146,180 +217,200 @@ export interface FoldRenderMeta {
   subtitle: string;
 }
 
-export interface CaTraceSegment {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  color: string;
-}
-
-export interface CaTraceNode {
-  x: number;
-  y: number;
-  color: string;
-}
-
-export interface CaTraceLayout {
-  width: number;
-  height: number;
-  segments: CaTraceSegment[];
-  nodes: CaTraceNode[];
-  meanPlddt: number;
-  residues: number;
-}
-
-export interface CaTraceLayoutOpts {
+export interface RibbonRenderOpts {
   /** Canvas width in user units (default 800). */
   width?: number;
   /** Canvas height in user units (default 500). */
   height?: number;
-  /** Padding around the trace (default 70). */
+  /** Left/right padding (default 60). */
   pad?: number;
-  /** Vertical space reserved at the bottom for footer chrome (default 40). */
-  footer?: number;
-  /** Extra downward offset to clear header chrome (default 20). */
-  offsetY?: number;
-  /** Max residue node markers to emit (default 60). */
-  maxNodes?: number;
+  /** View yaw in degrees (rotation about the vertical axis, default 35). */
+  yawDeg?: number;
+  /** View pitch in degrees (default 20). */
+  pitchDeg?: number;
+  /** Spline samples per residue gap (default 14). */
+  samplesPerSegment?: number;
+  /** Backbone colouring (default 'spectrum'). */
+  color?: 'spectrum' | 'plddt';
+  /** Draw a flat dark background instead of the radial gradient. */
+  solidBg?: boolean;
+  /** When set, overlays NFT-card chrome (title, score, sequence footer). */
+  meta?: FoldRenderMeta;
+}
+
+export interface RibbonRender {
+  svg: string;
+  residues: number;
+  meanPlddt: number;
 }
 
 /**
- * Project a PDB's Cα trace into 2D drawing coordinates (segments + nodes),
- * coloured per-residue by pLDDT. Framework-agnostic: used by the server SVG
- * renderer and by the client feed card (rendered as real React <svg> nodes,
- * so it never touches WebGL and renders identically for every candidate).
- * Returns null if there are too few Cα atoms to draw a meaningful backbone.
+ * Render the real Cα backbone as a 3D cartoon-ribbon SVG. Returns null when
+ * there are too few Cα atoms to draw a meaningful backbone (caller falls back).
  */
-export function buildCaTraceLayout(
-  pdb: string,
-  opts: CaTraceLayoutOpts = {},
-): CaTraceLayout | null {
+export function buildRibbonSvg(pdb: string, opts: RibbonRenderOpts = {}): RibbonRender | null {
   const trace = parseCaTrace(pdb);
-  if (trace.length < 3) return null;
+  if (trace.length < 4) return null;
 
   const W = opts.width ?? 800;
   const H = opts.height ?? 500;
-  const PAD = opts.pad ?? 70;
-  const footer = opts.footer ?? 40;
-  const offsetY = opts.offsetY ?? 20;
-  const maxNodes = opts.maxNodes ?? 60;
+  const PAD = opts.pad ?? 60;
+  const mode = opts.color ?? 'spectrum';
+  const yaw = ((opts.yawDeg ?? 35) * Math.PI) / 180;
+  const pitch = ((opts.pitchDeg ?? 20) * Math.PI) / 180;
+  const per = opts.samplesPerSegment ?? 14;
+  const hasChrome = !!opts.meta;
 
-  const proj = principalProjection(trace);
+  const { c, e1, e2, e3 } = pcaFrame(trace);
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const n = trace.length;
 
-  // Fit projected coords into the drawing area.
-  const drawW = W - PAD * 2;
-  const drawH = H - PAD * 2 - footer;
-  const us = proj.map((p) => p.u);
-  const vs = proj.map((p) => p.v);
+  // PCA-align, then tilt into a 3/4 view; keep depth for shading.
+  const raw: SplineNode[] = trace.map((p, i) => {
+    const d: Vec3 = [p.x - c[0], p.y - c[1], p.z - c[2]];
+    const a = dot(d, e1);
+    const b = dot(d, e2);
+    const cc = dot(d, e3);
+    const a1 = a * cy + cc * sy;
+    const c1 = -a * sy + cc * cy;
+    const b2 = b * cp - c1 * sp;
+    const c2 = b * sp + c1 * cp;
+    return { u: a1, v: b2, d: c2, f: n > 1 ? i / (n - 1) : 0, plddt: p.plddt };
+  });
+  const pts = splineNodes(raw, per);
+
+  const us = pts.map((p) => p.u);
+  const vs = pts.map((p) => p.v);
+  const ds = pts.map((p) => p.d);
   const minU = Math.min(...us);
   const maxU = Math.max(...us);
   const minV = Math.min(...vs);
   const maxV = Math.max(...vs);
+  const minD = Math.min(...ds);
+  const maxD = Math.max(...ds);
   const spanU = maxU - minU || 1;
   const spanV = maxV - minV || 1;
-  const scale = Math.min(drawW / spanU, drawH / spanV);
-  // Centre within the canvas.
-  const offX = PAD + (drawW - spanU * scale) / 2;
-  const offY = PAD + offsetY + (drawH - spanV * scale) / 2;
+  const spanD = maxD - minD || 1;
 
-  const pixels = proj.map((p) => ({
+  const topInset = hasChrome ? 104 : PAD;
+  const botInset = hasChrome ? 76 : PAD;
+  const drawW = W - PAD * 2;
+  const drawH = H - topInset - botInset;
+  const scale = Math.min(drawW / spanU, drawH / spanV);
+  const offX = PAD + (drawW - spanU * scale) / 2;
+  const offY = topInset + (drawH - spanV * scale) / 2;
+
+  const screen = pts.map((p) => ({
     x: offX + (p.u - minU) * scale,
-    y: offY + (p.v - minV) * scale,
+    y: offY + (maxV - p.v) * scale,
+    dt: (p.d - minD) / spanD,
+    f: p.f,
     plddt: p.plddt,
   }));
 
-  // Backbone segments coloured by the mean pLDDT of their endpoints.
-  const segments: CaTraceSegment[] = [];
-  for (let i = 1; i < pixels.length; i++) {
-    const a = pixels[i - 1]!;
-    const b = pixels[i]!;
-    segments.push({
+  // Tube width scales down as the chain gets longer (denser backbone).
+  const baseW = Math.max(7, Math.min(20, 600 / Math.sqrt(n)));
+
+  interface Seg {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    dt: number;
+    f: number;
+    plddt: number;
+  }
+  const segs: Seg[] = [];
+  for (let i = 1; i < screen.length; i++) {
+    const a = screen[i - 1]!;
+    const b = screen[i]!;
+    segs.push({
       x1: a.x,
       y1: a.y,
       x2: b.x,
       y2: b.y,
-      color: plddtColor((a.plddt + b.plddt) / 2),
+      dt: (a.dt + b.dt) / 2,
+      f: (a.f + b.f) / 2,
+      plddt: (a.plddt + b.plddt) / 2,
     });
   }
+  // Painter's algorithm: draw far (small depth) first so near segments occlude.
+  segs.sort((p, q) => p.dt - q.dt);
 
-  // Sparse residue nodes (cap to keep the output light).
-  const step = Math.max(1, Math.floor(pixels.length / maxNodes));
-  const nodes: CaTraceNode[] = [];
-  for (let i = 0; i < pixels.length; i += step) {
-    const p = pixels[i]!;
-    nodes.push({ x: p.x, y: p.y, color: plddtColor(p.plddt) });
+  const line = (s: Seg, stroke: string, w: number, extra = '') =>
+    `<line x1="${s.x1.toFixed(1)}" y1="${s.y1.toFixed(1)}" x2="${s.x2.toFixed(1)}" y2="${s.y2.toFixed(
+      1,
+    )}" stroke="${stroke}" stroke-width="${w.toFixed(1)}" stroke-linecap="round"${extra}/>`;
+
+  const body: string[] = [];
+  for (const s of segs) {
+    const w = baseW * (0.82 + 0.36 * s.dt);
+    let col: string;
+    if (mode === 'plddt') {
+      col = plddtColor(s.plddt);
+    } else {
+      const h = 248 - 248 * s.f; // blue (N) → red (C)
+      const l = 0.4 + 0.26 * s.dt; // depth shading
+      col = hslHex(h, 0.82, l);
+    }
+    // Dark casing then coloured core (interleaved → correct occlusion).
+    body.push(line(s, '#02060c', w + 3, ' stroke-opacity="0.5"'));
+    body.push(line(s, col, w));
+  }
+  // Glossy highlight along the near face.
+  for (const s of segs) {
+    if (s.dt < 0.55) continue;
+    const w = baseW * (0.82 + 0.36 * s.dt) * 0.34;
+    body.push(line(s, '#ffffff', w, ` stroke-opacity="${(0.1 + 0.16 * s.dt).toFixed(2)}"`));
   }
 
   const meanPlddt = trace.reduce((s, p) => s + p.plddt, 0) / trace.length;
 
-  return { width: W, height: H, segments, nodes, meanPlddt, residues: trace.length };
-}
+  const defs: string[] = [];
+  let bg: string;
+  if (opts.solidBg) {
+    bg = `<rect width="${W}" height="${H}" fill="#060c16"/>`;
+  } else {
+    defs.push(
+      `<radialGradient id="rbg" cx="42%" cy="36%" r="82%"><stop offset="0%" stop-color="#0d1830"/><stop offset="100%" stop-color="#05080f"/></radialGradient>`,
+    );
+    bg = `<rect width="${W}" height="${H}" fill="url(#rbg)"/>`;
+  }
 
-/**
- * Render the real Cα trace to an 800×500 SVG. Returns null if the PDB has
- * too few Cα atoms to draw a meaningful backbone (caller falls back).
- */
-export function renderFoldTraceSvg(pdb: string, meta: FoldRenderMeta): string | null {
-  const layout = buildCaTraceLayout(pdb);
-  if (!layout) return null;
+  let chrome = '';
+  if (opts.meta) {
+    const m = opts.meta;
+    defs.push(
+      `<linearGradient id="spec" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#1f4ff0"/><stop offset="33%" stop-color="#19c3c9"/><stop offset="55%" stop-color="#3fd14d"/><stop offset="78%" stop-color="#ffd11a"/><stop offset="100%" stop-color="#ff3b30"/></linearGradient>`,
+    );
+    const legendX = W - PAD - 150;
+    chrome =
+      `<text x="${PAD}" y="44" fill="#7fd8ff" font-size="11" letter-spacing="5" opacity="0.85">ETICA RESEARCH NFT · ESMFold</text>` +
+      `<text x="${PAD}" y="80" fill="#ffffff" font-size="28" font-weight="700">#${xmlEscape(m.tokenId)}</text>` +
+      `<text x="${PAD}" y="100" fill="#cdd6f4" font-size="15">${xmlEscape(m.title)}</text>` +
+      `<text x="${W - PAD}" y="76" fill="#7fd8ff" font-size="46" font-weight="700" text-anchor="end">${xmlEscape(
+        m.scoreStr,
+      )}</text>` +
+      `<text x="${W - PAD}" y="96" fill="#7fd8ff" font-size="10" letter-spacing="2" text-anchor="end">FOLD CONFIDENCE</text>` +
+      `<rect x="${PAD}" y="${H - 54}" width="${W - PAD * 2}" height="1" fill="#7fd8ff" opacity="0.2"/>` +
+      `<text x="${PAD}" y="${H - 28}" fill="#9fb3c8" font-size="11">${m.seqLen} aa · ${trace.length} residues · mean pLDDT ${meanPlddt.toFixed(
+        0,
+      )} · ${xmlEscape(m.subtitle)}</text>` +
+      `<text x="${legendX - 8}" y="${H - 24}" fill="#9fb3c8" font-size="11" text-anchor="end">N</text>` +
+      `<rect x="${legendX}" y="${H - 33}" width="130" height="9" rx="4" fill="url(#spec)"/>` +
+      `<text x="${legendX + 138}" y="${H - 24}" fill="#9fb3c8" font-size="11">C</text>`;
+  }
 
-  const W = layout.width;
-  const H = layout.height;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block" font-family="-apple-system,BlinkMacSystemFont,sans-serif">` +
+    (defs.length ? `<defs>${defs.join('')}</defs>` : '') +
+    bg +
+    `<g>${body.join('')}</g>` +
+    chrome +
+    `</svg>`;
 
-  const segments = layout.segments.map(
-    (s) =>
-      `<line x1="${s.x1.toFixed(1)}" y1="${s.y1.toFixed(1)}" x2="${s.x2.toFixed(
-        1,
-      )}" y2="${s.y2.toFixed(1)}" stroke="${s.color}" stroke-width="3.5" stroke-linecap="round"/>`,
-  );
-
-  const nodes = layout.nodes.map(
-    (n) =>
-      `<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="2.4" fill="${n.color}"/>`,
-  );
-
-  const meanPlddt = layout.meanPlddt;
-
-  // Confidence legend.
-  const legend = [
-    { c: '#0053d6', label: 'Very high' },
-    { c: '#65cbf3', label: 'Confident' },
-    { c: '#ffdb13', label: 'Low' },
-    { c: '#ff7d45', label: 'Very low' },
-  ]
-    .map((seg, i) => {
-      const lx = 300 + i * 120;
-      return `<rect x="${lx}" y="462" width="12" height="12" rx="2" fill="${seg.c}"/><text x="${
-        lx + 18
-      }" y="472" fill="#9fb3c8" font-size="10">${seg.label}</text>`;
-    })
-    .join('');
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="-apple-system,BlinkMacSystemFont,sans-serif">
-<defs>
-  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%" stop-color="#070d18"/>
-    <stop offset="100%" stop-color="#0f1b2e"/>
-  </linearGradient>
-  <filter id="glow"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-</defs>
-<rect width="${W}" height="${H}" fill="url(#bg)"/>
-<g filter="url(#glow)">
-${segments.join('\n')}
-</g>
-${nodes.join('\n')}
-<text x="40" y="44" fill="#7fd8ff" font-size="11" letter-spacing="5" opacity="0.8">ETICA RESEARCH NFT · ESMFold Cα</text>
-<text x="40" y="80" fill="#ffffff" font-size="28" font-weight="700">#${xmlEscape(meta.tokenId)}</text>
-<text x="40" y="106" fill="#cdd6f4" font-size="15">${xmlEscape(meta.title)}</text>
-<text x="760" y="80" fill="#7fd8ff" font-size="46" font-weight="700" text-anchor="end">${xmlEscape(
-    meta.scoreStr,
-  )}</text>
-<text x="760" y="100" fill="#7fd8ff" font-size="10" letter-spacing="2" text-anchor="end">FOLD CONFIDENCE</text>
-<rect x="40" y="446" width="720" height="1" fill="#7fd8ff" opacity="0.2"/>
-<text x="40" y="472" fill="#9fb3c8" font-size="11">${meta.seqLen} aa · mean pLDDT ${meanPlddt.toFixed(
-    0,
-  )} · ${xmlEscape(meta.subtitle)}</text>
-${legend}
-</svg>`;
+  return { svg, residues: trace.length, meanPlddt };
 }

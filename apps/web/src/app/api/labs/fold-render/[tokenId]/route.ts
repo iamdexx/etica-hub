@@ -16,7 +16,7 @@ import type { Hex } from 'viem';
 import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 import { getResearchClient } from '@/lib/research';
 import { getPdbForSequence } from '@/lib/labs/archive';
-import { renderFoldTraceSvg } from '@/lib/labs/pdb-render';
+import { buildRibbonSvg } from '@/lib/labs/pdb-render';
 import eticaResearchNftArtifact from '@/lib/etica-research-nft-artifact.json';
 
 export const runtime = 'nodejs';
@@ -152,19 +152,23 @@ export async function GET(
     }
 
     // Prefer the real ESMFold structure: if we persisted a PDB for this
-    // exact sequence, draw the actual Cα trace coloured by pLDDT. Fall back
-    // to the stylised card for older tokens with no stored structure.
+    // exact sequence, render the actual Cα backbone as a 3D cartoon ribbon
+    // (rainbow N→C). Fall back to the stylised card for older tokens with no
+    // stored structure.
     let svg: string | null = null;
     try {
       const pdb = await getPdbForSequence(d.sequence);
       if (pdb) {
-        svg = renderFoldTraceSvg(pdb, {
-          tokenId,
-          title: truncate(d.parentGoalTitle, 55),
-          scoreStr: scoreDecimal(d.score),
-          seqLen: d.sequence.length,
-          subtitle: `${d.iterations.toString()} iterations · block #${d.blockNumber.toString()}`,
-        });
+        svg =
+          buildRibbonSvg(pdb, {
+            meta: {
+              tokenId,
+              title: truncate(d.parentGoalTitle, 55),
+              scoreStr: scoreDecimal(d.score),
+              seqLen: d.sequence.length,
+              subtitle: `${d.iterations.toString()} iterations · block #${d.blockNumber.toString()}`,
+            },
+          })?.svg ?? null;
       }
     } catch {
       /* fall through to stylised card */
