@@ -1026,8 +1026,14 @@ async function main(): Promise<void> {
     try {
       job = await popJob();
     } catch (err) {
-      console.error('Pop failed:', err);
-      process.exitCode = 1;
+      // A pop failure is almost always transient infrastructure noise — a
+      // Redis hiccup, a brief OOM, or a Vercel cold-start 500. Failing the
+      // run on it emails the repo owner ("Run failed: Labs Autopilot") on
+      // every tick, turning a momentary blip into alert spam. The job stays
+      // pending and the next dispatch retries, so exit the tick cleanly. A
+      // genuine sustained outage still surfaces as zero completions on the
+      // dashboard — just without the per-minute failure emails.
+      log(`pop failed (transient — exiting tick cleanly, will retry next dispatch): ${err instanceof Error ? err.message : err}`);
       return;
     }
     if (!job) {
@@ -1104,7 +1110,10 @@ async function main(): Promise<void> {
         console.error('Could not mark job errored:', updateErr);
       }
       if (job.goalId) await touchGoal(job.goalId, false);
-      process.exitCode = 1;
+      // The job is already recorded as `error` (visible on the dashboard and
+      // auto-requeued up to 3×). A single crashed job must not fail the whole
+      // workflow run — that emails the repo owner on every tick. Keep
+      // processing the rest of the batch and exit the tick cleanly.
     }
   }
   log(`tick end; processed ${processed} job(s)`);
