@@ -242,6 +242,8 @@ export interface RibbonRender {
   svg: string;
   residues: number;
   meanPlddt: number;
+  minPlddt: number;
+  maxPlddt: number;
 }
 
 /**
@@ -368,6 +370,8 @@ export function buildRibbonSvg(pdb: string, opts: RibbonRenderOpts = {}): Ribbon
   }
 
   const meanPlddt = trace.reduce((s, p) => s + p.plddt, 0) / trace.length;
+  const minPlddt = trace.reduce((m, p) => Math.min(m, p.plddt), Infinity);
+  const maxPlddt = trace.reduce((m, p) => Math.max(m, p.plddt), -Infinity);
 
   const defs: string[] = [];
   let bg: string;
@@ -412,5 +416,11 @@ export function buildRibbonSvg(pdb: string, opts: RibbonRenderOpts = {}): Ribbon
     chrome +
     `</svg>`;
 
-  return { svg, residues: trace.length, meanPlddt };
+  return {
+    svg,
+    residues: trace.length,
+    meanPlddt,
+    minPlddt: Number.isFinite(minPlddt) ? minPlddt : meanPlddt,
+    maxPlddt: Number.isFinite(maxPlddt) ? maxPlddt : meanPlddt,
+  };
 }
