@@ -15,7 +15,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
 
 import { signSubmit } from '@/lib/labs/client-sig';
@@ -25,6 +25,7 @@ import type {
   LabsJobEvent,
   LabsJobStatus,
 } from '@/lib/labs/job';
+import { buildCaTraceLayout, type CaTraceLayout } from '@/lib/labs/pdb-render';
 import { MintResButton } from '@/components/labs/MintResButton';
 
 const REFRESH_MS = 5_000;
@@ -112,6 +113,150 @@ function statusLabel(status: LabsJobStatus): string {
   }
 }
 
+const PLDDT_LEGEND: ReadonlyArray<{ color: string; label: string }> = [
+  { color: '#0053d6', label: '≥90' },
+  { color: '#65cbf3', label: '70+' },
+  { color: '#ffdb13', label: '50+' },
+  { color: '#ff7d45', label: '<50' },
+];
+
+/**
+ * Renders a candidate's real ESMFold Cα backbone as a static SVG, projected
+ * onto its principal axes and coloured per-residue by pLDDT — the same trace
+ * that becomes the minted NFT image. Pure SVG (no WebGL), so every candidate
+ * paints reliably regardless of grid position.
+ */
+function FoldTraceSvg({ layout }: { layout: CaTraceLayout }): JSX.Element {
+  const gradientId = useId();
+  return (
+    <svg
+      viewBox={`0 0 ${layout.width} ${layout.height}`}
+      className="block h-full w-full"
+      role="img"
+      aria-label="ESMFold Cα backbone trace coloured by pLDDT confidence"
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#070d18" />
+          <stop offset="100%" stopColor="#0f1b2e" />
+        </linearGradient>
+      </defs>
+      <rect width={layout.width} height={layout.height} fill={`url(#${gradientId})`} />
+      <g strokeLinecap="round">
+        {layout.segments.map((s, i) => (
+          <line
+            key={i}
+            x1={s.x1}
+            y1={s.y1}
+            x2={s.x2}
+            y2={s.y2}
+            stroke={s.color}
+            strokeWidth={3}
+          />
+        ))}
+      </g>
+      {layout.nodes.map((n, i) => (
+        <circle key={i} cx={n.x} cy={n.y} r={2} fill={n.color} />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * On-demand interactive 3D viewer rendered in a modal. Only ever one viewer is
+ * mounted at a time (no grid), which avoids 3Dmol's shared-renderer viewport
+ * bug that left side-by-side viewers blank.
+ */
+function Structure3DModal({
+  pdb,
+  title,
+  onClose,
+}: {
+  pdb: string;
+  title: string;
+  onClose: () => void;
+}): JSX.Element {
+  const viewerRef = useRef<HTMLDivElement | null>(null);
+  const viewerInstanceRef = useRef<Viewer3D | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    load3Dmol()
+      .then(() => {
+        if (cancelled || !viewerRef.current) return;
+        const w = window as Win3Dmol;
+        const viewer = w.$3Dmol?.createViewer(viewerRef.current, {
+          backgroundColor: '#020806',
+        });
+        if (!viewer) {
+          setError('3D viewer failed to initialize.');
+          return;
+        }
+        viewer.addModel(pdb, 'pdb');
+        viewer.setStyle({}, { cartoon: { color: 'spectrum' } });
+        viewer.zoomTo();
+        viewer.render();
+        viewer.spin(true);
+        viewerInstanceRef.current = viewer;
+        requestAnimationFrame(() => viewerInstanceRef.current?.resize?.());
+        setTimeout(() => viewerInstanceRef.current?.resize?.(), 120);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Viewer failed to load.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pdb]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="relative w-full max-w-2xl overflow-hidden rounded-xl border border-white/15 bg-[#020806] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Interactive 3D structure — ${title}`}
+      >
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+          <span className="text-xs text-white/70">{title} · drag to rotate</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-white/15 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/70 transition-colors hover:border-white/30 hover:text-white"
+          >
+            close
+          </button>
+        </div>
+        <div
+          ref={viewerRef}
+          className="relative h-[60vh] w-full"
+          aria-label="3D protein structure"
+        />
+        {error && (
+          <p className="border-t border-white/5 p-2 text-[11px] text-rose-300">{error}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CandidateCard({
   jobId,
   candidate,
@@ -129,9 +274,6 @@ function CandidateCard({
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
 
-  const viewerRef = useRef<HTMLDivElement | null>(null);
-  const viewerInstanceRef = useRef<Viewer3D | null>(null);
-  const [viewerError, setViewerError] = useState<string | null>(null);
   const [archivedPdb, setArchivedPdb] = useState<string | null>(null);
   const [archiveTried, setArchiveTried] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -141,6 +283,7 @@ function CandidateCard({
   const [branchPrompt, setBranchPrompt] = useState('');
   const [branching, setBranching] = useState(false);
   const [branchError, setBranchError] = useState<string | null>(null);
+  const [show3D, setShow3D] = useState(false);
 
   // When the job result doesn't carry this candidate's PDB inline (only one is
   // kept inline), fetch the real structure we archived per-sequence so every
@@ -164,6 +307,23 @@ function CandidateCard({
   }, [pdb, candidate.folded, candidate.sequence]);
 
   const effectivePdb = pdb ?? archivedPdb ?? undefined;
+
+  // Project the real Cα trace to 2D once per structure. Rendered as plain SVG
+  // (see FoldTraceSvg) so every candidate's fold paints reliably.
+  const foldLayout = useMemo(
+    () =>
+      effectivePdb
+        ? buildCaTraceLayout(effectivePdb, {
+            width: 440,
+            height: 300,
+            pad: 28,
+            footer: 0,
+            offsetY: 0,
+            maxNodes: 90,
+          })
+        : null,
+    [effectivePdb],
+  );
 
   const requestRefold = useCallback(async () => {
     setRefolding(true);
@@ -192,49 +352,6 @@ function CandidateCard({
       setRefolding(false);
     }
   }, [jobId, candidate.index, onRefoldQueued]);
-
-  useEffect(() => {
-    if (!effectivePdb || !viewerRef.current) return;
-    let cancelled = false;
-
-    load3Dmol()
-      .then(() => {
-        if (cancelled || !viewerRef.current) return;
-        const w = window as Win3Dmol;
-        const viewer = w.$3Dmol?.createViewer(viewerRef.current, {
-          backgroundColor: '#020806',
-        });
-        if (!viewer) {
-          setViewerError('3Dmol viewer failed to initialize.');
-          return;
-        }
-        viewer.addModel(effectivePdb, 'pdb');
-        viewer.setStyle({}, { cartoon: { color: 'spectrum' } });
-        viewer.zoomTo();
-        viewer.render();
-        viewer.spin(true);
-        viewerInstanceRef.current = viewer;
-        requestAnimationFrame(() => viewerInstanceRef.current?.resize?.());
-        setTimeout(() => viewerInstanceRef.current?.resize?.(), 120);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setViewerError(err instanceof Error ? err.message : 'Viewer failed to load.');
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [effectivePdb]);
-
-  useEffect(() => {
-    function onResize(): void {
-      viewerInstanceRef.current?.resize?.();
-    }
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   async function handleCopySequence(): Promise<void> {
     try {
@@ -347,19 +464,40 @@ function CandidateCard({
         </div>
       )}
 
-      {effectivePdb ? (
+      {effectivePdb && foldLayout ? (
         <div className="mt-4 overflow-hidden rounded-lg border border-white/10 bg-[#020806]">
-          <div
-            ref={viewerRef}
-            className="relative h-72 w-full"
-            aria-label="3D protein structure"
-          />
-          {viewerError && (
-            <p className="border-t border-white/5 p-2 text-[11px] text-rose-300">
-              {viewerError}
-            </p>
-          )}
+          <div className="relative h-72 w-full">
+            <FoldTraceSvg layout={foldLayout} />
+            <button
+              type="button"
+              onClick={() => setShow3D(true)}
+              className="absolute right-2 top-2 rounded border border-white/15 bg-black/40 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/75 backdrop-blur-sm transition-colors hover:border-white/35 hover:text-white"
+            >
+              interactive 3D
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-white/5 px-3 py-2 text-[10px] text-white/45">
+            <span>
+              real ESMFold Cα trace · {foldLayout.residues} residues · mean pLDDT{' '}
+              {Math.round(foldLayout.meanPlddt)}
+            </span>
+            <span className="flex items-center gap-2">
+              {PLDDT_LEGEND.map((seg) => (
+                <span key={seg.color} className="flex items-center gap-1">
+                  <span
+                    className="inline-block h-2 w-2 rounded-sm"
+                    style={{ backgroundColor: seg.color }}
+                  />
+                  {seg.label}
+                </span>
+              ))}
+            </span>
+          </div>
         </div>
+      ) : effectivePdb ? (
+        <p className="mt-4 text-[11px] text-white/45">
+          Structure too short to visualise as a backbone trace.
+        </p>
       ) : candidate.folded && !archiveTried ? (
         <p className="mt-4 text-[11px] text-white/45">Loading structure…</p>
       ) : candidate.folded ? (
@@ -486,6 +624,14 @@ function CandidateCard({
           </div>
         )}
       </div>
+
+      {show3D && effectivePdb && (
+        <Structure3DModal
+          pdb={effectivePdb}
+          title={`candidate #${candidate.index + 1}`}
+          onClose={() => setShow3D(false)}
+        />
+      )}
     </div>
   );
 }
