@@ -11,7 +11,7 @@
     },
     {
       "path": "/api/labs/autopilot/dispatch",
-      "schedule": "* * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/labs/fold/retry",
