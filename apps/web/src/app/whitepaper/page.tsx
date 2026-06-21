@@ -6,25 +6,24 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 const markdownComponents: Components = {
-  table: ({ node: _node, ...props }) => (
+  table: ({ node: _node, children }) => (
     <div className="not-prose -mx-4 my-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-      <table
-        {...props}
-        className="w-full min-w-[640px] border-collapse text-sm [&_td]:border [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_th]:border [&_th]:border-white/10 [&_th]:bg-white/5 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left"
-      />
+      <table className="w-full min-w-[640px] border-collapse text-sm [&_td]:border [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_th]:border [&_th]:border-white/10 [&_th]:bg-white/5 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left">
+        {children}
+      </table>
     </div>
   ),
-  pre: ({ node: _node, ...props }) => (
-    <pre
-      {...props}
-      className="overflow-x-auto rounded-lg border border-white/10 bg-white/5 p-3 text-xs"
-    />
+  pre: ({ node: _node, children }) => (
+    <pre className="overflow-x-auto rounded-lg border border-white/10 bg-white/5 p-3 text-xs">
+      {children}
+    </pre>
   ),
-  code: ({ node: _node, className, ...props }) => (
+  code: ({ node: _node, className, children }) => (
     <code
-      {...props}
       className={`${className ?? ''} break-all rounded bg-white/10 px-1 py-0.5 text-[0.85em]`}
-    />
+    >
+      {children}
+    </code>
   ),
 };
 
