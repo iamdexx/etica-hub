@@ -1,7 +1,12 @@
 # @etica-hub/wres-keeper
 
-Off-chain keeper for the **wRES** cross-chain product: lock a RES NFT on Etica →
-mine with frozen TRX on TRON → get paid in ETX on Etica.
+Off-chain keeper for the **wRES** cross-chain product: register a research NFT
+from any origin chain → clone it as a TRON twin → mine with frozen TRX → get
+paid in ETX on Etica.
+
+No locking or vault — the origin-chain NFT stays **freely tradeable**. The TRON
+twin is a competitive research topic (dethroneable via `ResearchSovereignRegistry`)
+that cycles through owners independently of the origin-chain asset.
 
 The keeper is the **only** cross-chain actor. It custodies no user principal —
 every contract it talks to is drain-proof regardless of keeper honesty (a
@@ -11,19 +16,18 @@ executes the steps the contracts already permit.
 ## The loop
 
 Each tick (default 60s) the keeper observes both chains, builds a plan, then
-executes three independent legs. Any single failure is isolated and never aborts
+executes two independent legs. Any single failure is isolated and never aborts
 the rest of the tick.
 
 | Leg | Trigger | Actions |
 |---|---|---|
-| **Entry** | new `Locked` on Etica with no TRON twin yet | `mintTwin` (TRON) → optional `frontUpgrade` from the reserve (bounded by `frontableNow` this epoch) |
+| **Entry** | new registration with no TRON twin yet | `mintTwin` (TRON) → optional `frontUpgrade` from the reserve (bounded by `frontableNow` this epoch) |
 | **Payout** | a twin's settled reward ≥ `WRES_MIN_PAYOUT_TRX` | `claimForPayout` (TRON) → **1%** `topUp` to the reserve → **1%** keeper ops retention → mint eTRX 1:1 → approve → quote → swap eTRX→ETX to the holder's 0x wallet (Etica) |
-| **Exit** | a matured, un-vetoed `requestUnlock` on the vault | permissionless `executeUnlock` (Etica) returns the RES to its locker |
 
 `frontableNow` is read once per tick and debited locally, so multiple entries in
 one tick can never over-front the reserve. The payout split is **re-derived from
 the actually-claimed amount** (not the planned snapshot) so mid-tick accrual
-can't desync the 1% / 99% math.
+can't desync the split math.
 
 ## Architecture
 
@@ -31,10 +35,10 @@ can't desync the 1% / 99% math.
 src/
   config.ts        env -> typed config (TRX policy parsed to SUN bigint)
   types.ts         domain types + SUN_PER_TRX / BPS_DENOMINATOR constants
-  abi.ts           minimal ABIs (RESLockVault, ETRX on Etica; Miner, Reserve on TRON)
+  abi.ts           minimal ABIs (ETRX on Etica; Miner, Reserve on TRON)
   utils.ts         SUN<->eTRX-wei conversion, TRX formatting, withRetry backoff
   telegram.ts      optional failure alerts
-  planner.ts       PURE: Observation -> KeeperPlan (entries/payouts/exits)
+  planner.ts       PURE: Observation -> KeeperPlan (entries/payouts)
   monitor.ts       observe(): parallel cross-chain reads with retry
   executor.ts      executePlan(): ordered on-chain calls; dry-run safe
   keeper.ts        createKeeper() + runTick() (observe -> plan -> execute)
@@ -42,7 +46,7 @@ src/
   dry-run.ts       one-shot: forces dry-run, runs one tick, exits
   chains/
     types.ts       EticaClient / TronClient interfaces (the only chain seam)
-    etica.ts       viem adapter
+    etica.ts       viem adapter (chain-agnostic registration scanning)
     tron.ts        tronweb adapter
 ```
 
@@ -73,12 +77,11 @@ against live state) but every **write** is replaced by a log line. Recommended
 pre-mainnet flow:
 
 1. `cp .env.example .env`
-2. Fill in RPC endpoints + the four contract addresses. **Leave the two
+2. Fill in RPC endpoints + the contract addresses. **Leave the two
    `*_PRIVATE_KEY` fields blank.**
 3. `pnpm dry-run`
 4. Inspect the log: it prints each `mintTwin` / `frontUpgrade` / `claimForPayout`
-   / `topUp` / swap / `executeUnlock` it *would* send, with amounts. No funds
-   move.
+   / `topUp` / swap it *would* send, with amounts. No funds move.
 
 Point step 2 at testnet first (TRON Nile + an Etica testnet RPC) for an
 end-to-end rehearsal before any mainnet keys are introduced.
@@ -88,8 +91,7 @@ end-to-end rehearsal before any mainnet keys are introduced.
 Every variable is documented in [`.env.example`](./.env.example). Summary:
 
 - **Etica:** `WRES_ETICA_RPC_URL`, `WRES_ETICA_CHAIN_ID`,
-  `WRES_RES_LOCK_VAULT_ADDRESS`, `WRES_ETRX_ADDRESS`, `WRES_ETX_ADDRESS`,
-  `WRES_DEX_ROUTER_ADDRESS`
+  `WRES_ETRX_ADDRESS`, `WRES_ETX_ADDRESS`, `WRES_DEX_ROUTER_ADDRESS`
 - **TRON:** `WRES_TRON_RPC_URL`, `WRES_WRAPPED_RES_MINER_ADDRESS`,
   `WRES_TRX_RESERVE_ADDRESS`, `WRES_TRON_FEE_LIMIT_SUN`
 - **Signers:** `WRES_KEEPER_TRON_PRIVATE_KEY`, `WRES_KEEPER_ETICA_PRIVATE_KEY`
@@ -148,14 +150,10 @@ then exits — so `systemctl restart` never interrupts a mid-flight broadcast.
 
 ## Safety properties
 
-- **No principal custody.** The keeper holds no locked RES and no frozen TRX; it
-  can't release either. Contracts enforce this on-chain.
+- **No principal custody.** The keeper holds no locked/escrowed assets; it
+  can't release any. Contracts enforce this on-chain.
 - **Reserve can't run dry.** `frontUpgrade ≤ frontableNow` (min of balance and
   the per-epoch drip cap), enforced by `TrxReserve` and respected by the
   executor's local budget debit.
-- **Permissionless exits.** `executeUnlock` is callable by anyone; the keeper
-  runs it only as a liveness convenience and can never gate or seize a user's
-  RES.
 - **Dry-run by default** whenever keys are absent — a misconfigured deploy reads
   and logs but cannot move funds.
-```

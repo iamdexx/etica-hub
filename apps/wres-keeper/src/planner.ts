@@ -13,13 +13,11 @@
 import {
   BPS_DENOMINATOR,
   type EntryPlan,
-  type ExitPlan,
   type KeeperPlan,
-  type LockRecord,
   type Observation,
   type PayoutPlan,
   type PayoutSplit,
-  type PendingUnlock,
+  type Registration,
   type TwinRecord,
 } from './types.js';
 
@@ -60,22 +58,23 @@ export function splitPayout(
 }
 
 /**
- * New locks that have no TRON twin yet. A twin is considered to exist if its
- * `resTokenId` appears in `mintedByResTokenId` (built from TwinMinted events),
- * which makes entry planning idempotent across ticks without local state.
+ * Registrations that have no TRON twin yet. A twin is considered to exist if
+ * its `resTokenId` appears in `mintedByResTokenId` (built from TwinMinted
+ * events), which makes entry planning idempotent across ticks without local
+ * state.
  */
 export function planEntries(
-  locks: LockRecord[],
+  registrations: Registration[],
   mintedByResTokenId: Map<string, bigint>,
   initialFrontSun: bigint,
 ): EntryPlan[] {
   const out: EntryPlan[] = [];
-  for (const lock of locks) {
-    if (mintedByResTokenId.has(lock.resTokenId.toString())) continue;
+  for (const reg of registrations) {
+    if (mintedByResTokenId.has(reg.resTokenId.toString())) continue;
     out.push({
-      resTokenId: lock.resTokenId,
-      tronRecipient: lock.tronRecipient,
-      payoutWallet: lock.payoutWallet,
+      resTokenId: reg.resTokenId,
+      tronRecipient: reg.tronRecipient,
+      payoutWallet: reg.payoutWallet,
       initialFrontSun,
     });
   }
@@ -102,34 +101,15 @@ export function planPayouts(
   return out;
 }
 
-/**
- * Owner-initiated unlock requests that have matured past their challenge window
- * and have not been vetoed (a veto resets `unlockReadyAt` to 0). These are
- * finalized with the permissionless `executeUnlock`, returning the RES to its
- * locker. The keeper performs this purely as a liveness convenience — anyone
- * can call it — so it never gates or seizes anything.
- */
-export function planExits(pendingUnlocks: PendingUnlock[], nowSec: bigint): ExitPlan[] {
-  const out: ExitPlan[] = [];
-  for (const u of pendingUnlocks) {
-    if (!u.active) continue;
-    if (u.unlockReadyAt === 0n) continue; // no request, or vetoed
-    if (nowSec < u.unlockReadyAt) continue; // still inside the challenge window
-    out.push({ resTokenId: u.resTokenId });
-  }
-  return out;
-}
-
-/** Combine the three planners into a single tick plan. */
+/** Combine the two planners into a single tick plan. */
 export function buildPlan(observation: Observation, params: PlanParams): KeeperPlan {
   return {
-    entries: planEntries(observation.locks, observation.mintedByResTokenId, params.initialFrontSun),
+    entries: planEntries(observation.registrations, observation.mintedByResTokenId, params.initialFrontSun),
     payouts: planPayouts(observation.twins, params.minPayoutSun, params.reserveTopUpBps, params.keeperOpsBps),
-    exits: planExits(observation.pendingUnlocks, observation.nowSec),
   };
 }
 
 /** True when a plan has no actions — lets the loop stay quiet on idle ticks. */
 export function isEmptyPlan(plan: KeeperPlan): boolean {
-  return plan.entries.length === 0 && plan.payouts.length === 0 && plan.exits.length === 0;
+  return plan.entries.length === 0 && plan.payouts.length === 0;
 }

@@ -10,20 +10,17 @@
  * dry-run, so a missing signer can never broadcast.
  */
 
-import type { Hex, LockRecord, PendingUnlock, TwinRecord } from '../types.js';
+import type { Hex, Registration, TwinRecord } from '../types.js';
 
 /** Read + write surface for the Etica (L1) side. */
 export interface EticaClient {
   /** The keeper's own Etica address (null in dry-run with no signer). */
   keeperAddress(): Hex | null;
-  /** Active locks (RES escrowed, twin not yet returned) from `Locked` events. */
-  scanActiveLocks(): Promise<LockRecord[]>;
-  /** Owner-initiated unlock requests still pending on the vault. */
-  scanPendingUnlocks(): Promise<PendingUnlock[]>;
-  /** Current chain time (unix seconds), used to mature unlock requests. */
-  now(): Promise<bigint>;
-  /** Finalize a matured, un-vetoed unlock request (permissionless). */
-  executeUnlock(resTokenId: bigint): Promise<Hex>;
+  /**
+   * Scan for research registrations awaiting a TRON twin. Chain-agnostic:
+   * could read from any origin chain's event log or a local registry.
+   */
+  scanRegistrations(): Promise<Registration[]>;
   /** Mint eTRX 1:1 against TRX revenue locked on TRON (payout leg). */
   mintEtrx(to: Hex, amountWei: bigint): Promise<Hex>;
   /** Approve the DEX router to spend `amountWei` of the keeper's eTRX. */

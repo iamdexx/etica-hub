@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "bash e2e/run.sh",
-    "e2e:harness": "tsx e2e/run-harness.ts"
+    "e2e:harness": "tsx e2e/run-harness.ts",
+    "bulk-register": "tsx src/bulk-register.ts"
   },
   "dependencies": {
     "@etica-hub/shared": "workspace:*",

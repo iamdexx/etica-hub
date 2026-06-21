@@ -12,7 +12,6 @@
  *   2. Payouts : claimForPayout (TRON) -> reserve topUp (TRON)
  *                -> keeper ops retention (TRON) -> mint eTRX -> approve
  *                -> swap eTRX->ETX to the holder (Etica)
- *   3. Exits   : permissionless executeUnlock (Etica)
  *
  * Each item is isolated in try/catch so a single failure (e.g. a thin reserve)
  * never aborts the rest of the tick.
@@ -27,7 +26,6 @@ export interface ExecutionReport {
   minted: number;
   fronted: number;
   paid: number;
-  exited: number;
   skipped: number;
 }
 
@@ -42,7 +40,7 @@ export async function executePlan(plan: KeeperPlan, deps: ExecutorDeps): Promise
   const { config, etica, tron, log } = deps;
   const dry = config.dryRun;
   const tag = dry ? '[dry-run] would' : '[exec]';
-  const report: ExecutionReport = { minted: 0, fronted: 0, paid: 0, exited: 0, skipped: 0 };
+  const report: ExecutionReport = { minted: 0, fronted: 0, paid: 0, skipped: 0 };
 
   // ── 1. Entries: mint twin, then front TRX from the reserve ──────────────
   // The reserve self-limits via `frontableNow` (min of balance and the epoch
@@ -132,23 +130,6 @@ export async function executePlan(plan: KeeperPlan, deps: ExecutorDeps): Promise
     } catch (err) {
       report.skipped += 1;
       log.error(`[exec] payout twin=${tokenId} failed: ${errMsg(err)}`);
-    }
-  }
-
-  // ── 3. Exits: finalize matured, un-vetoed unlock requests ───────────────
-  for (const exit of plan.exits) {
-    try {
-      log.info(`${tag} executeUnlock resTokenId=${exit.resTokenId}`);
-      if (dry) {
-        report.exited += 1;
-        continue;
-      }
-      const tx = await etica.executeUnlock(exit.resTokenId);
-      report.exited += 1;
-      log.info(`[exec] executeUnlock resTokenId=${exit.resTokenId} tx=${tx}`);
-    } catch (err) {
-      report.skipped += 1;
-      log.error(`[exec] exit resTokenId=${exit.resTokenId} failed: ${errMsg(err)}`);
     }
   }
 
