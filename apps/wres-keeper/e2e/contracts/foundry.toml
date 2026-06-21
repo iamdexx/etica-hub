@@ -1,0 +1,25 @@
+# Foundry config for the wRES local E2E harness mocks ONLY.
+#
+# These are throwaway test doubles (a RES NFT, an ETX token, a 1:1 DEX router,
+# and a TRON CoreReactor sink) used to stand up a fully local two-chain loop.
+# The REAL product contracts are compiled by their own repos:
+#   - Etica  : packages/contracts (RESLockVault, ETRX)
+#   - TRON   : ../UEM/contracts    (WrappedRESMiner, TrxReserve)
+#
+# evm_version = "paris" is REQUIRED: it avoids the PUSH0 opcode (shanghai+),
+# which the TRON VM (java-tron) does not support — the MockCoreReactor is
+# deployed on TRON, so the whole project is pinned to paris for safety.
+[profile.default]
+src = "src"
+out = "out"
+libs = []
+solc = "0.8.26"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+evm_version = "paris"
+bytecode_hash = "none"
+cbor_metadata = false
+# OpenZeppelin is reused from packages/contracts (single source of truth) which
+# lives outside this sub-project's root, so it must be explicitly allowed.
+allow_paths = ["../../../../packages/contracts/lib"]
