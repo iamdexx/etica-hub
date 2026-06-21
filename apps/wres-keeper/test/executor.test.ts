@@ -24,6 +24,7 @@ function baseConfig(over: Partial<WresKeeperConfig> = {}): WresKeeperConfig {
     initialFrontSun: 0n,
     minPayoutSun: 1n,
     reserveTopUpBps: 100,
+    keeperOpsBps: 100,
     maxSlippageBps: 100,
     scanLookbackBlocks: 5_000,
     pollIntervalMs: 60_000,
@@ -47,7 +48,7 @@ describe('executePlan — dry-run', () => {
           tokenId: 9n,
           payoutWallet: PAYOUT,
           claimableSun: 1_000_000n,
-          split: { reserveTopUpSun: 10_000n, payoutSun: 990_000n },
+          split: { reserveTopUpSun: 10_000n, keeperOpsSun: 10_000n, payoutSun: 980_000n },
         },
       ],
       exits: [{ resTokenId: 4n }],
@@ -136,7 +137,7 @@ describe('executePlan — payouts', () => {
             tokenId: 9n,
             payoutWallet: PAYOUT,
             claimableSun: 1_000_000n,
-            split: { reserveTopUpSun: 10_000n, payoutSun: 990_000n },
+            split: { reserveTopUpSun: 10_000n, keeperOpsSun: 10_000n, payoutSun: 980_000n },
           },
         ],
         exits: [],
@@ -146,12 +147,12 @@ describe('executePlan — payouts', () => {
 
     expect(tron.claimForPayout).toHaveBeenCalledWith(9n);
     expect(tron.topUp).toHaveBeenCalledWith(10_000n); // 1% of 1 TRX
-    // 990k SUN -> 0.99 eTRX (18dp)
-    expect(etica.mintEtrx).toHaveBeenCalledWith('0xKEEPER0000000000000000000000000000000001', 990_000_000_000_000_000n);
-    expect(etica.approveEtrx).toHaveBeenCalledWith(990_000_000_000_000_000n);
+    // 980k SUN -> 0.98 eTRX (18dp) — 1% reserve + 1% keeper ops deducted
+    expect(etica.mintEtrx).toHaveBeenCalledWith('0xKEEPER0000000000000000000000000000000001', 980_000_000_000_000_000n);
+    expect(etica.approveEtrx).toHaveBeenCalledWith(980_000_000_000_000_000n);
     // minOut = quote * (10000-100)/10000 = 0.99 * quote
     expect(etica.swapEtrxForEtx).toHaveBeenCalledWith(
-      990_000_000_000_000_000n,
+      980_000_000_000_000_000n,
       990_000_000_000_000_000n,
       PAYOUT,
     );
@@ -169,7 +170,7 @@ describe('executePlan — payouts', () => {
             tokenId: 9n,
             payoutWallet: PAYOUT,
             claimableSun: 1_000_000n, // stale
-            split: { reserveTopUpSun: 10_000n, payoutSun: 990_000n },
+            split: { reserveTopUpSun: 10_000n, keeperOpsSun: 10_000n, payoutSun: 980_000n },
           },
         ],
         exits: [],

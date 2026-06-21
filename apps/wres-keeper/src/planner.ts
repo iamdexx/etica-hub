@@ -30,20 +30,33 @@ export interface PlanParams {
   minPayoutSun: bigint;
   /** Reserve top-up share in basis points (100 = 1%). */
   reserveTopUpBps: number;
+  /** Keeper ops share in basis points (100 = 1%). */
+  keeperOpsBps: number;
 }
 
 /**
- * Split a claimed amount into the 1% reserve top-up and the 99% holder payout.
- * Uses floor division for the reserve slice and gives the remainder to the
- * holder, so the two legs always sum back to exactly `amountSun` (no dust lost).
+ * Three-way split: reserve top-up, keeper ops retention, and holder payout.
+ * Reserve and keeper slices use floor division; the holder gets whatever is
+ * left, so the three legs always sum back to exactly `amountSun` (no dust lost).
  */
-export function splitPayout(amountSun: bigint, reserveTopUpBps: number): PayoutSplit {
+export function splitPayout(
+  amountSun: bigint,
+  reserveTopUpBps: number,
+  keeperOpsBps: number = 0,
+): PayoutSplit {
   if (amountSun < 0n) throw new Error('amountSun must be non-negative');
   if (reserveTopUpBps < 0 || reserveTopUpBps > 10_000) {
     throw new Error('reserveTopUpBps out of range [0, 10000]');
   }
+  if (keeperOpsBps < 0 || keeperOpsBps > 10_000) {
+    throw new Error('keeperOpsBps out of range [0, 10000]');
+  }
+  if (reserveTopUpBps + keeperOpsBps > 10_000) {
+    throw new Error('reserveTopUpBps + keeperOpsBps exceed 10000');
+  }
   const reserveTopUpSun = (amountSun * BigInt(reserveTopUpBps)) / BPS_DENOMINATOR;
-  return { reserveTopUpSun, payoutSun: amountSun - reserveTopUpSun };
+  const keeperOpsSun = (amountSun * BigInt(keeperOpsBps)) / BPS_DENOMINATOR;
+  return { reserveTopUpSun, keeperOpsSun, payoutSun: amountSun - reserveTopUpSun - keeperOpsSun };
 }
 
 /**
@@ -74,6 +87,7 @@ export function planPayouts(
   twins: TwinRecord[],
   minPayoutSun: bigint,
   reserveTopUpBps: number,
+  keeperOpsBps: number = 0,
 ): PayoutPlan[] {
   const out: PayoutPlan[] = [];
   for (const twin of twins) {
@@ -82,7 +96,7 @@ export function planPayouts(
       tokenId: twin.tokenId,
       payoutWallet: twin.payoutWallet,
       claimableSun: twin.pendingSun,
-      split: splitPayout(twin.pendingSun, reserveTopUpBps),
+      split: splitPayout(twin.pendingSun, reserveTopUpBps, keeperOpsBps),
     });
   }
   return out;
@@ -110,7 +124,7 @@ export function planExits(pendingUnlocks: PendingUnlock[], nowSec: bigint): Exit
 export function buildPlan(observation: Observation, params: PlanParams): KeeperPlan {
   return {
     entries: planEntries(observation.locks, observation.mintedByResTokenId, params.initialFrontSun),
-    payouts: planPayouts(observation.twins, params.minPayoutSun, params.reserveTopUpBps),
+    payouts: planPayouts(observation.twins, params.minPayoutSun, params.reserveTopUpBps, params.keeperOpsBps),
     exits: planExits(observation.pendingUnlocks, observation.nowSec),
   };
 }

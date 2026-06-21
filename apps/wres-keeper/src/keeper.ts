@@ -42,6 +42,7 @@ export async function runTick(keeper: Keeper): Promise<ExecutionReport> {
     initialFrontSun: config.initialFrontSun,
     minPayoutSun: config.minPayoutSun,
     reserveTopUpBps: config.reserveTopUpBps,
+    keeperOpsBps: config.keeperOpsBps,
   });
 
   if (isEmptyPlan(plan)) {

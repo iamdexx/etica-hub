@@ -21,6 +21,7 @@ function config(over: Partial<WresKeeperConfig> = {}): WresKeeperConfig {
     initialFrontSun: 0n,
     minPayoutSun: 1_000_000n,
     reserveTopUpBps: 100,
+    keeperOpsBps: 100,
     maxSlippageBps: 100,
     scanLookbackBlocks: 5_000,
     pollIntervalMs: 60_000,

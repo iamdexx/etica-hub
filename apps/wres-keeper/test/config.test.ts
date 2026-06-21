@@ -8,6 +8,7 @@ describe('loadConfig', () => {
     const c = loadConfig(env());
     expect(c.dryRun).toBe(true);
     expect(c.reserveTopUpBps).toBe(100);
+    expect(c.keeperOpsBps).toBe(100);
     expect(c.maxSlippageBps).toBe(100);
     expect(c.minPayoutSun).toBe(1_000_000n); // 1 TRX default
     expect(c.initialFrontSun).toBe(0n);
@@ -56,6 +57,13 @@ describe('loadConfig', () => {
 
   it('rejects out-of-range bps and sub-SUN precision', () => {
     expect(() => loadConfig(env({ WRES_RESERVE_TOPUP_BPS: '10001' }))).toThrow(/cannot exceed 10000/);
+    expect(() => loadConfig(env({ WRES_KEEPER_OPS_BPS: '10001' }))).toThrow(/cannot exceed 10000/);
     expect(() => loadConfig(env({ WRES_MIN_PAYOUT_TRX: '0.0000001' }))).toThrow(/sub-SUN precision/);
+  });
+
+  it('rejects when reserveTopUpBps + keeperOpsBps exceed 100%', () => {
+    expect(() => loadConfig(env({ WRES_RESERVE_TOPUP_BPS: '5000', WRES_KEEPER_OPS_BPS: '5001' }))).toThrow(
+      /exceed 10000/,
+    );
   });
 });

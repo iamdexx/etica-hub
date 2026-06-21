@@ -42,10 +42,12 @@ export interface TwinRecord {
   pendingSun: bigint;
 }
 
-/** The 1% / 99% split applied to a claimed payout (in SUN). */
+/** Three-way split applied to a claimed payout (in SUN). */
 export interface PayoutSplit {
   /** Slice retained in the TRX reserve (`TrxReserve.topUp`). */
   reserveTopUpSun: bigint;
+  /** Slice retained by the keeper as TRX for its own gas/energy costs. */
+  keeperOpsSun: bigint;
   /** Slice bridged + swapped to ETX for the holder. */
   payoutSun: bigint;
 }
