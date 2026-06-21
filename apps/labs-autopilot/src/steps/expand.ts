@@ -143,10 +143,14 @@ export async function proposeNextDirection(input: ExpansionInput): Promise<strin
     : [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK];
 
   for (const model of models) {
-    const raw = await callNvidia(model, system, user, 200);
-    if (raw) {
-      const cleaned = sanitize(raw);
-      if (cleaned) return cleaned;
+    // Try twice per model: LLM output is stochastic (temperature=0.5),
+    // so a second attempt often produces sanitizable text.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const raw = await callNvidia(model, system, user, 200);
+      if (raw) {
+        const cleaned = sanitize(raw);
+        if (cleaned) return cleaned;
+      }
     }
   }
   return null;
@@ -292,10 +296,14 @@ export async function proposeBranchPlan(input: BranchInput): Promise<BranchPlan 
     : [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK];
 
   for (const model of models) {
-    const raw = await callNvidia(model, system, user, 600, BRANCH_TIMEOUT_MS);
-    if (raw) {
-      const parsed = parseBranchPlan(raw);
-      if (parsed) return parsed;
+    // Try twice per model: structured JSON output has a higher failure
+    // rate, so a second stochastic attempt often yields valid JSON.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const raw = await callNvidia(model, system, user, 600, BRANCH_TIMEOUT_MS);
+      if (raw) {
+        const parsed = parseBranchPlan(raw);
+        if (parsed) return parsed;
+      }
     }
   }
   return null;
