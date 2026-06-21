@@ -56,6 +56,14 @@ export interface WresKeeperConfig {
   pollIntervalMs: number;
   dryRun: boolean;
 
+  // ── Brutus fallback ──────────────────────────────────────────────────
+  /** Brutus API user ID. When null, Brutus fallback is disabled. */
+  brutusApiId: string | null;
+  /** Brutus API token. When null, Brutus fallback is disabled. */
+  brutusApiToken: string | null;
+  /** Markup on Brutus rates for buyer pricing, in basis points (1500 = 15%). */
+  brutusMarkupBps: number;
+
   // ── Alerts ─────────────────────────────────────────────────────────────
   telegramBotToken: string | null;
   telegramChatId: string | null;
@@ -181,6 +189,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WresKeeperConf
     // Clamp to >=1ms so a misconfigured 0 doesn't spin the event loop.
     pollIntervalMs: Math.max(optionalInt(env, 'WRES_POLL_INTERVAL_MS', 60_000), 1),
     dryRun,
+
+    brutusApiId: optional(env, 'BRUTUS_API_ID'),
+    brutusApiToken: optional(env, 'BRUTUS_API_TOKEN'),
+    brutusMarkupBps: optionalInt(env, 'BRUTUS_MARKUP_BPS', 1500),
 
     telegramBotToken: optional(env, 'TELEGRAM_BOT_TOKEN'),
     telegramChatId: optional(env, 'TELEGRAM_CHAT_ID'),
