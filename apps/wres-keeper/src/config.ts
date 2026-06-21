@@ -48,6 +48,8 @@ export interface WresKeeperConfig {
   minPayoutSun: bigint;
   /** Revenue slice retained in the reserve, in basis points (100 = 1%). */
   reserveTopUpBps: number;
+  /** Revenue slice retained by the keeper for gas/energy, in basis points (100 = 1%). */
+  keeperOpsBps: number;
   /** Max tolerated slippage on the eTRX->ETX swap, in basis points (100 = 1%). */
   maxSlippageBps: number;
 
@@ -137,6 +139,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WresKeeperConf
     throw new Error(`WRES_RESERVE_TOPUP_BPS cannot exceed 10000 (100%), got: ${reserveTopUpBps}`);
   }
 
+  const keeperOpsBps = optionalInt(env, 'WRES_KEEPER_OPS_BPS', 100);
+  if (keeperOpsBps > 10_000) {
+    throw new Error(`WRES_KEEPER_OPS_BPS cannot exceed 10000 (100%), got: ${keeperOpsBps}`);
+  }
+
+  if (reserveTopUpBps + keeperOpsBps > 10_000) {
+    throw new Error(
+      `WRES_RESERVE_TOPUP_BPS (${reserveTopUpBps}) + WRES_KEEPER_OPS_BPS (${keeperOpsBps}) exceed 10000 (100%)`,
+    );
+  }
+
   const maxSlippageBps = optionalInt(env, 'WRES_MAX_SLIPPAGE_BPS', 100);
   if (maxSlippageBps > 10_000) {
     throw new Error(`WRES_MAX_SLIPPAGE_BPS cannot exceed 10000 (100%), got: ${maxSlippageBps}`);
@@ -164,6 +177,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WresKeeperConf
     initialFrontSun: optionalTrxToSun(env, 'WRES_INITIAL_FRONT_TRX', 0),
     minPayoutSun: optionalTrxToSun(env, 'WRES_MIN_PAYOUT_TRX', 1),
     reserveTopUpBps,
+    keeperOpsBps,
     maxSlippageBps,
 
     scanLookbackBlocks: optionalInt(env, 'WRES_SCAN_LOOKBACK_BLOCKS', 5_000),

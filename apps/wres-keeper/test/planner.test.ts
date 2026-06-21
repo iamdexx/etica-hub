@@ -24,25 +24,40 @@ const twin = (tokenId: bigint, pendingSun: bigint): TwinRecord => ({
 });
 
 describe('splitPayout', () => {
-  it('splits 1% reserve / 99% payout and conserves the total', () => {
-    const { reserveTopUpSun, payoutSun } = splitPayout(1_000_000n, 100);
+  it('splits 1% reserve / 99% payout and conserves the total (keeperOps=0)', () => {
+    const { reserveTopUpSun, keeperOpsSun, payoutSun } = splitPayout(1_000_000n, 100);
     expect(reserveTopUpSun).toBe(10_000n);
+    expect(keeperOpsSun).toBe(0n);
     expect(payoutSun).toBe(990_000n);
-    expect(reserveTopUpSun + payoutSun).toBe(1_000_000n);
+    expect(reserveTopUpSun + keeperOpsSun + payoutSun).toBe(1_000_000n);
   });
 
-  it('floors the reserve slice so no dust is lost (remainder to holder)', () => {
-    // 999 * 100 / 10000 = 9.99 -> floors to 9; holder gets the rest.
-    const { reserveTopUpSun, payoutSun } = splitPayout(999n, 100);
+  it('three-way split: 1% reserve / 1% keeper / 98% payout', () => {
+    const { reserveTopUpSun, keeperOpsSun, payoutSun } = splitPayout(1_000_000n, 100, 100);
+    expect(reserveTopUpSun).toBe(10_000n);
+    expect(keeperOpsSun).toBe(10_000n);
+    expect(payoutSun).toBe(980_000n);
+    expect(reserveTopUpSun + keeperOpsSun + payoutSun).toBe(1_000_000n);
+  });
+
+  it('floors both slices so no dust is lost (remainder to holder)', () => {
+    const { reserveTopUpSun, keeperOpsSun, payoutSun } = splitPayout(999n, 100, 100);
     expect(reserveTopUpSun).toBe(9n);
-    expect(payoutSun).toBe(990n);
-    expect(reserveTopUpSun + payoutSun).toBe(999n);
+    expect(keeperOpsSun).toBe(9n);
+    expect(payoutSun).toBe(981n);
+    expect(reserveTopUpSun + keeperOpsSun + payoutSun).toBe(999n);
   });
 
   it('rejects negative amounts and out-of-range bps', () => {
     expect(() => splitPayout(-1n, 100)).toThrow();
     expect(() => splitPayout(1n, -1)).toThrow();
     expect(() => splitPayout(1n, 10_001)).toThrow();
+    expect(() => splitPayout(1n, 100, -1)).toThrow();
+    expect(() => splitPayout(1n, 100, 10_001)).toThrow();
+  });
+
+  it('rejects when reserve + keeper exceed 100%', () => {
+    expect(() => splitPayout(1n, 5_000, 5_001)).toThrow();
   });
 });
 
@@ -64,6 +79,7 @@ describe('planPayouts', () => {
     const payouts = planPayouts([twin(1n, 0n), twin(2n, 500_000n), twin(3n, 2_000_000n)], 1_000_000n, 100);
     expect(payouts.map((p) => p.tokenId)).toEqual([3n]);
     expect(payouts[0]?.split.reserveTopUpSun).toBe(20_000n);
+    expect(payouts[0]?.split.keeperOpsSun).toBe(0n);
   });
 });
 
@@ -103,7 +119,7 @@ describe('buildPlan / isEmptyPlan', () => {
   });
 
   it('is empty when nothing to do', () => {
-    const plan = buildPlan(observation(), { initialFrontSun: 0n, minPayoutSun: 1n, reserveTopUpBps: 100 });
+    const plan = buildPlan(observation(), { initialFrontSun: 0n, minPayoutSun: 1n, reserveTopUpBps: 100, keeperOpsBps: 100 });
     expect(isEmptyPlan(plan)).toBe(true);
   });
 
@@ -114,7 +130,7 @@ describe('buildPlan / isEmptyPlan', () => {
         twins: [twin(9n, 5_000_000n)],
         pendingUnlocks: [{ resTokenId: 4n, unlockReadyAt: 1n, active: true }],
       }),
-      { initialFrontSun: 0n, minPayoutSun: 1n, reserveTopUpBps: 100 },
+      { initialFrontSun: 0n, minPayoutSun: 1n, reserveTopUpBps: 100, keeperOpsBps: 100 },
     );
     expect(isEmptyPlan(plan)).toBe(false);
     expect(plan.entries).toHaveLength(1);

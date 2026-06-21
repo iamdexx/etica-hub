@@ -17,7 +17,7 @@ the rest of the tick.
 | Leg | Trigger | Actions |
 |---|---|---|
 | **Entry** | new `Locked` on Etica with no TRON twin yet | `mintTwin` (TRON) → optional `frontUpgrade` from the reserve (bounded by `frontableNow` this epoch) |
-| **Payout** | a twin's settled reward ≥ `WRES_MIN_PAYOUT_TRX` | `claimForPayout` (TRON) → **1%** `topUp` to the reserve → mint eTRX 1:1 → approve → quote → swap eTRX→ETX to the holder's 0x wallet (Etica) |
+| **Payout** | a twin's settled reward ≥ `WRES_MIN_PAYOUT_TRX` | `claimForPayout` (TRON) → **1%** `topUp` to the reserve → **1%** keeper ops retention → mint eTRX 1:1 → approve → quote → swap eTRX→ETX to the holder's 0x wallet (Etica) |
 | **Exit** | a matured, un-vetoed `requestUnlock` on the vault | permissionless `executeUnlock` (Etica) returns the RES to its locker |
 
 `frontableNow` is read once per tick and debited locally, so multiple entries in
@@ -95,7 +95,8 @@ Every variable is documented in [`.env.example`](./.env.example). Summary:
 - **Signers:** `WRES_KEEPER_TRON_PRIVATE_KEY`, `WRES_KEEPER_ETICA_PRIVATE_KEY`
   (blank ⇒ dry-run)
 - **Policy:** `WRES_INITIAL_FRONT_TRX`, `WRES_MIN_PAYOUT_TRX`,
-  `WRES_RESERVE_TOPUP_BPS` (default `100` = 1%), `WRES_MAX_SLIPPAGE_BPS`
+  `WRES_RESERVE_TOPUP_BPS` (default `100` = 1%), `WRES_KEEPER_OPS_BPS`
+  (default `100` = 1% — keeper gas self-funding), `WRES_MAX_SLIPPAGE_BPS`
   (default `100` = 1%)
 - **Loop:** `WRES_SCAN_LOOKBACK_BLOCKS`, `WRES_POLL_INTERVAL_MS`, `WRES_DRY_RUN`
 - **Alerts:** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (optional)

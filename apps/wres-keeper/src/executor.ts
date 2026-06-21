@@ -9,8 +9,9 @@
  * Ordering per tick:
  *   1. Entries : mintTwin (TRON) -> frontUpgrade from reserve (bounded by the
  *                reserve's frontable budget this epoch)
- *   2. Payouts : claimForPayout (TRON) -> 1% topUp (TRON reserve)
- *                -> mint eTRX -> approve -> swap eTRX->ETX to the holder (Etica)
+ *   2. Payouts : claimForPayout (TRON) -> reserve topUp (TRON)
+ *                -> keeper ops retention (TRON) -> mint eTRX -> approve
+ *                -> swap eTRX->ETX to the holder (Etica)
  *   3. Exits   : permissionless executeUnlock (Etica)
  *
  * Each item is isolated in try/catch so a single failure (e.g. a thin reserve)
@@ -91,13 +92,14 @@ export async function executePlan(plan: KeeperPlan, deps: ExecutorDeps): Promise
     }
   }
 
-  // ── 2. Payouts: claim -> 1% topUp -> mint eTRX -> swap to ETX -> holder ──
+  // ── 2. Payouts: claim -> topUp -> keeper ops -> mint eTRX -> swap -> holder ─
   for (const payout of plan.payouts) {
     const { tokenId, payoutWallet, split } = payout;
     try {
       log.info(
         `${tag} claimForPayout twin=${tokenId} (${formatTrx(payout.claimableSun)}): ` +
-          `topUp ${formatTrx(split.reserveTopUpSun)}, payout ${formatTrx(split.payoutSun)}`,
+          `topUp ${formatTrx(split.reserveTopUpSun)}, keeper ${formatTrx(split.keeperOpsSun)}, ` +
+          `payout ${formatTrx(split.payoutSun)}`,
       );
       if (dry) {
         report.paid += 1;
@@ -110,11 +112,17 @@ export async function executePlan(plan: KeeperPlan, deps: ExecutorDeps): Promise
       // Re-derive the split from the *actual* claimed amount (it may differ
       // slightly from the planned snapshot if revenue accrued mid-tick).
       const reserveTopUpSun = (amountSun * BigInt(config.reserveTopUpBps)) / BPS_DENOMINATOR;
-      const payoutSun = amountSun - reserveTopUpSun;
+      const keeperOpsSun = (amountSun * BigInt(config.keeperOpsBps)) / BPS_DENOMINATOR;
+      const payoutSun = amountSun - reserveTopUpSun - keeperOpsSun;
 
       if (reserveTopUpSun > 0n) {
         const topUpTx = await tron.topUp(reserveTopUpSun);
         log.info(`[exec] reserve topUp ${formatTrx(reserveTopUpSun)} tx=${topUpTx}`);
+      }
+
+      // Keeper ops slice stays as TRX in the keeper's wallet — no tx needed.
+      if (keeperOpsSun > 0n) {
+        log.info(`[exec] keeper ops retained ${formatTrx(keeperOpsSun)}`);
       }
 
       if (payoutSun > 0n) {
