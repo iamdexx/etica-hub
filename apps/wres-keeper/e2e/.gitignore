@@ -1,0 +1,5 @@
+# Generated at runtime by run-harness.ts — contains throwaway dev keys.
+.env.local
+
+# Foundry cache — rebuilt by `forge build`.
+contracts/cache/
