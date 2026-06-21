@@ -54,7 +54,7 @@ jobs:
   tick:
     name: Worker tick
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 55
     env:
       LABS_AUTOPILOT_BASE_URL: ${{ vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
       LABS_AUTOPILOT_MAX_JOBS_PER_TICK: ${{ github.event.inputs.max_jobs || vars.LABS_AUTOPILOT_MAX_JOBS_PER_TICK || '5' }}
