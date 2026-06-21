@@ -9,7 +9,7 @@
 
 import { vi } from 'vitest';
 import type { EticaClient, TronClient, TronObservation } from '../src/chains/types.js';
-import type { Hex, LockRecord, Logger, PendingUnlock } from '../src/types.js';
+import type { Hex, Logger, Registration } from '../src/types.js';
 
 export interface RecordingLogger extends Logger {
   infos: string[];
@@ -33,19 +33,14 @@ export function makeLogger(): RecordingLogger {
 
 export interface FakeEticaOptions {
   keeper?: Hex | null;
-  locks?: LockRecord[];
-  pendingUnlocks?: PendingUnlock[];
-  nowSec?: bigint;
+  registrations?: Registration[];
   quoteOut?: bigint;
 }
 
 export function makeEticaClient(opts: FakeEticaOptions = {}) {
   const client: EticaClient = {
     keeperAddress: vi.fn(() => opts.keeper ?? ('0xKEEPER0000000000000000000000000000000001' as Hex)),
-    scanActiveLocks: vi.fn(async () => opts.locks ?? []),
-    scanPendingUnlocks: vi.fn(async () => opts.pendingUnlocks ?? []),
-    now: vi.fn(async () => opts.nowSec ?? 1_000n),
-    executeUnlock: vi.fn(async () => '0xexec' as Hex),
+    scanRegistrations: vi.fn(async () => opts.registrations ?? []),
     mintEtrx: vi.fn(async () => '0xmint' as Hex),
     approveEtrx: vi.fn(async () => '0xapprove' as Hex),
     quoteEtxOut: vi.fn(async () => opts.quoteOut ?? 1_000_000_000_000_000_000n),

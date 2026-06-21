@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { runTick, type Keeper } from '../src/keeper.js';
 import type { WresKeeperConfig } from '../src/config.js';
-import type { Hex, LockRecord, TwinRecord } from '../src/types.js';
+import type { Hex, Registration, TwinRecord } from '../src/types.js';
 import { makeEticaClient, makeLogger, makeTronClient } from './fakes.js';
 
 function config(over: Partial<WresKeeperConfig> = {}): WresKeeperConfig {
   return {
     eticaRpcUrl: 'http://etica',
     eticaChainId: 61803,
-    resLockVault: null,
     etrx: null,
     etx: null,
     dexRouter: null,
@@ -39,14 +38,13 @@ describe('runTick', () => {
     const keeper: Keeper = { config: config(), etica, tron, log: makeLogger() };
 
     const report = await runTick(keeper);
-    expect(report).toEqual({ minted: 0, fronted: 0, paid: 0, exited: 0, skipped: 0 });
+    expect(report).toEqual({ minted: 0, fronted: 0, paid: 0, skipped: 0 });
     expect(tron.mintTwin).not.toHaveBeenCalled();
   });
 
   it('observes -> plans -> executes a full pass (dry-run)', async () => {
-    const lock: LockRecord = {
+    const reg: Registration = {
       resTokenId: 1n,
-      owner: '0x1111111111111111111111111111111111111111',
       tronRecipient: '0x2222222222222222222222222222222222222222' as Hex,
       payoutWallet: '0x3333333333333333333333333333333333333333' as Hex,
     };
@@ -57,20 +55,15 @@ describe('runTick', () => {
       pendingSun: 5_000_000n,
     };
 
-    const etica = makeEticaClient({
-      locks: [lock],
-      pendingUnlocks: [{ resTokenId: 9n, unlockReadyAt: 1n, active: true }],
-      nowSec: 1_000n,
-    });
+    const etica = makeEticaClient({ registrations: [reg] });
     const tron = makeTronClient({
       observation: { mintedByResTokenId: new Map([['2', 7n]]), twins: [twin] },
     });
 
     const report = await runTick({ config: config(), etica, tron, log: makeLogger() });
-    // 1 new lock to mint, 1 twin above threshold to pay, 1 matured exit.
+    // 1 new registration to mint, 1 twin above threshold to pay
     expect(report.minted).toBe(1);
     expect(report.paid).toBe(1);
-    expect(report.exited).toBe(1);
     // dry-run: nothing actually broadcast
     expect(tron.mintTwin).not.toHaveBeenCalled();
   });

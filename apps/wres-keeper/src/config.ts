@@ -1,11 +1,11 @@
 /**
  * wRES keeper configuration — loaded from environment variables.
  *
- * The keeper spans two chains: Etica (viem) for the RESLockVault + ETRX + DEX,
- * and TRON (tronweb) for the WrappedRESMiner + TrxReserve. Most fields are
- * optional so the keeper degrades gracefully: with no private keys it forces
- * DRY-RUN (reads + logs intended writes, never broadcasts), and any leg whose
- * contract address is unset is simply skipped.
+ * The keeper spans two chains: Etica (viem) for ETRX + DEX, and TRON
+ * (tronweb) for the WrappedRESMiner + TrxReserve. Most fields are optional so
+ * the keeper degrades gracefully: with no private keys it forces DRY-RUN
+ * (reads + logs intended writes, never broadcasts), and any leg whose contract
+ * address is unset is simply skipped.
  *
  * Numeric TRX policy fields are parsed as decimal TRX and stored as SUN
  * (`bigint`, 1 TRX = 1e6 SUN) so the loop never juggles units.
@@ -19,8 +19,6 @@ export interface WresKeeperConfig {
   // ── Etica ──────────────────────────────────────────────────────────────
   eticaRpcUrl: string;
   eticaChainId: number;
-  /** RESLockVault on Etica. When null, the entry watcher is disabled. */
-  resLockVault: Address | null;
   /** ETRX (bridged TRX) on Etica. When null, the payout leg is disabled. */
   etrx: Address | null;
   /** ETX token on Etica. When null, the swap leg is disabled. */
@@ -161,7 +159,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WresKeeperConf
   return {
     eticaRpcUrl: optional(env, 'WRES_ETICA_RPC_URL') ?? 'https://rpc2.etica-stats.org',
     eticaChainId: optionalInt(env, 'WRES_ETICA_CHAIN_ID', 61803),
-    resLockVault: optionalAddress(env, 'WRES_RES_LOCK_VAULT_ADDRESS'),
     etrx: optionalAddress(env, 'WRES_ETRX_ADDRESS'),
     etx: optionalAddress(env, 'WRES_ETX_ADDRESS'),
     dexRouter: optionalAddress(env, 'WRES_DEX_ROUTER_ADDRESS'),

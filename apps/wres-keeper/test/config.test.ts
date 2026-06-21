@@ -13,7 +13,7 @@ describe('loadConfig', () => {
     expect(c.minPayoutSun).toBe(1_000_000n); // 1 TRX default
     expect(c.initialFrontSun).toBe(0n);
     expect(c.pollIntervalMs).toBe(60_000);
-    expect(c.resLockVault).toBeNull();
+    expect(c.etrx).toBeNull();
   });
 
   it('parses decimal TRX policy fields into SUN', () => {
@@ -33,7 +33,7 @@ describe('loadConfig', () => {
   });
 
   it('rejects an invalid Etica address', () => {
-    expect(() => loadConfig(env({ WRES_RES_LOCK_VAULT_ADDRESS: '0xnope' }))).toThrow(/not a valid address/);
+    expect(() => loadConfig(env({ WRES_ETRX_ADDRESS: '0xnope' }))).toThrow(/not a valid address/);
   });
 
   it('treats the zero address as unset', () => {

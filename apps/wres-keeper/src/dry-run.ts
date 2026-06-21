@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const report = await runTick(keeper);
   log.info(
     `[dry-run] done: would-mint=${report.minted} would-pay=${report.paid} ` +
-      `would-exit=${report.exited} skipped=${report.skipped}`,
+      `skipped=${report.skipped}`,
   );
 }
 

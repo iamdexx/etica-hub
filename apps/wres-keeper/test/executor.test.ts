@@ -11,7 +11,6 @@ function baseConfig(over: Partial<WresKeeperConfig> = {}): WresKeeperConfig {
   return {
     eticaRpcUrl: 'http://etica',
     eticaChainId: 61803,
-    resLockVault: null,
     etrx: null,
     etx: null,
     dexRouter: null,
@@ -35,7 +34,7 @@ function baseConfig(over: Partial<WresKeeperConfig> = {}): WresKeeperConfig {
   };
 }
 
-const emptyPlan = (): KeeperPlan => ({ entries: [], payouts: [], exits: [] });
+const emptyPlan = (): KeeperPlan => ({ entries: [], payouts: [] });
 
 describe('executePlan — dry-run', () => {
   it('broadcasts nothing but counts intended actions', async () => {
@@ -51,7 +50,6 @@ describe('executePlan — dry-run', () => {
           split: { reserveTopUpSun: 10_000n, keeperOpsSun: 10_000n, payoutSun: 980_000n },
         },
       ],
-      exits: [{ resTokenId: 4n }],
     };
 
     const report = await executePlan(plan, {
@@ -61,10 +59,9 @@ describe('executePlan — dry-run', () => {
       log: makeLogger(),
     });
 
-    expect(report).toEqual({ minted: 1, fronted: 0, paid: 1, exited: 1, skipped: 0 });
+    expect(report).toEqual({ minted: 1, fronted: 0, paid: 1, skipped: 0 });
     expect(tron.mintTwin).not.toHaveBeenCalled();
     expect(tron.claimForPayout).not.toHaveBeenCalled();
-    expect(etica.executeUnlock).not.toHaveBeenCalled();
     expect(etica.mintEtrx).not.toHaveBeenCalled();
   });
 });
@@ -76,7 +73,6 @@ describe('executePlan — entries', () => {
       {
         entries: [{ resTokenId: 1n, tronRecipient: RECIPIENT, payoutWallet: PAYOUT, initialFrontSun: 500_000n }],
         payouts: [],
-        exits: [],
       },
       { config: baseConfig(), etica: makeEticaClient(), tron, log: makeLogger() },
     );
@@ -94,7 +90,6 @@ describe('executePlan — entries', () => {
       {
         entries: [{ resTokenId: 1n, tronRecipient: RECIPIENT, payoutWallet: PAYOUT, initialFrontSun: 500_000n }],
         payouts: [],
-        exits: [],
       },
       { config: baseConfig(), etica: makeEticaClient(), tron, log },
     );
@@ -114,7 +109,6 @@ describe('executePlan — entries', () => {
           { resTokenId: 2n, tronRecipient: RECIPIENT, payoutWallet: PAYOUT, initialFrontSun: 500_000n },
         ],
         payouts: [],
-        exits: [],
       },
       { config: baseConfig(), etica: makeEticaClient(), tron, log: makeLogger() },
     );
@@ -140,7 +134,6 @@ describe('executePlan — payouts', () => {
             split: { reserveTopUpSun: 10_000n, keeperOpsSun: 10_000n, payoutSun: 980_000n },
           },
         ],
-        exits: [],
       },
       { config: baseConfig(), etica, tron, log: makeLogger() },
     );
@@ -173,7 +166,6 @@ describe('executePlan — payouts', () => {
             split: { reserveTopUpSun: 10_000n, keeperOpsSun: 10_000n, payoutSun: 980_000n },
           },
         ],
-        exits: [],
       },
       { config: baseConfig(), etica, tron, log: makeLogger() },
     );
@@ -181,17 +173,7 @@ describe('executePlan — payouts', () => {
   });
 });
 
-describe('executePlan — exits + error isolation', () => {
-  it('finalizes matured exits', async () => {
-    const etica = makeEticaClient();
-    const report = await executePlan(
-      { entries: [], payouts: [], exits: [{ resTokenId: 4n }] },
-      { config: baseConfig(), etica, tron: makeTronClient(), log: makeLogger() },
-    );
-    expect(etica.executeUnlock).toHaveBeenCalledWith(4n);
-    expect(report.exited).toBe(1);
-  });
-
+describe('executePlan — error isolation', () => {
   it('isolates a failing item and keeps going (counts skipped)', async () => {
     const tron = makeTronClient();
     tron.mintTwin.mockRejectedValueOnce(new Error('rpc down'));
@@ -203,7 +185,6 @@ describe('executePlan — exits + error isolation', () => {
           { resTokenId: 2n, tronRecipient: RECIPIENT, payoutWallet: PAYOUT, initialFrontSun: 0n },
         ],
         payouts: [],
-        exits: [],
       },
       { config: baseConfig(), etica: makeEticaClient(), tron, log },
     );
@@ -216,7 +197,7 @@ describe('executePlan — exits + error isolation', () => {
     const tron = makeTronClient();
     const etica = makeEticaClient();
     const report = await executePlan(emptyPlan(), { config: baseConfig(), etica, tron, log: makeLogger() });
-    expect(report).toEqual({ minted: 0, fronted: 0, paid: 0, exited: 0, skipped: 0 });
+    expect(report).toEqual({ minted: 0, fronted: 0, paid: 0, skipped: 0 });
     expect(tron.frontableNow).not.toHaveBeenCalled();
   });
 });

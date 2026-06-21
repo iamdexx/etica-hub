@@ -2,8 +2,8 @@
  * TRON chain adapter — tronweb.
  *
  * Twins are minted sequentially (`nextTokenId` starts at 1, `totalSupply`
- * tracks the count) and are never burned — the only exit is the Etica-side
- * unlock. So we enumerate the live set by walking `1..totalSupply` and reading
+ * tracks the count) and are never burned. We enumerate the live set by
+ * walking `1..totalSupply` and reading
  * the public `miners` getter + `pendingReward`, which avoids depending on a
  * TronGrid event index (often gated behind an API key).
  *
@@ -63,7 +63,9 @@ export function createTronClient(config: WresKeeperConfig, log: Logger): TronCli
   const tronWeb = new TronWeb({ fullHost: config.tronRpcUrl });
   const hasSigner = Boolean(config.keeperTronPrivateKey);
   if (config.keeperTronPrivateKey) {
-    tronWeb.setPrivateKey(config.keeperTronPrivateKey);
+    // Config validates the key as 0x-prefixed hex (viem `isHex`), but tronweb
+    // rejects the 0x prefix — strip it so the same key format works on both chains.
+    tronWeb.setPrivateKey(config.keeperTronPrivateKey.replace(/^0x/, ''));
   }
 
   function requireSigner(): void {

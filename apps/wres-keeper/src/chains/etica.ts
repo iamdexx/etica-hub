@@ -1,10 +1,11 @@
 /**
  * Etica (L1) chain adapter — viem.
  *
- * Reads `Locked` / `UnlockRequested` events from the RESLockVault and confirms
- * each against the authoritative `locks` getter. Writes (executeUnlock, eTRX
- * mint/approve, DEX swap) require a wallet; without a signer they throw, and the
- * executor never calls them in dry-run.
+ * Chain-agnostic registration scanning: reads new research registrations from
+ * a configurable source (currently returns an empty list — registrations are
+ * expected to come from the TRON-side `ResearchSovereignRegistry` or a local
+ * queue in the future). Writes (eTRX mint/approve, DEX swap) require a wallet;
+ * without a signer they throw, and the executor never calls them in dry-run.
  */
 
 import {
@@ -18,9 +19,9 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { routerAbi } from '@etica-hub/shared/abis';
-import { ETRX_ABI, RES_LOCK_VAULT_ABI } from '../abi.js';
+import { ETRX_ABI } from '../abi.js';
 import type { WresKeeperConfig } from '../config.js';
-import type { Hex, LockRecord, Logger, PendingUnlock } from '../types.js';
+import type { Hex, Logger, Registration } from '../types.js';
 import type { EticaClient } from './types.js';
 
 /** Deadline helper: now + 20 minutes, in seconds. */
@@ -50,108 +51,13 @@ export function createEticaClient(config: WresKeeperConfig, log: Logger): EticaC
     return account ? (account.address as Hex) : null;
   }
 
-  async function scanRange(): Promise<{ vault: Address; fromBlock: bigint; toBlock: bigint }> {
-    if (!config.resLockVault) throw new Error('RESLockVault address unset');
-    const head = await publicClient.getBlockNumber();
-    const lookback = BigInt(config.scanLookbackBlocks);
-    const fromBlock = head > lookback ? head - lookback : 0n;
-    return { vault: config.resLockVault, fromBlock, toBlock: head };
-  }
-
-  async function scanActiveLocks(): Promise<LockRecord[]> {
-    if (!config.resLockVault) return [];
-    const { vault, fromBlock, toBlock } = await scanRange();
-
-    const logs = await publicClient.getContractEvents({
-      address: vault,
-      abi: RES_LOCK_VAULT_ABI,
-      eventName: 'Locked',
-      fromBlock,
-      toBlock,
-    });
-
-    // De-duplicate by resTokenId (a token can only be locked once at a time).
-    const seen = new Set<string>();
-    const out: LockRecord[] = [];
-    for (const entry of logs) {
-      const resTokenId = entry.args.resTokenId;
-      if (resTokenId === undefined) continue;
-      const key = resTokenId.toString();
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      // Authoritative: only keep locks the vault still reports as active.
-      const lock = await publicClient.readContract({
-        address: vault,
-        abi: RES_LOCK_VAULT_ABI,
-        functionName: 'locks',
-        args: [resTokenId],
-      });
-      const [owner, payoutWallet, tronRecipient, , , active] = lock;
-      if (!active) continue;
-
-      out.push({
-        resTokenId,
-        owner: owner as Hex,
-        tronRecipient: tronRecipient as Hex,
-        payoutWallet: payoutWallet as Hex,
-      });
-    }
-    log.info(`[etica] ${out.length} active lock(s) found`);
-    return out;
-  }
-
-  async function scanPendingUnlocks(): Promise<PendingUnlock[]> {
-    if (!config.resLockVault) return [];
-    const { vault, fromBlock, toBlock } = await scanRange();
-
-    const logs = await publicClient.getContractEvents({
-      address: vault,
-      abi: RES_LOCK_VAULT_ABI,
-      eventName: 'UnlockRequested',
-      fromBlock,
-      toBlock,
-    });
-
-    const seen = new Set<string>();
-    const out: PendingUnlock[] = [];
-    for (const entry of logs) {
-      const resTokenId = entry.args.resTokenId;
-      if (resTokenId === undefined) continue;
-      const key = resTokenId.toString();
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      // Authoritative: read the live request state (a veto resets readyAt to 0).
-      const lock = await publicClient.readContract({
-        address: vault,
-        abi: RES_LOCK_VAULT_ABI,
-        functionName: 'locks',
-        args: [resTokenId],
-      });
-      const [, , , , unlockReadyAt, active] = lock;
-      out.push({ resTokenId, unlockReadyAt: BigInt(unlockReadyAt), active });
-    }
-    log.info(`[etica] ${out.length} pending unlock request(s) found`);
-    return out;
-  }
-
-  async function now(): Promise<bigint> {
-    const block = await publicClient.getBlock();
-    return block.timestamp;
-  }
-
-  async function executeUnlock(resTokenId: bigint): Promise<Hex> {
-    if (!config.resLockVault) throw new Error('RESLockVault address unset');
-    const { wallet, account } = requireWallet();
-    return wallet.writeContract({
-      account,
-      chain: null,
-      address: config.resLockVault,
-      abi: RES_LOCK_VAULT_ABI,
-      functionName: 'executeUnlock',
-      args: [resTokenId],
-    });
+  async function scanRegistrations(): Promise<Registration[]> {
+    // Chain-agnostic: registrations come from any origin chain. For now this
+    // returns an empty list — new entries are expected to be driven by the
+    // TRON-side ResearchSovereignRegistry.register() or a local queue.
+    // Future adapters per origin chain plug in here.
+    log.info('[etica] scanRegistrations: 0 pending (no origin-chain source configured)');
+    return [];
   }
 
   async function mintEtrx(to: Hex, amountWei: bigint): Promise<Hex> {
@@ -216,10 +122,7 @@ export function createEticaClient(config: WresKeeperConfig, log: Logger): EticaC
 
   return {
     keeperAddress,
-    scanActiveLocks,
-    scanPendingUnlocks,
-    now,
-    executeUnlock,
+    scanRegistrations,
     mintEtrx,
     approveEtrx,
     quoteEtxOut,

@@ -24,7 +24,7 @@ async function main(): Promise<void> {
       `poll=${config.pollIntervalMs}ms etica=${config.eticaRpcUrl} tron=${config.tronRpcUrl}`,
   );
   log.info(
-    `[keeper] vault=${config.resLockVault ?? 'unset'} miner=${config.wrappedResMiner ?? 'unset'} ` +
+    `[keeper] miner=${config.wrappedResMiner ?? 'unset'} ` +
       `reserve=${config.trxReserve ?? 'unset'} etrx=${config.etrx ?? 'unset'} router=${config.dexRouter ?? 'unset'}`,
   );
 
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
       if (report.skipped > 0) {
         await sendTelegramAlert(
           `wRES keeper tick: ${report.skipped} action(s) failed ` +
-            `(minted=${report.minted} paid=${report.paid} exited=${report.exited})`,
+            `(minted=${report.minted} paid=${report.paid})`,
           { botToken: config.telegramBotToken, chatId: config.telegramChatId, silent: true },
           log,
         );

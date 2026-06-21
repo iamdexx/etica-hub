@@ -23,7 +23,7 @@ export interface Keeper {
   log: Logger;
 }
 
-const EMPTY_REPORT: ExecutionReport = { minted: 0, fronted: 0, paid: 0, exited: 0, skipped: 0 };
+const EMPTY_REPORT: ExecutionReport = { minted: 0, fronted: 0, paid: 0, skipped: 0 };
 
 export function createKeeper(config: WresKeeperConfig, log: Logger = console): Keeper {
   return {
@@ -46,13 +46,13 @@ export async function runTick(keeper: Keeper): Promise<ExecutionReport> {
   });
 
   if (isEmptyPlan(plan)) {
-    log.info('[keeper] idle tick — no entries, payouts, or exits');
+    log.info('[keeper] idle tick — no entries or payouts');
     return { ...EMPTY_REPORT };
   }
 
   log.info(
     `[keeper] plan: ${plan.entries.length} entr(y/ies), ` +
-      `${plan.payouts.length} payout(s), ${plan.exits.length} exit(s)`,
+      `${plan.payouts.length} payout(s)`,
   );
   return executePlan(plan, { config, etica, tron, log });
 }
