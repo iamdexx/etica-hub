@@ -114,6 +114,7 @@ async function callNvidia(
       temperature: 0.5,
       max_tokens: maxTokens,
       timeoutMs,
+      maxRetriesPerKey: timeoutMs >= BRANCH_TIMEOUT_MS ? 1 : 2,
       messages: [
         // Directive on its own line so 550B recognises it and skips its
         // verbose chain-of-thought (it ignores the switch when concatenated).
@@ -137,15 +138,20 @@ export async function proposeNextDirection(input: ExpansionInput): Promise<strin
   const system = systemPrompt(input.kind);
   const user = userPrompt(input);
 
-  const primary = await callNvidia(NVIDIA_MODEL_PRIMARY, system, user, 200);
-  if (primary) {
-    const cleaned = sanitize(primary);
-    if (cleaned) return cleaned;
-  }
-  const fallback = await callNvidia(NVIDIA_MODEL_FALLBACK, system, user, 200);
-  if (fallback) {
-    const cleaned = sanitize(fallback);
-    if (cleaned) return cleaned;
+  const models = NVIDIA_MODEL_PRIMARY === NVIDIA_MODEL_FALLBACK
+    ? [NVIDIA_MODEL_PRIMARY]
+    : [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK];
+
+  for (const model of models) {
+    // Try twice per model: LLM output is stochastic (temperature=0.5),
+    // so a second attempt often produces sanitizable text.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const raw = await callNvidia(model, system, user, 200);
+      if (raw) {
+        const cleaned = sanitize(raw);
+        if (cleaned) return cleaned;
+      }
+    }
   }
   return null;
 }
@@ -285,15 +291,20 @@ export async function proposeBranchPlan(input: BranchInput): Promise<BranchPlan 
   const system = branchSystemPrompt();
   const user = branchUserPrompt(input);
 
-  const primary = await callNvidia(NVIDIA_MODEL_PRIMARY, system, user, 600, BRANCH_TIMEOUT_MS);
-  if (primary) {
-    const parsed = parseBranchPlan(primary);
-    if (parsed) return parsed;
-  }
-  const fallback = await callNvidia(NVIDIA_MODEL_FALLBACK, system, user, 600, BRANCH_TIMEOUT_MS);
-  if (fallback) {
-    const parsed = parseBranchPlan(fallback);
-    if (parsed) return parsed;
+  const models = NVIDIA_MODEL_PRIMARY === NVIDIA_MODEL_FALLBACK
+    ? [NVIDIA_MODEL_PRIMARY]
+    : [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK];
+
+  for (const model of models) {
+    // Try twice per model: structured JSON output has a higher failure
+    // rate, so a second stochastic attempt often yields valid JSON.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const raw = await callNvidia(model, system, user, 600, BRANCH_TIMEOUT_MS);
+      if (raw) {
+        const parsed = parseBranchPlan(raw);
+        if (parsed) return parsed;
+      }
+    }
   }
   return null;
 }
