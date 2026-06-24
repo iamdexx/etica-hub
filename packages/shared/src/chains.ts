@@ -1,4 +1,4 @@
-import { defineChain } from 'viem';
+import { defineChain, type Client, type Transport } from 'viem';
 
 /**
  * Etica Mainnet (chain ID 61803).
@@ -25,6 +25,12 @@ export const eticaMainnet = defineChain({
     eticaStats: { name: 'Etica Stats', url: 'http://explorer.etica-stats.org' },
   },
   testnet: false,
+  fees: {
+    estimateFeesPerGas: async ({ client }: { client: Client<Transport> }) => {
+      const gasPrice = await client.request({ method: 'eth_gasPrice' });
+      return { gasPrice: BigInt(gasPrice as string) } as any;
+    },
+  },
 });
 
 /**
