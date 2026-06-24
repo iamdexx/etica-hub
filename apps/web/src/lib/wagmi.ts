@@ -52,12 +52,17 @@ export const wagmiConfig = createConfig({
   transports: {
     [eticaMainnet.id]: fallback(
       eticaMainnet.rpcUrls.default.http.map((url) =>
-        http(url, { timeout: 10_000, retryCount: 2 }),
+        http(url, {
+          timeout: 5_000,
+          retryCount: 1,
+          batch: { batchSize: 20, wait: 50 },
+        }),
       ),
-      { rank: false },
+      { rank: true },
     ),
     [eticaLocalFork.id]: http(),
   },
+  pollingInterval: 15_000,
   ssr: true,
 });
 
