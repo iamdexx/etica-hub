@@ -184,32 +184,41 @@ export async function loadTokenRecentTransfers(
   if (!indexed) {
     return scanRecentTransfers(client, address, head);
   }
-  const cursorBlock = BigInt(indexed.cursor.lastBlock);
-  const resumeFrom = cursorBlock + 1n;
-  const windowFloor = head > MAX_TAIL_SCAN_BLOCKS ? head - MAX_TAIL_SCAN_BLOCKS : 0n;
-  const tailFrom = resumeFrom > windowFloor ? resumeFrom : windowFloor;
-  const tail = await scanRecentTransfers(client, address, head, tailFrom);
+  // Wrap post-fetch processing so a malformed indexed row (bad
+  // block/value/tx field that slips past parseJsonl) can never crash
+  // the token page. On any failure we degrade to the RPC-only scan,
+  // matching every other data-fetching function in this file.
+  try {
+    const cursorBlock = BigInt(indexed.cursor.lastBlock);
+    const resumeFrom = cursorBlock + 1n;
+    const windowFloor =
+      head > MAX_TAIL_SCAN_BLOCKS ? head - MAX_TAIL_SCAN_BLOCKS : 0n;
+    const tailFrom = resumeFrom > windowFloor ? resumeFrom : windowFloor;
+    const tail = await scanRecentTransfers(client, address, head, tailFrom);
 
-  const seen = new Set<string>();
-  const merged: TokenTransfer[] = [];
-  for (const t of tail) {
-    const key = `${t.txHash.toLowerCase()}:${t.logIndex}`;
-    seen.add(key);
-    merged.push(t);
-  }
-  for (const r of indexed.rows) {
-    const key = `${r.tx.toLowerCase()}:${r.logIndex}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(indexedToTokenTransfer(r));
-  }
-  merged.sort((a, b) => {
-    if (a.blockNumber !== b.blockNumber) {
-      return a.blockNumber < b.blockNumber ? 1 : -1;
+    const seen = new Set<string>();
+    const merged: TokenTransfer[] = [];
+    for (const t of tail) {
+      const key = `${t.txHash.toLowerCase()}:${t.logIndex}`;
+      seen.add(key);
+      merged.push(t);
     }
-    return b.logIndex - a.logIndex;
-  });
-  return merged.slice(0, TOKEN_TRANSFERS_PAGE);
+    for (const r of indexed.rows) {
+      const key = `${r.tx.toLowerCase()}:${r.logIndex}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(indexedToTokenTransfer(r));
+    }
+    merged.sort((a, b) => {
+      if (a.blockNumber !== b.blockNumber) {
+        return a.blockNumber < b.blockNumber ? 1 : -1;
+      }
+      return b.logIndex - a.logIndex;
+    });
+    return merged.slice(0, TOKEN_TRANSFERS_PAGE);
+  } catch {
+    return scanRecentTransfers(client, address, head);
+  }
 }
 
 function indexedToTokenTransfer(r: IndexedTransferRow): TokenTransfer {
@@ -351,41 +360,50 @@ export async function loadAddressTokenTransfers(
   if (!indexed) {
     return scanAddressTokenTransfers(client, address, head);
   }
-  // Start the RPC tail scan at one block past the indexer cursor so we
-  // cover exactly the gap between the last cron tick and head. If the
-  // indexer has fallen badly behind (cron outage), cap the scan at
-  // MAX_TAIL_SCAN_BLOCKS so we never do an unbounded RPC call — worst
-  // case matches the old pre-indexer RPC-only window.
-  const cursorBlock = BigInt(indexed.cursor.lastBlock);
-  const resumeFrom = cursorBlock + 1n;
-  const windowFloor = head > MAX_TAIL_SCAN_BLOCKS ? head - MAX_TAIL_SCAN_BLOCKS : 0n;
-  const tailFrom = resumeFrom > windowFloor ? resumeFrom : windowFloor;
-  const tail = await scanAddressTokenTransfers(client, address, head, tailFrom);
+  // Wrap post-fetch processing so a malformed indexed row (bad
+  // block/value/token field that slips past parseJsonl) can never
+  // crash the address page. On any failure we degrade to the RPC-only
+  // scan, matching every other data-fetching function in this file.
+  try {
+    // Start the RPC tail scan at one block past the indexer cursor so
+    // we cover exactly the gap between the last cron tick and head.
+    // If the indexer has fallen badly behind (cron outage), cap the
+    // scan at MAX_TAIL_SCAN_BLOCKS so we never do an unbounded RPC
+    // call — worst case matches the old pre-indexer RPC-only window.
+    const cursorBlock = BigInt(indexed.cursor.lastBlock);
+    const resumeFrom = cursorBlock + 1n;
+    const windowFloor =
+      head > MAX_TAIL_SCAN_BLOCKS ? head - MAX_TAIL_SCAN_BLOCKS : 0n;
+    const tailFrom = resumeFrom > windowFloor ? resumeFrom : windowFloor;
+    const tail = await scanAddressTokenTransfers(client, address, head, tailFrom);
 
-  const seen = new Set<string>();
-  const merged: AddressTokenTransfer[] = [];
-  for (const t of tail) {
-    const key = `${t.txHash.toLowerCase()}:${t.logIndex}`;
-    seen.add(key);
-    merged.push(t);
-  }
-  for (const r of indexed.rows) {
-    // Lowercase the tx hash to match the tail-side key format: if a
-    // future indexer write path ever emits mixed-case hashes, we'd
-    // otherwise silently double-render rows already present in the
-    // tail-window scan.
-    const key = `${r.tx.toLowerCase()}:${r.logIndex}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(indexedToAddressTransfer(r));
-  }
-  merged.sort((a, b) => {
-    if (a.blockNumber !== b.blockNumber) {
-      return a.blockNumber < b.blockNumber ? 1 : -1;
+    const seen = new Set<string>();
+    const merged: AddressTokenTransfer[] = [];
+    for (const t of tail) {
+      const key = `${t.txHash.toLowerCase()}:${t.logIndex}`;
+      seen.add(key);
+      merged.push(t);
     }
-    return b.logIndex - a.logIndex;
-  });
-  return merged.slice(0, TOKEN_TRANSFERS_PAGE);
+    for (const r of indexed.rows) {
+      // Lowercase the tx hash to match the tail-side key format: if a
+      // future indexer write path ever emits mixed-case hashes, we'd
+      // otherwise silently double-render rows already present in the
+      // tail-window scan.
+      const key = `${r.tx.toLowerCase()}:${r.logIndex}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(indexedToAddressTransfer(r));
+    }
+    merged.sort((a, b) => {
+      if (a.blockNumber !== b.blockNumber) {
+        return a.blockNumber < b.blockNumber ? 1 : -1;
+      }
+      return b.logIndex - a.logIndex;
+    });
+    return merged.slice(0, TOKEN_TRANSFERS_PAGE);
+  } catch {
+    return scanAddressTokenTransfers(client, address, head);
+  }
 }
 
 function indexedToAddressTransfer(r: IndexedTransferRow): AddressTokenTransfer {

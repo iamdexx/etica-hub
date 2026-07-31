@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PublicClient } from 'viem';
 import {
   formatTokenAmount,
+  loadAddressTokenTransfers,
   loadTokenRecentTransfers,
   resolveTokenInfos,
   scanAddressTokenTransfers,
@@ -438,5 +439,145 @@ describe('loadTokenRecentTransfers', () => {
     expect(out[0]!.blockNumber).toBe(150n); // newest first
     expect(out[1]!.blockNumber).toBe(50n);
     expect(out[1]!.value).toBe(5n);
+  });
+
+  // Malformed rows that slip past parseJsonl (e.g. a non-numeric `value`
+  // field that fails BigInt() at render time) must not crash the page.
+  // We expect the loader to swallow the post-parse error and degrade to
+  // the RPC-only scan so the UI still renders.
+  it('degrades to the RPC-only scan on malformed indexed rows', async () => {
+    const cursor = {
+      lastBlock: 100,
+      chainId: 61803,
+      updatedAt: '2025-11-15T12:00:00Z',
+      runs: 1,
+      cumulative: { transfers: 1, syncs: 0 },
+    };
+    // `value` is a string that BigInt() will reject. parseJsonl itself
+    // accepts it (it only checks shape); the BigInt() call downstream
+    // inside the loader throws.
+    const poisonRow = {
+      block: 50,
+      ts: 1700000000,
+      tx: '0xidx',
+      logIndex: 0,
+      token: TOKEN.toLowerCase(),
+      from: ALICE.toLowerCase(),
+      to: BOB.toLowerCase(),
+      value: 'not-a-bigint',
+    };
+    const body = JSON.stringify(poisonRow) + '\n';
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/cursor.json')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(cursor),
+          json: async () => cursor,
+        } as Response;
+      }
+      if (url.endsWith('.jsonl')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => body,
+        } as Response;
+      }
+      return { ok: false, status: 404 } as Response;
+    }) as typeof fetch;
+
+    const rpcFallback = [
+      rpcLog({
+        blockNumber: 150n,
+        logIndex: 0,
+        from: BOB,
+        to: ALICE,
+        value: 9n,
+        txHash: '0xrpc',
+      }),
+    ];
+    const client = {
+      getLogs: vi.fn().mockResolvedValue(rpcFallback),
+    } as unknown as PublicClient;
+
+    const out = await loadTokenRecentTransfers(client, TOKEN, 200n);
+    // The poison row must NOT appear. Only the RPC row renders.
+    expect(out).toHaveLength(1);
+    expect(out[0]!.blockNumber).toBe(150n);
+    expect(out[0]!.value).toBe(9n);
+  });
+});
+
+// ------------------------------------------------------------------ //
+// loadAddressTokenTransfers
+// ------------------------------------------------------------------ //
+// Same malformed-data contract as loadTokenRecentTransfers: a bad
+// indexed row must degrade to the RPC-only address scan rather than
+// crashing the address page.
+describe('loadAddressTokenTransfers', () => {
+  const VIEWER = '0x3333333333333333333333333333333333333333' as const;
+  const TOKEN = '0xAAaAaaAaaAaaAAaaAAAaaaAAAAAaaaAaAAaAAaaA' as const;
+  const COUNTERPARTY = '0x4444444444444444444444444444444444444444' as const;
+
+  const ORIG_FETCH = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = ORIG_FETCH;
+  });
+
+  it('degrades to the RPC-only scan on malformed indexed rows', async () => {
+    const cursor = {
+      lastBlock: 100,
+      chainId: 61803,
+      updatedAt: '2025-11-15T12:00:00Z',
+      runs: 1,
+      cumulative: { transfers: 1, syncs: 0 },
+    };
+    // `block` is a non-numeric string that BigInt() will reject.
+    const poisonRow = {
+      block: 'not-a-number',
+      ts: 1700000000,
+      tx: '0xidx',
+      logIndex: 0,
+      token: TOKEN.toLowerCase(),
+      from: VIEWER.toLowerCase(),
+      to: COUNTERPARTY.toLowerCase(),
+      value: '5',
+    };
+    const body = JSON.stringify(poisonRow) + '\n';
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/cursor.json')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(cursor),
+          json: async () => cursor,
+        } as Response;
+      }
+      if (url.endsWith('.jsonl')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => body,
+        } as Response;
+      }
+      return { ok: false, status: 404 } as Response;
+    }) as typeof fetch;
+
+    // scanAddressTokenTransfers does two getLogs calls (outbound +
+    // inbound). Both resolve to empty so we can assert "fell back to
+    // the RPC path" via the call count alone.
+    const client = {
+      getLogs: vi.fn().mockResolvedValue([]),
+    } as unknown as PublicClient;
+
+    const out = await loadAddressTokenTransfers(client, VIEWER, 200n);
+    // Poison row must not leak through. Fallback RPC scan returned 0.
+    expect(out).toHaveLength(0);
+    // And we must have hit the RPC path — at least one getLogs call.
+    expect((client.getLogs as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
   });
 });
