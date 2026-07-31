@@ -24,7 +24,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { resolve, join, dirname } from 'node:path';
+import { resolve, join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPublicClient, http, defineChain } from 'viem';
 
@@ -115,6 +115,14 @@ function compareBytecode(onchainHex, compiledHex, immutableReferences) {
  * the artifact came from a sibling package with a shared source tree.
  */
 function resolveSourcePath(relPath, contractsRoot) {
+  // Defense-in-depth: a hostile artifact could list `metadata.sources`
+  // keys like `../../etc/passwd`. Resolve each candidate and require it
+  // to live inside `contractsRoot`. The script is dev-time only and
+  // only reads our own `forge build` output, but the manifest it writes
+  // is published to the public site, so a rogue artifact could otherwise
+  // cause us to publish arbitrary CI-worker file contents.
+  const rootResolved = resolve(contractsRoot);
+  const rootPrefix = rootResolved + sep;
   const candidates = [
     join(contractsRoot, relPath),
     // Handle solc remappings that resolve to a different on-disk layout
@@ -122,7 +130,14 @@ function resolveSourcePath(relPath, contractsRoot) {
     join(contractsRoot, 'src', relPath),
   ];
   for (const p of candidates) {
-    if (existsSync(p)) return p;
+    const pResolved = resolve(p);
+    if (pResolved !== rootResolved && !pResolved.startsWith(rootPrefix)) {
+      throw new Error(
+        `Source path "${relPath}" resolves outside contracts root ` +
+          `"${rootResolved}" (got "${pResolved}"). Refusing to read.`,
+      );
+    }
+    if (existsSync(pResolved)) return pResolved;
   }
   throw new Error(
     `Could not resolve source path "${relPath}" under contracts root "${contractsRoot}". ` +

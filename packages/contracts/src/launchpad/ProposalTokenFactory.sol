@@ -59,6 +59,16 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
     uint256 public constant LIQUID_SUPPLY_BPS = 2_500;
     uint64 public constant VEST_DURATION = 90 days;
 
+    /// @notice Upper bounds on the owner-configurable launch fees. A
+    ///         compromised or malicious owner cannot set either fee
+    ///         above these ceilings, which caps the worst-case griefing
+    ///         of legitimate authors at a known, bounded value.
+    ///         ETX total supply is 100M (1e26), so 1M (1e24) is 1% —
+    ///         already an absurd launch fee in practice but a hard stop
+    ///         against "owner sets fee to type(uint256).max" DoS.
+    uint256 public constant MAX_LAUNCH_FEE_ETX = 1_000_000e18;
+    uint256 public constant MAX_LAUNCH_FEE_ETI = 1_000_000e18;
+
     IEticaCore public immutable eticaCore;
     IERC20 public immutable etx;
     IERC20 public immutable eti;
@@ -97,6 +107,7 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
     error LpEtxTooLow(uint256 provided, uint256 minimum);
     error LpEtiTooLow(uint256 provided, uint256 minimum);
     error SupplyTooLow(uint256 totalSupply);
+    error LaunchFeeTooHigh(uint256 provided, uint256 maximum);
 
     struct LaunchParams {
         bytes32 proposalHash;
@@ -127,6 +138,12 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
                 || address(a.eti) == address(0) || address(a.router) == address(0)
                 || a.treasury == address(0) || a.owner == address(0)
         ) revert ZeroAddress();
+        if (a.launchFeeEtx > MAX_LAUNCH_FEE_ETX) {
+            revert LaunchFeeTooHigh(a.launchFeeEtx, MAX_LAUNCH_FEE_ETX);
+        }
+        if (a.launchFeeEti > MAX_LAUNCH_FEE_ETI) {
+            revert LaunchFeeTooHigh(a.launchFeeEti, MAX_LAUNCH_FEE_ETI);
+        }
         eticaCore = a.eticaCore;
         etx = a.etx;
         eti = a.eti;
@@ -147,11 +164,13 @@ contract ProposalTokenFactory is Ownable, ReentrancyGuard {
     }
 
     function setLaunchFeeEtx(uint256 newFee) external onlyOwner {
+        if (newFee > MAX_LAUNCH_FEE_ETX) revert LaunchFeeTooHigh(newFee, MAX_LAUNCH_FEE_ETX);
         emit LaunchFeeEtxUpdated(launchFeeEtx, newFee);
         launchFeeEtx = newFee;
     }
 
     function setLaunchFeeEti(uint256 newFee) external onlyOwner {
+        if (newFee > MAX_LAUNCH_FEE_ETI) revert LaunchFeeTooHigh(newFee, MAX_LAUNCH_FEE_ETI);
         emit LaunchFeeEtiUpdated(launchFeeEti, newFee);
         launchFeeEti = newFee;
     }
