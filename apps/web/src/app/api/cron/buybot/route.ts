@@ -18,6 +18,7 @@ import { NextRequest } from 'next/server';
 import { createPublicClient, getAddress, http, type Address, type PublicClient } from 'viem';
 import { DEPLOYMENTS, TREASURY_ADDRESS, eticaMainnet } from '@etica-hub/shared';
 
+import { isVercelCron } from '@/lib/cron-auth';
 import { loadBuyBotConfig, type BuyBotConfig } from '@/lib/buybot/config';
 import {
   fetchCirculatingExcludes,
@@ -66,10 +67,8 @@ function unauthorized(): Response {
 }
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // no secret configured → allow (dev / preview)
-  const header = req.headers.get('authorization') ?? '';
-  return header === `Bearer ${secret}`;
+  if (!process.env.CRON_SECRET) return true; // no secret configured → allow (dev / preview)
+  return isVercelCron(req);
 }
 
 function makeClient(config: BuyBotConfig): PublicClient {

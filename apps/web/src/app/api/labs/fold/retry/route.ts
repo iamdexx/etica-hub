@@ -23,6 +23,7 @@
 
 import type { NextRequest } from 'next/server';
 
+import { isVercelCron } from '@/lib/cron-auth';
 import { getPdbForSequence, storePdbForSequence } from '@/lib/labs/archive';
 import { foldWithCascade } from '@/lib/labs/engines/registry';
 import {
@@ -46,9 +47,7 @@ function json(data: unknown, init?: ResponseInit): Response {
 }
 
 function authorize(req: NextRequest): boolean {
-  // Vercel cron signal — present on every invocation Vercel makes from
-  // its scheduler. Cron-only invocations don't need the worker token.
-  if (req.headers.get('x-vercel-cron')) return true;
+  if (isVercelCron(req)) return true;
 
   const expected = process.env.LABS_AUTOPILOT_TOKEN;
   if (!expected) return false;

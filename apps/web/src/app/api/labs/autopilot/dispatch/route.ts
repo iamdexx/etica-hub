@@ -21,14 +21,15 @@
  *   GITHUB_DISPATCH_WORKFLOW default "labs-autopilot.yml"
  *   GITHUB_DISPATCH_REF     default "main"
  *
- * Vercel cron auth: requests come from Vercel infrastructure with a
- * specific User-Agent. We also accept a manual trigger when called with
+ * Vercel cron auth: `Authorization: Bearer $CRON_SECRET` (see
+ * `@/lib/cron-auth`). We also accept a manual trigger when called with
  * the worker token in `x-labs-worker-token` for debugging. Public hits
  * without either are rejected.
  */
 
 import { NextRequest } from 'next/server';
 
+import { isVercelCron } from '@/lib/cron-auth';
 import { labsQueue } from '@/lib/labs/queue';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 import { runTreasuryCrank } from '@/lib/labs/treasury-crank';
@@ -43,16 +44,6 @@ const DEFAULT_REF = 'main';
 
 function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
-}
-
-function isVercelCron(req: NextRequest): boolean {
-  // Vercel cron sets this header on the cron-triggered fetch.
-  // https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs
-  const ua = req.headers.get('user-agent') ?? '';
-  if (ua.toLowerCase().includes('vercel-cron')) return true;
-  // Vercel also forwards `x-vercel-cron` on internal cron invocations.
-  if (req.headers.get('x-vercel-cron')) return true;
-  return false;
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
