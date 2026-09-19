@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
+import { BridgeWatcherBoard } from '@/components/bridge/BridgeWatcherBoard';
 import { BridgeStatusBoard } from '@/components/bridge/BridgeStatusBoard';
 import { BridgeFlowsCard } from '@/components/bridge/BridgeFlowsCard';
 import { BridgeParamsTable } from '@/components/bridge/BridgeParamsTable';
@@ -6,6 +8,7 @@ import { BridgeAddressBook } from '@/components/bridge/BridgeAddressBook';
 import { SourceBadge, TelemetrySection, UnavailableMetric } from '@/components/telemetry/TelemetryCards';
 
 export const metadata = { title: 'Bridge · EticaHub' };
+export const dynamic = 'force-dynamic';
 
 const BRIDGE_STATS = [
   {
@@ -88,6 +91,13 @@ export default function BridgePage() {
         <div className="space-y-6">
           <div className="rounded-2xl border border-fuchsia-400/20 bg-white/[0.03] p-3 shadow-xl shadow-fuchsia-950/20">
             <BridgeStatusBoard />
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
+            <Suspense
+              fallback={<div className="p-2 text-xs text-white/40">Checking watcher bots…</div>}
+            >
+              <BridgeWatcherBoard />
+            </Suspense>
           </div>
           <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
             <BridgeFlowsCard />

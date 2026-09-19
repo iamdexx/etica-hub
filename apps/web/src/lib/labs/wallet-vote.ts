@@ -11,8 +11,9 @@
  * Public so unit tests can import the same `verifyVotePayload` helper
  * that the route handlers use.
  */
-import { createPublicClient, getAddress, http, isAddress, type Address, type PublicClient } from 'viem';
+import { createPublicClient, getAddress, isAddress, type Address, type PublicClient } from 'viem';
 import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
+import { failoverTransport } from '@/lib/rpc';
 
 import {
   MAX_SIG_AGE_MS,
@@ -36,10 +37,9 @@ const BALANCE_OF_ABI = [
 let cached: PublicClient | null = null;
 function client(): PublicClient {
   if (cached) return cached;
-  const url = process.env.ETICA_MAINNET_RPC_URL;
   cached = createPublicClient({
     chain: eticaMainnet,
-    transport: url ? http(url) : http(),
+    transport: failoverTransport(eticaMainnet, process.env.ETICA_MAINNET_RPC_URL),
   }) as PublicClient;
   return cached;
 }

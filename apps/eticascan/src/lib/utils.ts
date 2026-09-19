@@ -1,9 +1,10 @@
-export function truncateHash(hash: string, start = 10, end = 8): string {
+export function truncateHash(hash: string | null | undefined, start = 10, end = 8): string {
   if (!hash || hash.length <= start + end) return hash || "";
   return `${hash.slice(0, start)}...${hash.slice(-end)}`;
 }
 
-export function formatTimestamp(ts: number | string): string {
+export function formatTimestamp(ts: number | string | null | undefined): string {
+  if (ts === null || ts === undefined) return "-";
   const date = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
   return date.toLocaleString("en-US", {
     month: "short",
@@ -15,7 +16,8 @@ export function formatTimestamp(ts: number | string): string {
   });
 }
 
-export function timeAgo(ts: number | string): string {
+export function timeAgo(ts: number | string | null | undefined): string {
+  if (ts === null || ts === undefined) return "-";
   const date = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
 
@@ -25,12 +27,14 @@ export function timeAgo(ts: number | string): string {
   return `${Math.floor(seconds / 86400)} days ago`;
 }
 
-export function formatGwei(wei: string | number): string {
+export function formatGwei(wei: string | number | null | undefined): string {
+  if (wei === null || wei === undefined) return "0 Gwei";
   const val = typeof wei === "string" ? parseInt(wei) : wei;
   return (val / 1e9).toFixed(2) + " Gwei";
 }
 
-export function formatEther(wei: string | number): string {
+export function formatEther(wei: string | number | null | undefined): string {
+  if (wei === null || wei === undefined) return "0 EGAZ";
   const val = typeof wei === "string" ? BigInt(wei) : BigInt(Math.floor(Number(wei)));
   const eth = Number(val) / 1e18;
   if (eth === 0) return "0 EGAZ";
@@ -38,7 +42,7 @@ export function formatEther(wei: string | number): string {
   return eth.toFixed(4) + " EGAZ";
 }
 
-export function formatNumber(n: number | string | null): string {
+export function formatNumber(n: number | string | null | undefined): string {
   if (n === null || n === undefined) return "0";
   return Number(n).toLocaleString();
 }

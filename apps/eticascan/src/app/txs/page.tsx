@@ -1,4 +1,4 @@
-import { getTransactions } from "@/lib/api";
+import { getTransactions, type TransactionsResponse } from "@/lib/api";
 import { truncateHash, timeAgo } from "@/lib/utils";
 
 export default async function TransactionsPage({
@@ -8,7 +8,7 @@ export default async function TransactionsPage({
 }) {
   const params = await searchParams;
   const page = parseInt(params.page || "1");
-  let data = { transactions: { data: [] } };
+  let data: TransactionsResponse = { transactions: { data: [] } };
 
   try {
     data = await getTransactions(page);
@@ -34,7 +34,7 @@ export default async function TransactionsPage({
             </tr>
           </thead>
           <tbody>
-            {txs.map((tx: any) => (
+            {txs.map((tx) => (
               <tr key={tx.hash}>
                 <td>
                   <a href={`/tx/${tx.hash}`} className="truncate-hash font-medium">

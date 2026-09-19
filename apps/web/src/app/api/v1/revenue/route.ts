@@ -56,7 +56,7 @@ export const runtime = 'nodejs';
 // between warm-cache efficiency for a ~30k-block scan and "since launch"
 // freshness when new swaps arrive.
 export const revalidate = 60;
-export const dynamic = 'force-static';
+export const dynamic = 'force-dynamic';
 
 const MAINNET_CHAIN_ID = 61803;
 const LP_FEE_BPS = 30; // 0.30%

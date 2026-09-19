@@ -21,7 +21,6 @@
 
 import {
   createPublicClient,
-  http,
   getAddress,
   isAddress,
   parseAbiItem,
@@ -30,6 +29,7 @@ import {
 } from 'viem';
 import { abis, DEPLOYMENTS, EXTERNAL_ADDRESSES, eticaMainnet } from '@etica-hub/shared';
 import { fetchIndexedPairSyncs } from './explorerIndex';
+import { failoverTransport } from './rpc';
 
 const MAINNET_CHAIN_ID = 61803;
 const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000';
@@ -49,10 +49,9 @@ export const JSON_HEADERS: HeadersInit = {
 // ---- client ---------------------------------------------------------------
 
 function getPriceClient(): PublicClient {
-  const override = process.env.ETICA_MAINNET_RPC_URL;
   return createPublicClient({
     chain: eticaMainnet,
-    transport: override ? http(override) : http(),
+    transport: failoverTransport(eticaMainnet, process.env.ETICA_MAINNET_RPC_URL),
   }) as PublicClient;
 }
 

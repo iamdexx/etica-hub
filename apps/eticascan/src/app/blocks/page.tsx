@@ -1,4 +1,4 @@
-import { getBlocks } from "@/lib/api";
+import { getBlocks, type BlocksResponse } from "@/lib/api";
 import { formatNumber, timeAgo, truncateHash } from "@/lib/utils";
 
 export default async function BlocksPage({
@@ -8,7 +8,7 @@ export default async function BlocksPage({
 }) {
   const params = await searchParams;
   const page = parseInt(params.page || "1");
-  let data = { blocks: { data: [] }, links: {} as any };
+  let data: BlocksResponse = { blocks: { data: [] }, links: {} };
 
   try {
     data = await getBlocks(page);
@@ -34,7 +34,7 @@ export default async function BlocksPage({
             </tr>
           </thead>
           <tbody>
-            {blocks.map((block: any) => (
+            {blocks.map((block) => (
               <tr key={block.number}>
                 <td>
                   <a href={`/block/${block.number}`} className="font-medium">

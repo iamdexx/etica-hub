@@ -1,11 +1,9 @@
-import { getBlocks, getTransactions } from "@/lib/api";
+import { getBlocks, getTransactions, type BlocksResponse, type TransactionsResponse } from "@/lib/api";
 import { truncateHash, timeAgo, formatNumber } from "@/lib/utils";
 
 export default async function Home() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let blocks: any = { blocks: { data: [] } };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let txs: any = { transactions: { data: [] } };
+  let blocks: BlocksResponse = { blocks: { data: [] } };
+  let txs: TransactionsResponse = { transactions: { data: [] } };
 
   try {
     [blocks, txs] = await Promise.all([getBlocks(), getTransactions()]);
@@ -73,7 +71,7 @@ export default async function Home() {
             <a href="/blocks" className="text-xs">View All &rarr;</a>
           </div>
           <div className="space-y-3">
-            {latestBlocks.map((block: any) => (
+            {latestBlocks.map((block) => (
               <div
                 key={block.number}
                 className="flex items-center justify-between border-b border-[var(--eth-border)] pb-3"
@@ -119,7 +117,7 @@ export default async function Home() {
             <a href="/txs" className="text-xs">View All &rarr;</a>
           </div>
           <div className="space-y-3">
-            {latestTxs.map((tx: any) => (
+            {latestTxs.map((tx) => (
               <div
                 key={tx.hash}
                 className="flex items-center justify-between border-b border-[var(--eth-border)] pb-3"

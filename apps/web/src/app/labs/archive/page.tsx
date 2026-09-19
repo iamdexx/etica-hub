@@ -343,7 +343,7 @@ export default function LabsArchivePage(): JSX.Element {
                 )}
               </div>
 
-              <Link href={`/labs/feed/${e.jobId}`} className="mt-2 block">
+              <Link href={`/labs/archive/${e.id}`} className="mt-2 block">
                 <h3 className="line-clamp-2 text-sm font-medium text-white/90 hover:text-emerald-200">
                   {e.goalTitle || e.prompt || `Research ${e.jobId}`}
                 </h3>
