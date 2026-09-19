@@ -93,18 +93,33 @@ const META_START =
   /^(the user (wants|asks|is asking)|here is|here's|this prompt|a research prompt|the prompt|we need to|i need to|i should|i will|let me|okay|ok[,.]|sure[,.]|output one|the topic|the goal|as an ai|note:)/i;
 const META_BODY = /max 280 char|imperative sentence|research prompt should|the previous candidate had a score/i;
 
-export function sanitize(raw: string): string | null {
-  let s = raw.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
-  // strip surrounding quotes / backticks / markdown
+function cleanLine(line: string): string | null {
+  let s = line.trim();
   s = s.replace(/^["'`]+|["'`]+$/g, '').trim();
-  s = s.replace(/^\s*[-*•]\s*/, '');
-  s = s.split('\n')[0]?.trim() ?? '';
-  if (!s) return null;
+  s = s.replace(/^\s*[-*•]\s*/, '').trim();
+  s = s.replace(/^(?:\*\*)?(?:next research prompt|research prompt|prompt|answer)(?:\*\*)?\s*:\s*/i, '')
+    .trim();
   if (s.length > MAX_PROMPT_CHARS) s = s.slice(0, MAX_PROMPT_CHARS).trim();
   // very-short outputs are almost always model refusals or junk
   if (s.length < 20) return null;
   if (META_START.test(s) || META_BODY.test(s)) return null;
   return s;
+}
+
+/**
+ * Extract the research prompt from a raw completion. 550B frequently ignores
+ * the thinking switch and narrates before answering, so the prompt is the last
+ * usable line, not the first; meta-commentary lines are dropped entirely so
+ * chain-of-thought never reaches the public feed.
+ */
+export function sanitize(raw: string): string | null {
+  const body = raw.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+  const lines = body.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const cleaned = cleanLine(lines[i] ?? '');
+    if (cleaned) return cleaned;
+  }
+  return null;
 }
 
 async function callNvidia(
@@ -152,7 +167,10 @@ export async function proposeNextDirection(input: ExpansionInput): Promise<strin
     // Try twice per model: LLM output is stochastic (temperature=0.5),
     // so a second attempt often produces sanitizable text.
     for (let attempt = 0; attempt < 2; attempt++) {
-      const raw = await callNvidia(model, system, user, 200);
+      // Ceiling, not a target: a one-sentence prompt is ~60 tokens, but when
+      // 550B narrates first a 200-token cap truncates before it ever reaches
+      // the answer, so every expansion was skipped.
+      const raw = await callNvidia(model, system, user, 700);
       if (raw) {
         const cleaned = sanitize(raw);
         if (cleaned) return cleaned;
