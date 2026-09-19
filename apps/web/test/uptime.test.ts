@@ -47,18 +47,36 @@ describe('uptime samples', () => {
     expect(recent[0].at).toBeLessThan(recent[1].at);
   });
 
-  it('bucketizes into fixed windows ending at now', () => {
+  it('bucketizes into fixed windows covering exactly the rolling interval', () => {
     const now = 10 * HOUR + 15 * 60 * 1000;
-    const samples = [sample(now - 10 * 60 * 1000, true), sample(now - HOUR - 1, false), sample(now - 5 * HOUR, true)];
+    const samples = [
+      sample(now - 10 * 60 * 1000, true),
+      sample(now - HOUR - 1, false),
+      sample(now - 3 * HOUR + 1, true),
+      sample(now - 5 * HOUR, true),
+    ];
     const buckets = bucketize(samples, HOUR, 3, now);
     expect(buckets).toHaveLength(3);
+    expect(buckets[0].start).toBe(now - 3 * HOUR);
+    expect(buckets[2].end).toBe(now);
     expect(buckets[2]).toMatchObject({ total: 1, ok: 1 });
     expect(buckets[1]).toMatchObject({ total: 1, ok: 0 });
-    expect(buckets[0]).toMatchObject({ total: 0, ok: 0 });
+    expect(buckets[0]).toMatchObject({ total: 1, ok: 1 });
   });
 
-  it('computes availability percentage', () => {
-    expect(availabilityPct([])).toBeNull();
-    expect(availabilityPct([sample(1, true), sample(2, true), sample(3, false), sample(4, true)])).toBe(75);
+  it('computes availability, counting missed cron slots as downtime', () => {
+    const now = 100 * HOUR;
+    const q = 15 * 60 * 1000;
+    expect(availabilityPct([], now - HOUR, now, q)).toBeNull();
+
+    const full = [1, 2, 3, 4].map((i) => sample(now - i * q, i !== 3));
+    expect(availabilityPct(full, now - HOUR, now, q)).toBe(75);
+
+    // 4 slots expected since first sample, only 2 recorded (app was down for 2 slots).
+    const gappy = [sample(now - 4 * q, true), sample(now - q, true)];
+    expect(availabilityPct(gappy, now - HOUR, now, q)).toBe(50);
+
+    // History that only just started is not penalised for the pre-history window.
+    expect(availabilityPct([sample(now - q, true)], now - 24 * HOUR, now, q)).toBe(100);
   });
 });

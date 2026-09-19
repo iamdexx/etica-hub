@@ -54,8 +54,9 @@ jobs:
         run: |
           body=$(curl -sS -m 30 -H 'cache-control: no-cache' "${HEALTH_URL}?t=$(date +%s)" || echo '{}')
           echo "$body"
-          ok=$(echo "$body" | jq -r '.ok // false')
-          age=$(echo "$body" | jq -r '.headAgeSeconds // 999999')
+          ok=$(echo "$body" | jq -r '.ok // false' 2>/dev/null || echo false)
+          age=$(echo "$body" | jq -r '.headAgeSeconds // 999999' 2>/dev/null || echo 999999)
+          case "$age" in ''|*[!0-9]*) age=999999 ;; esac
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
           echo "age=$age" >> "$GITHUB_OUTPUT"
           if [ "$ok" = "true" ] && [ "$age" -lt "$STALE_ALERT_SECONDS" ]; then

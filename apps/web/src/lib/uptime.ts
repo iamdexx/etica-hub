@@ -63,8 +63,9 @@ export interface UptimeBucket {
   ok: number;
 }
 
+/** Fixed-width buckets covering exactly `[now - count*bucketMs, now)`. */
 export function bucketize(samples: UptimeSample[], bucketMs: number, count: number, now = Date.now()): UptimeBucket[] {
-  const end = Math.ceil(now / bucketMs) * bucketMs;
+  const end = now;
   const buckets: UptimeBucket[] = Array.from({ length: count }, (_, i) => {
     const start = end - (count - i) * bucketMs;
     return { start, end: start + bucketMs, total: 0, ok: 0 };
@@ -79,7 +80,26 @@ export function bucketize(samples: UptimeSample[], bucketMs: number, count: numb
   return buckets;
 }
 
-export function availabilityPct(samples: UptimeSample[]): number | null {
-  if (samples.length === 0) return null;
-  return (samples.filter((s) => s.ok).length / samples.length) * 100;
+export const SAMPLE_INTERVAL_MS = 15 * 60 * 1000;
+
+/**
+ * Availability over `[windowStart, now)`. Expected samples are derived from
+ * the cron cadence so slots with no recorded sample (the app itself was
+ * unreachable) count as downtime. The window is clamped to the first stored
+ * sample so a freshly enabled history doesn't read as an outage, and the
+ * most recent interval is excused as the in-flight slot.
+ */
+export function availabilityPct(
+  samples: UptimeSample[],
+  windowStart: number,
+  now = Date.now(),
+  intervalMs = SAMPLE_INTERVAL_MS,
+): number | null {
+  const inWindow = samples.filter((s) => s.at >= windowStart && s.at < now);
+  if (inWindow.length === 0) return null;
+  const first = Math.min(...inWindow.map((s) => s.at));
+  const observedSpan = Math.max(0, now - intervalMs - Math.max(windowStart, first));
+  const expected = Math.max(inWindow.length, Math.floor(observedSpan / intervalMs) + 1);
+  const ok = inWindow.filter((s) => s.ok).length;
+  return Math.min(100, (ok / expected) * 100);
 }

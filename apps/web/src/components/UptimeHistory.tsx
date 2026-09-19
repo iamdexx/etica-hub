@@ -47,7 +47,6 @@ export async function UptimeHistory() {
     error = err instanceof Error ? err.message : String(err);
   }
 
-  const last24h = samples.filter((s) => s.at >= now - DAY_MS);
   const latest = samples.at(-1);
 
   return (
@@ -73,10 +72,10 @@ export async function UptimeHistory() {
         </p>
       ) : (
         <div className="mt-4 space-y-5">
-          <Strip title="Last 24 hours (hourly)" buckets={bucketize(last24h, HOUR_MS, 24, now)} pct={availabilityPct(last24h)} />
-          <Strip title="Last 7 days (6h)" buckets={bucketize(samples, 6 * HOUR_MS, 28, now)} pct={availabilityPct(samples)} />
+          <Strip title="Last 24 hours (hourly)" buckets={bucketize(samples, HOUR_MS, 24, now)} pct={availabilityPct(samples, now - DAY_MS, now)} />
+          <Strip title="Last 7 days (6h)" buckets={bucketize(samples, 6 * HOUR_MS, 28, now)} pct={availabilityPct(samples, now - 7 * DAY_MS, now)} />
           <p className="text-[11px] text-white/40">
-            {samples.length} samples · healthy = RPC reachable, factory decodes, head block &lt; 120s old.{' '}
+            {samples.length} samples · healthy = RPC reachable, factory decodes, head block &lt; 120s old; missed 15-min samples count as downtime.{' '}
             <a href="/api/v1/uptime" className="underline decoration-white/20 hover:text-white/70">JSON</a>
           </p>
         </div>
