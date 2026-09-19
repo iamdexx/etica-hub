@@ -25,6 +25,7 @@ const FEED_KEY = 'labs:feed';
 const JOB_PREFIX = 'labs:job:';
 const RECENT_FEED_CAP = 50;
 const JOB_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
+export const LABS_JOB_TTL_MS = JOB_TTL_SECONDS * 1000;
 
 export interface LabsQueue {
   /** Push a new job onto the pending queue + register it in the feed index. */
