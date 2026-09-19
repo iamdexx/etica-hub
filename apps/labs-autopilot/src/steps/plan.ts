@@ -630,7 +630,11 @@ export async function generatePlan(
       }
       const plan = tryParse(result.content);
       if (plan) return { ...plan, references };
-      lastErr = 'Planner returned unparseable response';
+      const c = result.content ?? '';
+      lastErr =
+        `Planner returned unparseable response (${model}, ${c.length} chars, ` +
+        `head=${JSON.stringify(c.slice(0, 160))}, tail=${JSON.stringify(c.slice(-160))})`;
+      console.warn(`[plan] ${lastErr}`);
     } catch (err) {
       if (err instanceof NvidiaLLMError) {
         lastErr = `Nvidia plan ${err.status}: ${(err.detail ?? err.message).slice(0, 200)}`;
