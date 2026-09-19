@@ -12,7 +12,7 @@
 
 import { NextRequest } from 'next/server';
 
-import { nvidiaChat, hasNvidiaKey, NVIDIA_MODEL_PRIMARY } from '@/lib/labs/nvidia';
+import { nvidiaChat, hasNvidiaKey, NvidiaError, NVIDIA_MODEL_PRIMARY } from '@/lib/labs/nvidia';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 
 export const runtime = 'nodejs';
@@ -59,6 +59,26 @@ const TOPIC_POOL = [
   'circadian rhythm drug metabolism',
   'exosome drug delivery',
   'organoid disease model',
+];
+
+/**
+ * Curated, patent-safe seeds used only when 550B cannot produce a valid
+ * prompt (auth/quota outage, persistent meta-commentary). Keeps the
+ * discovery cascade alive; the response is tagged `source: 'fallback'`.
+ */
+const FALLBACK_SEEDS = [
+  'Design a cyclic peptide inhibitor targeting the PD-1/PD-L1 interface for melanoma immunotherapy',
+  'Engineer a thermostable variant of human lysozyme with enhanced antimicrobial activity against MRSA',
+  'Develop a stapled alpha-helical peptide blocking the MDM2-p53 interaction for glioblastoma treatment',
+  'Design a beta-hairpin peptide that disrupts amyloid-beta oligomerisation for early Alzheimer\'s disease',
+  'Engineer a nanobody scaffold binding the SARS-CoV-2 spike RBD with cross-variant neutralisation',
+  'Design a mitochondria-targeted peptide that stabilises complex I assembly for Leigh syndrome',
+  'Develop a KRAS-G12D selective helical peptide occupying the switch II pocket for pancreatic cancer',
+  'Engineer an IL-17A blocking peptide with improved serum stability for psoriasis therapy',
+  'Design a TDP-43 aggregation-inhibiting peptide for amyotrophic lateral sclerosis',
+  'Develop a GLP-1 receptor agonist peptide with extended half-life for type 2 diabetes',
+  'Design a cationic antimicrobial peptide selective for Pseudomonas aeruginosa biofilms',
+  'Engineer a TGF-beta receptor II decoy peptide to attenuate idiopathic pulmonary fibrosis',
 ];
 
 // 550B only — per product requirement, no smaller-model fallbacks. Nvidia
@@ -207,6 +227,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   let prompt = '';
   let succeeded = false;
+  let lastFailure = '';
 
   for (let retry = 0; retry < 3 && !succeeded; retry++) {
     for (const model of SEED_MODELS) {
@@ -227,20 +248,36 @@ export async function POST(req: NextRequest): Promise<Response> {
         candidate = candidate.replace(/^-\s+/, '').trim();
         candidate = candidate.split('\n')[0]?.trim() ?? '';
         if (candidate.length > 280) candidate = candidate.slice(0, 280).trim();
-        if (candidate.length < 30) continue;
-        if (metaStart.test(candidate)) continue;
-        if (metaBody.test(candidate)) continue;
+        if (candidate.length < 30) { lastFailure = `too short: ${JSON.stringify(candidate)}`; continue; }
+        if (metaStart.test(candidate) || metaBody.test(candidate)) {
+          lastFailure = `meta-commentary: ${JSON.stringify(candidate.slice(0, 120))}`;
+          continue;
+        }
         prompt = candidate;
         succeeded = true;
         break;
-      } catch {
+      } catch (err) {
+        lastFailure =
+          err instanceof NvidiaError
+            ? `nvidia ${err.status}: ${err.detail ?? err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
         continue;
       }
     }
   }
 
   if (!succeeded) {
-    return Response.json({ ok: false, error: 'LLM failed to produce a valid research prompt after retries' }, { status: 422 });
+    console.error('[labs/seed] LLM seed failed, using fallback', { topic, lastFailure });
+    return Response.json({
+      ok: true,
+      prompt: FALLBACK_SEEDS[Math.floor(Math.random() * FALLBACK_SEEDS.length)]!,
+      topic: 'curated fallback',
+      source: 'fallback',
+      paperTitles: [],
+      warning: `LLM seed failed: ${lastFailure.slice(0, 300)}`,
+    });
   }
 
   const source = papers.length > 0 && protein ? 'combined' : papers.length > 0 ? 'pubmed' : protein ? 'uniprot' : 'topic-only';
