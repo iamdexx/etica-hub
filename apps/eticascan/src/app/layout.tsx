@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,16 +12,16 @@ function Header() {
   return (
     <header className="bg-white border-b border-[var(--eth-border)] sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-        <a href="/" className="flex items-center gap-2 text-xl font-bold text-[var(--eth-blue)] no-underline hover:no-underline">
+        <Link href="/" className="flex items-center gap-2 text-xl font-bold text-[var(--eth-blue)] no-underline hover:no-underline">
           <span className="text-2xl">&#9670;</span>
           Eticascan
-        </a>
+        </Link>
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-          <a href="/" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Home</a>
-          <a href="/blocks" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Blocks</a>
-          <a href="/txs" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Transactions</a>
-          <a href="/tokens" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Tokens</a>
-          <a href="/proposals" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Research</a>
+          <Link href="/" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Home</Link>
+          <Link href="/blocks" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Blocks</Link>
+          <Link href="/txs" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Transactions</Link>
+          <Link href="/tokens" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Tokens</Link>
+          <Link href="/proposals" className="text-[var(--eth-text)] hover:text-[var(--eth-link)]">Research</Link>
         </nav>
         <div className="flex items-center gap-2 text-xs text-[var(--eth-muted)]">
           <span className="badge badge-success">EGAZ: Gas</span>

@@ -1,4 +1,5 @@
-import { getTransfers } from "@/lib/api";
+import Link from "next/link";
+import { getTransfers, type TransfersResponse } from "@/lib/api";
 import { truncateHash, timeAgo } from "@/lib/utils";
 
 export default async function TokensPage({
@@ -9,7 +10,7 @@ export default async function TokensPage({
   const params = await searchParams;
   const page = parseInt(params.page || "1");
 
-  let data = { transfers: { data: [] } };
+  let data: TransfersResponse = { transfers: { data: [] } };
   try {
     data = await getTransfers(page);
   } catch (e) {
@@ -30,9 +31,9 @@ export default async function TokensPage({
           <div>
             <div className="text-xs text-[var(--eth-muted)] uppercase">Contract</div>
             <div className="text-sm mt-1">
-              <a href="/address/0x34c61EA91bAcdA647269d4e310A86b875c09946f" className="break-all">
+              <Link href="/address/0x34c61EA91bAcdA647269d4e310A86b875c09946f" className="break-all">
                 0x34c61EA91bAcdA647269d4e310A86b875c09946f
-              </a>
+              </Link>
             </div>
           </div>
           <div>
@@ -54,7 +55,7 @@ export default async function TokensPage({
             </tr>
           </thead>
           <tbody>
-            {transfers.map((t: any, i: number) => (
+            {transfers.map((t, i) => (
               <tr key={i}>
                 <td>
                   <a href={`/tx/${t.transactionhash || t.hash}`} className="truncate-hash font-medium">

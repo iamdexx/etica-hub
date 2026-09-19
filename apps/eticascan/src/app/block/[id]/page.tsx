@@ -1,5 +1,5 @@
-import { fetchAPI } from "@/lib/api";
-import { formatNumber, formatTimestamp, truncateHash } from "@/lib/utils";
+import { fetchAPI, type Block, type BlocksResponse } from "@/lib/api";
+import { formatNumber, formatTimestamp } from "@/lib/utils";
 
 export default async function BlockDetailPage({
   params,
@@ -8,10 +8,10 @@ export default async function BlockDetailPage({
 }) {
   const { id } = await params;
 
-  let block: any = null;
+  let block: Block | undefined;
   try {
-    const data = await fetchAPI("/api/etica/blocks", { page: "1" });
-    block = data?.blocks?.data?.find((b: any) => String(b.number) === id);
+    const data = await fetchAPI<BlocksResponse>("/api/etica/blocks", { page: "1" });
+    block = data?.blocks?.data?.find((b) => String(b.number) === id);
   } catch (e) {
     console.error(e);
   }
@@ -38,7 +38,7 @@ export default async function BlockDetailPage({
     { label: "Gas Used", value: formatNumber(block.gasUsed || block.gasused || 0) },
     { label: "Gas Limit", value: formatNumber(block.gasLimit || block.gaslimit || 0) },
     { label: "Hash", value: block.hash },
-    { label: "Parent Hash", value: block.parenthash, link: block.parenthash ? `/block/${block.number - 1}` : undefined },
+    { label: "Parent Hash", value: block.parenthash, link: block.parenthash ? `/block/${Number(block.number) - 1}` : undefined },
     { label: "Nonce", value: block.nonce },
     { label: "Extra Data", value: block.extraData || block.extradata || "" },
   ];

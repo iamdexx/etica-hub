@@ -1,4 +1,4 @@
-import { fetchAPI } from "@/lib/api";
+import { fetchAPI, type Transfer, type TransfersResponse } from "@/lib/api";
 import { truncateHash, timeAgo } from "@/lib/utils";
 
 export default async function AddressPage({
@@ -8,11 +8,11 @@ export default async function AddressPage({
 }) {
   const { addr } = await params;
 
-  let transfers: any[] = [];
+  let transfers: Transfer[] = [];
   try {
-    const data = await fetchAPI("/api/etica/transfers", { page: "1" });
+    const data = await fetchAPI<TransfersResponse>("/api/etica/transfers", { page: "1" });
     transfers = (data?.transfers?.data || []).filter(
-      (t: any) =>
+      (t) =>
         (t.fromaddress || "").toLowerCase() === addr.toLowerCase() ||
         (t.toaddress || "").toLowerCase() === addr.toLowerCase()
     );
@@ -63,7 +63,7 @@ export default async function AddressPage({
               </tr>
             </thead>
             <tbody>
-              {transfers.map((t: any, i: number) => (
+              {transfers.map((t, i) => (
                 <tr key={i}>
                   <td>
                     <a href={`/tx/${t.transactionhash || t.hash}`} className="truncate-hash">

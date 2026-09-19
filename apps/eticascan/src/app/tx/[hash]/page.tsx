@@ -1,5 +1,5 @@
-import { fetchAPI } from "@/lib/api";
-import { formatTimestamp, formatNumber, truncateHash } from "@/lib/utils";
+import { fetchAPI, type Transaction, type TransactionsResponse } from "@/lib/api";
+import { formatTimestamp, formatNumber } from "@/lib/utils";
 
 export default async function TxDetailPage({
   params,
@@ -8,10 +8,10 @@ export default async function TxDetailPage({
 }) {
   const { hash } = await params;
 
-  let tx: any = null;
+  let tx: Transaction | undefined;
   try {
-    const data = await fetchAPI("/api/etica/transactions", { page: "1" });
-    tx = data?.transactions?.data?.find((t: any) => t.hash === hash);
+    const data = await fetchAPI<TransactionsResponse>("/api/etica/transactions", { page: "1" });
+    tx = data?.transactions?.data?.find((t) => t.hash === hash);
   } catch (e) {
     console.error(e);
   }

@@ -1,4 +1,4 @@
-import { getProposals, getDiseases } from "@/lib/api";
+import { getProposals, getDiseases, type ProposalsResponse, type DiseasesResponse } from "@/lib/api";
 import { truncateHash, timeAgo } from "@/lib/utils";
 
 export default async function ProposalsPage({
@@ -9,8 +9,8 @@ export default async function ProposalsPage({
   const params = await searchParams;
   const page = parseInt(params.page || "1");
 
-  let proposalData = { proposals: { data: [] } };
-  let diseaseData = { diseases: { data: [] } };
+  let proposalData: ProposalsResponse = { proposals: { data: [] } };
+  let diseaseData: DiseasesResponse = { diseases: { data: [] } };
 
   try {
     [proposalData, diseaseData] = await Promise.all([
@@ -33,7 +33,7 @@ export default async function ProposalsPage({
         <div className="card mb-6">
           <h2 className="text-base font-bold mb-3">Disease Topics</h2>
           <div className="flex flex-wrap gap-2">
-            {diseases.map((d: any) => (
+            {diseases.map((d) => (
               <span
                 key={d.id || d.diseasehash}
                 className="badge bg-blue-50 text-blue-700 px-3 py-1"
@@ -58,7 +58,7 @@ export default async function ProposalsPage({
             </tr>
           </thead>
           <tbody>
-            {proposals.map((p: any) => (
+            {proposals.map((p) => (
               <tr key={p.id || p.proposalhash}>
                 <td>
                   <span className="truncate-hash font-medium text-[var(--eth-link)]">
@@ -80,7 +80,7 @@ export default async function ProposalsPage({
                 </td>
                 <td>
                   <span className="truncate-hash text-xs">
-                    {truncateHash(p.chunkid || p.raw_release_hash || "", 8, 6)}
+                    {truncateHash(String(p.chunkid ?? p.raw_release_hash ?? ""), 8, 6)}
                   </span>
                 </td>
               </tr>
