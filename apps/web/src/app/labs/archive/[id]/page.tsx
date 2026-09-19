@@ -11,7 +11,7 @@ import { notFound } from 'next/navigation';
 
 import { ShareButtons } from '@/components/labs/ShareButtons';
 import { getArchivedResearch } from '@/lib/labs/archive';
-import { LABS_JOB_TTL_MS } from '@/lib/labs/queue';
+import { labsQueue } from '@/lib/labs/queue';
 import { discoveryDescription, discoveryTitle } from '@/lib/labs/discovery-meta';
 import { scoreLabel } from '@/lib/labs/plain-summary';
 import { absoluteUrl, SITE_NAME } from '@/lib/site';
@@ -60,7 +60,10 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
   const url = absoluteUrl(`/labs/archive/${encodeURIComponent(id)}`);
   const best = r.bestCandidate;
   const score = best.score;
-  const timelineAvailable = Date.now() - r.completedAt < LABS_JOB_TTL_MS;
+  const timelineAvailable = await labsQueue()
+    .get(r.jobId)
+    .then((j) => j !== null)
+    .catch(() => false);
 
   const jsonLd = {
     '@context': 'https://schema.org',
