@@ -165,7 +165,16 @@ async function fetchRandomProtein(): Promise<string | null> {
   }
 }
 
+/**
+ * The CDN in front of this route drops the connection around 100s, so the
+ * worker sees an HTML error page instead of JSON. Everything below must
+ * finish well inside that: context prefetch + bounded LLM attempts, then
+ * the curated fallback.
+ */
+const SEED_DEADLINE_MS = 55_000;
+
 export async function POST(req: NextRequest): Promise<Response> {
+  const startedAt = Date.now();
   const auth = requireWorkerAuth(req);
   if (!auth.ok) return Response.json(auth.body, { status: auth.status });
 
@@ -230,13 +239,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   let lastFailure = '';
 
   for (let retry = 0; retry < 3 && !succeeded; retry++) {
+    if (Date.now() - startedAt > SEED_DEADLINE_MS) {
+      lastFailure = lastFailure || 'deadline exceeded before a valid prompt';
+      break;
+    }
     for (const model of SEED_MODELS) {
       try {
         const result = await nvidiaChat({
           models: [model],
           temperature: 0.7 + retry * 0.1, // increase randomness on retry
           max_tokens: 200,
-          timeoutMs: 60_000,
+          timeoutMs: 15_000,
+          maxRetriesPerKey: 1,
           messages: [
             { role: 'system', content: 'detailed thinking off' },
             { role: 'system', content: system },

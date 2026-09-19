@@ -1099,7 +1099,15 @@ async function main(): Promise<void> {
             'content-type': 'application/json',
           },
         });
-        const parsed = (await seedRes.json()) as SeedResponse;
+        const raw = await seedRes.text();
+        let parsed: SeedResponse | null = null;
+        try {
+          parsed = JSON.parse(raw) as SeedResponse;
+        } catch {
+          // CDN/gateway error pages come back as HTML
+          log(`auto-seed server returned non-JSON ${seedRes.status}: ${raw.replace(/\s+/g, ' ').slice(0, 200)}`);
+          break;
+        }
         if (!seedRes.ok || !parsed.ok) {
           log(`auto-seed server returned: ${seedRes.status} ${parsed.error ?? 'unknown'}`);
           break;
