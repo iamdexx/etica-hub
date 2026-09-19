@@ -1089,7 +1089,7 @@ async function main(): Promise<void> {
     if (!job) {
       log('queue empty — requesting auto-seed from server');
       // Call the Vercel-side seed endpoint (Nvidia API is unreachable from GH Actions)
-      interface SeedResponse { ok: boolean; prompt: string; topic: string; source: string; error?: string }
+      interface SeedResponse { ok: boolean; prompt: string; topic: string; source: string; error?: string; warning?: string }
       let seedData: SeedResponse | null = null;
       try {
         const seedRes = await fetch(`${BASE_URL}/api/labs/seed`, {
@@ -1099,7 +1099,15 @@ async function main(): Promise<void> {
             'content-type': 'application/json',
           },
         });
-        const parsed = (await seedRes.json()) as SeedResponse;
+        const raw = await seedRes.text();
+        let parsed: SeedResponse | null = null;
+        try {
+          parsed = JSON.parse(raw) as SeedResponse;
+        } catch {
+          // CDN/gateway error pages come back as HTML
+          log(`auto-seed server returned non-JSON ${seedRes.status}: ${raw.replace(/\s+/g, ' ').slice(0, 200)}`);
+          break;
+        }
         if (!seedRes.ok || !parsed.ok) {
           log(`auto-seed server returned: ${seedRes.status} ${parsed.error ?? 'unknown'}`);
           break;
@@ -1109,6 +1117,7 @@ async function main(): Promise<void> {
         log(`auto-seed fetch failed: ${seedErr instanceof Error ? seedErr.message : seedErr}`);
         break;
       }
+      if (seedData.warning) log(`::warning::auto-seed ${seedData.warning}`);
       log(`auto-seed generated: "${seedData.prompt}" (source: ${seedData.source}, topic: ${seedData.topic})`);
       // Enqueue the seed as a new research job via spawn endpoint
       try {

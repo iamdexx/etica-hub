@@ -1,27 +1,41 @@
 # EticaHub
 
-A single site combining three dapps for the Etica ecosystem:
+DeSci + DeFi application layer for the Etica Protocol (chain id 61803), live at
+**https://eticahub.com**.
 
-| Phase | Module | Status |
-|---|---|---|
-| 1 | **EticaSwap V2** — Uniswap V2 fork, first on-chain DEX for ETI / EGAZ / ERC-20 | Code complete, tested end-to-end on local mainnet fork |
-| 2a | **ETX reward token + MasterChef + xETXVault + FeeRouter + vesting** | Code complete, held from deploy |
-| 2b | **Research Hub** — proposal reader, IPFS renderer, ETI tipping, subscription contract | Code complete |
-| 3 | **Bridge** — ETI ↔ wETI on Ethereum, 2-of-3 multisig relayer | Code + tests complete, awaiting audit |
+| Module | Status |
+|---|---|
+| **EticaSwap V2** — AMM DEX for ETI / EGAZ / ERC-20 (factory, router, Permit2, Dutch reactor + order registry) | Live on Etica mainnet |
+| **ETX** token, **stETX** liquid staking (ERC-4626), farms, treasury harvester, fee controller | Live on Etica mainnet |
+| **EticaStableSwap** + harvester adapter | Live on Etica mainnet |
+| **Research Markets** + **RES NFT** (ERC-721 research discoveries) + marketplace | Live on Etica mainnet |
+| **EticaLabs Autopilot** — autonomous AI protein-design / research loop, public archive at `/labs/archive` | Live (GitHub Actions worker + Vercel API) |
+| **Bridge** — ETX ↔ wrapped ETX on Ethereum / BNB via Hyperlane, optimistic veto | Contracts + watcher bots complete; remote deployments not yet configured |
 
-**Nothing is deployed to any chain yet.** See [`docs/DEPLOYMENT_RUNBOOK.md`](./docs/DEPLOYMENT_RUNBOOK.md)
-for the promotion path.
+Canonical deployment addresses live in [`packages/shared/src/addresses.ts`](./packages/shared/src/addresses.ts).
+See [`docs/DEPLOYMENT_RUNBOOK.md`](./docs/DEPLOYMENT_RUNBOOK.md) for the promotion path of new contracts.
+
+### Operations
+
+- Frontend + API: Vercel (`apps/web`), Redis for Labs queue / rate limits / uptime history.
+- Automation: GitHub Actions cron — bridge heartbeat/monitor/execute, explorer indexer, harvest, keeper,
+  Labs autopilot, research automation. A weekly `keepalive` workflow re-enables anything GitHub
+  auto-disables for inactivity; `ops-alerts` posts to Telegram on failed/timed-out runs or a stale `/api/v1/health`.
+- Status: https://eticahub.com/status (chain head, RPC failover, 7-day uptime).
 
 ## Repo layout
 
 ```
 apps/
-  web/         Next.js 14 + wagmi + viem frontend
-  indexer/     Node/TS — Etica core event watcher + IPFS proposal fetcher
-  relayer/     Node/TS — bridge coordinator + per-validator signer
+  web/             Next.js 14 + wagmi + viem frontend + API routes (Vercel)
+  labs-autopilot/  AI research worker loop (GitHub Actions)
+  bridge-watcher/  Bridge heartbeat / monitor / executor bots
+  indexer/         Explorer event indexer
+  keeper/, wres-keeper/, orderbook/, research-markets-sourcify/, eticascan/
 packages/
-  contracts/   Solidity + Foundry
-  shared/      TS — chain configs, ABIs, deployment addresses
+  contracts/       Solidity + Foundry
+  trading-contracts/
+  shared/          TS — chain configs, ABIs, deployment addresses
 docs/
   BRIDGE_AUDIT_SCOPE.md    What to hand a bridge auditor
   DEPLOYMENT_RUNBOOK.md    Step-by-step promotion from fork → testnet → mainnet

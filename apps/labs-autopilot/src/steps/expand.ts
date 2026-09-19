@@ -88,8 +88,13 @@ function userPrompt(input: ExpansionInput): string {
   return lines.join('\n');
 }
 
-function sanitize(raw: string): string | null {
-  let s = raw.trim();
+/** Leaked chain-of-thought / instruction echoes that must never reach the public feed. */
+const META_START =
+  /^(the user (wants|asks|is asking)|here is|here's|this prompt|a research prompt|the prompt|we need to|i need to|i should|i will|let me|okay|ok[,.]|sure[,.]|output one|the topic|the goal|as an ai|note:)/i;
+const META_BODY = /max 280 char|imperative sentence|research prompt should|the previous candidate had a score/i;
+
+export function sanitize(raw: string): string | null {
+  let s = raw.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
   // strip surrounding quotes / backticks / markdown
   s = s.replace(/^["'`]+|["'`]+$/g, '').trim();
   s = s.replace(/^\s*[-*•]\s*/, '');
@@ -98,6 +103,7 @@ function sanitize(raw: string): string | null {
   if (s.length > MAX_PROMPT_CHARS) s = s.slice(0, MAX_PROMPT_CHARS).trim();
   // very-short outputs are almost always model refusals or junk
   if (s.length < 20) return null;
+  if (META_START.test(s) || META_BODY.test(s)) return null;
   return s;
 }
 

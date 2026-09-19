@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation';
 
 import { ShareButtons } from '@/components/labs/ShareButtons';
 import { getArchivedResearch } from '@/lib/labs/archive';
+import { labsQueue } from '@/lib/labs/queue';
 import { discoveryDescription, discoveryTitle } from '@/lib/labs/discovery-meta';
 import { scoreLabel } from '@/lib/labs/plain-summary';
 import { absoluteUrl, SITE_NAME } from '@/lib/site';
@@ -59,6 +60,10 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
   const url = absoluteUrl(`/labs/archive/${encodeURIComponent(id)}`);
   const best = r.bestCandidate;
   const score = best.score;
+  const timelineAvailable = await labsQueue()
+    .get(r.jobId)
+    .then((j) => j !== null)
+    .catch(() => false);
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -157,9 +162,13 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
           {r.iterations} iteration{r.iterations === 1 ? '' : 's'} · {r.candidates.length} candidate
           {r.candidates.length === 1 ? '' : 's'}
         </span>
-        <Link href={`/labs/feed/${r.jobId}`} className="text-emerald-200/80 hover:text-emerald-200">
-          Full run timeline →
-        </Link>
+        {timelineAvailable ? (
+          <Link href={`/labs/feed/${r.jobId}`} className="text-emerald-200/80 hover:text-emerald-200">
+            Full run timeline →
+          </Link>
+        ) : (
+          <span className="text-white/35">run timeline expired · run {r.jobId}</span>
+        )}
         {r.mintTxHash && (
           <Link href={`/explorer/tx/${r.mintTxHash}`} className="text-amber-200/80 hover:text-amber-200">
             Mint tx →

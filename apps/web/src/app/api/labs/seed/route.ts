@@ -12,7 +12,7 @@
 
 import { NextRequest } from 'next/server';
 
-import { nvidiaChat, hasNvidiaKey, NVIDIA_MODEL_PRIMARY } from '@/lib/labs/nvidia';
+import { nvidiaChat, hasNvidiaKey, NvidiaError, NVIDIA_MODEL_PRIMARY } from '@/lib/labs/nvidia';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 
 export const runtime = 'nodejs';
@@ -60,6 +60,38 @@ const TOPIC_POOL = [
   'exosome drug delivery',
   'organoid disease model',
 ];
+
+/**
+ * Curated, patent-safe seeds used only when 550B cannot produce a valid
+ * prompt (auth/quota outage, persistent meta-commentary). Keeps the
+ * discovery cascade alive; the response is tagged `source: 'fallback'`.
+ */
+const FALLBACK_SEEDS = [
+  'Design a cyclic peptide inhibitor targeting the PD-1/PD-L1 interface for melanoma immunotherapy',
+  'Engineer a thermostable variant of human lysozyme with enhanced antimicrobial activity against MRSA',
+  'Develop a stapled alpha-helical peptide blocking the MDM2-p53 interaction for glioblastoma treatment',
+  'Design a beta-hairpin peptide that disrupts amyloid-beta oligomerisation for early Alzheimer\'s disease',
+  'Engineer a nanobody scaffold binding the SARS-CoV-2 spike RBD with cross-variant neutralisation',
+  'Design a mitochondria-targeted peptide that stabilises complex I assembly for Leigh syndrome',
+  'Develop a KRAS-G12D selective helical peptide occupying the switch II pocket for pancreatic cancer',
+  'Engineer an IL-17A blocking peptide with improved serum stability for psoriasis therapy',
+  'Design a TDP-43 aggregation-inhibiting peptide for amyotrophic lateral sclerosis',
+  'Develop a GLP-1 receptor agonist peptide with extended half-life for type 2 diabetes',
+  'Design a cationic antimicrobial peptide selective for Pseudomonas aeruginosa biofilms',
+  'Engineer a TGF-beta receptor II decoy peptide to attenuate idiopathic pulmonary fibrosis',
+];
+
+function fallbackSeedResponse(reason: string): Response {
+  console.error('[labs/seed] LLM seed failed, using fallback', { reason });
+  return Response.json({
+    ok: true,
+    prompt: FALLBACK_SEEDS[Math.floor(Math.random() * FALLBACK_SEEDS.length)]!,
+    topic: 'curated fallback',
+    source: 'fallback',
+    paperTitles: [],
+    warning: `LLM seed failed: ${reason.slice(0, 300)}`,
+  });
+}
 
 // 550B only — per product requirement, no smaller-model fallbacks. Nvidia
 // is reachable from Vercel (unlike the GH Actions worker), so 550B answers
@@ -145,13 +177,20 @@ async function fetchRandomProtein(): Promise<string | null> {
   }
 }
 
+/**
+ * The CDN in front of this route drops the connection around 100s, so the
+ * worker sees an HTML error page instead of JSON. Everything below must
+ * finish well inside that: context prefetch + bounded LLM attempts, then
+ * the curated fallback.
+ */
+const SEED_DEADLINE_MS = 55_000;
+
 export async function POST(req: NextRequest): Promise<Response> {
+  const startedAt = Date.now();
   const auth = requireWorkerAuth(req);
   if (!auth.ok) return Response.json(auth.body, { status: auth.status });
 
-  if (!hasNvidiaKey()) {
-    return Response.json({ ok: false, error: 'No NVIDIA_API_KEY configured' }, { status: 500 });
-  }
+  if (!hasNvidiaKey()) return fallbackSeedResponse('no NVIDIA_API_KEY configured');
 
   // Try up to 3 different topics
   let papers: PaperSummary[] = [];
@@ -207,15 +246,21 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   let prompt = '';
   let succeeded = false;
+  let lastFailure = '';
 
   for (let retry = 0; retry < 3 && !succeeded; retry++) {
+    if (Date.now() - startedAt > SEED_DEADLINE_MS) {
+      lastFailure = lastFailure || 'deadline exceeded before a valid prompt';
+      break;
+    }
     for (const model of SEED_MODELS) {
       try {
         const result = await nvidiaChat({
           models: [model],
           temperature: 0.7 + retry * 0.1, // increase randomness on retry
           max_tokens: 200,
-          timeoutMs: 60_000,
+          timeoutMs: 15_000,
+          maxRetriesPerKey: 1,
           messages: [
             { role: 'system', content: 'detailed thinking off' },
             { role: 'system', content: system },
@@ -227,21 +272,27 @@ export async function POST(req: NextRequest): Promise<Response> {
         candidate = candidate.replace(/^-\s+/, '').trim();
         candidate = candidate.split('\n')[0]?.trim() ?? '';
         if (candidate.length > 280) candidate = candidate.slice(0, 280).trim();
-        if (candidate.length < 30) continue;
-        if (metaStart.test(candidate)) continue;
-        if (metaBody.test(candidate)) continue;
+        if (candidate.length < 30) { lastFailure = `too short: ${JSON.stringify(candidate)}`; continue; }
+        if (metaStart.test(candidate) || metaBody.test(candidate)) {
+          lastFailure = `meta-commentary: ${JSON.stringify(candidate.slice(0, 120))}`;
+          continue;
+        }
         prompt = candidate;
         succeeded = true;
         break;
-      } catch {
+      } catch (err) {
+        lastFailure =
+          err instanceof NvidiaError
+            ? `nvidia ${err.status}: ${err.detail ?? err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
         continue;
       }
     }
   }
 
-  if (!succeeded) {
-    return Response.json({ ok: false, error: 'LLM failed to produce a valid research prompt after retries' }, { status: 422 });
-  }
+  if (!succeeded) return fallbackSeedResponse(`topic ${topic}: ${lastFailure}`);
 
   const source = papers.length > 0 && protein ? 'combined' : papers.length > 0 ? 'pubmed' : protein ? 'uniprot' : 'topic-only';
 
