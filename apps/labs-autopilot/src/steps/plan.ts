@@ -598,7 +598,7 @@ export async function generatePlan(
   // samples) plus the salvage parser make an unparseable plan very unlikely.
   let lastErr = '';
   const models = [NVIDIA_MODEL_PRIMARY, NVIDIA_MODEL_FALLBACK, NVIDIA_MODEL_PRIMARY];
-  for (const model of models) {
+  for (const [attempt, model] of models.entries()) {
     try {
       const result = await nvidiaChat({
         models: [model],
@@ -609,10 +609,12 @@ export async function generatePlan(
         // the cap (~600-900 tok typical); the salvage parser recovers candidates
         // if the model still overruns. At ~10-12 tok/s this stays inside 240s.
         max_tokens: 2048,
-        // Plain mode: `json_object` makes this model emit mangled/over-escaped
-        // JSON and costs a redundant second underlying pass. With the forceful
-        // prompt the model returns clean minified JSON without it.
-        jsonMode: false,
+        // First pass runs plain: the forceful prompt usually yields clean
+        // minified JSON, and `json_object` costs a redundant second underlying
+        // pass and can over-escape quotes. When the model ignores the
+        // reasoning switch it instead streams chain-of-thought until the token
+        // cap with no JSON at all, so later passes force the JSON grammar.
+        jsonMode: attempt > 0,
         // 550B plan latency is highly variable in production (measured
         // ~60s up to ~170s under load). The Vercel proxy runs on the Pro
         // plan (300s ceiling), so we give a single call 240s — enough to
