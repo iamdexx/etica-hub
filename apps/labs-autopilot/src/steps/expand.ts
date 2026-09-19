@@ -94,7 +94,7 @@ const META_START =
 const META_BODY = /max 280 char|imperative sentence|research prompt should|the previous candidate had a score/i;
 
 export function sanitize(raw: string): string | null {
-  let s = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  let s = raw.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
   // strip surrounding quotes / backticks / markdown
   s = s.replace(/^["'`]+|["'`]+$/g, '').trim();
   s = s.replace(/^\s*[-*•]\s*/, '');

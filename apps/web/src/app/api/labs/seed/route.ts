@@ -81,6 +81,18 @@ const FALLBACK_SEEDS = [
   'Engineer a TGF-beta receptor II decoy peptide to attenuate idiopathic pulmonary fibrosis',
 ];
 
+function fallbackSeedResponse(reason: string): Response {
+  console.error('[labs/seed] LLM seed failed, using fallback', { reason });
+  return Response.json({
+    ok: true,
+    prompt: FALLBACK_SEEDS[Math.floor(Math.random() * FALLBACK_SEEDS.length)]!,
+    topic: 'curated fallback',
+    source: 'fallback',
+    paperTitles: [],
+    warning: `LLM seed failed: ${reason.slice(0, 300)}`,
+  });
+}
+
 // 550B only — per product requirement, no smaller-model fallbacks. Nvidia
 // is reachable from Vercel (unlike the GH Actions worker), so 550B answers
 // reliably here.
@@ -178,9 +190,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const auth = requireWorkerAuth(req);
   if (!auth.ok) return Response.json(auth.body, { status: auth.status });
 
-  if (!hasNvidiaKey()) {
-    return Response.json({ ok: false, error: 'No NVIDIA_API_KEY configured' }, { status: 500 });
-  }
+  if (!hasNvidiaKey()) return fallbackSeedResponse('no NVIDIA_API_KEY configured');
 
   // Try up to 3 different topics
   let papers: PaperSummary[] = [];
@@ -282,17 +292,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
-  if (!succeeded) {
-    console.error('[labs/seed] LLM seed failed, using fallback', { topic, lastFailure });
-    return Response.json({
-      ok: true,
-      prompt: FALLBACK_SEEDS[Math.floor(Math.random() * FALLBACK_SEEDS.length)]!,
-      topic: 'curated fallback',
-      source: 'fallback',
-      paperTitles: [],
-      warning: `LLM seed failed: ${lastFailure.slice(0, 300)}`,
-    });
-  }
+  if (!succeeded) return fallbackSeedResponse(`topic ${topic}: ${lastFailure}`);
 
   const source = papers.length > 0 && protein ? 'combined' : papers.length > 0 ? 'pubmed' : protein ? 'uniprot' : 'topic-only';
 
