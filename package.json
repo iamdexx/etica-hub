@@ -2,7 +2,7 @@
   "name": "etica-hub",
   "version": "0.0.1",
   "private": true,
-  "description": "EticaHub — a unified dapp for the Etica mainnet: on-chain DEX, Ethereum bridge, and DeSci research hub.",
+  "description": "EticaHub \u2014 a unified dapp for the Etica mainnet: on-chain DEX, Ethereum bridge, and DeSci research hub.",
   "packageManager": "pnpm@9.15.1",
   "engines": {
     "node": ">=20.11.0"
@@ -19,5 +19,19 @@
   "devDependencies": {
     "prettier": "^3.3.3",
     "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "axios@<1.16.0": ">=1.16.0",
+      "ws@<8.21.0": ">=8.21.0",
+      "form-data@<4.0.6": ">=4.0.6",
+      "fast-uri@<3.1.6": ">=3.1.6",
+      "find-my-way@<9.7.0": ">=9.7.0",
+      "hono@<4.12.25": ">=4.12.25",
+      "nanoid@<3.3.18": ">=3.3.18",
+      "postcss@<8.5.18": ">=8.5.18",
+      "socket.io-parser@<4.2.7": ">=4.2.7",
+      "browserslist@<4.28.7": ">=4.28.7"
+    }
   }
 }

@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { NextRequest } from 'next/server';
-import { Redis } from 'ioredis';
+
+import { labsStore } from '@/lib/labs/store';
 
 const LIMIT = 5;
 const WINDOW_MS = 60 * 60 * 1000;
@@ -30,30 +31,34 @@ function memoryStore(): BucketStore {
   };
 }
 
-function redisStore(url: string): BucketStore {
-  const client = new Redis(url, {
-    lazyConnect: false,
-    maxRetriesPerRequest: 2,
-    enableReadyCheck: true,
-  });
-  client.on('error', () => {
-    /* surfaced via command failures; fallback handled in consume */
-  });
+/**
+ * Shared-backend store (Upstash REST / TCP Redis / memory — same resolution
+ * as `labsStore()`). Window start is kept alongside the counter so every
+ * instance reports the same `resetAt`.
+ */
+function sharedStore(): BucketStore {
   const memory = memoryStore();
   return {
     async hit(key, windowMs) {
+      const kv = labsStore();
+      const ttlSeconds = Math.ceil(windowMs / 1000);
       try {
-        const [[, count], [, pttl]] = (await client
-          .multi()
-          .incr(key)
-          .pttl(key)
-          .exec()) as [[null, number], [null, number]];
-        let ttl = pttl;
-        if (ttl < 0) {
-          await client.pexpire(key, windowMs);
-          ttl = windowMs;
+        const startKey = `${key}:start`;
+        let count = await kv.incr(key);
+        let start = Number(await kv.get(startKey));
+        if (count > 1 && start > 0 && start + windowMs <= now()) {
+          // Backend without TTL eviction (memory): roll the window manually.
+          await kv.del(key);
+          await kv.del(startKey);
+          count = await kv.incr(key);
+          start = 0;
         }
-        return { count, resetAt: now() + ttl };
+        if (count === 1 || !(start > 0)) {
+          start = now();
+          await kv.expire(key, ttlSeconds);
+          await kv.set(startKey, String(start), ttlSeconds);
+        }
+        return { count, resetAt: start + windowMs };
       } catch {
         return memory.hit(key, windowMs);
       }
@@ -63,9 +68,7 @@ function redisStore(url: string): BucketStore {
 
 let cachedStore: BucketStore | null = null;
 function store(): BucketStore {
-  if (cachedStore) return cachedStore;
-  const url = process.env.REDIS_URL;
-  cachedStore = url ? redisStore(url) : memoryStore();
+  cachedStore ??= sharedStore();
   return cachedStore;
 }
 
