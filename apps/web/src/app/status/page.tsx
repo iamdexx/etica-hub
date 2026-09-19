@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { StatusPanel } from '@/components/StatusPanel';
+import { UptimeHistory } from '@/components/UptimeHistory';
 import { StatusAutoRefresh } from '@/components/StatusAutoRefresh';
 import {
   StatusLiquidityFlowCard,
@@ -85,6 +87,9 @@ export default function StatusPage() {
               <InfoCard title="Contract surface" body="Use Explorer Contracts when a status row needs deeper address, code, or verification inspection." />
             </div>
           </div>
+          <Suspense fallback={<PanelSkeleton label="Loading uptime history…" />}>
+            <UptimeHistory />
+          </Suspense>
         </aside>
 
         <div className="space-y-6">
@@ -98,10 +103,23 @@ export default function StatusPage() {
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
-            <StatusPanel />
+            <Suspense fallback={<PanelSkeleton label="Reading contracts from chain…" />}>
+              <StatusPanel />
+            </Suspense>
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+function PanelSkeleton({ label }: { label: string }) {
+  return (
+    <div className="animate-pulse space-y-3 rounded-2xl border border-white/10 bg-[#07120f] p-5">
+      <div className="h-3 w-40 rounded bg-white/10" />
+      <div className="h-3 w-full rounded bg-white/5" />
+      <div className="h-3 w-5/6 rounded bg-white/5" />
+      <div className="text-[11px] text-white/40">{label}</div>
     </div>
   );
 }
