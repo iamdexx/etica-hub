@@ -23,7 +23,7 @@ import { DEPLOYMENTS } from '@etica-hub/shared';
 
 export const runtime = 'nodejs';
 export const revalidate = API_REVALIDATE_SECONDS;
-export const dynamic = 'force-static';
+export const dynamic = 'force-dynamic';
 
 const MAINNET_CHAIN_ID = 61803;
 

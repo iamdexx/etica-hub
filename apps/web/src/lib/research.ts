@@ -1,8 +1,6 @@
 import 'server-only';
 import {
   createPublicClient,
-  fallback,
-  http,
   type Address,
   type Hex,
   type PublicClient,
@@ -18,6 +16,7 @@ import {
   ProposalStatus,
   type SupportedChainId,
 } from '@etica-hub/shared';
+import { failoverTransport } from './rpc';
 
 /**
  * Server-side helpers for reading research data off the Etica core contract.
@@ -111,26 +110,7 @@ export function getResearchClient(chainId: SupportedChainId = resolveChainId()):
         ? process.env.ETICA_CRUCIBLE_RPC_URL
         : (process.env.ETICA_LOCAL_RPC_URL ?? 'http://127.0.0.1:8545');
 
-  // Build an ordered, de-duplicated endpoint list: the env-configured RPC
-  // first (if any), then the chain's public RPCs as automatic failovers. A
-  // single slow/unresponsive endpoint previously hung server reads (e.g. the
-  // mint-fee read in /api/labs/mint/attest) until the function ceiling and
-  // surfaced as a 504. The fallback transport retries the next endpoint on
-  // failure, and a bounded per-request timeout keeps any one node from
-  // stalling the whole call.
-  const endpoints = Array.from(
-    new Set([rpcUrl, ...chain.rpcUrls.default.http].filter((u): u is string => !!u)),
-  );
-
-  const transport =
-    endpoints.length > 0
-      ? fallback(
-          endpoints.map((url) => http(url, { timeout: 5_000, retryCount: 1 })),
-          { rank: false },
-        )
-      : http();
-
-  return createPublicClient({ chain, transport }) as PublicClient;
+  return createPublicClient({ chain, transport: failoverTransport(chain, rpcUrl) }) as PublicClient;
 }
 
 /**

@@ -1,0 +1,78 @@
+name: Ops alerts
+
+on:
+  workflow_run:
+    workflows:
+      - Bridge execute (live)
+      - Bridge heartbeat (live)
+      - Bridge monitor (live)
+      - Explorer indexer
+      - Harvest (live)
+      - Keeper (dry-run)
+      - Labs Autopilot
+      - Research markets auto-Sourcify
+      - Keepalive scheduled workflows
+    types: [completed]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-alerts-${{ github.event_name }}
+  cancel-in-progress: false
+
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.BRIDGE_TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.BRIDGE_TELEGRAM_CHAT_ID }}
+  HEALTH_URL: https://eticahub.com/api/v1/health
+  STALE_ALERT_SECONDS: '600'
+
+jobs:
+  workflow-failed:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Telegram
+        run: |
+          text="🚨 <b>${{ github.event.workflow_run.name }}</b> failed on <code>${{ github.event.workflow_run.head_branch }}</code>
+          ${{ github.event.workflow_run.html_url }}"
+          curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "disable_web_page_preview=true" \
+            --data-urlencode "text=${text}" > /dev/null
+
+  health:
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe /api/v1/health
+        id: probe
+        run: |
+          body=$(curl -sS -m 30 -H 'cache-control: no-cache' "${HEALTH_URL}?t=$(date +%s)" || echo '{}')
+          echo "$body"
+          ok=$(echo "$body" | jq -r '.ok // false')
+          age=$(echo "$body" | jq -r '.headAgeSeconds // 999999')
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          echo "age=$age" >> "$GITHUB_OUTPUT"
+          if [ "$ok" = "true" ] && [ "$age" -lt "$STALE_ALERT_SECONDS" ]; then
+            echo "alert=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "alert=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify Telegram
+        if: steps.probe.outputs.alert == 'true'
+        run: |
+          text="🚨 <b>eticahub.com health check failing</b>
+          ok=${{ steps.probe.outputs.ok }} headAgeSeconds=${{ steps.probe.outputs.age }}
+          ${HEALTH_URL}"
+          curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "disable_web_page_preview=true" \
+            --data-urlencode "text=${text}" > /dev/null
+          exit 1

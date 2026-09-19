@@ -41,7 +41,7 @@ import {
 
 export const runtime = 'nodejs';
 export const revalidate = 60;
-export const dynamic = 'force-static';
+export const dynamic = 'force-dynamic';
 
 const MAINNET_CHAIN_ID = 61803;
 const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000';

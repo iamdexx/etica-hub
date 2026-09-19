@@ -15,10 +15,11 @@
  */
 
 import { NextRequest } from 'next/server';
-import { createPublicClient, getAddress, http, type Address, type PublicClient } from 'viem';
+import { createPublicClient, getAddress, type Address, type PublicClient } from 'viem';
 import { DEPLOYMENTS, TREASURY_ADDRESS, eticaMainnet } from '@etica-hub/shared';
 
 import { isVercelCron } from '@/lib/cron-auth';
+import { failoverTransport } from '@/lib/rpc';
 import { loadBuyBotConfig, type BuyBotConfig } from '@/lib/buybot/config';
 import {
   fetchCirculatingExcludes,
@@ -74,7 +75,7 @@ function authorized(req: NextRequest): boolean {
 function makeClient(config: BuyBotConfig): PublicClient {
   return createPublicClient({
     chain: eticaMainnet,
-    transport: http(config.rpcUrl),
+    transport: failoverTransport(eticaMainnet, config.rpcUrl),
   }) as PublicClient;
 }
 

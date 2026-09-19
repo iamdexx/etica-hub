@@ -34,6 +34,7 @@ import {
   EXTERNAL_ADDRESSES,
   eticaMainnet,
 } from '@etica-hub/shared';
+import { failoverTransport } from './rpc';
 
 const MAINNET_CHAIN_ID = 61803;
 const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000';
@@ -48,10 +49,9 @@ const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000';
  * without hardcoding it twice.
  */
 function getExplorerClient(): PublicClient {
-  const override = process.env.ETICA_MAINNET_RPC_URL;
   return createPublicClient({
     chain: eticaMainnet,
-    transport: override ? http(override) : http(),
+    transport: failoverTransport(eticaMainnet, process.env.ETICA_MAINNET_RPC_URL),
   }) as PublicClient;
 }
 

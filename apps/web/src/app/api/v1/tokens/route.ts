@@ -11,7 +11,7 @@ import { apiTokens, API_REVALIDATE_SECONDS, jsonResponse } from '@/lib/priceApi'
 
 export const runtime = 'nodejs';
 export const revalidate = API_REVALIDATE_SECONDS;
-export const dynamic = 'force-static';
+export const dynamic = 'force-dynamic';
 
 export async function GET(): Promise<Response> {
   const tokens = apiTokens();
