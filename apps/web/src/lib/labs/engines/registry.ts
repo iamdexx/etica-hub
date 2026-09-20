@@ -18,6 +18,7 @@
 
 import { createBoltzEngine } from './boltz';
 import { createChai1Engine } from './chai1';
+import { createEsmAtlasEngine } from './esmatlas';
 import { createHuggingFaceEsmFoldEngine } from './hf-esmfold';
 import { createNvidiaEsmFoldEngine } from './nvidia-esmfold';
 import type {
@@ -38,6 +39,10 @@ import type {
 const CASCADE: readonly FoldEngine[] = [
   createNvidiaEsmFoldEngine(),
   createHuggingFaceEsmFoldEngine(),
+  // Keyless floor: NVIDIA retired its ESMFold NIM function (404 "Not found
+  // for account") and HF deprovisioned esmfold_v1, which left the cascade
+  // with no reachable engine and every candidate unfolded.
+  createEsmAtlasEngine(),
   createChai1Engine(),
   createBoltzEngine(),
 ];
@@ -99,7 +104,11 @@ function isPermanentFailure(error: string): boolean {
     /not set$/i.test(error) ||
     /not configured/i.test(error) ||
     /not currently serving/i.test(error) ||
-    /not (supported|deployed)/i.test(error)
+    /not (supported|deployed)/i.test(error) ||
+    // A retired/unavailable upstream function never recovers within a pass;
+    // retrying it burns 35s of backoff per candidate before failing over.
+    /\b(404|410)\b/.test(error) ||
+    /not found for account/i.test(error)
   );
 }
 
@@ -194,7 +203,7 @@ export async function foldWithCascade(
   const configured = attempts.filter((a) => a.error && !a.error.startsWith('not configured'));
   const summary =
     configured.length === 0
-      ? 'No folding engines are configured. Set NVIDIA_API_KEY to enable ESMFold.'
+      ? 'No folding engines are reachable.'
       : 'All configured folding engines failed. Please retry in a moment.';
 
   return { ok: false, error: summary, attempts };

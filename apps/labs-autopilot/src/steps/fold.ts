@@ -4,8 +4,9 @@
  * Next.js bundle.
  *
  * Order:
- *   1. NVIDIA NIM ESMFold (free, most reliable host today)
+ *   1. NVIDIA NIM ESMFold (free, needs a key)
  *   2. Hugging Face Router ESMFold (fallback; intermittent)
+ *   3. ESM Atlas ESMFold (keyless floor, <=400 residues)
  *
  * Each engine gets up to 3 attempts with exponential backoff (0s, 5s,
  * 30s) and a 90s per-attempt timeout. The cascade exits on the first
@@ -17,6 +18,8 @@
 const NVIDIA_INVOKE_URL = 'https://health.api.nvidia.com/v1/biology/nvidia/esmfold';
 const NVIDIA_STATUS_URL = 'https://health.api.nvidia.com/v1/status';
 const HF_URL = 'https://router.huggingface.co/hf-inference/models/facebook/esmfold_v1';
+const ESMATLAS_URL = 'https://api.esmatlas.com/foldSequence/v1/pdb/';
+const ESMATLAS_MAX_RESIDUES = 400;
 
 const POLL_INTERVAL_MS = 1_500;
 const POLL_BUDGET_MS = Number(process.env.LABS_AUTOPILOT_FOLD_TIMEOUT_MS ?? '60000');
@@ -51,8 +54,10 @@ function nextNvidiaKey(): string | null {
 
 export type FoldResult = { ok: true; pdb: string } | { ok: false; error: string };
 
+export type FoldEngineId = 'nvidia-esmfold' | 'hf-esmfold' | 'esmatlas';
+
 export type CascadeAttempt = {
-  engine: 'nvidia-esmfold' | 'hf-esmfold';
+  engine: FoldEngineId;
   ok: boolean;
   error?: string;
   durationMs: number;
@@ -60,7 +65,7 @@ export type CascadeAttempt = {
 };
 
 export type CascadeOutcome =
-  | { ok: true; engine: 'nvidia-esmfold' | 'hf-esmfold'; pdb: string; attempts: CascadeAttempt[] }
+  | { ok: true; engine: FoldEngineId; pdb: string; attempts: CascadeAttempt[] }
   | { ok: false; error: string; attempts: CascadeAttempt[] };
 
 function sleep(ms: number): Promise<void> {
@@ -85,7 +90,11 @@ function isPermanentFailure(error: string): boolean {
     /not set$/i.test(error) ||
     /not configured/i.test(error) ||
     /not currently serving/i.test(error) ||
-    /not (supported|deployed)/i.test(error)
+    /not (supported|deployed)/i.test(error) ||
+    // A retired/unavailable upstream function never recovers within a pass;
+    // retrying it burns 35s of backoff per candidate before failing over.
+    /\b(404|410)\b/.test(error) ||
+    /not found for account/i.test(error)
   );
 }
 
@@ -214,8 +223,35 @@ export async function foldWithHuggingFace(sequence: string): Promise<FoldResult>
   return { ok: false, error: `HF ${response.status}: ${text.slice(0, 200)}` };
 }
 
+/**
+ * ESM Atlas ESMFold — Meta's public endpoint. Keyless, so it always runs and
+ * keeps candidates folding when the keyed hosts retire their models. Its PDB
+ * carries pLDDT on a 0-1 scale; `summarizePdb` in analyse.ts rescales it.
+ */
+export async function foldWithEsmAtlas(sequence: string): Promise<FoldResult> {
+  if (sequence.length > ESMATLAS_MAX_RESIDUES) {
+    return { ok: false, error: `ESM Atlas is not supported above ${ESMATLAS_MAX_RESIDUES} residues` };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(ESMATLAS_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: sequence,
+      cache: 'no-store',
+    });
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'network error' };
+  }
+
+  const text = await response.text();
+  if (response.ok && looksLikePdb(text)) return { ok: true, pdb: text };
+  return { ok: false, error: `ESM Atlas ${response.status}: ${text.slice(0, 200)}` };
+}
+
 async function runWithRetry(
-  engine: 'nvidia-esmfold' | 'hf-esmfold',
+  engine: FoldEngineId,
   call: (sequence: string) => Promise<FoldResult>,
   sequence: string,
 ): Promise<CascadeAttempt & { result: FoldResult }> {
@@ -254,7 +290,7 @@ export async function foldWithCascade(sequence: string): Promise<CascadeOutcome>
   const attempts: CascadeAttempt[] = [];
 
   const engines: Array<{
-    id: 'nvidia-esmfold' | 'hf-esmfold';
+    id: FoldEngineId;
     configured: boolean;
     missingEnv: string;
     call: (sequence: string) => Promise<FoldResult>;
@@ -270,6 +306,12 @@ export async function foldWithCascade(sequence: string): Promise<CascadeOutcome>
       configured: Boolean(process.env.HUGGINGFACE_API_KEY ?? process.env.HF_TOKEN),
       missingEnv: 'HUGGINGFACE_API_KEY',
       call: foldWithHuggingFace,
+    },
+    {
+      id: 'esmatlas',
+      configured: true,
+      missingEnv: '',
+      call: foldWithEsmAtlas,
     },
   ];
 
@@ -303,7 +345,7 @@ export async function foldWithCascade(sequence: string): Promise<CascadeOutcome>
   const configured = attempts.filter((a) => !a.error || !/not set$/i.test(a.error));
   const error =
     configured.length === 0
-      ? 'No folding engines are configured (set NVIDIA_API_KEY)'
+      ? 'No folding engines are reachable'
       : 'All folding engines failed after retries';
   return { ok: false, error, attempts };
 }

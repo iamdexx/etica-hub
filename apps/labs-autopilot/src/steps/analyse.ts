@@ -62,12 +62,16 @@ function summarizePdb(pdb: string): PdbSummary {
     }
   }
 
+  // ESM Atlas writes pLDDT on a 0-1 scale (NVIDIA/HF use 0-100); normalise
+  // so the confidence score and summary tiers below read the same either way.
+  const scale = bCount > 0 && bMax <= 1 ? 100 : 1;
+
   return {
     length: residueIds.size,
     atomCount,
-    bMean: bCount > 0 ? bSum / bCount : 0,
-    bMin: Number.isFinite(bMin) ? bMin : 0,
-    bMax: Number.isFinite(bMax) ? bMax : 0,
+    bMean: bCount > 0 ? (bSum / bCount) * scale : 0,
+    bMin: Number.isFinite(bMin) ? bMin * scale : 0,
+    bMax: Number.isFinite(bMax) ? bMax * scale : 0,
     helixHint,
     sheetHint,
   };
