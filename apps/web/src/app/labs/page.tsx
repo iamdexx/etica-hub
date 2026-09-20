@@ -818,12 +818,11 @@ export default function LabsPage() {
           </div>
 
           <div className="relative w-full min-w-0">
-            <div
-              ref={viewerRef}
-              className="relative h-[440px] w-full min-w-0 overflow-hidden rounded-3xl border border-emerald-400/15 bg-[#020806]"
-            >
+            <div className="relative h-[440px] w-full min-w-0 overflow-hidden rounded-3xl border border-emerald-400/15 bg-[#020806]">
+              {/* 3Dmol owns this node's children; keep React children out of it. */}
+              <div ref={viewerRef} className="absolute inset-0" />
               {!pdb && (
-                <div className="flex h-full items-center justify-center text-center text-sm text-white/40">
+                <div className="pointer-events-none absolute inset-0 flex items-center bg-[#020806] justify-center text-center text-sm text-white/40">
                   {loading ? 'Preparing protein structure\u2026' : 'Your folded molecule will render here.'}
                 </div>
               )}
