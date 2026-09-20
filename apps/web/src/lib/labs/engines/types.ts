@@ -7,7 +7,7 @@
  * next when an upstream host is rate-limited, warming, or down.
  */
 
-export type FoldEngineId = 'hf-esmfold' | 'nvidia-esmfold' | 'chai-1' | 'boltz';
+export type FoldEngineId = 'hf-esmfold' | 'nvidia-esmfold' | 'esmatlas' | 'chai-1' | 'boltz';
 
 export type FoldEngineDescriptor = {
   /** Stable, URL-safe identifier used in API params and UI keys. */

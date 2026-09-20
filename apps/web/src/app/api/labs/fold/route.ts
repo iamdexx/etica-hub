@@ -8,7 +8,13 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const AMINO_ACIDS = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
-const KNOWN_ENGINES = new Set<FoldEngineId>(['hf-esmfold', 'nvidia-esmfold', 'chai-1', 'boltz']);
+const KNOWN_ENGINES = new Set<FoldEngineId>([
+  'hf-esmfold',
+  'nvidia-esmfold',
+  'esmatlas',
+  'chai-1',
+  'boltz',
+]);
 
 function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
