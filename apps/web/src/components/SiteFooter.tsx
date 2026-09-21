@@ -1,3 +1,13 @@
+import Link from 'next/link';
+
+const SEO_HUBS: Array<[label: string, href: string]> = [
+  ['Tokens', '/tokens'],
+  ['Pools', '/pools'],
+  ['Research by disease', '/labs/diseases'],
+  ['Archive', '/labs/archive'],
+  ['Status', '/status'],
+];
+
 interface AggregatorLink {
   label: string;
   href: string;
@@ -34,6 +44,13 @@ export function SiteFooter() {
           <p className="max-w-2xl leading-5 text-white/35">
             DEX, staking, governance research, farming, bridging, and liquidity infrastructure built directly on the Etica execution layer.
           </p>
+          <nav className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-white/45">
+            {SEO_HUBS.map(([label, href]) => (
+              <Link key={href} href={href} className="hover:text-white/80">
+                {label}
+              </Link>
+            ))}
+          </nav>
         </div>
 
         {links.length > 0 && (

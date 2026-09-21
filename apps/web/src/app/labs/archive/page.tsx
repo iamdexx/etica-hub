@@ -113,6 +113,15 @@ export default function LabsArchivePage(): JSX.Element {
   // query is present, otherwise newest-first).
   const [sort, setSort] = useState<'auto' | 'date' | 'relevance' | 'score'>('auto');
 
+  // Deep links (`?q=…`, `?disease=…`) from /labs/diseases and search engines.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const q0 = p.get('q');
+    const d0 = p.get('disease');
+    if (q0) setQ(q0);
+    if (d0) setDisease(d0);
+  }, []);
+
   const queryString = useMemo(() => {
     const p = new URLSearchParams();
     if (q.trim()) p.set('q', q.trim());
