@@ -97,6 +97,7 @@ export function jsonFeed(records: ArchivedResearch[]): Record<string, unknown> {
       url: archiveUrl(r.id),
       title: entryTitle(r),
       summary: entrySummary(r),
+      content_text: entrySummary(r),
       image: archiveImageUrl(r.id),
       date_published: iso(r.completedAt),
       tags: r.disease ? [r.disease] : [],

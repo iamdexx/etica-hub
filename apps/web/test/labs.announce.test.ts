@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ArchivedResearch } from '@/lib/labs/archive';
-import { announceDiscovery, oauth1Header, telegramCaption, tweetText } from '@/lib/labs/announce';
+import {
+  announceDiscovery,
+  oauth1Header,
+  telegramCaption,
+  tweetLength,
+  tweetText,
+} from '@/lib/labs/announce';
 
 const record: ArchivedResearch = {
   id: 'job-1',
@@ -54,13 +60,17 @@ describe('labs announcer', () => {
     expect(c).toContain('/labs/archive/job-1');
   });
 
-  it('keeps tweets within 280 chars (URL counted as 23)', () => {
-    const long = { ...record, goalTitle: 'x'.repeat(600) };
-    const t = tweetText(long);
-    const url = t.match(/https?:\/\/\S+/)?.[0];
-    expect(url).toBeTruthy();
-    expect(t.replace(url!, 'u'.repeat(23)).length).toBeLessThanOrEqual(280);
-    expect(t).toContain('#DeSci');
+  it('keeps tweets within 280 chars (URL counted as 23), even with a huge disease name', () => {
+    for (const variant of [
+      { ...record, goalTitle: 'x'.repeat(600) },
+      { ...record, goalTitle: 'y'.repeat(120), disease: 'd'.repeat(120) },
+      { ...record, disease: undefined },
+    ]) {
+      const t = tweetText(variant);
+      expect(t).toMatch(/https?:\/\/\S+/);
+      expect(tweetLength(t)).toBeLessThanOrEqual(280);
+      expect(t).toContain('#DeSci');
+    }
   });
 
   it('produces a well-formed OAuth 1.0a header', () => {
@@ -90,8 +100,36 @@ describe('labs announcer', () => {
     );
 
     const second = await announceDiscovery(record, { env, fetchImpl: fakeFetch(calls) });
-    expect(second).toBeNull();
+    expect(second).toEqual({ telegram: 'skipped', x: 'skipped' });
     expect(calls).toHaveLength(1);
+  });
+
+  it('retries a channel that failed, without re-posting one that succeeded', async () => {
+    const env = {
+      BUYBOT_TELEGRAM_BOT_TOKEN: 't',
+      BUYBOT_TELEGRAM_CHAT_ID: '-1',
+      X_API_KEY: 'k',
+      X_API_SECRET: 's',
+      X_ACCESS_TOKEN: 'a',
+      X_ACCESS_SECRET: 'b',
+    };
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const xDown = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      return new Response('{}', { status: String(url).includes('api.x.com') ? 503 : 200 });
+    }) as typeof fetch;
+    const r = { ...record, id: 'job-retry' };
+    expect(await announceDiscovery(r, { env, fetchImpl: xDown })).toEqual({
+      telegram: 'sent',
+      x: 'failed',
+    });
+
+    calls.length = 0;
+    expect(await announceDiscovery(r, { env, fetchImpl: fakeFetch(calls) })).toEqual({
+      telegram: 'skipped',
+      x: 'sent',
+    });
+    expect(calls.map((c) => c.url)).toEqual(['https://api.x.com/2/tweets']);
   });
 
   it('falls back to sendMessage when sendPhoto fails', async () => {

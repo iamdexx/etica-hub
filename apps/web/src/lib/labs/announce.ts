@@ -15,8 +15,9 @@
  *             the archive link into a card using the page's OG image.
  *
  * Posting is best-effort and must never fail the archive write. Duplicate
- * suppression uses a Redis set of announced record ids so a retried worker
- * update can't double-post.
+ * suppression uses one Redis set of *successfully* announced record ids per
+ * channel, so a retried worker update can't double-post but a channel that
+ * failed transiently is retried.
  */
 
 import { createHmac, randomBytes } from 'node:crypto';
@@ -27,7 +28,8 @@ import { scoreOutOf100 } from '@/lib/seo/labs';
 import type { ArchivedResearch } from './archive';
 import { labsStore } from './store';
 
-const ANNOUNCED_SET = 'labs:archive:announced';
+type Channel = 'telegram' | 'x';
+const ANNOUNCED_SET = (channel: Channel) => `labs:archive:announced:${channel}`;
 
 export interface AnnounceOutcome {
   telegram: 'sent' | 'skipped' | 'failed';
@@ -36,6 +38,7 @@ export interface AnnounceOutcome {
 
 function trunc(s: string, max: number): string {
   const t = s.replace(/\s+/g, ' ').trim();
+  if (max < 2) return '';
   return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`;
 }
 
@@ -87,15 +90,25 @@ export function telegramCaption(r: ArchivedResearch): string {
   return lines.join('\n');
 }
 
+/** X counts every URL as 23 characters. */
+const X_LIMIT = 280;
+const X_URL_LEN = 23;
+
 export function tweetText(r: ArchivedResearch): string {
   const f = discoveryFacts(r);
-  const head = `🧬 New autonomous Labs discovery${f.disease ? ` for ${f.disease}` : ''}`;
+  const head = `🧬 New autonomous Labs discovery${f.disease ? ` for ${trunc(f.disease, 60)}` : ''}`;
   const stats = `${f.score} best candidate · ${f.residues} aa · ${f.folded}/${f.candidates} folded`;
   const tags = '#DeSci #ProteinDesign $ETX';
-  // 280 chars; URLs count as 23 on X.
-  const budget = 280 - 23 - (head.length + stats.length + tags.length + 6);
-  const title = trunc(f.title, Math.max(40, budget));
-  return `${head}\n\n${title}\n${stats}\n\n${f.url}\n${tags}`;
+  const separators = 6; // \n\n, \n, \n\n, \n
+  const fixed = head.length + stats.length + tags.length + X_URL_LEN + separators;
+  const title = trunc(f.title, Math.max(0, X_LIMIT - fixed));
+  const body = title ? `${head}\n\n${title}\n${stats}` : `${head}\n${stats}`;
+  return `${body}\n\n${f.url}\n${tags}`;
+}
+
+/** Length as X measures it (URL weighted at 23). */
+export function tweetLength(text: string): number {
+  return text.replace(/https?:\/\/\S+/g, 'x'.repeat(X_URL_LEN)).length;
 }
 
 /* ------------------------------------------------------------------ */
@@ -248,12 +261,20 @@ export async function announceDiscovery(
   if (!announcementsEnabled(env)) return null;
   if (!r.candidates.some((c) => c.folded)) return null;
 
-  const added = await labsStore().sadd(ANNOUNCED_SET, r.id);
-  if (added === 0) return null;
+  const store = labsStore();
+  const once = async <C extends Channel>(
+    channel: C,
+    post: () => Promise<AnnounceOutcome[C]>,
+  ): Promise<AnnounceOutcome[C]> => {
+    if (await store.sismember(ANNOUNCED_SET(channel), r.id)) return 'skipped';
+    const outcome = await post().catch(() => 'failed' as const);
+    if (outcome === 'sent') await store.sadd(ANNOUNCED_SET(channel), r.id);
+    return outcome;
+  };
 
   const [telegram, x] = await Promise.all([
-    postTelegram(r, env, fetchImpl).catch(() => 'failed' as const),
-    postX(r, env, fetchImpl).catch(() => 'failed' as const),
+    once('telegram', () => postTelegram(r, env, fetchImpl)),
+    once('x', () => postX(r, env, fetchImpl)),
   ]);
   return { telegram, x };
 }

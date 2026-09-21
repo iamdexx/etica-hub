@@ -1,5 +1,5 @@
 import { fallback, http } from 'viem';
-import { createConfig } from 'wagmi';
+import { createConfig, type CreateConnectorFn } from 'wagmi';
 import { injected, walletConnect } from 'wagmi/connectors';
 import { eticaMainnet, eticaLocalFork } from '@etica-hub/shared/chains';
 
@@ -35,29 +35,28 @@ const WALLETCONNECT_PROJECT_ID =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || DEFAULT_WALLETCONNECT_PROJECT_ID;
 
 // WalletConnect's provider eagerly opens IndexedDB in `setup()`, which
-// `createConfig` runs immediately — so it must only be registered in the
-// browser, otherwise every SSR render throws `indexedDB is not defined`.
+// `createConfig` runs immediately. The connector is still registered on the
+// server so SSR and browser render the same wallet list (no hydration
+// mismatch), but its setup is skipped there — nothing can pair during SSR.
 const isBrowser = typeof window !== 'undefined';
+
+const walletConnectConnector: CreateConnectorFn = (config) => {
+  const connector = walletConnect({
+    projectId: WALLETCONNECT_PROJECT_ID,
+    showQrModal: true,
+    metadata: {
+      name: 'EticaHub',
+      description: 'Non-custodial trading + liquidity on the Etica network',
+      url: 'https://eticahub.com',
+      icons: ['https://eticahub.com/favicon.ico'],
+    },
+  })(config);
+  return isBrowser ? connector : { ...connector, setup: undefined };
+};
 
 export const wagmiConfig = createConfig({
   chains: [eticaMainnet, eticaLocalFork],
-  connectors: [
-    injected({ shimDisconnect: true }),
-    ...(isBrowser
-      ? [
-          walletConnect({
-            projectId: WALLETCONNECT_PROJECT_ID,
-            showQrModal: true,
-            metadata: {
-              name: 'EticaHub',
-              description: 'Non-custodial trading + liquidity on the Etica network',
-              url: 'https://eticahub.com',
-              icons: ['https://eticahub.com/favicon.ico'],
-            },
-          }),
-        ]
-      : []),
-  ],
+  connectors: [injected({ shimDisconnect: true }), walletConnectConnector],
   transports: {
     [eticaMainnet.id]: fallback(
       eticaMainnet.rpcUrls.default.http.map((url) =>
