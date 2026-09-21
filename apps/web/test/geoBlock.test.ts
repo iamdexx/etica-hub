@@ -1,5 +1,46 @@
 import { describe, expect, it } from 'vitest';
-import { isGeoRestricted, RESTRICTED_PATHS } from '../src/lib/geoBlock';
+import {
+  isFullySanctionedCountry,
+  isGeoRestricted,
+  resolveCountry,
+  RESTRICTED_PATHS,
+} from '../src/lib/geoBlock';
+
+function headersOf(entries: Record<string, string>) {
+  const map = new Map(Object.entries(entries).map(([k, v]) => [k.toLowerCase(), v]));
+  return { get: (name: string) => map.get(name.toLowerCase()) ?? null };
+}
+
+describe('resolveCountry', () => {
+  it('prefers cf-ipcountry over x-vercel-ip-country (Cloudflare fronts Vercel)', () => {
+    expect(
+      resolveCountry(headersOf({ 'cf-ipcountry': 'KR', 'x-vercel-ip-country': 'US' })),
+    ).toBe('KR');
+  });
+
+  it('falls back to x-vercel-ip-country when Cloudflare is not in the path', () => {
+    expect(resolveCountry(headersOf({ 'x-vercel-ip-country': 'de' }))).toBe('DE');
+  });
+
+  it('treats Cloudflare XX / T1 pseudo-codes as unknown', () => {
+    expect(resolveCountry(headersOf({ 'cf-ipcountry': 'XX' }))).toBeNull();
+    expect(
+      resolveCountry(headersOf({ 'cf-ipcountry': 'T1', 'x-vercel-ip-country': 'JP' })),
+    ).toBe('JP');
+  });
+
+  it('returns null with no geo headers at all', () => {
+    expect(resolveCountry(headersOf({}))).toBeNull();
+  });
+});
+
+describe('isFullySanctionedCountry', () => {
+  it('blocks North Korea (KP) but not South Korea (KR)', () => {
+    expect(isFullySanctionedCountry('KP')).toBe(true);
+    expect(isFullySanctionedCountry('KR')).toBe(false);
+    expect(isFullySanctionedCountry('kr')).toBe(false);
+  });
+});
 
 describe('isGeoRestricted', () => {
   it('returns false when no country header is present (local dev / unknown geo)', () => {

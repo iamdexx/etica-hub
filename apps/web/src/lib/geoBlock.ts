@@ -17,11 +17,40 @@
  * mirror the same good-faith posture adopted by Uniswap, Aave, and similar
  * US-aware DeFi frontends.
  *
- * The middleware that consumes this module reads the country from
- * `request.geo.country` (Vercel Edge runtime) with a fallback to the
- * `x-vercel-ip-country` header so this is testable without the Vercel runtime.
+ * The middleware and server components resolve the country via
+ * `resolveCountry()` from plain request headers so this is testable without
+ * the Vercel runtime.
  */
 export const RESTRICTED_PATHS: readonly string[] = ['/stake', '/farms'] as const;
+
+/**
+ * Cloudflare emits `XX` (unknown) and `T1` (Tor) instead of a country code.
+ * Neither is a real jurisdiction, so they must fall through to the next
+ * source rather than being matched against the policy sets.
+ */
+const NON_COUNTRY_CODES: ReadonlySet<string> = new Set(['XX', 'T1']);
+
+export interface HeaderReader {
+  get(name: string): string | null;
+}
+
+/**
+ * Resolves the visitor's ISO country code from the request headers.
+ *
+ * eticahub.com is fronted by Cloudflare, so the IP that reaches Vercel is a
+ * Cloudflare edge address and `x-vercel-ip-country` describes the edge, not
+ * the visitor. Cloudflare's `cf-ipcountry` header (which Cloudflare always
+ * overwrites for proxied traffic, so it cannot be spoofed by the client) is
+ * therefore the authoritative source; `x-vercel-ip-country` is the fallback
+ * for previews / direct-to-Vercel hostnames.
+ */
+export function resolveCountry(headers: HeaderReader): string | null {
+  for (const name of ['cf-ipcountry', 'x-vercel-ip-country']) {
+    const value = headers.get(name)?.trim().toUpperCase();
+    if (value && !NON_COUNTRY_CODES.has(value)) return value;
+  }
+  return null;
+}
 
 export const RESTRICTED_COUNTRIES: ReadonlySet<string> = new Set(['US']);
 
