@@ -5,6 +5,8 @@ const SEO_HUBS: Array<[label: string, href: string]> = [
   ['Pools', '/pools'],
   ['Research by disease', '/labs/diseases'],
   ['Archive', '/labs/archive'],
+  ['Research feed', '/labs/feed.xml'],
+  ['API', '/api'],
   ['Status', '/status'],
 ];
 

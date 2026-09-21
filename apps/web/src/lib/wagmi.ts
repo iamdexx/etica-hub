@@ -34,20 +34,29 @@ const DEFAULT_WALLETCONNECT_PROJECT_ID = '62e7452dd44d83bbfe12c92ef0da6bf6';
 const WALLETCONNECT_PROJECT_ID =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || DEFAULT_WALLETCONNECT_PROJECT_ID;
 
+// WalletConnect's provider eagerly opens IndexedDB in `setup()`, which
+// `createConfig` runs immediately — so it must only be registered in the
+// browser, otherwise every SSR render throws `indexedDB is not defined`.
+const isBrowser = typeof window !== 'undefined';
+
 export const wagmiConfig = createConfig({
   chains: [eticaMainnet, eticaLocalFork],
   connectors: [
     injected({ shimDisconnect: true }),
-    walletConnect({
-      projectId: WALLETCONNECT_PROJECT_ID,
-      showQrModal: true,
-      metadata: {
-        name: 'EticaHub',
-        description: 'Non-custodial trading + liquidity on the Etica network',
-        url: 'https://eticahub.com',
-        icons: ['https://eticahub.com/favicon.ico'],
-      },
-    }),
+    ...(isBrowser
+      ? [
+          walletConnect({
+            projectId: WALLETCONNECT_PROJECT_ID,
+            showQrModal: true,
+            metadata: {
+              name: 'EticaHub',
+              description: 'Non-custodial trading + liquidity on the Etica network',
+              url: 'https://eticahub.com',
+              icons: ['https://eticahub.com/favicon.ico'],
+            },
+          }),
+        ]
+      : []),
   ],
   transports: {
     [eticaMainnet.id]: fallback(
