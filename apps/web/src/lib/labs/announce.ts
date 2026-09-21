@@ -14,10 +14,10 @@
  *             (OAuth 1.0a user context, POST /2/tweets). Text-only; X unfurls
  *             the archive link into a card using the page's OG image.
  *
- * Posting is best-effort and must never fail the archive write. Duplicate
- * suppression uses one Redis set of *successfully* announced record ids per
- * channel, so a retried worker update can't double-post but a channel that
- * failed transiently is retried.
+ * Posting is best-effort and must never fail the archive write. Each channel
+ * is gated by an atomic SADD on a per-channel Redis set so concurrent
+ * completions can't double-post; a failed post releases the gate and parks
+ * the record in a pending set that the autopilot dispatch tick drains.
  */
 
 import { createHmac, randomBytes } from 'node:crypto';
@@ -25,11 +25,14 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { absoluteUrl } from '@/lib/site';
 import { scoreOutOf100 } from '@/lib/seo/labs';
 
-import type { ArchivedResearch } from './archive';
+import { type ArchivedResearch, getArchivedResearch } from './archive';
 import { labsStore } from './store';
 
 type Channel = 'telegram' | 'x';
 const ANNOUNCED_SET = (channel: Channel) => `labs:archive:announced:${channel}`;
+/** Record ids with at least one channel still unsent; drained by `retryPendingAnnouncements`. */
+const PENDING_SET = 'labs:archive:announce:pending';
+const RETRY_BATCH = 5;
 
 export interface AnnounceOutcome {
   telegram: 'sent' | 'skipped' | 'failed';
@@ -266,9 +269,10 @@ export async function announceDiscovery(
     channel: C,
     post: () => Promise<AnnounceOutcome[C]>,
   ): Promise<AnnounceOutcome[C]> => {
-    if (await store.sismember(ANNOUNCED_SET(channel), r.id)) return 'skipped';
+    const key = ANNOUNCED_SET(channel);
+    if ((await store.sadd(key, r.id)) === 0) return 'skipped';
     const outcome = await post().catch(() => 'failed' as const);
-    if (outcome === 'sent') await store.sadd(ANNOUNCED_SET(channel), r.id);
+    if (outcome !== 'sent') await store.srem(key, r.id);
     return outcome;
   };
 
@@ -276,5 +280,31 @@ export async function announceDiscovery(
     once('telegram', () => postTelegram(r, env, fetchImpl)),
     once('x', () => postX(r, env, fetchImpl)),
   ]);
+  if (telegram === 'failed' || x === 'failed') await store.sadd(PENDING_SET, r.id);
+  else await store.srem(PENDING_SET, r.id);
   return { telegram, x };
+}
+
+/**
+ * Re-attempt announcements whose channel failed earlier (e.g. X 503). Runs
+ * from the autopilot dispatch tick; bounded so a long outage can't stall it.
+ */
+export async function retryPendingAnnouncements(
+  opts: { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch } = {},
+): Promise<{ retried: number; sent: number }> {
+  const env = opts.env ?? process.env;
+  if (!announcementsEnabled(env)) return { retried: 0, sent: 0 };
+  const store = labsStore();
+  const ids = (await store.smembers(PENDING_SET)).slice(0, RETRY_BATCH);
+  let sent = 0;
+  for (const id of ids) {
+    const record = await getArchivedResearch(id);
+    if (!record) {
+      await store.srem(PENDING_SET, id);
+      continue;
+    }
+    const out = await announceDiscovery(record, { ...opts, env });
+    if (out && out.telegram !== 'failed' && out.x !== 'failed') sent += 1;
+  }
+  return { retried: ids.length, sent };
 }

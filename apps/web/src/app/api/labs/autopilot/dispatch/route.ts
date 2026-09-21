@@ -30,6 +30,7 @@
 import { NextRequest } from 'next/server';
 
 import { isVercelCron } from '@/lib/cron-auth';
+import { retryPendingAnnouncements } from '@/lib/labs/announce';
 import { labsQueue } from '@/lib/labs/queue';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 import { runTreasuryCrank } from '@/lib/labs/treasury-crank';
@@ -59,6 +60,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // bounded batch of abandoned (past-7d) research to the treasury every
   // tick. Never throws; never blocks dispatch on failure.
   const crank = await runTreasuryCrank().catch(() => null);
+  await retryPendingAnnouncements().catch(() => null);
 
   // Skip the dispatch if the pending queue is empty — saves a GitHub
   // API call and reduces Actions invocations during quiet periods.

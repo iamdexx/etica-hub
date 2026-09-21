@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ArchivedResearch } from '@/lib/labs/archive';
+import { type ArchivedResearch, archiveResearch } from '@/lib/labs/archive';
 import {
   announceDiscovery,
   oauth1Header,
+  retryPendingAnnouncements,
   telegramCaption,
   tweetLength,
   tweetText,
@@ -130,6 +131,28 @@ describe('labs announcer', () => {
       x: 'sent',
     });
     expect(calls.map((c) => c.url)).toEqual(['https://api.x.com/2/tweets']);
+  });
+
+  it('drains the pending set from the dispatch tick once the channel recovers', async () => {
+    const env = { X_API_KEY: 'k', X_API_SECRET: 's', X_ACCESS_TOKEN: 'a', X_ACCESS_SECRET: 'b' };
+    const r = { ...record, id: 'job-pending' };
+    await archiveResearch(r);
+    const calls: Array<{ url: string; body: unknown }> = [];
+    expect(await announceDiscovery(r, { env, fetchImpl: fakeFetch(calls, false) })).toEqual({
+      telegram: 'skipped',
+      x: 'failed',
+    });
+
+    calls.length = 0;
+    expect(await retryPendingAnnouncements({ env, fetchImpl: fakeFetch(calls) })).toEqual({
+      retried: 1,
+      sent: 1,
+    });
+    expect(calls).toHaveLength(1);
+    expect(await retryPendingAnnouncements({ env, fetchImpl: fakeFetch(calls) })).toEqual({
+      retried: 0,
+      sent: 0,
+    });
   });
 
   it('falls back to sendMessage when sendPhoto fails', async () => {
