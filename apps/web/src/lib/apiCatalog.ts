@@ -68,7 +68,7 @@ export const ENDPOINTS: EndpointRow[] = [
   {
     method: 'GET',
     pathTemplate: '/api/v1/ohlcv/[pair]?interval=1h&limit=100',
-    example: '/api/v1/ohlcv/ETI-ETX?interval=1h&limit=100',
+    example: '/api/v1/ohlcv/0x88f179117BE4402a71ca3e9094E7942D03Db84b3?interval=1h&limit=100',
     summary: 'Short-range OHLC candles derived from pair Sync events.',
   },
   {
