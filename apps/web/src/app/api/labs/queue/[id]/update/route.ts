@@ -30,6 +30,7 @@ import {
   storePdbForSequence,
   type ArchivedResearch,
 } from '@/lib/labs/archive';
+import { announceDiscovery } from '@/lib/labs/announce';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -333,6 +334,12 @@ export async function POST(
       }
 
       await archiveResearch(archived);
+      try {
+        const out = await announceDiscovery(archived);
+        if (out) console.log(`[labs] announced ${archived.id}: tg=${out.telegram} x=${out.x}`);
+      } catch (err) {
+        console.error('[labs] announce failed (non-fatal):', err);
+      }
     } catch (err) {
       console.error('[labs] archive failed (non-fatal):', err);
     }
