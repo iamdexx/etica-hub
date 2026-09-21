@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { isFullySanctionedCountry, isGeoRestricted } from './lib/geoBlock';
+import {
+  isFullySanctionedCountry,
+  isGeoRestricted,
+  resolveCountry,
+} from './lib/geoBlock';
 
 const ROUTE_ALIASES: Record<string, string> = {
   '/blocks': '/explorer/blocks',
@@ -20,8 +24,7 @@ export function middleware(req: NextRequest): NextResponse {
     return NextResponse.redirect(url);
   }
 
-  const country =
-    req.geo?.country ?? req.headers.get('x-vercel-ip-country') ?? null;
+  const country = resolveCountry(req.headers);
 
   if (isFullySanctionedCountry(country)) {
     const url = req.nextUrl.clone();
