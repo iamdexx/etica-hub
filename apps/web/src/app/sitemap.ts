@@ -4,7 +4,7 @@ import { getAddress } from 'viem';
 import { listArchive } from '@/lib/labs/archive';
 import { fetchAllPairs } from '@/lib/priceApi';
 import { diseasePath, listDiseases } from '@/lib/seo/labs';
-import { TOKEN_IDS } from '@/lib/seo/market';
+import { TOKEN_IDS, isSupportedPair } from '@/lib/seo/market';
 import { absoluteUrl } from '@/lib/site';
 
 export const runtime = 'nodejs';
@@ -49,7 +49,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   try {
     const pairs = await fetchAllPairs();
-    for (const p of pairs) {
+    for (const p of pairs.filter(isSupportedPair)) {
       entries.push({
         url: absoluteUrl(`/pools/${getAddress(p.address)}`),
         lastModified: new Date(p.blockTimestampLast * 1000),

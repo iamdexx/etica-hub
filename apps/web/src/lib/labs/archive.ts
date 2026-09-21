@@ -320,6 +320,26 @@ export async function listArchiveByGoal(
 }
 
 /**
+ * Every disease with at least one archived record, with its record count.
+ * Scans the full archive index (unlike the top-20 UI facets from
+ * {@link searchArchive}) so route discovery is complete.
+ */
+export async function listDiseaseFacets(): Promise<Array<{ name: string; count: number }>> {
+  const store = labsStore();
+  const ids = await store.zrevrange(ARCHIVE_INDEX, 0, -1);
+  const counts = new Map<string, number>();
+  for (const id of ids) {
+    const raw = await store.get(ARCHIVE_KEY(id));
+    if (!raw) continue;
+    const entry: ArchivedResearch = JSON.parse(raw);
+    if (entry.disease) counts.set(entry.disease, (counts.get(entry.disease) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+/**
  * List archived research for a specific disease.
  */
 export async function listArchiveByDisease(

@@ -10,13 +10,15 @@ import { notFound } from 'next/navigation';
 import { JsonLd } from '@/components/JsonLd';
 import { discoveryDescription, discoveryTitle } from '@/lib/labs/discovery-meta';
 import { breadcrumbJsonLd } from '@/lib/seo/jsonld';
-import { diseasePath, diseaseResearch, resolveDisease } from '@/lib/seo/labs';
+import { diseasePath, diseaseResearch, resolveDisease, scoreOutOf100 } from '@/lib/seo/labs';
 import { absoluteUrl, SITE_NAME } from '@/lib/site';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type Params = { params: Promise<{ slug: string }> };
+
+const TOP_N = 60;
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
@@ -39,12 +41,14 @@ export default async function DiseasePage({ params }: Params): Promise<JSX.Eleme
   const d = await resolveDisease(slug);
   if (!d) notFound();
 
-  const { results, total } = await diseaseResearch(d.name);
-  const folded = results.reduce((n, r) => n + r.candidates.filter((c) => c.folded).length, 0);
-  const proteins = results.reduce((n, r) => n + r.candidates.length, 0);
-  const scores = results.map((r) => r.bestCandidate.score).filter((s): s is number => typeof s === 'number');
-  const bestScore = scores.length ? Math.max(...scores) : null;
-  const targets = Array.from(new Set(results.map((r) => r.goalTitle).filter((g): g is string => !!g))).slice(0, 12);
+  const all = await diseaseResearch(d.name);
+  const total = all.length;
+  const results = all.slice(0, TOP_N);
+  const folded = all.reduce((n, r) => n + r.candidates.filter((c) => c.folded).length, 0);
+  const proteins = all.reduce((n, r) => n + r.candidates.length, 0);
+  const scores = all.map((r) => r.bestCandidate.score).filter((s): s is number => typeof s === 'number');
+  const bestScore = scores.length ? Math.max(...scores) : undefined;
+  const targets = Array.from(new Set(all.map((r) => r.goalTitle).filter((g): g is string => !!g))).slice(0, 12);
   const url = absoluteUrl(diseasePath(d.slug));
 
   const jsonLd = {
@@ -101,7 +105,7 @@ export default async function DiseasePage({ params }: Params): Promise<JSX.Eleme
         <Stat label="Research runs" value={total.toLocaleString()} />
         <Stat label="Designed proteins" value={proteins.toLocaleString()} />
         <Stat label="Folded structures" value={folded.toLocaleString()} />
-        <Stat label="Best score" value={bestScore !== null ? `${bestScore}/100` : '—'} />
+        <Stat label="Best score" value={bestScore !== undefined ? scoreOutOf100(bestScore) : '—'} />
       </section>
 
       {targets.length > 0 && (
@@ -118,7 +122,9 @@ export default async function DiseasePage({ params }: Params): Promise<JSX.Eleme
       )}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-white/80">Top discoveries</h2>
+        <h2 className="text-sm font-medium text-white/80">
+          Top discoveries{total > TOP_N ? ` (best ${TOP_N} of ${total})` : ''}
+        </h2>
         <ol className="divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.03]">
           {results.map((r) => (
             <li key={r.id} className="p-4">
@@ -130,7 +136,7 @@ export default async function DiseasePage({ params }: Params): Promise<JSX.Eleme
                   {discoveryTitle(r)}
                 </Link>
                 <span className="font-mono text-xs text-white/50">
-                  {typeof r.bestCandidate.score === 'number' ? `${r.bestCandidate.score}/100` : 'unscored'} ·{' '}
+                  {scoreOutOf100(r.bestCandidate.score)} ·{' '}
                   {new Date(r.completedAt).toISOString().slice(0, 10)}
                 </span>
               </div>

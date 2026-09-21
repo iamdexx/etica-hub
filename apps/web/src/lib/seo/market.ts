@@ -94,6 +94,11 @@ function toUnits(raw: bigint, decimals: number): number {
   return Number(raw) / 10 ** decimals;
 }
 
+/** Pairs whose both tokens are in the token registry; index, detail and sitemap all use this. */
+export function isSupportedPair(p: ApiPairRaw): boolean {
+  return tokenByAddress(p.token0) !== null && tokenByAddress(p.token1) !== null;
+}
+
 function poolSnapshot(p: ApiPairRaw, pairs: ApiPairRaw[], etxUsd: number | null): PoolSnapshot | null {
   const t0 = tokenByAddress(p.token0);
   const t1 = tokenByAddress(p.token1);
