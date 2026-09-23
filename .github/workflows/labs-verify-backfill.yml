@@ -50,9 +50,18 @@ jobs:
       - name: Guard — worker token present, target is ours
         run: |
           # The worker token is attached to every request, so the override
-          # must not be able to point it at a host we don't control.
+          # must not be able to point it at a host we don't control. Match on
+          # the bare host only: a path, query or userinfo can otherwise end in
+          # an allowed suffix while the request goes somewhere else.
           case "$BASE_URL" in
-            https://eticahub.com|https://*.eticahub.com|https://*.vercel.app) ;;
+            https://*) host="${BASE_URL#https://}" ;;
+            *) host='!' ;;
+          esac
+          case "$host" in
+            *[!a-zA-Z0-9.-]*) host='!' ;;
+          esac
+          case "$host" in
+            eticahub.com|*.eticahub.com|*.vercel.app) ;;
             *)
               echo "::error::refusing to send the worker token to $BASE_URL"
               exit 1
