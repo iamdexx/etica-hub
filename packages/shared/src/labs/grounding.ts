@@ -111,15 +111,28 @@ interface UniProtResponse {
   }>;
 }
 
-async function fetchJson<T>(url: string): Promise<T | null> {
+/**
+ * The lookup itself failed, so nothing can be said about the claim. Kept
+ * distinct from an empty result: "UniProt is down" must never be archived
+ * as "this target does not exist".
+ */
+export class LookupUnavailableError extends Error {
+  constructor(url: string, cause: string) {
+    super(`lookup unavailable (${new URL(url).host}): ${cause}`);
+    this.name = 'LookupUnavailableError';
+  }
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) return null;
+    if (!res.ok) throw new LookupUnavailableError(url, `HTTP ${res.status}`);
     return (await res.json()) as T;
-  } catch {
-    return null;
+  } catch (err) {
+    if (err instanceof LookupUnavailableError) throw err;
+    throw new LookupUnavailableError(url, err instanceof Error ? err.message : String(err));
   } finally {
     clearTimeout(timer);
   }
@@ -133,7 +146,7 @@ export async function resolveTarget(symbol: string): Promise<TargetHit | null> {
   const query = encodeURIComponent(`gene:${symbol} AND organism_id:9606`);
   const url = `${UNIPROT_SEARCH}?query=${query}&fields=accession,id,protein_name,gene_names,organism_name,reviewed&size=5`;
   const data = await fetchJson<UniProtResponse>(url);
-  const results = data?.results ?? [];
+  const results = data.results ?? [];
   if (results.length === 0) return null;
 
   const exact = results.find((r) =>
@@ -174,7 +187,7 @@ export async function checkPubmedIds(
   if (ids.length === 0) return { found: [], missing: [] };
   const url = `${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`;
   const data = await fetchJson<PubmedSummary>(url);
-  if (!data?.result) return { found: [], missing: [...ids] };
+  if (!data.result) return { found: [], missing: [...ids] };
   const found: string[] = [];
   const missing: string[] = [];
   for (const id of ids) {

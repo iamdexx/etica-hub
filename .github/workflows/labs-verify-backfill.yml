@@ -24,7 +24,7 @@ on:
         required: false
         default: '80'
       base_url:
-        description: 'Override deployment to regrade (e.g. a preview URL)'
+        description: 'Override deployment to regrade (eticahub.com or a *.vercel.app preview only)'
         required: false
         default: ''
 
@@ -47,8 +47,17 @@ jobs:
       LIMIT: ${{ github.event.inputs.limit || '25' }}
       MAX_PAGES: ${{ github.event.inputs.max_pages || '80' }}
     steps:
-      - name: Guard — worker token present
+      - name: Guard — worker token present, target is ours
         run: |
+          # The worker token is attached to every request, so the override
+          # must not be able to point it at a host we don't control.
+          case "$BASE_URL" in
+            https://eticahub.com|https://*.eticahub.com|https://*.vercel.app) ;;
+            *)
+              echo "::error::refusing to send the worker token to $BASE_URL"
+              exit 1
+              ;;
+          esac
           if [ -z "$TOKEN" ]; then
             echo "::error::LABS_AUTOPILOT_TOKEN secret not set"
             exit 1

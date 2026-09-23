@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
 import {
+  LookupUnavailableError,
   checkPubmedIds,
   extractPubmedIds,
   extractTargetSymbols,
@@ -77,9 +78,9 @@ describe('resolveTarget', () => {
     expect(await resolveTarget('ZZQX9')).toBeNull();
   });
 
-  it('returns null rather than throwing when the lookup fails', async () => {
+  it('throws rather than reporting an outage as a missing protein', async () => {
     stubFetch({}, false);
-    expect(await resolveTarget('KRAS')).toBeNull();
+    await expect(resolveTarget('KRAS')).rejects.toBeInstanceOf(LookupUnavailableError);
   });
 });
 
@@ -96,11 +97,9 @@ describe('checkPubmedIds', () => {
     expect(missing).toEqual(['99999999']);
   });
 
-  it('treats every id as unverified when PubMed is unreachable', async () => {
+  it('throws rather than reporting an outage as fabricated citations', async () => {
     stubFetch({}, false);
-    const { found, missing } = await checkPubmedIds(['32623266']);
-    expect(found).toEqual([]);
-    expect(missing).toEqual(['32623266']);
+    await expect(checkPubmedIds(['32623266'])).rejects.toBeInstanceOf(LookupUnavailableError);
   });
 });
 
