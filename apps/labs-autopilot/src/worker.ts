@@ -141,6 +141,17 @@ const INTER_JOB_COOLDOWN_MS = Math.max(
   Number(process.env.LABS_AUTOPILOT_INTER_JOB_COOLDOWN_MS ?? '2000'),
 );
 
+/** Extra planner draws when every planned candidate fails verification.
+ * The planner is sampled, so another draw usually yields usable designs;
+ * 0 disables replanning. */
+const PLAN_REVERIFY_ATTEMPTS = Math.max(
+  0,
+  Math.min(5, Number(process.env.LABS_AUTOPILOT_PLAN_REVERIFY_ATTEMPTS ?? '2') || 0),
+);
+/** ProteinMPNN sampling temperatures tried in order. Hotter samples are more
+ * diverse, which is what clears the complexity/repeat checks. */
+const MPNN_SAMPLING_TEMPS = [0.2, 0.4, 0.7] as const;
+
 function log(message: string, meta?: Record<string, unknown>): void {
   const stamp = new Date().toISOString();
   if (meta) {
@@ -799,25 +810,54 @@ async function runJob(job: LabsJob): Promise<void> {
     if (prior.sequence) peerSequences.push(prior.sequence);
   }
 
-  // Drop designs that fail the objective sequence checks before paying for
-  // a fold: a poly-proline or tandem-repeat peptide folds to a confident rod
-  // and then wins the run on pLDDT alone. If the planner produced nothing
-  // but rejects, keep the first so the run still yields a record.
-  const plannedSurvivors = plan.candidates.filter(
-    (c) =>
-      verifyCandidate({
-        sequence: c.sequence,
-        peers: plan.candidates.filter((o) => o !== c).map((o) => o.sequence),
-      }).grade !== 'rejected',
-  );
-  if (plannedSurvivors.length < plan.candidates.length) {
+  // Drop designs that fail the objective sequence checks before paying for a
+  // fold: a poly-proline or tandem-repeat peptide folds to a confident rod and
+  // then wins the run on pLDDT alone. Rather than losing the slot, replan —
+  // the planner is sampled, so a rejected batch usually yields usable designs
+  // on another draw.
+  const keepVerifiable = (batch: readonly PlanCandidate[]): PlanCandidate[] =>
+    batch.filter(
+      (c) =>
+        verifyCandidate({
+          sequence: c.sequence,
+          peers: [...peerSequences, ...batch.filter((o) => o !== c).map((o) => o.sequence)],
+        }).grade !== 'rejected',
+    );
+
+  const plannedCandidates: PlanCandidate[] = keepVerifiable(plan.candidates);
+  let plannedRejected = plan.candidates.length - plannedCandidates.length;
+  for (let attempt = 1; attempt <= PLAN_REVERIFY_ATTEMPTS && plannedCandidates.length === 0; attempt++) {
     events.push({
       kind: 'note',
-      message: `Dropped ${plan.candidates.length - plannedSurvivors.length} planned candidate(s) that failed sequence verification`,
+      message: `All ${plannedRejected} planned candidate(s) failed sequence verification; replanning (attempt ${attempt}/${PLAN_REVERIFY_ATTEMPTS})`,
+    });
+    const replan = await generatePlan(job.prompt, priorContext).catch((err) => {
+      log(`replan failed: ${err instanceof Error ? err.message : err}`);
+      return null;
+    });
+    if (!replan) break;
+    plannedRejected += replan.candidates.length;
+    const survivors = keepVerifiable(replan.candidates);
+    plannedRejected -= survivors.length;
+    plannedCandidates.push(...survivors);
+    if (survivors.length > 0) {
+      plan = { ...replan, references: plan.references.length ? plan.references : replan.references };
+      events.push({
+        kind: 'planned',
+        message: `Replan produced ${survivors.length} verifiable candidate(s)`,
+        meta: { candidates: survivors.length, attempt },
+      });
+    }
+  }
+  if (plannedRejected > 0) {
+    events.push({
+      kind: 'note',
+      message: `Dropped ${plannedRejected} planned candidate(s) that failed sequence verification`,
     });
   }
-  const plannedCandidates =
-    plannedSurvivors.length > 0 ? plannedSurvivors : plan.candidates.slice(0, 1);
+  // Everything the planner offered is junk: publish one anyway so the run is
+  // still archived (graded, and never announced).
+  if (plannedCandidates.length === 0) plannedCandidates.push(...plan.candidates.slice(0, 1));
 
   for (let i = 0; i < plannedCandidates.length; i++) {
     const candidate = plannedCandidates[i]!;
@@ -874,56 +914,77 @@ async function runJob(job: LabsJob): Promise<void> {
     let designedMutants: Array<{ sequence: string; description: string }> = [];
 
     if (parentPdb) {
-      const mpnnResult = await designSequences({
-        pdb: parentPdb,
-        samplingTemp: 0.2,
-        numSequences: 3,
-      }).catch((err) => {
-        log(`ProteinMPNN error: ${err instanceof Error ? err.message : err}`);
-        return null;
-      });
+      // ProteinMPNN at low temperature happily emits poly-A/E/R runs; folding
+      // those wastes the tick and pollutes the archive. Resample at a higher
+      // temperature instead of giving up — more diverse designs clear the
+      // complexity checks.
+      for (const samplingTemp of MPNN_SAMPLING_TEMPS) {
+        const mpnnResult = await designSequences({
+          pdb: parentPdb,
+          samplingTemp,
+          numSequences: 3,
+        }).catch((err) => {
+          log(`ProteinMPNN error: ${err instanceof Error ? err.message : err}`);
+          return null;
+        });
 
-      if (mpnnResult && mpnnResult.ok) {
+        if (!mpnnResult || !mpnnResult.ok) {
+          const errMsg = mpnnResult && !mpnnResult.ok ? mpnnResult.error : 'not available';
+          events.push({
+            kind: 'proteinmpnn_fallback',
+            message: `ProteinMPNN unavailable (${errMsg}); using deterministic mutations`,
+          });
+          break;
+        }
+
         events.push({
           kind: 'proteinmpnn',
-          message: `ProteinMPNN designed ${mpnnResult.sequences.length} sequence(s) in ${mpnnResult.durationMs}ms`,
-          meta: { count: mpnnResult.sequences.length, durationMs: mpnnResult.durationMs },
+          message: `ProteinMPNN designed ${mpnnResult.sequences.length} sequence(s) at T=${samplingTemp} in ${mpnnResult.durationMs}ms`,
+          meta: {
+            count: mpnnResult.sequences.length,
+            durationMs: mpnnResult.durationMs,
+            samplingTemp,
+          },
         });
+        let rejected = 0;
         for (const designed of mpnnResult.sequences) {
           // Skip sequences identical to parent
           if (designed.sequence === best.sequence) continue;
           // ESM2 quick quality check
           const quality = quickSequenceQuality(designed.sequence);
           if (quality < 0.3) continue;
-          // ProteinMPNN at low temperature happily emits poly-A/E/R runs;
-          // folding them wastes the tick and pollutes the archive.
           if (
-            verifyCandidate({ sequence: designed.sequence, peers: peerSequences }).grade ===
-            'rejected'
+            verifyCandidate({
+              sequence: designed.sequence,
+              peers: [...peerSequences, ...designedMutants.map((m) => m.sequence)],
+            }).grade === 'rejected'
           ) {
+            rejected += 1;
             continue;
           }
           designedMutants.push({
             sequence: designed.sequence,
-            description: `ProteinMPNN design (score=${designed.score.toFixed(2)}, recovery=${(designed.recoveryRate * 100).toFixed(0)}%)`,
+            description: `ProteinMPNN design T=${samplingTemp} (score=${designed.score.toFixed(2)}, recovery=${(designed.recoveryRate * 100).toFixed(0)}%)`,
           });
         }
-      } else {
-        const errMsg = mpnnResult && !mpnnResult.ok ? mpnnResult.error : 'not available';
+        if (designedMutants.length > 0) break;
         events.push({
-          kind: 'proteinmpnn_fallback',
-          message: `ProteinMPNN unavailable (${errMsg}); using deterministic mutations`,
+          kind: 'note',
+          message: `All ${rejected} ProteinMPNN design(s) at T=${samplingTemp} failed sequence verification; resampling hotter`,
         });
       }
     }
 
-    // Fallback to deterministic mutations if ProteinMPNN produced nothing
+    // Fallback to deterministic mutations if ProteinMPNN produced nothing.
+    // Oversample so verification has something to keep.
     if (designedMutants.length === 0) {
-      const fallback = mutateSequence(best.sequence, 3);
-      designedMutants = fallback.map((m) => ({
-        sequence: m.sequence,
-        description: m.description,
-      }));
+      const fallback = mutateSequence(best.sequence, 6);
+      const verifiable = fallback.filter(
+        (m) => verifyCandidate({ sequence: m.sequence, peers: peerSequences }).grade !== 'rejected',
+      );
+      designedMutants = (verifiable.length > 0 ? verifiable : fallback.slice(0, 1))
+        .slice(0, 3)
+        .map((m) => ({ sequence: m.sequence, description: m.description }));
     }
 
     for (const mutant of designedMutants) {
