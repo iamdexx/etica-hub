@@ -55,6 +55,7 @@ jobs:
           set -euo pipefail
           offset="$OFFSET"
           total_verified=0; total_weak=0; total_rejected=0; total_reranked=0; processed=0
+          total_grounded=0; total_ungrounded=0
           for page in $(seq 1 "$MAX_PAGES"); do
             body=$(printf '{"offset":%s,"limit":%s}' "$offset" "$LIMIT")
             resp=$(curl -sS -X POST "$BASE_URL/api/labs/archive/verify-backfill" \
@@ -71,8 +72,10 @@ jobs:
             total_weak=$((total_weak + $(printf '%s' "$resp" | jq -r '.counts.weak')))
             total_rejected=$((total_rejected + $(printf '%s' "$resp" | jq -r '.counts.rejected')))
             total_reranked=$((total_reranked + $(printf '%s' "$resp" | jq -r '.rerankedBest')))
+            total_grounded=$((total_grounded + $(printf '%s' "$resp" | jq -r '.grounding.grounded')))
+            total_ungrounded=$((total_ungrounded + $(printf '%s' "$resp" | jq -r '.grounding.ungrounded')))
             next=$(printf '%s' "$resp" | jq -r '.nextOffset')
-            echo "page $page: offset $offset -> next $next"
+            echo "page $page: $(printf '%s' "$resp" | jq -c '{processed,counts,rerankedBest,grounding,nextOffset}')"
             if [ "$next" = "null" ]; then break; fi
             offset="$next"
           done
@@ -86,5 +89,7 @@ jobs:
             echo "| weak | $total_weak |"
             echo "| rejected | $total_rejected |"
             echo "| headline candidate re-ranked | $total_reranked |"
+            echo "| targets grounded | $total_grounded |"
+            echo "| no target resolved | $total_ungrounded |"
             echo "| resume offset | $offset |"
           } >> "$GITHUB_STEP_SUMMARY"
