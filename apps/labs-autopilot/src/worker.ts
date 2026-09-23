@@ -120,10 +120,13 @@ const TICK_BUDGET_MS = Math.max(
  * finishes inside the budget instead of being killed by the workflow
  * timeout mid-run (a killed job stays `running` until stale requeue and
  * its model calls are wasted). Grows to the longest job seen this tick. */
-const JOB_RESERVE_MS = Math.max(
-  0,
-  Number(process.env.LABS_AUTOPILOT_JOB_RESERVE_MS ?? `${8 * 60 * 1000}`),
+const DEFAULT_JOB_RESERVE_MS = 8 * 60 * 1000;
+const parsedJobReserveMs = Number(
+  process.env.LABS_AUTOPILOT_JOB_RESERVE_MS ?? `${DEFAULT_JOB_RESERVE_MS}`,
 );
+const JOB_RESERVE_MS = Number.isFinite(parsedJobReserveMs)
+  ? Math.max(0, parsedJobReserveMs)
+  : DEFAULT_JOB_RESERVE_MS;
 /** Cross-goal seeding threshold: best candidate score must exceed this
  * for the worker to also enqueue a follow-up on the top-related goal.
  * Range [0, 1]; default 0.75 = top quartile. Set to 1.1 to disable. */
