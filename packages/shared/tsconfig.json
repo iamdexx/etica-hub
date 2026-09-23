@@ -1,6 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // grounding.ts calls fetch/AbortController, available in both the
+    // Next.js runtime and the Node 20 worker.
+    "lib": ["ES2022", "DOM"],
     "outDir": "dist",
     "rootDir": "src",
     "jsx": "preserve"

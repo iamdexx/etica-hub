@@ -27,15 +27,17 @@ import {
 import {
   archiveResearch,
   extractDisease,
+  saveArchivedResearch,
   storePdbForSequence,
   type ArchivedResearch,
 } from '@/lib/labs/archive';
 import { announceDiscovery } from '@/lib/labs/announce';
 import { pickBestCandidate, runGrade, verifyRun } from '@/lib/labs/verification';
+import { groundArchivedResearch } from '@/lib/labs/grounding';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 15;
+export const maxDuration = 30;
 
 const VALID_STATUSES: LabsJobStatus[] = ['pending', 'running', 'done', 'error'];
 const VALID_EVENT_KINDS = new Set([
@@ -343,6 +345,20 @@ export async function POST(
       }
 
       await archiveResearch(archived);
+
+      // Resolve the targets the run names against UniProt and its cited
+      // PMIDs against PubMed. Done after the archive write so a slow or
+      // unreachable external database can never cost us the record.
+      try {
+        const grounding = await groundArchivedResearch(archived);
+        if (grounding) {
+          archived.grounding = grounding;
+          await saveArchivedResearch(archived);
+        }
+      } catch (err) {
+        console.error('[labs] grounding failed (non-fatal):', err);
+      }
+
       try {
         // Only broadcast work that survives verification — a repetitive
         // rod posted as a "discovery" costs more credibility than the

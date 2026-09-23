@@ -1,0 +1,90 @@
+# Regrade archived Labs research with the objective verifier.
+#
+# Manual only: the verifier changes rarely, and a full pass rewrites every
+# archive record. Walks the archive page by page via the worker-token
+# endpoint, which returns the next offset until the archive is exhausted.
+#
+# Secrets used:
+#   LABS_AUTOPILOT_TOKEN — shared worker secret (same value as on Vercel)
+name: Labs Verify Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      offset:
+        description: 'Archive offset to resume from'
+        required: false
+        default: '0'
+      limit:
+        description: 'Records per request (max 50)'
+        required: false
+        default: '25'
+      max_pages:
+        description: 'Safety cap on pages per run'
+        required: false
+        default: '80'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: labs-verify-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Regrade archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      BASE_URL: ${{ vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
+      TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}
+      OFFSET: ${{ github.event.inputs.offset || '0' }}
+      LIMIT: ${{ github.event.inputs.limit || '25' }}
+      MAX_PAGES: ${{ github.event.inputs.max_pages || '80' }}
+    steps:
+      - name: Guard — worker token present
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::LABS_AUTOPILOT_TOKEN secret not set"
+            exit 1
+          fi
+
+      - name: Walk the archive
+        run: |
+          set -euo pipefail
+          offset="$OFFSET"
+          total_verified=0; total_weak=0; total_rejected=0; total_reranked=0; processed=0
+          for page in $(seq 1 "$MAX_PAGES"); do
+            body=$(printf '{"offset":%s,"limit":%s}' "$offset" "$LIMIT")
+            resp=$(curl -sS -X POST "$BASE_URL/api/labs/archive/verify-backfill" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H 'content-type: application/json' \
+              -d "$body")
+            ok=$(printf '%s' "$resp" | jq -r '.ok // false')
+            if [ "$ok" != "true" ]; then
+              echo "::error::backfill failed at offset $offset: $resp"
+              exit 1
+            fi
+            processed=$((processed + $(printf '%s' "$resp" | jq -r '.processed')))
+            total_verified=$((total_verified + $(printf '%s' "$resp" | jq -r '.counts.verified')))
+            total_weak=$((total_weak + $(printf '%s' "$resp" | jq -r '.counts.weak')))
+            total_rejected=$((total_rejected + $(printf '%s' "$resp" | jq -r '.counts.rejected')))
+            total_reranked=$((total_reranked + $(printf '%s' "$resp" | jq -r '.rerankedBest')))
+            next=$(printf '%s' "$resp" | jq -r '.nextOffset')
+            echo "page $page: offset $offset -> next $next"
+            if [ "$next" = "null" ]; then break; fi
+            offset="$next"
+          done
+          {
+            echo "### Labs verification backfill"
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| records regraded | $processed |"
+            echo "| verified | $total_verified |"
+            echo "| weak | $total_weak |"
+            echo "| rejected | $total_rejected |"
+            echo "| headline candidate re-ranked | $total_reranked |"
+            echo "| resume offset | $offset |"
+          } >> "$GITHUB_STEP_SUMMARY"

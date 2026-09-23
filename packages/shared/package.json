@@ -11,6 +11,7 @@
     "./addresses": "./src/addresses.ts",
     "./abis": "./src/abis/index.ts",
     "./labs/verify": "./src/labs/verify.ts",
+    "./labs/grounding": "./src/labs/grounding.ts",
     "./abis/*": "./src/abis/*.ts"
   },
   "scripts": {

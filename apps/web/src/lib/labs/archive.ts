@@ -55,6 +55,22 @@ export interface CandidateVerificationRecord {
   checks: Array<{ id: string; label: string; status: 'pass' | 'warn' | 'fail'; detail: string }>;
 }
 
+/** Mirrors `GroundingResult` in @etica-hub/shared/labs/grounding. */
+export interface GroundingRecord {
+  checkedAt: number;
+  summary: string;
+  targets: Array<{
+    symbol: string;
+    accession: string;
+    entryName: string;
+    proteinName: string;
+    reviewed: boolean;
+  }>;
+  unresolvedSymbols: string[];
+  citationsFound: string[];
+  citationsMissing: string[];
+}
+
 export interface ArchivedResearch {
   id: string;
   jobId: string;
@@ -82,6 +98,13 @@ export interface ArchivedResearch {
   /** Grade of the published best candidate; mirrors
    * `bestCandidate.verification.grade` for cheap filtering. */
   verificationGrade?: 'verified' | 'weak' | 'rejected';
+  /**
+   * Whether the targets and citations this run names correspond to real
+   * UniProt entries and PubMed records. Independent of the design checks:
+   * a well-formed peptide aimed at an invented protein is still worthless,
+   * and a grounded target is still not evidence of binding.
+   */
+  grounding?: GroundingRecord;
   /** Whether this has been minted as an NFT */
   minted: boolean;
   mintTxHash?: string;
