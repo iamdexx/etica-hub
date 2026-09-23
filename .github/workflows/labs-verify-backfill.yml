@@ -58,7 +58,7 @@ jobs:
           for page in $(seq 1 "$MAX_PAGES"); do
             body=$(printf '{"offset":%s,"limit":%s}' "$offset" "$LIMIT")
             resp=$(curl -sS -X POST "$BASE_URL/api/labs/archive/verify-backfill" \
-              -H "Authorization: Bearer $TOKEN" \
+              -H "x-labs-worker-token: $TOKEN" \
               -H 'content-type: application/json' \
               -d "$body")
             ok=$(printf '%s' "$resp" | jq -r '.ok // false')
