@@ -7,11 +7,17 @@
  *
  * POST /api/labs/seed
  *   headers: { x-labs-worker-token: <LABS_AUTOPILOT_TOKEN> }
- *   returns: { ok: true, prompt, topic, source, paperTitles } | { ok: false, error }
+ *   returns: { ok: true, prompt, topic, title?, campaign?, source, paperTitles }
+ *          | { ok: false, error }
+ *
+ * Seeding is campaign-weighted (see lib/labs/campaign.ts): most auto-seeds
+ * are drawn from the active priority disease area, the rest from the general
+ * biomedical pool.
  */
 
 import { NextRequest } from 'next/server';
 
+import { drawCampaign, type Campaign } from '@/lib/labs/campaign';
 import { nvidiaChat, hasNvidiaKey, NvidiaError, NVIDIA_MODEL_PRIMARY } from '@/lib/labs/nvidia';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 
@@ -81,13 +87,16 @@ const FALLBACK_SEEDS = [
   'Engineer a TGF-beta receptor II decoy peptide to attenuate idiopathic pulmonary fibrosis',
 ];
 
-function fallbackSeedResponse(reason: string): Response {
-  console.error('[labs/seed] LLM seed failed, using fallback', { reason });
+function fallbackSeedResponse(reason: string, campaign: Campaign | null): Response {
+  console.error('[labs/seed] LLM seed failed, using fallback', { reason, campaign: campaign?.id });
+  const pool = campaign ? campaign.seeds : FALLBACK_SEEDS;
   return Response.json({
     ok: true,
-    prompt: FALLBACK_SEEDS[Math.floor(Math.random() * FALLBACK_SEEDS.length)]!,
-    topic: 'curated fallback',
+    prompt: pool[Math.floor(Math.random() * pool.length)]!,
+    topic: campaign ? campaign.label : 'curated fallback',
+    title: campaign ? `${campaign.disease} — driver-directed design` : undefined,
     source: 'fallback',
+    campaign: campaign?.id,
     paperTitles: [],
     warning: `LLM seed failed: ${reason.slice(0, 300)}`,
   });
@@ -98,8 +107,9 @@ function fallbackSeedResponse(reason: string): Response {
 // reliably here.
 const SEED_MODELS = [NVIDIA_MODEL_PRIMARY] as const;
 
-function randomTopic(): string {
-  return TOPIC_POOL[Math.floor(Math.random() * TOPIC_POOL.length)]!;
+function randomTopic(campaign: Campaign | null): string {
+  const pool = campaign ? campaign.topics : TOPIC_POOL;
+  return pool[Math.floor(Math.random() * pool.length)]!;
 }
 
 function politeGet(url: string, opts: RequestInit = {}): Promise<Response> {
@@ -190,7 +200,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const auth = requireWorkerAuth(req);
   if (!auth.ok) return Response.json(auth.body, { status: auth.status });
 
-  if (!hasNvidiaKey()) return fallbackSeedResponse('no NVIDIA_API_KEY configured');
+  // A campaign biases this seed toward a priority disease area; the rest of
+  // the time the general pool keeps the archive broad.
+  const campaign = drawCampaign();
+
+  if (!hasNvidiaKey()) return fallbackSeedResponse('no NVIDIA_API_KEY configured', campaign);
 
   // Try up to 3 different topics
   let papers: PaperSummary[] = [];
@@ -198,10 +212,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   let topic = '';
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    topic = randomTopic();
+    topic = randomTopic(campaign);
     [papers, protein] = await Promise.all([
       fetchRecentPapers(topic, 5),
-      attempt === 0 ? fetchRandomProtein() : Promise.resolve(protein),
+      attempt === 0 && !campaign ? fetchRandomProtein() : Promise.resolve(protein),
     ]);
     if (papers.length > 0 || protein) break;
   }
@@ -226,6 +240,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     'must be a novel design direction (not summary of the input), patent-safe.',
     'NEVER output meta-commentary like "The user wants" or "Here is a prompt".',
     'NEVER describe what the prompt should be. Just output the prompt itself.',
+    ...(campaign ? ['', ...campaign.constraints] : []),
     '',
     'Examples of CORRECT output:',
     '- Design a cyclic peptide inhibitor targeting the PD-1/PD-L1 interface for melanoma immunotherapy',
@@ -292,7 +307,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
-  if (!succeeded) return fallbackSeedResponse(`topic ${topic}: ${lastFailure}`);
+  if (!succeeded) return fallbackSeedResponse(`topic ${topic}: ${lastFailure}`, campaign);
 
   const source = papers.length > 0 && protein ? 'combined' : papers.length > 0 ? 'pubmed' : protein ? 'uniprot' : 'topic-only';
 
@@ -300,7 +315,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     ok: true,
     prompt,
     topic,
+    // Goal titles of the form "<disease> — <topic>" let the archive index the
+    // run under its disease facet instead of leaving it unlabelled.
+    title: campaign ? `${campaign.disease} — ${topic}` : undefined,
     source,
+    campaign: campaign?.id,
     paperTitles: papers.map((p) => p.title),
   });
 }

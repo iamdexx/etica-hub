@@ -116,6 +116,17 @@ const TICK_BUDGET_MS = Math.max(
   60_000,
   Number(process.env.LABS_AUTOPILOT_TICK_BUDGET_MS ?? `${50 * 60 * 1000}`),
 );
+/** Headroom kept free before popping another job, so a job started late
+ * finishes inside the budget instead of being killed by the workflow
+ * timeout mid-run (a killed job stays `running` until stale requeue and
+ * its model calls are wasted). Grows to the longest job seen this tick. */
+const DEFAULT_JOB_RESERVE_MS = 8 * 60 * 1000;
+const parsedJobReserveMs = Number(
+  process.env.LABS_AUTOPILOT_JOB_RESERVE_MS ?? `${DEFAULT_JOB_RESERVE_MS}`,
+);
+const JOB_RESERVE_MS = Number.isFinite(parsedJobReserveMs)
+  ? Math.max(0, parsedJobReserveMs)
+  : DEFAULT_JOB_RESERVE_MS;
 /** Cross-goal seeding threshold: best candidate score must exceed this
  * for the worker to also enqueue a follow-up on the top-related goal.
  * Range [0, 1]; default 0.75 = top quartile. Set to 1.1 to disable. */
@@ -1061,11 +1072,17 @@ async function main(): Promise<void> {
 
   const tickStart = Date.now();
   let processed = 0;
+  let reserveMs = JOB_RESERVE_MS;
   for (let i = 0; i < MAX_JOBS_PER_TICK; i++) {
-    if (Date.now() - tickStart > TICK_BUDGET_MS) {
-      log(`tick budget exhausted after ${processed} job(s); exiting cleanly`);
+    const elapsed = Date.now() - tickStart;
+    if (elapsed > TICK_BUDGET_MS - reserveMs) {
+      log(
+        `tick budget exhausted after ${processed} job(s) in ${Math.round(elapsed / 1000)}s ` +
+          `(reserve ${Math.round(reserveMs / 1000)}s); exiting cleanly`,
+      );
       break;
     }
+    const jobStart = Date.now();
     let job: LabsJob | null;
     try {
       job = await popJob();
@@ -1089,7 +1106,7 @@ async function main(): Promise<void> {
     if (!job) {
       log('queue empty — requesting auto-seed from server');
       // Call the Vercel-side seed endpoint (Nvidia API is unreachable from GH Actions)
-      interface SeedResponse { ok: boolean; prompt: string; topic: string; source: string; error?: string; warning?: string }
+      interface SeedResponse { ok: boolean; prompt: string; topic: string; title?: string; campaign?: string; source: string; error?: string; warning?: string }
       let seedData: SeedResponse | null = null;
       try {
         const seedRes = await fetch(`${BASE_URL}/api/labs/seed`, {
@@ -1118,7 +1135,10 @@ async function main(): Promise<void> {
         break;
       }
       if (seedData.warning) log(`::warning::auto-seed ${seedData.warning}`);
-      log(`auto-seed generated: "${seedData.prompt}" (source: ${seedData.source}, topic: ${seedData.topic})`);
+      log(
+        `auto-seed generated: "${seedData.prompt}" (source: ${seedData.source}, topic: ${seedData.topic}` +
+          `${seedData.campaign ? `, campaign: ${seedData.campaign}` : ''})`,
+      );
       // Enqueue the seed as a new research job via spawn endpoint
       try {
         const spawnRes = await fetch(`${BASE_URL}/api/labs/queue/spawn`, {
@@ -1129,7 +1149,7 @@ async function main(): Promise<void> {
           },
           body: JSON.stringify({
             prompt: seedData.prompt,
-            title: seedData.topic,
+            title: seedData.title ?? seedData.topic,
             kind: 'auto-seed',
             maxIterations: 3,
           }),
@@ -1174,6 +1194,7 @@ async function main(): Promise<void> {
       // workflow run — that emails the repo owner on every tick. Keep
       // processing the rest of the batch and exit the tick cleanly.
     }
+    reserveMs = Math.max(reserveMs, Date.now() - jobStart);
   }
   log(`tick end; processed ${processed} job(s)`);
 }

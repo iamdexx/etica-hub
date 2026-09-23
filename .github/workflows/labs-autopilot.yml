@@ -28,10 +28,12 @@ name: Labs Autopilot
 #
 # Optional repo variables:
 #   LABS_AUTOPILOT_BASE_URL          — defaults to https://eticahub.com
-#   LABS_AUTOPILOT_MAX_JOBS_PER_TICK — defaults to 5 (drains a small
-#                                      backlog in a single tick so a
-#                                      throttled scheduler doesn't leave
-#                                      branches sitting in QUEUED for hours)
+#   LABS_AUTOPILOT_MAX_JOBS_PER_TICK — defaults to 10 (drains a backlog in a
+#                                      single tick so a throttled scheduler
+#                                      doesn't leave branches sitting in
+#                                      QUEUED for hours; ticks are serialised
+#                                      by the concurrency group, so this is
+#                                      the lever for research throughput)
 
 on:
   schedule:
@@ -57,7 +59,7 @@ jobs:
     timeout-minutes: 55
     env:
       LABS_AUTOPILOT_BASE_URL: ${{ vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
-      LABS_AUTOPILOT_MAX_JOBS_PER_TICK: ${{ github.event.inputs.max_jobs || vars.LABS_AUTOPILOT_MAX_JOBS_PER_TICK || '5' }}
+      LABS_AUTOPILOT_MAX_JOBS_PER_TICK: ${{ github.event.inputs.max_jobs || vars.LABS_AUTOPILOT_MAX_JOBS_PER_TICK || '10' }}
       LABS_AUTOPILOT_TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
       NVIDIA_API_KEYS: ${{ secrets.NVIDIA_API_KEYS }}
