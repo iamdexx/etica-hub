@@ -1089,7 +1089,7 @@ async function main(): Promise<void> {
     if (!job) {
       log('queue empty — requesting auto-seed from server');
       // Call the Vercel-side seed endpoint (Nvidia API is unreachable from GH Actions)
-      interface SeedResponse { ok: boolean; prompt: string; topic: string; source: string; error?: string; warning?: string }
+      interface SeedResponse { ok: boolean; prompt: string; topic: string; title?: string; campaign?: string; source: string; error?: string; warning?: string }
       let seedData: SeedResponse | null = null;
       try {
         const seedRes = await fetch(`${BASE_URL}/api/labs/seed`, {
@@ -1118,7 +1118,10 @@ async function main(): Promise<void> {
         break;
       }
       if (seedData.warning) log(`::warning::auto-seed ${seedData.warning}`);
-      log(`auto-seed generated: "${seedData.prompt}" (source: ${seedData.source}, topic: ${seedData.topic})`);
+      log(
+        `auto-seed generated: "${seedData.prompt}" (source: ${seedData.source}, topic: ${seedData.topic}` +
+          `${seedData.campaign ? `, campaign: ${seedData.campaign}` : ''})`,
+      );
       // Enqueue the seed as a new research job via spawn endpoint
       try {
         const spawnRes = await fetch(`${BASE_URL}/api/labs/queue/spawn`, {
@@ -1129,7 +1132,7 @@ async function main(): Promise<void> {
           },
           body: JSON.stringify({
             prompt: seedData.prompt,
-            title: seedData.topic,
+            title: seedData.title ?? seedData.topic,
             kind: 'auto-seed',
             maxIterations: 3,
           }),
