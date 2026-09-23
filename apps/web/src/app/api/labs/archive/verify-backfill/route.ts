@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
   let rerankedBest = 0;
   let grounded = 0;
   let ungrounded = 0;
+  let groundingError: string | null = null;
   let processed = 0;
   const deadline = Date.now() + DEADLINE_MS;
 
@@ -89,7 +90,9 @@ export async function POST(req: NextRequest) {
     counts[updated.verificationGrade ?? 'weak'] += 1;
 
     if (ground && !updated.grounding) {
-      const grounding = await groundArchivedResearch(updated);
+      const grounding = await groundArchivedResearch(updated, (msg) => {
+        groundingError ??= msg;
+      });
       if (grounding) {
         updated.grounding = grounding;
         if (grounding.targets.length > 0) grounded += 1;
@@ -109,6 +112,6 @@ export async function POST(req: NextRequest) {
     nextOffset: nextOffset < total && processed > 0 ? nextOffset : null,
     rerankedBest,
     counts,
-    grounding: { grounded, ungrounded },
+    grounding: { grounded, ungrounded, error: groundingError },
   });
 }

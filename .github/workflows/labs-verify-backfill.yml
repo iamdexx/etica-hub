@@ -23,6 +23,10 @@ on:
         description: 'Safety cap on pages per run'
         required: false
         default: '80'
+      base_url:
+        description: 'Override deployment to regrade (eticahub.com or a *.vercel.app preview only)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -37,14 +41,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
-      BASE_URL: ${{ vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
+      BASE_URL: ${{ github.event.inputs.base_url || vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
       TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}
       OFFSET: ${{ github.event.inputs.offset || '0' }}
       LIMIT: ${{ github.event.inputs.limit || '25' }}
       MAX_PAGES: ${{ github.event.inputs.max_pages || '80' }}
     steps:
-      - name: Guard — worker token present
+      - name: Guard — worker token present, target is ours
         run: |
+          # The worker token is attached to every request, so the override
+          # must not be able to point it at a host we don't control. Match on
+          # the bare host only: a path, query or userinfo can otherwise end in
+          # an allowed suffix while the request goes somewhere else.
+          case "$BASE_URL" in
+            https://*) host="${BASE_URL#https://}" ;;
+            *) host='!' ;;
+          esac
+          case "$host" in
+            *[!a-zA-Z0-9.-]*) host='!' ;;
+          esac
+          case "$host" in
+            eticahub.com|*.eticahub.com|*.vercel.app) ;;
+            *)
+              echo "::error::refusing to send the worker token to $BASE_URL"
+              exit 1
+              ;;
+          esac
           if [ -z "$TOKEN" ]; then
             echo "::error::LABS_AUTOPILOT_TOKEN secret not set"
             exit 1
@@ -55,10 +77,11 @@ jobs:
           set -euo pipefail
           offset="$OFFSET"
           total_verified=0; total_weak=0; total_rejected=0; total_reranked=0; processed=0
+          total_grounded=0; total_ungrounded=0
           for page in $(seq 1 "$MAX_PAGES"); do
             body=$(printf '{"offset":%s,"limit":%s}' "$offset" "$LIMIT")
             resp=$(curl -sS -X POST "$BASE_URL/api/labs/archive/verify-backfill" \
-              -H "Authorization: Bearer $TOKEN" \
+              -H "x-labs-worker-token: $TOKEN" \
               -H 'content-type: application/json' \
               -d "$body")
             ok=$(printf '%s' "$resp" | jq -r '.ok // false')
@@ -71,8 +94,10 @@ jobs:
             total_weak=$((total_weak + $(printf '%s' "$resp" | jq -r '.counts.weak')))
             total_rejected=$((total_rejected + $(printf '%s' "$resp" | jq -r '.counts.rejected')))
             total_reranked=$((total_reranked + $(printf '%s' "$resp" | jq -r '.rerankedBest')))
+            total_grounded=$((total_grounded + $(printf '%s' "$resp" | jq -r '.grounding.grounded')))
+            total_ungrounded=$((total_ungrounded + $(printf '%s' "$resp" | jq -r '.grounding.ungrounded')))
             next=$(printf '%s' "$resp" | jq -r '.nextOffset')
-            echo "page $page: offset $offset -> next $next"
+            echo "page $page: $(printf '%s' "$resp" | jq -c '{processed,counts,rerankedBest,grounding,nextOffset}')"
             if [ "$next" = "null" ]; then break; fi
             offset="$next"
           done
@@ -86,5 +111,7 @@ jobs:
             echo "| weak | $total_weak |"
             echo "| rejected | $total_rejected |"
             echo "| headline candidate re-ranked | $total_reranked |"
+            echo "| targets grounded | $total_grounded |"
+            echo "| no target resolved | $total_ungrounded |"
             echo "| resume offset | $offset |"
           } >> "$GITHUB_STEP_SUMMARY"
