@@ -19,7 +19,7 @@ function groundingTexts(research: ArchivedResearch): string[] {
     research.hypothesis,
     research.approach,
     research.successCriteria ?? '',
-    ...research.references,
+    ...(Array.isArray(research.references) ? research.references : []),
   ].filter(Boolean);
 }
 
