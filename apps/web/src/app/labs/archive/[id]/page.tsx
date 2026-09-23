@@ -173,6 +173,54 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
         </Card>
       )}
 
+      {r.grounding && (
+        <Card label="Target grounding">
+          <p className="mb-3 text-xs text-white/55">
+            The proteins and papers this run names, resolved against UniProt and PubMed. A
+            resolved target means the protein exists — not that this design binds it.
+          </p>
+          {r.grounding.targets.length > 0 && (
+            <ul className="space-y-1 text-xs">
+              {r.grounding.targets.map((t) => (
+                <li key={t.accession} className="flex gap-2">
+                  <span className="w-14 shrink-0 uppercase tracking-wider text-emerald-300/80">
+                    {t.reviewed ? 'uniprot' : 'unrev.'}
+                  </span>
+                  <span className="text-white/70">
+                    <a
+                      href={`https://www.uniprot.org/uniprotkb/${t.accession}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono hover:text-white"
+                    >
+                      {t.accession}
+                    </a>{' '}
+                    {t.symbol}
+                    <span className="text-white/40"> — {t.proteinName || t.entryName}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {r.grounding.unresolvedSymbols.length > 0 && (
+            <p className="mt-2 text-xs text-amber-200/70">
+              Unresolved symbols: {r.grounding.unresolvedSymbols.join(', ')}
+            </p>
+          )}
+          {(r.grounding.citationsFound.length > 0 || r.grounding.citationsMissing.length > 0) && (
+            <p className="mt-2 text-xs text-white/55">
+              Citations: {r.grounding.citationsFound.length} found in PubMed
+              {r.grounding.citationsMissing.length > 0 && (
+                <span className="text-rose-200/70">
+                  , {r.grounding.citationsMissing.length} not found (
+                  {r.grounding.citationsMissing.join(', ')})
+                </span>
+              )}
+            </p>
+          )}
+        </Card>
+      )}
+
       {r.references.length > 0 && (
         <Card label={`Prior art (${r.references.length})`}>
           <ul className="list-disc space-y-1 pl-5 text-xs text-white/65">
