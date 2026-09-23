@@ -31,6 +31,7 @@ import {
   type ArchivedResearch,
 } from '@/lib/labs/archive';
 import { announceDiscovery } from '@/lib/labs/announce';
+import { pickBestCandidate, runGrade, verifyRun } from '@/lib/labs/verification';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -278,10 +279,15 @@ export async function POST(
   // This is fire-and-forget — a failure here must not break the worker.
   if (statusUpdate === 'done' && existing.status !== 'done' && result) {
     try {
-      const bestCandidate = result.candidates.reduce(
-        (best, c) => ((c.score ?? 0) > (best.score ?? 0) ? c : best),
-        result.candidates[0]!,
+      // Grade every candidate objectively before deciding what this run
+      // publishes: the model's own score happily crowns a repetitive rod
+      // that folds to 90 pLDDT, which is confidence in a shape, not in a
+      // binder.
+      const verifications = verifyRun(
+        result.candidates,
+        (c) => result.pdbBySequenceIndex?.[c.index] ?? null,
       );
+      const bestCandidate = pickBestCandidate(result.candidates, verifications);
       const archived: ArchivedResearch = {
         id: `${id}-archive`,
         jobId: id,
@@ -301,6 +307,7 @@ export async function POST(
           analysis: bestCandidate.analysis,
           folded: bestCandidate.folded,
           engine: bestCandidate.engine,
+          verification: verifications.get(bestCandidate.index),
         },
         candidates: result.candidates.map((c) => ({
           index: c.index,
@@ -310,7 +317,9 @@ export async function POST(
           analysis: c.analysis,
           folded: c.folded,
           engine: c.engine,
+          verification: verifications.get(c.index),
         })),
+        verificationGrade: runGrade(bestCandidate, verifications),
         iterations: next.iterations,
         summary: result.summary ?? '',
         bestPdb: result.pdbBySequenceIndex?.[bestCandidate.index],
@@ -335,7 +344,11 @@ export async function POST(
 
       await archiveResearch(archived);
       try {
-        const out = await announceDiscovery(archived);
+        // Only broadcast work that survives verification — a repetitive
+        // rod posted as a "discovery" costs more credibility than the
+        // post earns.
+        const out =
+          archived.verificationGrade === 'rejected' ? null : await announceDiscovery(archived);
         if (out) console.log(`[labs] announced ${archived.id}: tg=${out.telegram} x=${out.x}`);
       } catch (err) {
         console.error('[labs] announce failed (non-fatal):', err);

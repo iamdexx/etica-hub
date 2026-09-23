@@ -36,6 +36,23 @@ export interface ArchivedCandidate {
   folded: boolean;
   engine?: string;
   dockingConfidence?: number;
+  /**
+   * Objective verification of this candidate (sequence complexity,
+   * composition, repeats, novelty, fold confidence, tertiary structure).
+   * Absent on records archived before verification existed until the
+   * backfill route regrades them.
+   */
+  verification?: CandidateVerificationRecord;
+}
+
+/** Mirrors `CandidateVerification` in ./verification, kept structural to
+ * avoid a cycle between the archive store and its verifier. */
+export interface CandidateVerificationRecord {
+  grade: 'verified' | 'weak' | 'rejected';
+  penalty: number;
+  adjustedScore: number;
+  summary: string;
+  checks: Array<{ id: string; label: string; status: 'pass' | 'warn' | 'fail'; detail: string }>;
 }
 
 export interface ArchivedResearch {
@@ -62,6 +79,9 @@ export interface ArchivedResearch {
   bestPdb?: string;
   /** Prior work references used in planning */
   references: string[];
+  /** Grade of the published best candidate; mirrors
+   * `bestCandidate.verification.grade` for cheap filtering. */
+  verificationGrade?: 'verified' | 'weak' | 'rejected';
   /** Whether this has been minted as an NFT */
   minted: boolean;
   mintTxHash?: string;
@@ -207,6 +227,15 @@ async function incrementStats(research: ArchivedResearch): Promise<void> {
 /* ------------------------------------------------------------------ */
 /*  Read                                                               */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Overwrite an archived record in place, leaving every index and the
+ * cumulative stats untouched. Used to attach verification grades to
+ * records archived before verification existed.
+ */
+export async function saveArchivedResearch(research: ArchivedResearch): Promise<void> {
+  await labsStore().set(ARCHIVE_KEY(research.id), JSON.stringify(research));
+}
 
 /**
  * Get a single archived research by ID.

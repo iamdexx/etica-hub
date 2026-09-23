@@ -109,6 +109,16 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
               {scoreLabel(score)} · score {score.toFixed(2)}
             </span>
           )}
+          {best.verification && (
+            <span
+              className={`rounded-full border px-2 py-0.5 uppercase tracking-wider ${
+                GRADE_STYLE[best.verification.grade]
+              }`}
+              title={best.verification.summary}
+            >
+              {GRADE_LABEL[best.verification.grade]}
+            </span>
+          )}
           {r.minted && (
             <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 uppercase tracking-wider text-amber-200">
               minted RES NFT
@@ -138,6 +148,30 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
         </pre>
         {best.analysis && <p className="mt-3 text-xs text-white/60">{best.analysis}</p>}
       </Card>
+
+      {best.verification && (
+        <Card label={`Verification · ${GRADE_LABEL[best.verification.grade]}`}>
+          <p className="mb-3 text-xs text-white/55">
+            Deterministic checks on the sequence and the predicted Cα trace — no model opinion.
+            They bound how seriously a design can be taken; they cannot show that it binds
+            anything. Re-run them yourself:{' '}
+            <code className="font-mono text-white/70">/api/labs/verify?sequence={best.sequence.slice(0, 12)}…</code>
+          </p>
+          <ul className="space-y-1 text-xs">
+            {best.verification.checks.map((check) => (
+              <li key={check.id} className="flex gap-2">
+                <span className={`w-14 shrink-0 uppercase tracking-wider ${CHECK_STYLE[check.status]}`}>
+                  {check.status}
+                </span>
+                <span className="text-white/70">
+                  {check.label}
+                  <span className="text-white/40"> — {check.detail}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {r.references.length > 0 && (
         <Card label={`Prior art (${r.references.length})`}>
@@ -179,6 +213,24 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
     </article>
   );
 }
+
+const GRADE_LABEL = {
+  verified: 'verified',
+  weak: 'weak evidence',
+  rejected: 'failed verification',
+} as const;
+
+const GRADE_STYLE = {
+  verified: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
+  weak: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
+  rejected: 'border-rose-400/30 bg-rose-400/10 text-rose-200',
+} as const;
+
+const CHECK_STYLE = {
+  pass: 'text-emerald-300/80',
+  warn: 'text-amber-300/80',
+  fail: 'text-rose-300/80',
+} as const;
 
 function Card({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
