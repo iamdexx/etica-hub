@@ -30,6 +30,7 @@ function groundingTexts(research: ArchivedResearch): string[] {
  */
 export async function groundArchivedResearch(
   research: ArchivedResearch,
+  onError?: (message: string) => void,
 ): Promise<GroundingRecord | null> {
   try {
     const result = await groundRun(groundingTexts(research));
@@ -47,7 +48,9 @@ export async function groundArchivedResearch(
       citationsFound: result.citationsFound,
       citationsMissing: result.citationsMissing,
     };
-  } catch {
+  } catch (err) {
+    console.error('[labs] grounding failed:', err);
+    onError?.(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
     return null;
   }
 }

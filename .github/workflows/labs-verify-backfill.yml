@@ -23,6 +23,10 @@ on:
         description: 'Safety cap on pages per run'
         required: false
         default: '80'
+      base_url:
+        description: 'Override deployment to regrade (e.g. a preview URL)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -37,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
-      BASE_URL: ${{ vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
+      BASE_URL: ${{ github.event.inputs.base_url || vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
       TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}
       OFFSET: ${{ github.event.inputs.offset || '0' }}
       LIMIT: ${{ github.event.inputs.limit || '25' }}
