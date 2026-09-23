@@ -10,6 +10,7 @@
     "./chains": "./src/chains.ts",
     "./addresses": "./src/addresses.ts",
     "./abis": "./src/abis/index.ts",
+    "./labs/verify": "./src/labs/verify.ts",
     "./abis/*": "./src/abis/*.ts"
   },
   "scripts": {

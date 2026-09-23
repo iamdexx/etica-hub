@@ -46,6 +46,7 @@ import { mutateSequence } from './steps/mutate.js';
 import { designSequences } from './steps/proteinmpnn.js';
 import { dockMolecule } from './steps/diffdock.js';
 import { validateSequence, quickSequenceQuality } from './steps/esm2.js';
+import { verifyCandidate } from '@etica-hub/shared/labs/verify';
 import { proposeBranchPlan, proposeNextDirection } from './steps/expand.js';
 // generateSeedPrompt now runs server-side via /api/labs/seed (Nvidia unreachable from GH Actions)
 
@@ -798,8 +799,28 @@ async function runJob(job: LabsJob): Promise<void> {
     if (prior.sequence) peerSequences.push(prior.sequence);
   }
 
-  for (let i = 0; i < plan.candidates.length; i++) {
-    const candidate = plan.candidates[i]!;
+  // Drop designs that fail the objective sequence checks before paying for
+  // a fold: a poly-proline or tandem-repeat peptide folds to a confident rod
+  // and then wins the run on pLDDT alone. If the planner produced nothing
+  // but rejects, keep the first so the run still yields a record.
+  const plannedSurvivors = plan.candidates.filter(
+    (c) =>
+      verifyCandidate({
+        sequence: c.sequence,
+        peers: plan.candidates.filter((o) => o !== c).map((o) => o.sequence),
+      }).grade !== 'rejected',
+  );
+  if (plannedSurvivors.length < plan.candidates.length) {
+    events.push({
+      kind: 'note',
+      message: `Dropped ${plan.candidates.length - plannedSurvivors.length} planned candidate(s) that failed sequence verification`,
+    });
+  }
+  const plannedCandidates =
+    plannedSurvivors.length > 0 ? plannedSurvivors : plan.candidates.slice(0, 1);
+
+  for (let i = 0; i < plannedCandidates.length; i++) {
+    const candidate = plannedCandidates[i]!;
     const result = await buildCandidateResult(job.id, i, candidate, events, pdbMap, {
       prompt: job.prompt,
       peerSequences,
@@ -812,13 +833,28 @@ async function runJob(job: LabsJob): Promise<void> {
 
   // Subsequent iterations — pick top scorer, mutate, fold + analyse N
   // mutants. Each iteration adds at most 3 new candidates.
-  let bestIndex = allCandidates.reduce((bestIdx, c, i) => {
-    const best = allCandidates[bestIdx];
-    if (!best) return i;
-    const a = c.score ?? -1;
-    const b = best.score ?? -1;
-    return a > b ? i : bestIdx;
-  }, 0);
+  /**
+   * Rank by score discounted by objective verification, so iteration never
+   * branches off a repetitive rod just because the fold predictor was
+   * confident about it.
+   */
+  const adjustedScore = (c: (typeof allCandidates)[number], index: number): number => {
+    const verdict = verifyCandidate({
+      sequence: c.sequence,
+      pdb: pdbMap[index],
+      folded: c.folded,
+      peers: allCandidates.filter((o) => o !== c).map((o) => o.sequence),
+    });
+    return (c.score ?? -1) * verdict.penalty;
+  };
+  const rankBest = (): number =>
+    allCandidates.reduce((bestIdx, c, i) => {
+      const best = allCandidates[bestIdx];
+      if (!best) return i;
+      return adjustedScore(c, i) > adjustedScore(best, bestIdx) ? i : bestIdx;
+    }, 0);
+
+  let bestIndex = rankBest();
 
   for (let iter = 2; iter <= job.maxIterations; iter++) {
     const best = allCandidates[bestIndex];
@@ -859,6 +895,14 @@ async function runJob(job: LabsJob): Promise<void> {
           // ESM2 quick quality check
           const quality = quickSequenceQuality(designed.sequence);
           if (quality < 0.3) continue;
+          // ProteinMPNN at low temperature happily emits poly-A/E/R runs;
+          // folding them wastes the tick and pollutes the archive.
+          if (
+            verifyCandidate({ sequence: designed.sequence, peers: peerSequences }).grade ===
+            'rejected'
+          ) {
+            continue;
+          }
           designedMutants.push({
             sequence: designed.sequence,
             description: `ProteinMPNN design (score=${designed.score.toFixed(2)}, recovery=${(designed.recoveryRate * 100).toFixed(0)}%)`,
@@ -903,13 +947,7 @@ async function runJob(job: LabsJob): Promise<void> {
 
     events.push({ kind: 'iteration_done', message: `Iteration ${iter} complete` });
 
-    const newBest = allCandidates.reduce((bestIdx, c, i) => {
-      const cur = allCandidates[bestIdx];
-      if (!cur) return i;
-      const a = c.score ?? -1;
-      const b = cur.score ?? -1;
-      return a > b ? i : bestIdx;
-    }, 0);
+    const newBest = rankBest();
     if (newBest === bestIndex) {
       events.push({
         kind: 'note',
