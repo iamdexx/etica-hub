@@ -53,7 +53,42 @@ const STOPWORDS = new Set([
   'HTTP',
   'HTTPS',
   'WWW',
+  'KEGG',
+  'GEO',
+  'BBB',
+  'ITC',
+  'SPR',
+  'ELISA',
+  'MST',
+  'MRI',
+  'PET',
+  'CT',
+  'ADME',
+  'PK',
+  'PKPD',
+  'QSAR',
+  'RMSD',
+  'PLDDT',
+  'PTM',
+  'WT',
+  'KO',
+  'SIRNA',
+  'MRNA',
+  'CDNA',
+  'CRISPR',
+  'FRET',
+  'SASA',
+  'MHC',
+  'IND',
+  'NCCN',
 ]);
+
+/** One-letter amino-acid alphabet, for spotting raw sequence text. */
+const AA = 'ACDEFGHIKLMNPQRSTVWY';
+/** A stretch this long of pure residue letters is a sequence, not prose. */
+const SEQUENCE_RUN = new RegExp(`[${AA}]{15,}`, 'g');
+/** `G12D`, `D835Y` — a substitution, not the gene it sits in. */
+const MUTATION_CODE = new RegExp(`^[${AA}]\\d{1,4}[${AA}]$`);
 
 /** A UniProt hit for a symbol the run claims to target. */
 export interface TargetHit {
@@ -88,13 +123,21 @@ export interface GroundingResult {
  */
 export function extractTargetSymbols(text: string): string[] {
   const out = new Set<string>();
-  const matches = text.match(/\b[A-Z][A-Z0-9]{1,9}(?:[.-][A-Z0-9]{1,6})?\b/g) ?? [];
-  for (const raw of matches) {
+  // Designed sequences are uppercase residue letters, so any window of one
+  // reads as a symbol (`KLAVKLAD` -> `KLAV`). Skip matches inside them.
+  const sequenceSpans: Array<[number, number]> = [];
+  for (const run of text.matchAll(SEQUENCE_RUN)) {
+    sequenceSpans.push([run.index!, run.index! + run[0].length]);
+  }
+  for (const match of text.matchAll(/\b[A-Z][A-Z0-9]{1,9}(?:[.-][A-Z0-9]{1,6})?\b/g)) {
+    const at = match.index!;
+    if (sequenceSpans.some(([start, end]) => at >= start && at < end)) continue;
     // Drop the mutation/isoform suffix: KRAS-G12D targets the KRAS entry.
-    const symbol = raw.split(/[.-]/)[0]!;
+    const symbol = match[0].split(/[.-]/)[0]!;
     if (symbol.length < 3 || symbol.length > 10) continue;
     if (STOPWORDS.has(symbol)) continue;
     if (/^\d+$/.test(symbol)) continue;
+    if (MUTATION_CODE.test(symbol)) continue;
     out.add(symbol);
   }
   return [...out];

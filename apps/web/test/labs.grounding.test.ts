@@ -36,6 +36,20 @@ describe('extractTargetSymbols', () => {
   it('keeps invented symbols so they can be reported as unresolved', () => {
     expect(extractTargetSymbols('targeting ZZQX9 directly')).toContain('ZZQX9');
   });
+
+  it('does not read symbols out of a designed sequence', () => {
+    const symbols = extractTargetSymbols(
+      'candidate KLAVKLADKLAVKLADKLAVKLAD binds KRAS',
+    );
+    expect(symbols).toContain('KRAS');
+    expect(symbols).not.toContain('KLAV');
+  });
+
+  it('drops bare substitution codes', () => {
+    const symbols = extractTargetSymbols('the G12D and D835Y substitutions');
+    expect(symbols).not.toContain('G12D');
+    expect(symbols).not.toContain('D835Y');
+  });
 });
 
 describe('extractPubmedIds', () => {

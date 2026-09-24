@@ -8,7 +8,8 @@
  * archive path now does, so historical records stop headlining designs
  * that fail verification, and grounds each record's named targets and
  * citations against UniProt/PubMed (`ground: false` to skip the external
- * lookups and regrade designs only).
+ * lookups and regrade designs only, `reground: true` to recompute grounding
+ * that is already stored).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -40,7 +41,12 @@ export async function POST(req: NextRequest) {
   const auth = requireWorkerAuth(req);
   if (!auth.ok) return NextResponse.json(auth.body, { status: auth.status });
 
-  let body: { offset?: unknown; limit?: unknown; ground?: unknown } = {};
+  let body: {
+    offset?: unknown;
+    limit?: unknown;
+    ground?: unknown;
+    reground?: unknown;
+  } = {};
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -49,6 +55,7 @@ export async function POST(req: NextRequest) {
   const offset = Math.max(0, Number(body.offset) || 0);
   const limit = Math.min(MAX_LIMIT, Math.max(1, Number(body.limit) || DEFAULT_LIMIT));
   const ground = body.ground !== false;
+  const reground = body.reground === true;
 
   const total = await getArchiveCount();
   const page = await listArchive(limit, offset);
@@ -89,7 +96,7 @@ export async function POST(req: NextRequest) {
     };
     counts[updated.verificationGrade ?? 'weak'] += 1;
 
-    if (ground && !updated.grounding) {
+    if (ground && (reground || !updated.grounding)) {
       const grounding = await groundArchivedResearch(updated, (msg) => {
         groundingError ??= msg;
       });

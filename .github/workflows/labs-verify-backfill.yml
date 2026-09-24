@@ -23,6 +23,11 @@ on:
         description: 'Safety cap on pages per run'
         required: false
         default: '80'
+      reground:
+        description: 'Recompute grounding that is already stored'
+        type: boolean
+        required: false
+        default: false
       base_url:
         description: 'Override deployment to regrade (eticahub.com or a *.vercel.app preview only)'
         required: false
@@ -46,6 +51,7 @@ jobs:
       OFFSET: ${{ github.event.inputs.offset || '0' }}
       LIMIT: ${{ github.event.inputs.limit || '25' }}
       MAX_PAGES: ${{ github.event.inputs.max_pages || '80' }}
+      REGROUND: ${{ github.event.inputs.reground == 'true' && 'true' || 'false' }}
     steps:
       - name: Guard — worker token present, target is ours
         run: |
@@ -79,14 +85,25 @@ jobs:
           total_verified=0; total_weak=0; total_rejected=0; total_reranked=0; processed=0
           total_grounded=0; total_ungrounded=0
           for page in $(seq 1 "$MAX_PAGES"); do
-            body=$(printf '{"offset":%s,"limit":%s}' "$offset" "$LIMIT")
-            resp=$(curl -sS -X POST "$BASE_URL/api/labs/archive/verify-backfill" \
+            body=$(printf '{"offset":%s,"limit":%s,"reground":%s}' "$offset" "$LIMIT" "$REGROUND")
+            resp=$(curl -sS --max-time 300 -X POST "$BASE_URL/api/labs/archive/verify-backfill" \
               -H "x-labs-worker-token: $TOKEN" \
               -H 'content-type: application/json' \
-              -d "$body")
-            ok=$(printf '%s' "$resp" | jq -r '.ok // false')
+              -d "$body" || echo '{}')
+            # A gateway timeout answers with HTML, which jq cannot parse. One
+            # page is worth a retry, not the whole walk.
+            ok=$(printf '%s' "$resp" | jq -r '.ok // false' 2>/dev/null || echo false)
             if [ "$ok" != "true" ]; then
-              echo "::error::backfill failed at offset $offset: $resp"
+              echo "::warning::page at offset $offset failed, retrying once: $(printf '%s' "$resp" | head -c 200)"
+              sleep 20
+              resp=$(curl -sS --max-time 300 -X POST "$BASE_URL/api/labs/archive/verify-backfill" \
+                -H "x-labs-worker-token: $TOKEN" \
+                -H 'content-type: application/json' \
+                -d "$body" || echo '{}')
+              ok=$(printf '%s' "$resp" | jq -r '.ok // false' 2>/dev/null || echo false)
+            fi
+            if [ "$ok" != "true" ]; then
+              echo "::error::backfill failed at offset $offset: $(printf '%s' "$resp" | head -c 500)"
               exit 1
             fi
             processed=$((processed + $(printf '%s' "$resp" | jq -r '.processed')))
