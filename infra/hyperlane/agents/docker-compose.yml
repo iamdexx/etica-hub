@@ -1,0 +1,89 @@
+# Hyperlane agents for the Etica <-> Ethereum USDC warp route.
+#
+# Three long-running containers on one small VPS (2 vCPU / 2 GB is plenty):
+#   validator-ethereum  signs Ethereum mailbox checkpoints (Ethereum -> Etica messages)
+#   validator-etica     signs Etica mailbox checkpoints    (Etica -> Ethereum messages)
+#   relayer             delivers messages both ways, paying destination gas
+#
+# Nothing here is interactive: containers restart on failure, state lives in
+# ./data, and `healthcheck.sh` (cron) alerts Telegram if any agent stalls.
+#
+# Copy `.env.example` to `.env` and fill in the keys before `docker compose up -d`.
+# `agent-config.json` is generated from the registry:
+#   hyperlane registry agent-config --chains etica ethereum -r ../registry -o agent-config.json
+
+x-agent: &agent
+  image: ghcr.io/hyperlane-xyz/hyperlane-agent:${HYPERLANE_AGENT_TAG:-agents-v2.2.0}
+  restart: unless-stopped
+  environment:
+    CONFIG_FILES: /config/agent-config.json
+    HYP_LOG_FORMAT: json
+    HYP_LOG_LEVEL: info
+  volumes:
+    - ./agent-config.json:/config/agent-config.json:ro
+  logging:
+    driver: json-file
+    options: { max-size: '50m', max-file: '5' }
+
+services:
+  validator-ethereum:
+    <<: *agent
+    container_name: hl-validator-ethereum
+    volumes:
+      - ./agent-config.json:/config/agent-config.json:ro
+      - ./data/validator-ethereum:/hyperlane_db
+      - ./data/signatures/ethereum:/signatures/ethereum
+    command:
+      - ./validator
+      - --db=/hyperlane_db
+      - --originChainName=ethereum
+      - --checkpointSyncer.type=localStorage
+      - --checkpointSyncer.path=/signatures/ethereum
+      - --validator.key=${VALIDATOR_KEY}
+      - --chains.ethereum.signer.key=${VALIDATOR_KEY}
+      - --chains.ethereum.customRpcUrls=${ETHEREUM_RPC_URLS}
+      - --metrics-port=9091
+    ports: ['127.0.0.1:9091:9091']
+
+  validator-etica:
+    <<: *agent
+    container_name: hl-validator-etica
+    volumes:
+      - ./agent-config.json:/config/agent-config.json:ro
+      - ./data/validator-etica:/hyperlane_db
+      - ./data/signatures/etica:/signatures/etica
+    command:
+      - ./validator
+      - --db=/hyperlane_db
+      - --originChainName=etica
+      - --checkpointSyncer.type=localStorage
+      - --checkpointSyncer.path=/signatures/etica
+      - --validator.key=${VALIDATOR_KEY}
+      - --chains.etica.signer.key=${VALIDATOR_KEY}
+      - --chains.etica.customRpcUrls=${ETICA_RPC_URLS}
+      - --metrics-port=9092
+    ports: ['127.0.0.1:9092:9092']
+
+  relayer:
+    <<: *agent
+    container_name: hl-relayer
+    depends_on: [validator-ethereum, validator-etica]
+    volumes:
+      - ./agent-config.json:/config/agent-config.json:ro
+      - ./data/relayer:/hyperlane_db
+      - ./data/signatures/ethereum:/signatures/ethereum:ro
+      - ./data/signatures/etica:/signatures/etica:ro
+    command:
+      - ./relayer
+      - --db=/hyperlane_db
+      - --relayChains=ethereum,etica
+      - --allowLocalCheckpointSyncers=true
+      - --defaultSigner.key=${RELAYER_KEY}
+      - --chains.ethereum.customRpcUrls=${ETHEREUM_RPC_URLS}
+      - --chains.etica.customRpcUrls=${ETICA_RPC_URLS}
+      # Only relay our own warp route; ignore anything else on the mailboxes.
+      - --whitelist=${RELAYER_WHITELIST:-[]}
+      # Users don't pay IGP on Etica (no gas paymaster deployed): relay for free.
+      - --gasPaymentEnforcement=[{"type":"none"}]
+      - --metrics-port=9090
+    ports: ['127.0.0.1:9090:9090']

@@ -1,0 +1,33 @@
+# Hyperlane core deployment for Etica mainnet (Mailbox, ISM, hooks).
+#
+#   hyperlane core deploy --chain etica --config infra/hyperlane/configs/core-config.yaml \
+#     --registry ./infra/hyperlane/registry
+#
+# Every 0x000…0 below is a placeholder filled in by `infra/hyperlane/deploy.sh`
+# from env: OWNER (bridge owner / future Safe) and VALIDATOR (the EticaHub
+# validator EOA announced on-chain). Nothing here holds user funds — funds
+# live in the warp route contracts (see registry/deployments/warp_routes/USDC/etica-deploy.yaml).
+owner: '0x0000000000000000000000000000000000000000'
+
+# Default ISM for messages *arriving on Etica*: a 1-of-1 message-id multisig
+# over the EticaHub validator. Raising security later = deploy a new ISM with
+# more validators and `hyperlane core apply`; no redeploy, no fund movement.
+defaultIsm:
+  type: messageIdMultisigIsm
+  threshold: 1
+  validators:
+    - '0x0000000000000000000000000000000000000000'
+
+# Default hook for messages *leaving Etica*: insert into the merkle tree the
+# validator signs over.
+defaultHook:
+  type: merkleTreeHook
+
+# Required hook: protocol fee. Zero fee at launch (EGAZ is cheap); the
+# beneficiary is the owner so any future fee accrues to the treasury.
+requiredHook:
+  type: protocolFee
+  owner: '0x0000000000000000000000000000000000000000'
+  beneficiary: '0x0000000000000000000000000000000000000000'
+  maxProtocolFee: '1000000000000000000'
+  protocolFee: '0'
