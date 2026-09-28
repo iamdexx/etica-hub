@@ -18,13 +18,16 @@ contract EticaResearchMarketplaceTest is Test {
     address internal treasury = address(0xDEAFBEEF);
     address internal seller = address(0xB0B);
     address internal buyer = address(0xBA1A);
+    address internal keeper = address(0xCAFE);
+
+    uint256 internal constant ABANDONED_PRICE_BPS = 20_000; // 2x mint fee
 
     function setUp() public {
         attestor = vm.addr(attestorPk);
         nft = new EticaResearchNFT(
             attestor, treasury, "https://eticahub.com", 0.01 ether, 0.99 ether
         );
-        market = new EticaResearchMarketplace(address(nft));
+        market = new EticaResearchMarketplace(address(nft), ABANDONED_PRICE_BPS);
         vm.warp(1_700_000_000);
         vm.deal(seller, 100 ether);
         vm.deal(buyer, 100 ether);
@@ -53,6 +56,31 @@ contract EticaResearchMarketplaceTest is Test {
         uint256 fee = 0.01 ether + (0.99 ether * 9100) / 10_000;
         vm.prank(to);
         nft.claim{value: fee}(p, sig);
+    }
+
+    /// Mint a record whose windows have already closed, so the NFT
+    /// force-mints it to the treasury (fee waived) whoever submits.
+    function _forfeitToTreasury(string memory branchId, uint256 score)
+        internal
+        returns (uint256 tokenId)
+    {
+        EticaResearchNFT.ClaimPayload memory p = EticaResearchNFT.ClaimPayload({
+            parentGoalTitle: "Abandoned research",
+            sequence: "MKTAYIAKQRQISFVKSHFSRQ",
+            analysis: "Nobody claimed this",
+            score: score,
+            iterations: 3,
+            branchGoalId: branchId,
+            submitter: seller,
+            expiresAt: uint64(block.timestamp + 1 days),
+            exclusiveUntil: uint64(block.timestamp - 8 days),
+            marketOpenUntil: uint64(block.timestamp - 1 days),
+            parentBranchGoalId: ""
+        });
+        bytes memory sig = _sign(p, attestorPk);
+        vm.prank(keeper);
+        tokenId = nft.claim(p, sig);
+        assertEq(nft.ownerOf(tokenId), treasury);
     }
 
     function _sign(EticaResearchNFT.ClaimPayload memory p, uint256 pk)
@@ -235,6 +263,114 @@ contract EticaResearchMarketplaceTest is Test {
         assertEq(royaltyReceiver.balance, receiverBalBefore + royaltyAmount);
         // Seller got price minus royalty
         assertEq(seller.balance, sellerBalBefore + uint256(price) - royaltyAmount);
+    }
+
+    // ─── Treasury auto-listing ──────────────────────────────────────────
+
+    function test_listAbandoned_anyoneCanListTreasuryToken_atDerivedPrice() public {
+        uint256 tokenId = _forfeitToTreasury("abandoned_001", 5_000);
+        vm.prank(treasury);
+        nft.setApprovalForAll(address(market), true);
+
+        // mint fee at score 0.5 = 0.01 + 0.99/2 = 0.505 ether; 2x = 1.01 ether
+        uint128 expected = 1.01 ether;
+        assertEq(market.abandonedPriceOf(tokenId), expected);
+
+        vm.prank(keeper);
+        uint128 price = market.listAbandoned(tokenId);
+
+        assertEq(price, expected);
+        assertTrue(market.isListed(tokenId));
+        (address listedSeller, uint128 listedPrice,) = market.listings(tokenId);
+        assertEq(listedSeller, treasury);
+        assertEq(listedPrice, expected);
+        assertEq(market.totalListings(), 1);
+    }
+
+    function test_listAbandoned_higherScoreListsHigher() public {
+        uint256 low = _forfeitToTreasury("abandoned_low", 1_000);
+        uint256 high = _forfeitToTreasury("abandoned_high", 9_000);
+        assertTrue(market.abandonedPriceOf(high) > market.abandonedPriceOf(low));
+    }
+
+    function test_listAbandoned_saleProceedsGoToTreasury() public {
+        uint256 tokenId = _forfeitToTreasury("abandoned_002", 9_100);
+        vm.prank(treasury);
+        nft.setApprovalForAll(address(market), true);
+        vm.prank(keeper);
+        uint128 price = market.listAbandoned(tokenId);
+
+        (, uint256 royaltyAmount) = nft.royaltyInfo(tokenId, price);
+        uint256 treasuryBefore = treasury.balance;
+        uint256 keeperBefore = keeper.balance;
+
+        vm.prank(buyer);
+        market.buy{value: price}(tokenId);
+
+        assertEq(nft.ownerOf(tokenId), buyer);
+        // Treasury receives the seller share plus its 1% royalty slice via
+        // the splitter (at least the seller share must land).
+        assertTrue(treasury.balance >= treasuryBefore + uint256(price) - royaltyAmount);
+        assertEq(keeper.balance, keeperBefore, "lister earns nothing");
+        assertFalse(market.isListed(tokenId));
+    }
+
+    function test_listAbandoned_reverts_whenNotTreasuryOwned() public {
+        vm.prank(seller);
+        nft.setApprovalForAll(address(market), true);
+        vm.prank(keeper);
+        vm.expectRevert(EticaResearchMarketplace.NotTreasuryOwned.selector);
+        market.listAbandoned(1);
+    }
+
+    function test_listAbandoned_reverts_whenTreasuryHasNotApproved() public {
+        uint256 tokenId = _forfeitToTreasury("abandoned_003", 5_000);
+        vm.prank(keeper);
+        vm.expectRevert(EticaResearchMarketplace.NotApproved.selector);
+        market.listAbandoned(tokenId);
+    }
+
+    function test_listAbandoned_reverts_whenAlreadyListed() public {
+        uint256 tokenId = _forfeitToTreasury("abandoned_004", 5_000);
+        vm.prank(treasury);
+        nft.setApprovalForAll(address(market), true);
+        vm.prank(keeper);
+        market.listAbandoned(tokenId);
+        vm.prank(keeper);
+        vm.expectRevert(EticaResearchMarketplace.AlreadyListed.selector);
+        market.listAbandoned(tokenId);
+    }
+
+    function test_listAbandoned_treasuryCancelOptsOut_ownListingOptsBackIn() public {
+        uint256 tokenId = _forfeitToTreasury("abandoned_005", 5_000);
+        vm.prank(treasury);
+        nft.setApprovalForAll(address(market), true);
+        vm.prank(keeper);
+        market.listAbandoned(tokenId);
+
+        vm.prank(treasury);
+        market.cancel(tokenId);
+        assertTrue(market.autoListDisabled(tokenId));
+
+        vm.prank(keeper);
+        vm.expectRevert(EticaResearchMarketplace.AutoListDisabled.selector);
+        market.listAbandoned(tokenId);
+
+        vm.prank(treasury);
+        market.list(tokenId, 50 ether);
+        assertFalse(market.autoListDisabled(tokenId));
+        (address listedSeller, uint128 listedPrice,) = market.listings(tokenId);
+        assertEq(listedSeller, treasury);
+        assertEq(listedPrice, 50 ether);
+    }
+
+    function test_cancel_byNonTreasurySeller_doesNotDisableAutoList() public {
+        vm.startPrank(seller);
+        nft.setApprovalForAll(address(market), true);
+        market.list(1, 1 ether);
+        market.cancel(1);
+        vm.stopPrank();
+        assertFalse(market.autoListDisabled(1));
     }
 
     function test_getListings_pagination() public {

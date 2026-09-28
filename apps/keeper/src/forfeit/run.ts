@@ -8,7 +8,10 @@
  *      stale, and two keepers may race);
  *   3. simulate `claim(payload, sig)` with zero value — the simulation
  *      also tells us the recipient, which MUST be the treasury;
- *   4. submit, wait for the receipt, confirm `ownerOf(tokenId)`.
+ *   4. submit, wait for the receipt, confirm `ownerOf(tokenId)`;
+ *   5. list every treasury-held token that is not yet on the marketplace
+ *      (see ./list.ts) — this step runs even when no attestations could
+ *      be fetched, so a listing never waits on the platform being up.
  *
  * One record failing never aborts the sweep: every outcome is recorded
  * and the next record is attempted.
@@ -29,6 +32,7 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 
 import type { ForfeitConfig } from './config.js';
+import { autoListTreasuryTokens, type AutoListResult } from './list.js';
 
 export const RESEARCH_NFT_ABI = parseAbi([
   'struct ClaimPayload { string parentGoalTitle; string sequence; string analysis; uint256 score; uint256 iterations; string branchGoalId; address submitter; uint64 expiresAt; uint64 exclusiveUntil; uint64 marketOpenUntil; string parentBranchGoalId; }',
@@ -67,6 +71,8 @@ export interface ForfeitRunResult {
   fetched: number;
   settled: number;
   results: ForfeitSettlement[];
+  /** Marketplace auto-listing outcome; absent when no marketplace is configured. */
+  listing?: AutoListResult;
   /** Keeper balance in wei after the run, when a signer is configured. */
   keeperBalanceWei?: bigint;
   error?: string;
@@ -166,6 +172,12 @@ export async function fetchAttestations(
   return (await res.json()) as AttestationsResponse;
 }
 
+interface Clients {
+  publicClient: PublicClient;
+  walletClient: WalletClient | null;
+  account: ReturnType<typeof privateKeyToAccount> | null;
+}
+
 export async function runForfeitSweep(
   config: ForfeitConfig,
   opts: { log?: Logger; fetchImpl?: typeof fetch } = {},
@@ -178,10 +190,74 @@ export async function runForfeitSweep(
     rpcUrls: { default: { http: [config.rpcUrl] } },
   });
   const publicClient = createPublicClient({ chain, transport: http(config.rpcUrl) }) as PublicClient;
+  const account = config.privateKey ? privateKeyToAccount(config.privateKey) : null;
+  const walletClient: WalletClient | null =
+    account && !config.dryRun
+      ? createWalletClient({ account, chain, transport: http(config.rpcUrl) })
+      : null;
+  if (!config.dryRun && !walletClient) {
+    const error = 'live sweep requires a signer key';
+    log.error(`[forfeit] ${error}`);
+    return { dryRun: config.dryRun, fetched: 0, settled: 0, results: [], error };
+  }
+  const clients: Clients = { publicClient, walletClient, account };
 
+  const settlement = await settleForfeits(config, clients, log, opts.fetchImpl);
+
+  let listing: AutoListResult | undefined;
+  if (config.marketplace) {
+    try {
+      listing = await autoListTreasuryTokens({
+        publicClient,
+        walletClient,
+        account,
+        nft: config.nft,
+        marketplace: config.marketplace,
+        treasury: config.treasury,
+        maxPerRun: config.maxListPerRun,
+        dryRun: config.dryRun,
+        log,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      log.error(`[autolist] aborted: ${error}`);
+      listing = { supply: 0, treasuryHeld: 0, onMarket: 0, listed: 0, treasuryApproved: false, results: [], error };
+    }
+  }
+
+  const keeperBalanceWei = account
+    ? await publicClient.getBalance({ address: account.address }).catch(() => undefined)
+    : undefined;
+
+  log.info(
+    `[forfeit] run complete — settled=${settlement.settled} ` +
+      `errors=${settlement.results.filter((r) => r.status === 'error').length} ` +
+      `alreadyClaimed=${settlement.results.filter((r) => r.status === 'already-claimed').length}` +
+      (listing ? ` listed=${listing.listed} onMarket=${listing.onMarket}` : '') +
+      (keeperBalanceWei !== undefined
+        ? ` keeperBalance=${Number(keeperBalanceWei) / 1e18} EGAZ`
+        : ''),
+  );
+
+  return {
+    ...settlement,
+    ...(listing ? { listing } : {}),
+    keeperBalanceWei,
+    ...(settlement.error || listing?.error
+      ? { error: [settlement.error, listing?.error].filter(Boolean).join('; ') }
+      : {}),
+  };
+}
+
+async function settleForfeits(
+  config: ForfeitConfig,
+  { publicClient, walletClient, account }: Clients,
+  log: Logger,
+  fetchImpl?: typeof fetch,
+): Promise<ForfeitRunResult> {
   let response: AttestationsResponse;
   try {
-    response = await fetchAttestations(config, opts.fetchImpl);
+    response = await fetchAttestations(config, fetchImpl);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     log.error(`[forfeit] could not fetch attestations: ${error}`);
@@ -208,17 +284,6 @@ export async function runForfeitSweep(
     `[forfeit] fetched=${attestations.length} scanned=${response.scanned ?? 0} ` +
       `reconciled=${response.reconciled ?? 0} dryRun=${config.dryRun}`,
   );
-
-  const account = config.privateKey ? privateKeyToAccount(config.privateKey) : null;
-  const walletClient: WalletClient | null =
-    account && !config.dryRun
-      ? createWalletClient({ account, chain, transport: http(config.rpcUrl) })
-      : null;
-  if (!config.dryRun && !walletClient) {
-    const error = 'live sweep requires a signer key';
-    log.error(`[forfeit] ${error}`);
-    return { dryRun: config.dryRun, fetched: attestations.length, settled: 0, results: [], error };
-  }
 
   const results: ForfeitSettlement[] = [];
   const submitted = new Set<string>();
@@ -307,24 +372,10 @@ export async function runForfeitSweep(
     }
   }
 
-  const keeperBalanceWei = account
-    ? await publicClient.getBalance({ address: account.address }).catch(() => undefined)
-    : undefined;
-
-  log.info(
-    `[forfeit] run complete — settled=${settled} ` +
-      `errors=${results.filter((r) => r.status === 'error').length} ` +
-      `alreadyClaimed=${results.filter((r) => r.status === 'already-claimed').length}` +
-      (keeperBalanceWei !== undefined
-        ? ` keeperBalance=${Number(keeperBalanceWei) / 1e18} EGAZ`
-        : ''),
-  );
-
   return {
     dryRun: config.dryRun,
     fetched: attestations.length,
     settled,
     results,
-    keeperBalanceWei,
   };
 }

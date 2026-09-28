@@ -11,6 +11,13 @@ name: Labs forfeit sweep
 # job only pays gas, from the same unprivileged EOA as the daily farm
 # harvest. A matured claim mints to the treasury regardless of who sends
 # it, so a leaked key can waste gas and nothing else.
+#
+# After settling, every treasury-held token not yet on the marketplace is
+# listed via the permissionless EticaResearchMarketplace.listAbandoned():
+# price derives on-chain from the record's mint fee and proceeds go to the
+# treasury, so again the keeper only pays gas. Requires a one-time
+# setApprovalForAll from the treasury wallet (banner on /labs/market);
+# until then unlisted tokens are reported as skipped, never as failures.
 
 on:
   schedule:
@@ -25,6 +32,10 @@ on:
         default: true
       max_per_run:
         description: 'Records to settle this run (1-25)'
+        type: string
+        default: '10'
+      max_list_per_run:
+        description: 'Treasury tokens to list on the marketplace this run (0-50)'
         type: string
         default: '10'
 
@@ -43,6 +54,10 @@ jobs:
       FORFEIT_TREASURY_ADDRESS: ${{ vars.HARVEST_TREASURY_ADDRESS || '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D' }}
       FORFEIT_BASE_URL: ${{ vars.LABS_BASE_URL || 'https://eticahub.com' }}
       FORFEIT_MAX_PER_RUN: ${{ inputs.max_per_run || '10' }}
+      # Marketplace defaults to the shared deployment table; set the var to
+      # `off` to skip listing entirely.
+      FORFEIT_MARKETPLACE_ADDRESS: ${{ vars.FORFEIT_MARKETPLACE_ADDRESS }}
+      FORFEIT_MAX_LIST_PER_RUN: ${{ inputs.max_list_per_run || '10' }}
       FORFEIT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
       # Optional: bypasses the public rate limit on the attestations endpoint.
       FORFEIT_WORKER_TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}

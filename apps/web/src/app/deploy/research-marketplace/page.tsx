@@ -23,6 +23,9 @@ import { DEPLOYMENTS, isSupportedChainId } from '@etica-hub/shared';
 import { OperatorBanner } from '@/components/OperatorBanner';
 import marketplaceArtifact from '@/lib/etica-research-marketplace-artifact.json';
 
+/** Auto-listing price for treasury-forfeited research: 2x the record's mint fee. */
+const DEFAULT_ABANDONED_PRICE_BPS = 20_000;
+
 type DeployState =
   | { status: 'idle' }
   | { status: 'signing' }
@@ -60,15 +63,22 @@ export default function DeployResearchMarketplacePage() {
   })();
 
   const [state, setState] = useState<DeployState>({ status: 'idle' });
+  const [abandonedPriceBps, setAbandonedPriceBps] = useState(String(DEFAULT_ABANDONED_PRICE_BPS));
+
+  const parsedBps = (() => {
+    if (!/^\d+$/.test(abandonedPriceBps)) return null;
+    const n = BigInt(abandonedPriceBps);
+    return n > 0n && n <= 1_000_000n ? n : null;
+  })();
 
   async function deploy() {
-    if (!walletClient || !publicClient || !address || !nftAddr) return;
+    if (!walletClient || !publicClient || !address || !nftAddr || parsedBps === null) return;
     try {
       setState({ status: 'signing' });
       const data = encodeDeployData({
         abi: marketplaceArtifact.abi,
         bytecode: marketplaceArtifact.bytecode as Hex,
-        args: [nftAddr],
+        args: [nftAddr, parsedBps],
       });
       const txHash = await walletClient.sendTransaction({ account: address, data });
       setState({ status: 'pending', txHash });
@@ -175,6 +185,24 @@ export default function DeployResearchMarketplacePage() {
               </span>
             </div>
           )}
+          <div className="flex items-center justify-between gap-4 text-sm">
+            <label htmlFor="abandoned-bps" className="text-white/50">
+              Abandoned-research price
+              <span className="block text-xs text-white/30">
+                bps of the record&apos;s mint fee; immutable (20000 = 2×)
+              </span>
+            </label>
+            <input
+              id="abandoned-bps"
+              inputMode="numeric"
+              value={abandonedPriceBps}
+              onChange={(e) => setAbandonedPriceBps(e.target.value.trim())}
+              disabled={deploying}
+              className={`w-28 rounded border bg-black/30 px-2 py-1 text-right font-mono text-xs text-white/80 ${
+                parsedBps === null ? 'border-red-500/50' : 'border-white/10'
+              }`}
+            />
+          </div>
         </div>
 
         {/* Deploy Button */}
@@ -182,7 +210,7 @@ export default function DeployResearchMarketplacePage() {
           <div className="space-y-3">
             <button
               onClick={deploy}
-              disabled={deploying}
+              disabled={deploying || parsedBps === null}
               className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
             >
               {state.status === 'signing'
@@ -243,7 +271,7 @@ export default function DeployResearchMarketplacePage() {
 {`forge create src/labs/EticaResearchMarketplace.sol:EticaResearchMarketplace \\
   --rpc-url https://rpc2.etica-stats.org \\
   --private-key $DEPLOYER_PK \\
-  --constructor-args ${nftAddr ?? '0x...'}`}
+  --constructor-args ${nftAddr ?? '0x...'} ${abandonedPriceBps}`}
           </pre>
         </div>
       </div>

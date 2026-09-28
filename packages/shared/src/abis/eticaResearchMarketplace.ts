@@ -1,7 +1,10 @@
 export const eticaResearchMarketplaceAbi = [
   {
     type: 'constructor',
-    inputs: [{ name: 'nft_', type: 'address' }],
+    inputs: [
+      { name: 'nft_', type: 'address' },
+      { name: 'abandonedPriceBps_', type: 'uint256' },
+    ],
     stateMutability: 'nonpayable',
   },
   // ─── Events ───────────────────────────────────────────────────
@@ -41,12 +44,43 @@ export const eticaResearchMarketplaceAbi = [
   { type: 'error', name: 'CannotBuyOwn', inputs: [] },
   { type: 'error', name: 'InsufficientPayment', inputs: [] },
   { type: 'error', name: 'TransferFailed', inputs: [] },
+  { type: 'error', name: 'NotTreasuryOwned', inputs: [] },
+  { type: 'error', name: 'AlreadyListed', inputs: [] },
+  { type: 'error', name: 'AutoListDisabled', inputs: [] },
   // ─── Read ─────────────────────────────────────────────────────
   {
     type: 'function',
     name: 'nft',
     inputs: [],
     outputs: [{ type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'research',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'abandonedPriceBps',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'abandonedPriceOf',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ type: 'uint128' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'autoListDisabled',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ type: 'bool' }],
     stateMutability: 'view',
   },
   {
@@ -111,6 +145,13 @@ export const eticaResearchMarketplaceAbi = [
       { name: 'price', type: 'uint128' },
     ],
     outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'listAbandoned',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ name: 'price', type: 'uint128' }],
     stateMutability: 'nonpayable',
   },
   {
