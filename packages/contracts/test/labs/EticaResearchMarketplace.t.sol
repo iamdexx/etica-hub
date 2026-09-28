@@ -364,6 +364,32 @@ contract EticaResearchMarketplaceTest is Test {
         assertEq(listedPrice, 50 ether);
     }
 
+    function test_setAutoListDisabled_shieldsATokenBeforeAnyoneCanListIt() public {
+        uint256 tokenId = _forfeitToTreasury("abandoned_006", 5_000);
+        vm.prank(treasury);
+        nft.setApprovalForAll(address(market), true);
+
+        vm.prank(treasury);
+        market.setAutoListDisabled(tokenId, true);
+
+        vm.prank(keeper);
+        vm.expectRevert(EticaResearchMarketplace.AutoListDisabled.selector);
+        market.listAbandoned(tokenId);
+
+        vm.prank(treasury);
+        market.setAutoListDisabled(tokenId, false);
+        vm.prank(keeper);
+        market.listAbandoned(tokenId);
+        assertTrue(market.isListed(tokenId));
+    }
+
+    function test_setAutoListDisabled_reverts_whenNotTreasury() public {
+        uint256 tokenId = _forfeitToTreasury("abandoned_007", 5_000);
+        vm.prank(keeper);
+        vm.expectRevert(EticaResearchMarketplace.NotTreasury.selector);
+        market.setAutoListDisabled(tokenId, true);
+    }
+
     function test_cancel_byNonTreasurySeller_doesNotDisableAutoList() public {
         vm.startPrank(seller);
         nft.setApprovalForAll(address(market), true);

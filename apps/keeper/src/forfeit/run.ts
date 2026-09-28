@@ -243,8 +243,8 @@ export async function runForfeitSweep(
     ...settlement,
     ...(listing ? { listing } : {}),
     keeperBalanceWei,
-    ...(settlement.error || listing?.error
-      ? { error: [settlement.error, listing?.error].filter(Boolean).join('; ') }
+    ...(settlement.error || (listing?.error && !listing.unsupported)
+      ? { error: [settlement.error, listing?.unsupported ? undefined : listing?.error].filter(Boolean).join('; ') }
       : {}),
   };
 }

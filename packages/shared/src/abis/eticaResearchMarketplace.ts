@@ -47,6 +47,7 @@ export const eticaResearchMarketplaceAbi = [
   { type: 'error', name: 'NotTreasuryOwned', inputs: [] },
   { type: 'error', name: 'AlreadyListed', inputs: [] },
   { type: 'error', name: 'AutoListDisabled', inputs: [] },
+  { type: 'error', name: 'NotTreasury', inputs: [] },
   // ─── Read ─────────────────────────────────────────────────────
   {
     type: 'function',
@@ -143,6 +144,16 @@ export const eticaResearchMarketplaceAbi = [
     inputs: [
       { name: 'tokenId', type: 'uint256' },
       { name: 'price', type: 'uint128' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'setAutoListDisabled',
+    inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'disabled', type: 'bool' },
     ],
     outputs: [],
     stateMutability: 'nonpayable',

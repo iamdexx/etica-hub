@@ -23,6 +23,7 @@ type Logger = Pick<Console, 'info' | 'warn' | 'error'>;
 export const LISTING_NFT_ABI = parseAbi([
   'function ownerOf(uint256 tokenId) view returns (address)',
   'function isApprovedForAll(address owner, address operator) view returns (bool)',
+  'function getApproved(uint256 tokenId) view returns (address)',
 ]);
 
 export const MARKETPLACE_ABI = parseAbi([
@@ -66,6 +67,12 @@ export interface AutoListResult {
   treasuryApproved: boolean;
   results: ListingOutcome[];
   error?: string;
+  /**
+   * The configured marketplace predates {@link autoListTreasuryTokens}
+   * (no `listAbandoned`). A configuration gap, not a run failure: the
+   * settlement half of the sweep still did its job.
+   */
+  unsupported?: boolean;
 }
 
 export interface AutoListParams {
@@ -84,12 +91,27 @@ export interface AutoListParams {
 
 const CHUNK = 25;
 
+/**
+ * A read that reverted (the token does not exist) versus one that never
+ * reached the chain. Treating a transport failure as "no such token"
+ * would silently truncate the collection and leave treasury tokens
+ * unlisted with nothing reported, so only reverts count as absence.
+ */
+export function isContractRevert(err: unknown): boolean {
+  const text = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (/timeout|timed out|fetch failed|socket|econn|enotfound|network|429|5\d\d [a-z]/.test(text)) {
+    return false;
+  }
+  return /revert|nonexistent|invalid token|out of bounds|returned no data/.test(text);
+}
+
 async function tokenExists(client: PublicClient, nft: Address, id: bigint): Promise<boolean> {
   try {
     await client.readContract({ address: nft, abi: LISTING_NFT_ABI, functionName: 'ownerOf', args: [id] });
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    if (isContractRevert(err)) return false;
+    throw new Error(`ownerOf(${id}) failed against ${nft}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -128,7 +150,10 @@ async function ownersOf(client: PublicClient, nft: Address, ids: bigint[]): Prom
         client
           .readContract({ address: nft, abi: LISTING_NFT_ABI, functionName: 'ownerOf', args: [id] })
           .then((o) => o as Address)
-          .catch(() => null),
+          .catch((err: unknown) => {
+            if (isContractRevert(err)) return null;
+            throw new Error(`ownerOf(${id}) failed against ${nft}: ${err instanceof Error ? err.message : String(err)}`);
+          }),
       ),
     );
     out.push(...owners);
@@ -175,8 +200,8 @@ export async function autoListTreasuryTokens(params: AutoListParams): Promise<Au
     .catch(() => null);
   if (priceBps === null) {
     const error = `marketplace ${marketplace} has no listAbandoned() — deploy the version with treasury auto-listing`;
-    log.error(`[autolist] ${error}`);
-    return empty(error);
+    log.warn(`[autolist] ${error}`);
+    return { ...empty(error), unsupported: true };
   }
 
   const supply = await findSupply(publicClient, nft, params.maxTokenId);
@@ -190,6 +215,15 @@ export async function autoListTreasuryTokens(params: AutoListParams): Promise<Au
     functionName: 'isApprovedForAll',
     args: [treasury, marketplace],
   })) as boolean;
+
+  /** The marketplace also accepts a single-token approval. */
+  const approvedForToken = async (id: bigint): Promise<boolean> => {
+    if (treasuryApproved) return true;
+    const operator = (await publicClient
+      .readContract({ address: nft, abi: LISTING_NFT_ABI, functionName: 'getApproved', args: [id] })
+      .catch(() => null)) as Address | null;
+    return operator?.toLowerCase() === marketplace.toLowerCase();
+  };
 
   let onMarket = 0;
   const candidates: bigint[] = [];
@@ -221,21 +255,29 @@ export async function autoListTreasuryTokens(params: AutoListParams): Promise<Au
       `unlisted=${candidates.length} treasuryApproved=${treasuryApproved} dryRun=${dryRun}`,
   );
 
+  let listable = candidates;
   if (candidates.length > 0 && !treasuryApproved) {
-    log.warn(
-      `[autolist] treasury ${treasury} has not approved marketplace ${marketplace} ` +
-        `(setApprovalForAll) — ${candidates.length} token(s) cannot be listed until it does. ` +
-        `Connect the treasury wallet on /labs/market to grant it once.`,
-    );
-    for (const id of candidates) {
-      results.push({ tokenId: id.toString(), status: 'skipped', reason: 'treasury has not approved the marketplace' });
+    const perToken = await Promise.all(candidates.map(approvedForToken));
+    listable = candidates.filter((_, i) => perToken[i]);
+    const blocked = candidates.filter((_, i) => !perToken[i]);
+    if (blocked.length > 0) {
+      log.warn(
+        `[autolist] treasury ${treasury} has not approved marketplace ${marketplace} ` +
+          `(setApprovalForAll) — ${blocked.length} token(s) cannot be listed until it does. ` +
+          `Connect the treasury wallet on /labs/market to grant it once.`,
+      );
+      for (const id of blocked) {
+        results.push({ tokenId: id.toString(), status: 'skipped', reason: 'treasury has not approved the marketplace' });
+      }
     }
-    return { supply, treasuryHeld: held.length, onMarket, listed: 0, treasuryApproved, results };
+    if (listable.length === 0) {
+      return { supply, treasuryHeld: held.length, onMarket, listed: 0, treasuryApproved, results };
+    }
   }
 
   let listed = 0;
-  const batch = candidates.slice(0, maxPerRun);
-  for (const id of candidates.slice(maxPerRun)) {
+  const batch = listable.slice(0, maxPerRun);
+  for (const id of listable.slice(maxPerRun)) {
     results.push({ tokenId: id.toString(), status: 'skipped', reason: 'over per-run cap' });
   }
 

@@ -103,6 +103,9 @@ function relativeTime(timestamp: bigint): string {
   return `${Math.floor(delta / 86400)}d ago`;
 }
 
+/** getListings page size; every page is fetched so listings never truncate. */
+const LISTINGS_PAGE = 50n;
+
 // ─── Marketplace Page ──────────────────────────────────────────────────
 
 export default function MarketPage() {
@@ -130,24 +133,38 @@ export default function MarketPage() {
     query: { enabled: !!marketplaceAddr },
   });
 
-  const { data: listingsData, refetch: refetchListings } = useReadContract({
-    address: marketplaceAddr ?? undefined,
-    abi: abis.eticaResearchMarketplaceAbi,
-    functionName: 'getListings',
-    args: [0n, 50n],
-    query: { enabled: !!marketplaceAddr && (totalListings ?? 0n) > 0n },
+  const listingPageCalls = useMemo(() => {
+    const total = totalListings ?? 0n;
+    if (!marketplaceAddr || total === 0n) return [];
+    const pages = Number((total + LISTINGS_PAGE - 1n) / LISTINGS_PAGE);
+    return Array.from({ length: pages }, (_, i) => ({
+      address: marketplaceAddr,
+      abi: abis.eticaResearchMarketplaceAbi,
+      functionName: 'getListings' as const,
+      args: [BigInt(i) * LISTINGS_PAGE, LISTINGS_PAGE] as const,
+    }));
+  }, [marketplaceAddr, totalListings]);
+
+  const { data: listingPages, refetch: refetchListings } = useReadContracts({
+    contracts: listingPageCalls,
+    query: { enabled: listingPageCalls.length > 0 },
   });
 
   const listings = useMemo<ListingData[]>(() => {
-    if (!listingsData) return [];
-    const [tokenIds, items] = listingsData as [bigint[], { seller: Address; price: bigint; listedAt: bigint }[]];
-    return tokenIds.map((tokenId, i) => ({
-      tokenId,
-      seller: items[i]!.seller,
-      price: items[i]!.price,
-      listedAt: items[i]!.listedAt,
-    }));
-  }, [listingsData]);
+    if (!listingPages) return [];
+    const out: ListingData[] = [];
+    for (const page of listingPages) {
+      if (page.status !== 'success') continue;
+      const [tokenIds, items] = page.result as unknown as [
+        readonly bigint[],
+        readonly { seller: Address; price: bigint; listedAt: bigint }[],
+      ];
+      tokenIds.forEach((tokenId, i) => {
+        out.push({ tokenId, seller: items[i]!.seller, price: items[i]!.price, listedAt: items[i]!.listedAt });
+      });
+    }
+    return out;
+  }, [listingPages]);
 
   // ─── Fetch user's owned NFTs ────────────────────────────────
   const { data: userBalance } = useReadContract({
@@ -220,6 +237,17 @@ export default function MarketPage() {
     args: treasuryAddr ? [treasuryAddr as Address] : undefined,
     query: { enabled: !!nftAddr && !!treasuryAddr },
   });
+
+  // Listing is non-custodial, so the treasury still owns what it has listed:
+  // only the difference is actually waiting for the keeper.
+  const treasuryUnlisted = useMemo(() => {
+    const held = Number(treasuryBalance ?? 0n);
+    if (!treasuryAddr || held === 0) return 0;
+    const onMarket = listings.filter(
+      (l) => l.seller.toLowerCase() === (treasuryAddr as string).toLowerCase(),
+    ).length;
+    return Math.max(0, held - onMarket);
+  }, [treasuryBalance, treasuryAddr, listings]);
 
   const isTreasuryWallet =
     !!connected && !!treasuryAddr && connected.toLowerCase() === (treasuryAddr as string).toLowerCase();
@@ -408,10 +436,10 @@ export default function MarketPage() {
 
       {/* Treasury auto-listing status — abandoned research sells itself
           once the treasury has approved the marketplace. */}
-      {marketplaceAddr && treasuryAddr && treasuryApproved === false && (treasuryBalance ?? 0n) > 0n && (
+      {marketplaceAddr && treasuryAddr && treasuryApproved === false && treasuryUnlisted > 0 && (
         <div className="mb-8 rounded-xl border border-sky-400/20 bg-sky-400/5 p-5">
           <p className="text-sm font-medium text-sky-200">
-            {Number(treasuryBalance)} abandoned discover{Number(treasuryBalance) === 1 ? 'y is' : 'ies are'}{' '}
+            {treasuryUnlisted} abandoned discover{treasuryUnlisted === 1 ? 'y is' : 'ies are'}{' '}
             waiting to be listed automatically
           </p>
           <p className="mt-1 text-xs text-white/50">

@@ -5,6 +5,7 @@ import { loadForfeitConfig } from '../src/forfeit/config.js';
 import {
   autoListTreasuryTokens,
   findSupply,
+  isContractRevert,
   listingRevertReason,
 } from '../src/forfeit/list.js';
 
@@ -21,8 +22,12 @@ interface ChainState {
   listed: Set<number>;
   optedOut: Set<number>;
   approved: boolean;
+  /** Single-token approvals (getApproved). */
+  tokenApproved?: Set<number>;
   marketNft?: Address;
   hasAutoList?: boolean;
+  /** Token ids whose ownerOf read fails at the transport, not the contract. */
+  rpcDown?: Set<number>;
   /** Token ids whose listAbandoned simulation reverts with this selector. */
   reverts?: Record<number, string>;
 }
@@ -34,12 +39,15 @@ function fakeChain(state: ChainState) {
     const id = Number((args.args?.[0] as bigint | undefined) ?? 0);
     switch (args.functionName) {
       case 'ownerOf': {
+        if (state.rpcDown?.has(id)) throw new Error('HTTP request failed. Status: 502 Bad Gateway');
         const owner = state.owners[id];
         if (!owner) throw new Error('reverted: ERC721NonexistentToken');
         return owner;
       }
       case 'isApprovedForAll':
         return state.approved;
+      case 'getApproved':
+        return state.tokenApproved?.has(id) ? MARKET : '0x0000000000000000000000000000000000000000';
       case 'nft':
         return state.marketNft ?? NFT;
       case 'abandonedPriceBps':
@@ -123,6 +131,22 @@ describe('findSupply', () => {
     const chain = fakeChain({ owners: {}, listed: new Set(), optedOut: new Set(), approved: true });
     expect(await findSupply(chain.publicClient, NFT)).toBe(0);
   });
+
+  it('throws on a transport failure instead of truncating the collection', async () => {
+    const owners: Record<number, Address> = {};
+    for (let i = 1; i <= 37; i++) owners[i] = OTHER;
+    const chain = fakeChain({ owners, listed: new Set(), optedOut: new Set(), approved: true, rpcDown: new Set([16]) });
+    await expect(findSupply(chain.publicClient, NFT)).rejects.toThrow(/ownerOf\(16\) failed/);
+  });
+});
+
+describe('isContractRevert', () => {
+  it('separates reverts from transport errors', () => {
+    expect(isContractRevert(new Error('The contract function "ownerOf" reverted. ERC721NonexistentToken'))).toBe(true);
+    expect(isContractRevert(new Error('HTTP request failed. Status: 502 Bad Gateway'))).toBe(false);
+    expect(isContractRevert(new Error('The request took too long to respond. timeout'))).toBe(false);
+    expect(isContractRevert(new Error('fetch failed'))).toBe(false);
+  });
 });
 
 describe('autoListTreasuryTokens', () => {
@@ -176,6 +200,32 @@ describe('autoListTreasuryTokens', () => {
     expect(result.results.every((r) => r.status === 'skipped')).toBe(true);
   });
 
+  it('lists a token the treasury approved individually even without setApprovalForAll', async () => {
+    const chain = fakeChain({
+      owners: treasuryHeld(),
+      listed: new Set(),
+      optedOut: new Set(),
+      approved: false,
+      tokenApproved: new Set([5]),
+    });
+    const result = await autoListTreasuryTokens(baseParams(chain, false));
+    expect(result.listed).toBe(1);
+    expect(chain.writes.map((w) => w.tokenId)).toEqual([5n]);
+    expect(result.results.filter((r) => r.status === 'skipped')).toHaveLength(3);
+  });
+
+  it('surfaces an RPC outage as an error rather than an empty collection', async () => {
+    const chain = fakeChain({
+      owners: treasuryHeld(),
+      listed: new Set(),
+      optedOut: new Set(),
+      approved: true,
+      rpcDown: new Set([3]),
+    });
+    await expect(autoListTreasuryTokens(baseParams(chain, false))).rejects.toThrow(/ownerOf\(3\) failed/);
+    expect(chain.writes).toHaveLength(0);
+  });
+
   it('respects the per-run cap', async () => {
     const chain = fakeChain({ owners: treasuryHeld(), listed: new Set(), optedOut: new Set(), approved: true });
     const result = await autoListTreasuryTokens(baseParams(chain, false, 1));
@@ -221,6 +271,7 @@ describe('autoListTreasuryTokens', () => {
     });
     const result = await autoListTreasuryTokens(baseParams(chain, false));
     expect(result.error).toMatch(/listAbandoned/);
+    expect(result.unsupported).toBe(true);
     expect(chain.writes).toHaveLength(0);
   });
 });
