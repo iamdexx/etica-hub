@@ -261,6 +261,24 @@ export async function saveArchivedResearch(research: ArchivedResearch): Promise<
 }
 
 /**
+ * Move a record between disease facets. Needed when an editorial pass
+ * files a record that was archived without a condition, or merges an
+ * older facet name onto the canonical one.
+ */
+export async function reindexDisease(
+  research: ArchivedResearch,
+  previousDisease: string | undefined,
+): Promise<void> {
+  const store = labsStore();
+  if (previousDisease && previousDisease !== research.disease) {
+    await store.zrem(ARCHIVE_DISEASE(previousDisease), research.id);
+  }
+  if (research.disease) {
+    await store.zadd(ARCHIVE_DISEASE(research.disease), research.completedAt, research.id);
+  }
+}
+
+/**
  * Get a single archived research by ID.
  */
 export async function getArchivedResearch(id: string): Promise<ArchivedResearch | null> {

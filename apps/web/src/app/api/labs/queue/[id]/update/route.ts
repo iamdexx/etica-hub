@@ -26,12 +26,12 @@ import {
 } from '@/lib/labs/fold-retry-queue';
 import {
   archiveResearch,
-  extractDisease,
   saveArchivedResearch,
   storePdbForSequence,
   type ArchivedResearch,
 } from '@/lib/labs/archive';
 import { announceDiscovery } from '@/lib/labs/announce';
+import { cleanProse, resolveDisease } from '@/lib/labs/editorial';
 import { pickBestCandidate, runGrade, verifyRun } from '@/lib/labs/verification';
 import { groundArchivedResearch } from '@/lib/labs/grounding';
 
@@ -298,9 +298,9 @@ export async function POST(
         disease: undefined,
         prompt: next.prompt,
         completedAt: now,
-        hypothesis: result.plan.hypothesis,
-        approach: result.plan.approach,
-        successCriteria: result.plan.successCriteria,
+        hypothesis: cleanProse(result.plan.hypothesis) ?? result.plan.hypothesis,
+        approach: cleanProse(result.plan.approach) ?? result.plan.approach,
+        successCriteria: cleanProse(result.plan.successCriteria) ?? result.plan.successCriteria,
         bestCandidate: {
           index: bestCandidate.index,
           sequence: bestCandidate.sequence,
@@ -337,7 +337,9 @@ export async function POST(
           const goal = await goalStore.getGoal(next.goalId);
           if (goal) {
             archived.goalTitle = goal.title;
-            archived.disease = extractDisease(goal.title);
+            // Fall back to the run's own text so a record is never filed
+            // without a condition and invisible to the disease index.
+            archived.disease = resolveDisease(goal.title, next.prompt);
             archived.parentGoalId = goal.parentGoalId;
             archived.parentCandidateIndex = goal.parentCandidateIndex;
           }
