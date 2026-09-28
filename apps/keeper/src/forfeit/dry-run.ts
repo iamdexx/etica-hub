@@ -13,6 +13,10 @@ runForfeitSweep(config)
     for (const r of result.results) {
       console.info(`  ${r.status.padEnd(15)} ${r.branchGoalId} ${r.reason ?? r.tokenId ?? ''}`);
     }
+    for (const l of result.listing?.results ?? []) {
+      const price = l.priceWei ? `${Number(l.priceWei) / 1e18} EGAZ` : '';
+      console.info(`  ${l.status.padEnd(15)} token ${l.tokenId} ${l.reason ?? price}`);
+    }
     if (result.error) process.exit(1);
   })
   .catch((err) => {

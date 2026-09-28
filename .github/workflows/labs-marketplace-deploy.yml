@@ -1,0 +1,57 @@
+name: Labs marketplace deploy
+
+# One-shot deploy of EticaResearchMarketplace from the farm keeper EOA.
+#
+# The contract has no owner, admin, pause or fee switch, so the deployer
+# earns nothing but the gas bill — which is why the unprivileged harvest
+# key can do it. The two constructor arguments (NFT, abandoned-price bps)
+# are immutable and read back from chain before the address is printed;
+# copy that address into packages/shared/src/addresses.ts in a PR.
+
+on:
+  workflow_dispatch:
+    inputs:
+      abandoned_price_bps:
+        description: 'Auto-list price as bps of the record mint fee (20000 = 2x)'
+        type: string
+        default: '20000'
+      nft_address:
+        description: 'EticaResearchNFT the marketplace trades'
+        type: string
+        default: '0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy EticaResearchMarketplace
+    runs-on: ubuntu-latest
+    environment: harvest-live
+    env:
+      HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      HARVEST_CHAIN_ID: ${{ vars.HARVEST_CHAIN_ID || '61803' }}
+      MARKETPLACE_NFT_ADDRESS: ${{ inputs.nft_address }}
+      MARKETPLACE_ABANDONED_PRICE_BPS: ${{ inputs.abandoned_price_bps }}
+      HARVEST_PRIVATE_KEY: ${{ secrets.HARVEST_KEEPER_PRIVATE_KEY }}
+    steps:
+      - name: Guard against missing deployer key
+        if: ${{ env.HARVEST_PRIVATE_KEY == '' }}
+        run: |
+          echo "::error ::HARVEST_KEEPER_PRIVATE_KEY secret is unset on the 'harvest-live' environment."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Deploy
+        run: pnpm --filter @etica-hub/keeper run marketplace:deploy

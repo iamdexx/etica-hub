@@ -5,6 +5,28 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+/// @notice The subset of EticaResearchNFT this marketplace reads to price
+///         and authorise treasury auto-listings.
+interface IEticaResearchNFTView {
+    function treasury() external view returns (address);
+    function BASE_MINT_FEE_WEI() external view returns (uint256);
+    function MAX_SCORE_MINT_FEE_WEI() external view returns (uint256);
+    function discoveryOf(uint256 tokenId)
+        external
+        view
+        returns (
+            string memory parentGoalTitle,
+            string memory sequence,
+            string memory analysis,
+            uint256 score,
+            uint256 iterations,
+            string memory branchGoalId,
+            address submitter,
+            uint64 discoveredAt,
+            uint64 blockNumber
+        );
+}
+
 /// @title EticaResearchMarketplace
 /// @notice Fixed-price NFT marketplace for EticaResearchNFT. Sellers list at
 ///         a native EGAZ price, buyers pay that price, and ERC-2981 royalties
@@ -18,6 +40,13 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///         - On buy: royalty is split off and sent to the royalty receiver,
 ///           remainder goes to the seller, NFT goes to the buyer.
 ///         - Seller can cancel anytime if still owner.
+///         - Research abandoned past its 7-day window is force-minted to the
+///           treasury by the NFT itself, and the treasury holds no automation
+///           key. {listAbandoned} therefore lets anyone put such a token on
+///           sale on the treasury's behalf, at a price derived on-chain from
+///           the record's own mint fee, so the caller has no discretion over
+///           price or recipient. The treasury opts a token back out by
+///           cancelling it.
 ///         - If the NFT is transferred away externally, the listing becomes
 ///           stale and buy() reverts (ownerOf check).
 contract EticaResearchMarketplace is ReentrancyGuard {
@@ -34,6 +63,16 @@ contract EticaResearchMarketplace is ReentrancyGuard {
     /// @notice The EticaResearchNFT contract this marketplace trades.
     IERC721 public immutable nft;
 
+    /// @notice Same contract as {nft}, typed for the research-record reads
+    ///         that price a treasury auto-listing.
+    IEticaResearchNFTView public immutable research;
+
+    /// @notice Auto-listing price as basis points of the record's own mint
+    ///         fee (`10000` = mint fee, `20000` = twice it). Immutable, so
+    ///         an abandoned-research listing price is a pure function of the
+    ///         token and no caller can set it.
+    uint256 public immutable abandonedPriceBps;
+
     /// @notice tokenId => active listing. seller == address(0) means unlisted.
     mapping(uint256 => Listing) public listings;
 
@@ -43,6 +82,11 @@ contract EticaResearchMarketplace is ReentrancyGuard {
 
     /// @notice Index+1 of a tokenId in listedTokenIds (0 = not listed).
     mapping(uint256 => uint256) internal _listedIndex;
+
+    /// @notice tokenIds the treasury has cancelled, which {listAbandoned}
+    ///         must not put back on sale. Cleared when the treasury lists
+    ///         the token itself.
+    mapping(uint256 => bool) public autoListDisabled;
 
     // ─── Events ─────────────────────────────────────────────────────────
 
@@ -65,11 +109,16 @@ contract EticaResearchMarketplace is ReentrancyGuard {
     error CannotBuyOwn();
     error InsufficientPayment();
     error TransferFailed();
+    error NotTreasuryOwned();
+    error AlreadyListed();
+    error AutoListDisabled();
 
     // ─── Constructor ────────────────────────────────────────────────────
 
-    constructor(address nft_) {
+    constructor(address nft_, uint256 abandonedPriceBps_) {
         nft = IERC721(nft_);
+        research = IEticaResearchNFTView(nft_);
+        abandonedPriceBps = abandonedPriceBps_;
     }
 
     // ─── Write ──────────────────────────────────────────────────────────
@@ -85,16 +134,32 @@ contract EticaResearchMarketplace is ReentrancyGuard {
                 && nft.getApproved(tokenId) != address(this)
         ) revert NotApproved();
 
-        listings[tokenId] =
-            Listing({seller: msg.sender, price: price, listedAt: uint64(block.timestamp)});
-
-        // Add to enumerable set if not already present
-        if (_listedIndex[tokenId] == 0) {
-            listedTokenIds.push(tokenId);
-            _listedIndex[tokenId] = listedTokenIds.length; // 1-based
-        }
-
+        autoListDisabled[tokenId] = false;
+        _store(tokenId, msg.sender, price);
         emit Listed(tokenId, msg.sender, price);
+    }
+
+    /// @notice Put a treasury-held research NFT on sale on the treasury's
+    ///         behalf, at {abandonedPriceOf}. Callable by anyone: the
+    ///         recipient of the sale is the treasury and the price is fixed
+    ///         by the token's own record, so the caller gains nothing but
+    ///         the gas bill. Reverts once the treasury has cancelled the
+    ///         listing, which is how it takes a token off the rail.
+    function listAbandoned(uint256 tokenId) external returns (uint128 price) {
+        address treasury = research.treasury();
+        if (nft.ownerOf(tokenId) != treasury) revert NotTreasuryOwned();
+        if (listings[tokenId].seller != address(0)) revert AlreadyListed();
+        if (autoListDisabled[tokenId]) revert AutoListDisabled();
+        if (
+            !nft.isApprovedForAll(treasury, address(this))
+                && nft.getApproved(tokenId) != address(this)
+        ) revert NotApproved();
+
+        price = abandonedPriceOf(tokenId);
+        if (price == 0) revert PriceZero();
+
+        _store(tokenId, treasury, price);
+        emit Listed(tokenId, treasury, price);
     }
 
     /// @notice Cancel a listing. Only the seller (current owner) can cancel.
@@ -103,6 +168,7 @@ contract EticaResearchMarketplace is ReentrancyGuard {
         if (l.seller == address(0)) revert NotListed();
         if (l.seller != msg.sender) revert NotOwner();
 
+        if (msg.sender == research.treasury()) autoListDisabled[tokenId] = true;
         _removeListing(tokenId);
         emit Unlisted(tokenId, msg.sender);
     }
@@ -189,12 +255,32 @@ contract EticaResearchMarketplace is ReentrancyGuard {
         }
     }
 
+    /// @notice The price {listAbandoned} would use for `tokenId`: the mint
+    ///         fee the record would have cost a researcher, scaled by
+    ///         {abandonedPriceBps}. Higher-scoring research lists higher.
+    function abandonedPriceOf(uint256 tokenId) public view returns (uint128) {
+        (,,, uint256 score,,,,,) = research.discoveryOf(tokenId);
+        uint256 mintFee = research.BASE_MINT_FEE_WEI()
+            + (research.MAX_SCORE_MINT_FEE_WEI() * score) / 10_000;
+        return uint128((mintFee * abandonedPriceBps) / 10_000);
+    }
+
     /// @notice Check if a tokenId is currently listed.
     function isListed(uint256 tokenId) external view returns (bool) {
         return listings[tokenId].seller != address(0);
     }
 
     // ─── Internal ───────────────────────────────────────────────────────
+
+    function _store(uint256 tokenId, address seller, uint128 price) internal {
+        listings[tokenId] =
+            Listing({seller: seller, price: price, listedAt: uint64(block.timestamp)});
+
+        if (_listedIndex[tokenId] == 0) {
+            listedTokenIds.push(tokenId);
+            _listedIndex[tokenId] = listedTokenIds.length; // 1-based
+        }
+    }
 
     function _removeListing(uint256 tokenId) internal {
         delete listings[tokenId];

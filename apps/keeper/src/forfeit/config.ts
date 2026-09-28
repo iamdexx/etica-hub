@@ -13,6 +13,7 @@
 
 import 'dotenv/config';
 import { isAddress, isHex, type Address, type Hex } from 'viem';
+import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 
 export interface ForfeitConfig {
   /** RPC endpoint for reads + tx submission. */
@@ -23,6 +24,13 @@ export interface ForfeitConfig {
   nft: Address;
   /** Treasury — the only address a matured claim can mint to. */
   treasury: Address;
+  /**
+   * EticaResearchMarketplace with `listAbandoned`; treasury-held tokens
+   * are put on sale there after settlement. Null disables auto-listing.
+   */
+  marketplace: Address | null;
+  /** Treasury tokens to list per run. */
+  maxListPerRun: number;
   /** Origin serving /api/labs/treasury/attestations. */
   baseUrl: string;
   /** Optional Labs worker token; bypasses the public rate limit. */
@@ -58,6 +66,8 @@ function address(env: NodeJS.ProcessEnv, name: string, fallback: string): Addres
 
 export const DEFAULT_NFT = '0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9';
 export const DEFAULT_TREASURY = '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D';
+export const DEFAULT_MARKETPLACE = DEPLOYMENTS[eticaMainnet.id].eticaResearchMarketplace;
+const ZERO = '0x0000000000000000000000000000000000000000';
 
 export function loadForfeitConfig(env: NodeJS.ProcessEnv = process.env): ForfeitConfig {
   const pk = opt(env, 'FORFEIT_PRIVATE_KEY') ?? opt(env, 'HARVEST_PRIVATE_KEY');
@@ -72,6 +82,22 @@ export function loadForfeitConfig(env: NodeJS.ProcessEnv = process.env): Forfeit
   if (maxPerRun === 0 || maxPerRun > 25) {
     throw new Error(`FORFEIT_MAX_PER_RUN must be in [1, 25], got ${maxPerRun}`);
   }
+  const maxListPerRun = optInt(env, 'FORFEIT_MAX_LIST_PER_RUN', 10);
+  if (maxListPerRun > 50) {
+    throw new Error(`FORFEIT_MAX_LIST_PER_RUN must be in [0, 50], got ${maxListPerRun}`);
+  }
+
+  // The marketplace is optional: an explicit "off" or an unset deployment
+  // (zero address) simply skips the listing step.
+  const marketplaceRaw = opt(env, 'FORFEIT_MARKETPLACE_ADDRESS');
+  let marketplace: Address | null;
+  if (marketplaceRaw !== null && /^(0|off|false|none)$/i.test(marketplaceRaw)) {
+    marketplace = null;
+  } else {
+    const v = marketplaceRaw ?? DEFAULT_MARKETPLACE;
+    if (!isAddress(v)) throw new Error(`FORFEIT_MARKETPLACE_ADDRESS is not an address: ${v}`);
+    marketplace = v.toLowerCase() === ZERO ? null : (v as Address);
+  }
 
   const baseUrl = (opt(env, 'FORFEIT_BASE_URL') ?? 'https://eticahub.com').replace(/\/+$/, '');
   if (!/^https:\/\//.test(baseUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(baseUrl)) {
@@ -83,6 +109,8 @@ export function loadForfeitConfig(env: NodeJS.ProcessEnv = process.env): Forfeit
     chainId: optInt(env, 'FORFEIT_CHAIN_ID', optInt(env, 'HARVEST_CHAIN_ID', 61803)),
     nft: address(env, 'FORFEIT_NFT_ADDRESS', DEFAULT_NFT),
     treasury: address(env, 'FORFEIT_TREASURY_ADDRESS', DEFAULT_TREASURY),
+    marketplace,
+    maxListPerRun,
     baseUrl,
     workerToken: opt(env, 'FORFEIT_WORKER_TOKEN') ?? opt(env, 'LABS_AUTOPILOT_TOKEN'),
     maxPerRun,
