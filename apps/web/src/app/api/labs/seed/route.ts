@@ -18,6 +18,7 @@
 import { NextRequest } from 'next/server';
 
 import { drawCampaign, type Campaign } from '@/lib/labs/campaign';
+import { editorialTitle } from '@/lib/labs/editorial';
 import { nvidiaChat, hasNvidiaKey, NvidiaError, NVIDIA_MODEL_PRIMARY } from '@/lib/labs/nvidia';
 import { requireWorkerAuth } from '@/lib/labs/worker-auth';
 
@@ -71,6 +72,8 @@ const TOPIC_POOL = [
  * Curated, patent-safe seeds used only when 550B cannot produce a valid
  * prompt (auth/quota outage, persistent meta-commentary). Keeps the
  * discovery cascade alive; the response is tagged `source: 'fallback'`.
+ * The tag is diagnostic only — it never reaches a public title, which is
+ * derived from the seed's own subject like every other run.
  */
 const FALLBACK_SEEDS = [
   'Design a cyclic peptide inhibitor targeting the PD-1/PD-L1 interface for melanoma immunotherapy',
@@ -90,11 +93,12 @@ const FALLBACK_SEEDS = [
 function fallbackSeedResponse(reason: string, campaign: Campaign | null): Response {
   console.error('[labs/seed] LLM seed failed, using fallback', { reason, campaign: campaign?.id });
   const pool = campaign ? campaign.seeds : FALLBACK_SEEDS;
+  const prompt = pool[Math.floor(Math.random() * pool.length)]!;
   return Response.json({
     ok: true,
-    prompt: pool[Math.floor(Math.random() * pool.length)]!,
+    prompt,
     topic: campaign ? campaign.label : 'curated fallback',
-    title: campaign ? `${campaign.disease} — driver-directed design` : undefined,
+    title: editorialTitle(campaign?.disease, prompt),
     source: 'fallback',
     campaign: campaign?.id,
     paperTitles: [],
@@ -315,9 +319,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     ok: true,
     prompt,
     topic,
-    // Goal titles of the form "<disease> — <topic>" let the archive index the
-    // run under its disease facet instead of leaving it unlabelled.
-    title: campaign ? `${campaign.disease} — ${topic}` : undefined,
+    // Goal titles of the form "<condition> — <specifics>" let the archive
+    // index the run under its disease facet instead of leaving it unlabelled,
+    // and read as an encyclopedia entry rather than an internal topic string.
+    title: editorialTitle(campaign?.disease, prompt),
     source,
     campaign: campaign?.id,
     paperTitles: papers.map((p) => p.title),

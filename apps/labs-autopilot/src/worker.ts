@@ -1248,7 +1248,9 @@ async function main(): Promise<void> {
           },
           body: JSON.stringify({
             prompt: seedData.prompt,
-            title: seedData.title ?? seedData.topic,
+            // Never the internal topic label — the server derives a public
+            // "Condition — Specifics" title from the prompt when absent.
+            title: seedData.title,
             kind: 'auto-seed',
             maxIterations: 3,
           }),

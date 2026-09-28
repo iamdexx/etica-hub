@@ -1,0 +1,131 @@
+# Rewrite archived Labs records so the public archive reads like a
+# reference work: internal seed labels ("Curated Fallback") and planner
+# narration are replaced with "Condition — Research Specifics" titles and
+# records are filed under the condition their own text implies.
+#
+# Manual only, deterministic (no model call), and non-destructive — only
+# presentation metadata changes. Run with dry_run first to see the diff.
+#
+# Secrets used:
+#   LABS_AUTOPILOT_TOKEN — shared worker secret (same value as on Vercel)
+name: Labs Editorial Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      offset:
+        description: 'Archive offset to resume from'
+        required: false
+        default: '0'
+      limit:
+        description: 'Records per request (max 100)'
+        required: false
+        default: '50'
+      max_pages:
+        description: 'Safety cap on pages per run'
+        required: false
+        default: '40'
+      dry_run:
+        description: 'Report the rewrites without writing them'
+        type: boolean
+        required: false
+        default: false
+      base_url:
+        description: 'Override deployment (eticahub.com or a *.vercel.app preview only)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: labs-editorial-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Rewrite archive titles
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      BASE_URL: ${{ github.event.inputs.base_url || vars.LABS_AUTOPILOT_BASE_URL || 'https://eticahub.com' }}
+      TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}
+      OFFSET: ${{ github.event.inputs.offset || '0' }}
+      LIMIT: ${{ github.event.inputs.limit || '50' }}
+      MAX_PAGES: ${{ github.event.inputs.max_pages || '40' }}
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || 'false' }}
+    steps:
+      - name: Guard — worker token present, target is ours
+        run: |
+          # The worker token is attached to every request, so the override
+          # must not be able to point it at a host we don't control. Match on
+          # the bare host only: a path, query or userinfo can otherwise end in
+          # an allowed suffix while the request goes somewhere else.
+          case "$BASE_URL" in
+            https://*) host="${BASE_URL#https://}" ;;
+            *) host='!' ;;
+          esac
+          case "$host" in
+            *[!a-zA-Z0-9.-]*) host='!' ;;
+          esac
+          case "$host" in
+            eticahub.com|*.eticahub.com|*.vercel.app) ;;
+            *)
+              echo "::error::refusing to send the worker token to $BASE_URL"
+              exit 1
+              ;;
+          esac
+          if [ -z "$TOKEN" ]; then
+            echo "::error::LABS_AUTOPILOT_TOKEN secret not set"
+            exit 1
+          fi
+
+      - name: Walk the archive
+        run: |
+          set -euo pipefail
+          offset="$OFFSET"
+          processed=0; changed=0; unchanged=0; unsalvageable=0
+          for page in $(seq 1 "$MAX_PAGES"); do
+            body=$(printf '{"offset":%s,"limit":%s,"dryRun":%s}' "$offset" "$LIMIT" "$DRY_RUN")
+            resp=$(curl -sS --max-time 300 -X POST "$BASE_URL/api/labs/archive/editorial-backfill" \
+              -H "x-labs-worker-token: $TOKEN" \
+              -H 'content-type: application/json' \
+              -d "$body" || echo '{}')
+            # A gateway timeout answers with HTML, which jq cannot parse. One
+            # page is worth a retry, not the whole walk.
+            ok=$(printf '%s' "$resp" | jq -r '.ok // false' 2>/dev/null || echo false)
+            if [ "$ok" != "true" ]; then
+              echo "::warning::page at offset $offset failed, retrying once: $(printf '%s' "$resp" | head -c 200)"
+              sleep 20
+              resp=$(curl -sS --max-time 300 -X POST "$BASE_URL/api/labs/archive/editorial-backfill" \
+                -H "x-labs-worker-token: $TOKEN" \
+                -H 'content-type: application/json' \
+                -d "$body" || echo '{}')
+              ok=$(printf '%s' "$resp" | jq -r '.ok // false' 2>/dev/null || echo false)
+            fi
+            if [ "$ok" != "true" ]; then
+              echo "::error::backfill failed at offset $offset: $(printf '%s' "$resp" | head -c 500)"
+              exit 1
+            fi
+            processed=$((processed + $(printf '%s' "$resp" | jq -r '.processed')))
+            changed=$((changed + $(printf '%s' "$resp" | jq -r '.changed')))
+            unchanged=$((unchanged + $(printf '%s' "$resp" | jq -r '.unchanged')))
+            unsalvageable=$((unsalvageable + $(printf '%s' "$resp" | jq -r '.unsalvageable | length')))
+            echo "page $page: $(printf '%s' "$resp" | jq -c '{processed,changed,unchanged,nextOffset}')"
+            printf '%s' "$resp" | jq -r '.changes[] | "  \(.oldTitle // "(untitled)") -> \(.newTitle)"'
+            next=$(printf '%s' "$resp" | jq -r '.nextOffset')
+            if [ "$next" = "null" ]; then break; fi
+            offset="$next"
+          done
+          {
+            echo "### Labs editorial backfill"
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| dry run | $DRY_RUN |"
+            echo "| records inspected | $processed |"
+            echo "| rewritten | $changed |"
+            echo "| already clean | $unchanged |"
+            echo "| prompt unsalvageable (review) | $unsalvageable |"
+            echo "| resume offset | $offset |"
+          } >> "$GITHUB_STEP_SUMMARY"
