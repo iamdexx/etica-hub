@@ -39,13 +39,13 @@ import { discoveryBranchId, parentDiscoveryBranchId } from '@/lib/labs/discovery
  */
 
 /** 7-day open-market window; matches /api/labs/mint/attest. */
-const MARKET_OPEN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const MARKET_OPEN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** Hard cap on records settled per crank invocation. */
 const DEFAULT_MAX_PER_RUN = 3;
 /** How many of the oldest archive entries to scan per run. */
 const SCAN_LIMIT = 50;
 
-const CLAIM_TYPES = {
+export const CLAIM_TYPES = {
   ClaimPayload: [
     { name: 'parentGoalTitle', type: 'string' },
     { name: 'sequence', type: 'string' },
@@ -95,6 +95,177 @@ function clampScoreBasisPoints(score: number | undefined): bigint {
   if (bps < 0) return 0n;
   if (bps > 10_000) return 10_000n;
   return BigInt(bps);
+}
+
+/** EIP-712 message force-minting one abandoned record to the treasury. */
+export interface ForfeitPayload {
+  parentGoalTitle: string;
+  sequence: string;
+  analysis: string;
+  score: bigint;
+  iterations: bigint;
+  branchGoalId: string;
+  submitter: Hex;
+  expiresAt: bigint;
+  exclusiveUntil: bigint;
+  marketOpenUntil: bigint;
+  parentBranchGoalId: string;
+}
+
+/**
+ * Resolve the branch id a record settles under, or the reason it can't.
+ * The best candidate's per-candidate id matches the user-mint attest
+ * scheme so the on-chain dedupe stays consistent across both paths.
+ */
+export function prepareForfeit(
+  entry: ArchivedResearch,
+): { goalId: string; branchGoalId: string } | { branchGoalId: string; reason: string } {
+  const goalId = entry.goalId;
+  if (!goalId) return { branchGoalId: '', reason: 'no goalId' };
+  if (!entry.bestCandidate?.sequence) return { branchGoalId: goalId, reason: 'no sequence' };
+  return { goalId, branchGoalId: discoveryBranchId(goalId, entry.bestCandidate.index) };
+}
+
+/**
+ * Build the claim payload. Both windows are set in the past so the
+ * contract resolves the recipient to the treasury (tier 3) and waives the
+ * fee; `expiresAt` leaves the attestation valid long enough for an
+ * off-box keeper to submit it.
+ */
+export function forfeitPayload(
+  entry: ArchivedResearch,
+  branchGoalId: string,
+  nowSec: number = Math.floor(Date.now() / 1000),
+): ForfeitPayload {
+  return {
+    parentGoalTitle: entry.goalTitle || entry.prompt || `Research ${branchGoalId}`,
+    sequence: entry.bestCandidate?.sequence ?? '',
+    analysis: entry.bestCandidate?.analysis || entry.summary || '',
+    score: clampScoreBasisPoints(entry.bestCandidate?.score),
+    iterations: BigInt(entry.iterations ?? 0),
+    branchGoalId,
+    submitter: isAddress(entry.submitterWallet) ? entry.submitterWallet : TREASURY_ADDRESS,
+    expiresAt: BigInt(nowSec + 24 * 60 * 60),
+    exclusiveUntil: BigInt(nowSec - 2),
+    marketOpenUntil: BigInt(nowSec - 1),
+    parentBranchGoalId: parentDiscoveryBranchId(entry.parentGoalId, entry.parentCandidateIndex),
+  };
+}
+
+export async function signForfeitPayload(
+  payload: ForfeitPayload,
+  ctx: {
+    attestor: ReturnType<typeof privateKeyToAccount>;
+    chainId: number;
+    nftAddress: Hex;
+  },
+): Promise<Hex> {
+  return ctx.attestor.signTypedData({
+    domain: {
+      name: 'EticaResearchNFT',
+      version: '1',
+      chainId: ctx.chainId,
+      verifyingContract: ctx.nftAddress,
+    },
+    types: CLAIM_TYPES,
+    primaryType: 'ClaimPayload',
+    message: payload,
+  });
+}
+
+/**
+ * True when the record is already on chain — under its per-candidate id
+ * or the legacy bare goal id, so records minted before per-candidate ids
+ * are never force-minted twice.
+ */
+export async function isBranchSettled(
+  publicClient: ReturnType<typeof getResearchClient>,
+  nftAddress: Hex,
+  goalId: string,
+  branchGoalId: string,
+): Promise<boolean> {
+  const isClaimed = async (id: string): Promise<boolean> =>
+    (await publicClient.readContract({
+      abi: eticaResearchNftArtifact.abi,
+      address: nftAddress,
+      functionName: 'branchClaimed',
+      args: [keccak256(stringToBytes(id))],
+    })) as boolean;
+  const [claimed, legacyClaimed] = await Promise.all([isClaimed(branchGoalId), isClaimed(goalId)]);
+  return claimed || legacyClaimed;
+}
+
+/**
+ * Signed attestations for abandoned records, for a keeper that pays gas
+ * from its own wallet instead of the platform's.
+ *
+ * Records already settled on chain are reconciled locally (their `minted`
+ * flag is set) and omitted, so a caller that keeps submitting what it is
+ * handed can never double-mint and the walk keeps advancing.
+ */
+export interface ForfeitAttestation {
+  archiveId: string;
+  branchGoalId: string;
+  payload: Record<string, string>;
+  signature: Hex;
+}
+
+export async function listForfeitAttestations(opts: { max?: number } = {}): Promise<{
+  nftAddress: Hex;
+  chainId: number;
+  scanned: number;
+  reconciled: number;
+  attestations: ForfeitAttestation[];
+  reason?: string;
+}> {
+  const max = Math.max(1, Math.min(opts.max ?? 10, 25));
+  const chainId = eticaMainnet.id;
+  const nftAddress = DEPLOYMENTS[chainId].eticaResearchNft as Hex;
+  const empty = {
+    nftAddress,
+    chainId,
+    scanned: 0,
+    reconciled: 0,
+    attestations: [] as ForfeitAttestation[],
+  };
+  if (!isAddress(nftAddress) || /^0x0+$/.test(nftAddress)) {
+    return { ...empty, reason: 'EticaResearchNFT not deployed' };
+  }
+  const attestorKey = normalisePrivateKey(process.env.LABS_ATTESTOR_PRIVATE_KEY);
+  if (!attestorKey) return { ...empty, reason: 'attestor key not configured' };
+  const attestor = privateKeyToAccount(attestorKey);
+  const publicClient = getResearchClient();
+
+  const expired = await listExpiredUnminted(Date.now() - MARKET_OPEN_WINDOW_MS, max * 2);
+  const attestations: ForfeitAttestation[] = [];
+  let reconciled = 0;
+
+  for (const entry of expired) {
+    if (attestations.length >= max) break;
+    const prepared = prepareForfeit(entry);
+    if ('reason' in prepared) continue;
+    if (
+      await isBranchSettled(publicClient, nftAddress, prepared.goalId, prepared.branchGoalId).catch(
+        () => false,
+      )
+    ) {
+      await markAsMinted(entry.id, '').catch(() => {});
+      reconciled += 1;
+      continue;
+    }
+    const payload = forfeitPayload(entry, prepared.branchGoalId);
+    const signature = await signForfeitPayload(payload, { attestor, chainId, nftAddress });
+    attestations.push({
+      archiveId: entry.id,
+      branchGoalId: prepared.branchGoalId,
+      payload: Object.fromEntries(
+        Object.entries(payload).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v]),
+      ) as Record<string, string>,
+      signature,
+    });
+  }
+
+  return { nftAddress, chainId, scanned: expired.length, reconciled, attestations };
 }
 
 /**
@@ -171,67 +342,30 @@ async function settleOne(
     walletClient: ReturnType<typeof createWalletClient>;
   },
 ): Promise<CrankSettlement> {
-  const goalId = entry.goalId;
-  if (!goalId) {
-    return { archiveId: entry.id, branchGoalId: '', status: 'skipped', reason: 'no goalId' };
+  const prepared = prepareForfeit(entry);
+  if ('reason' in prepared) {
+    return {
+      archiveId: entry.id,
+      branchGoalId: prepared.branchGoalId,
+      status: 'skipped',
+      reason: prepared.reason,
+    };
   }
-  const sequence = entry.bestCandidate?.sequence;
-  if (!sequence) {
-    return { archiveId: entry.id, branchGoalId: goalId, status: 'skipped', reason: 'no sequence' };
-  }
-  // Force-mint the best candidate under its per-candidate branch id, matching
-  // the user-mint attest scheme so the on-chain dedupe stays consistent.
-  const branchGoalId = discoveryBranchId(goalId, entry.bestCandidate.index);
+  const { goalId, branchGoalId } = prepared;
 
   try {
-    const isClaimed = async (id: string): Promise<boolean> =>
-      (await ctx.publicClient.readContract({
-        abi: eticaResearchNftArtifact.abi,
-        address: ctx.nftAddress,
-        functionName: 'branchClaimed',
-        args: [keccak256(stringToBytes(id))],
-      })) as boolean;
-    // Dedupe against both the per-candidate id and the legacy bare goal id, so
-    // records minted before per-candidate ids are never force-minted twice.
-    const [claimed, legacyClaimed] = await Promise.all([
-      isClaimed(branchGoalId),
-      isClaimed(goalId),
-    ]);
-    if (claimed || legacyClaimed) {
+    if (await isBranchSettled(ctx.publicClient, ctx.nftAddress, goalId, branchGoalId)) {
       // Already settled on chain (by an open-market mint or a prior crank).
       // Reconcile the local archive flag so we stop re-scanning it.
       await markAsMinted(entry.id, '').catch(() => {});
       return { archiveId: entry.id, branchGoalId, status: 'already-claimed' };
     }
 
-    const nowSec = Math.floor(Date.now() / 1000);
-    // Both windows in the past so the contract resolves the recipient to the
-    // treasury (tier 3) and waives the fee. expiresAt is well in the future
-    // so the attestation itself is still valid.
-    const payload = {
-      parentGoalTitle: entry.goalTitle || entry.prompt || `Research ${branchGoalId}`,
-      sequence,
-      analysis: entry.bestCandidate?.analysis || entry.summary || '',
-      score: clampScoreBasisPoints(entry.bestCandidate?.score),
-      iterations: BigInt(entry.iterations ?? 0),
-      branchGoalId,
-      submitter: isAddress(entry.submitterWallet) ? entry.submitterWallet : TREASURY_ADDRESS,
-      expiresAt: BigInt(nowSec + 24 * 60 * 60),
-      exclusiveUntil: BigInt(nowSec - 2),
-      marketOpenUntil: BigInt(nowSec - 1),
-      parentBranchGoalId: parentDiscoveryBranchId(entry.parentGoalId, entry.parentCandidateIndex),
-    } as const;
-
-    const signature = await ctx.attestor.signTypedData({
-      domain: {
-        name: 'EticaResearchNFT',
-        version: '1',
-        chainId: ctx.chainId,
-        verifyingContract: ctx.nftAddress,
-      },
-      types: CLAIM_TYPES,
-      primaryType: 'ClaimPayload',
-      message: payload,
+    const payload = forfeitPayload(entry, branchGoalId);
+    const signature = await signForfeitPayload(payload, {
+      attestor: ctx.attestor,
+      chainId: ctx.chainId,
+      nftAddress: ctx.nftAddress,
     });
 
     const txHash = await ctx.walletClient.writeContract({
