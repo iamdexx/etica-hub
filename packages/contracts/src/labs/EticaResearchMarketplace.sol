@@ -99,6 +99,7 @@ contract EticaResearchMarketplace is ReentrancyGuard {
         uint128 price,
         uint256 royaltyPaid
     );
+    event AutoListDisabledSet(uint256 indexed tokenId, bool disabled);
 
     // ─── Errors ─────────────────────────────────────────────────────────
 
@@ -112,6 +113,7 @@ contract EticaResearchMarketplace is ReentrancyGuard {
     error NotTreasuryOwned();
     error AlreadyListed();
     error AutoListDisabled();
+    error NotTreasury();
 
     // ─── Constructor ────────────────────────────────────────────────────
 
@@ -160,6 +162,16 @@ contract EticaResearchMarketplace is ReentrancyGuard {
 
         _store(tokenId, treasury, price);
         emit Listed(tokenId, treasury, price);
+    }
+
+    /// @notice Treasury-only switch for the permissionless rail. Lets the
+    ///         treasury shield a token it holds for reasons other than
+    ///         forfeiture (bought, gifted) before anyone can
+    ///         {listAbandoned} it, and re-arm a token it cancelled earlier.
+    function setAutoListDisabled(uint256 tokenId, bool disabled) external {
+        if (msg.sender != research.treasury()) revert NotTreasury();
+        autoListDisabled[tokenId] = disabled;
+        emit AutoListDisabledSet(tokenId, disabled);
     }
 
     /// @notice Cancel a listing. Only the seller (current owner) can cancel.

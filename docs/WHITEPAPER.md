@@ -605,7 +605,7 @@ Discoveries left unminted past their 7-day window forfeit to the treasury automa
 
 ### 14.9 Secondary marketplace
 
-`EticaResearchMarketplace` (`0x4D1eb3884927A9ad0d77E1627698f1153AAd5aDC`, bound immutably to the RES NFT) is a minimal, non-custodial fixed-price market at `/labs/market`: a holder lists a RES for a native EGAZ price; a buyer pays it; the contract auto-deducts the 5% ERC-2981 royalty, routes it to the token's splitter, and pays the seller the remainder. There is **no admin, no owner, no pause, and no platform fee beyond the ERC-2981 royalty**.
+`EticaResearchMarketplace` (`0xefa71266318c3787c6d3f63d7ba40fd69fc840a3`, bound immutably to the RES NFT) is a minimal, non-custodial fixed-price market at `/labs/market`: a holder lists a RES for a native EGAZ price; a buyer pays it; the contract auto-deducts the 5% ERC-2981 royalty, routes it to the token's splitter, and pays the seller the remainder. There is **no admin, no owner, no pause, and no platform fee beyond the ERC-2981 royalty**.
 
 ### 14.10 Research encyclopedia
 
@@ -868,7 +868,7 @@ Etica mainnet (chain id `61803`). Canonical source: `packages/shared/src/address
 | `EticaResearchMarkets` (launchpad singleton) | `0x6605d2F6A8b77a8dC7f53Fd1EDe0974d85937D17` |
 | `EticaResearchNftMetadataLib` | `0x66aa725d9d18481bB937F4DF2DA68f82DF964219` |
 | `EticaResearchNft` (RES — 3-tier mint) | `0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9` |
-| `EticaResearchMarketplace` (RES secondary market) | `0x4D1eb3884927A9ad0d77E1627698f1153AAd5aDC` |
+| `EticaResearchMarketplace` (RES secondary market) | `0xefa71266318c3787c6d3f63d7ba40fd69fc840a3` |
 | ETI (Etica protocol, external) | `0x34c61EA91bAcdA647269d4e310A86b875c09946f` |
 | Treasury wallet | `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D` |
 
