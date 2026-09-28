@@ -1,0 +1,77 @@
+name: Labs forfeit sweep
+
+# Settles abandoned research to the treasury.
+#
+# A Labs discovery nobody mints within 7 days is forfeit: past that window
+# EticaResearchNFT.claim() force-mints it to the immutable treasury and
+# waives the fee — but only when someone submits the transaction. Without
+# this crank the rail is dead code and abandoned records stay unminted.
+#
+# The platform signs the attestation (attestor key stays in Vercel); this
+# job only pays gas, from the same unprivileged EOA as the daily farm
+# harvest. A matured claim mints to the treasury regardless of who sends
+# it, so a leaked key can waste gas and nothing else.
+
+on:
+  schedule:
+    # Hourly — ~10 records a run clears the backlog in a couple of days
+    # and then idles at "nothing matured".
+    - cron: '40 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Simulate claims without submitting'
+        type: boolean
+        default: true
+      max_per_run:
+        description: 'Records to settle this run (1-25)'
+        type: string
+        default: '10'
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: Sweep abandoned discoveries
+    runs-on: ubuntu-latest
+    environment: harvest-live
+    env:
+      FORFEIT_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      FORFEIT_CHAIN_ID: ${{ vars.HARVEST_CHAIN_ID || '61803' }}
+      FORFEIT_NFT_ADDRESS: ${{ vars.FORFEIT_NFT_ADDRESS || '0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9' }}
+      FORFEIT_TREASURY_ADDRESS: ${{ vars.HARVEST_TREASURY_ADDRESS || '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D' }}
+      FORFEIT_BASE_URL: ${{ vars.LABS_BASE_URL || 'https://eticahub.com' }}
+      FORFEIT_MAX_PER_RUN: ${{ inputs.max_per_run || '10' }}
+      FORFEIT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+      # Optional: bypasses the public rate limit on the attestations endpoint.
+      FORFEIT_WORKER_TOKEN: ${{ secrets.LABS_AUTOPILOT_TOKEN }}
+      # Gas-paying EOA — shared with the farm harvest, no privileged role
+      # on-chain and no ability to redirect a matured mint.
+      HARVEST_PRIVATE_KEY: ${{ secrets.HARVEST_KEEPER_PRIVATE_KEY }}
+    steps:
+      - name: Guard against missing gas-payer key
+        if: ${{ env.HARVEST_PRIVATE_KEY == '' && env.FORFEIT_DRY_RUN != 'true' }}
+        run: |
+          echo "::error ::HARVEST_KEEPER_PRIVATE_KEY secret is unset on the 'harvest-live' environment."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Sweep (dry run)
+        if: ${{ env.FORFEIT_DRY_RUN == 'true' }}
+        run: pnpm --filter @etica-hub/keeper run forfeit:dry-run
+
+      - name: Sweep (live)
+        if: ${{ env.FORFEIT_DRY_RUN != 'true' }}
+        run: pnpm --filter @etica-hub/keeper run forfeit:live
