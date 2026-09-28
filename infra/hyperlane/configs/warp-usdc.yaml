@@ -1,0 +1,45 @@
+# Hyperlane warp route: Circle USDC on Ethereum (collateral) <-> USDC.e on Etica (synthetic).
+#
+#   The CLI reads deploy configs from the registry, so this file is copied to
+#   infra/hyperlane/registry/deployments/warp_routes/USDC/etica-deploy.yaml
+#   by deploy.sh and deployed with:
+#   hyperlane warp deploy --warp-route-id USDC/etica --registry ./infra/hyperlane/registry
+#
+# Model: real USDC is locked in the Ethereum `HypERC20Collateral` router;
+# exactly that many USDC.e are minted on Etica by the `HypERC20` router.
+# Burning USDC.e on Etica releases USDC on Ethereum. No yield, no rebase,
+# no admin mint. Supply on Etica == USDC locked on Ethereum by construction.
+#
+# 0x000…0 placeholders are filled by `infra/hyperlane/deploy.sh` from env
+# (OWNER, VALIDATOR). Both sides pin an explicit ISM so neither depends on the
+# other chain's default ISM (Ethereum's has no entry for domain 61803).
+#
+# No `hook:` on either side on purpose: a per-router hook deploys a *separate*
+# MerkleTreeHook that the validators do not watch, so messages would never be
+# signed. Routers fall back to the mailbox default hook (the core merkle tree).
+ethereum:
+  type: collateral
+  # Circle USDC (Ethereum mainnet)
+  token: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+  owner: '0x0000000000000000000000000000000000000000'
+  # Messages arriving here originate on Etica -> signed by the EticaHub
+  # validator instance watching Etica.
+  interchainSecurityModule:
+    type: messageIdMultisigIsm
+    threshold: 1
+    validators:
+      - '0x0000000000000000000000000000000000000000'
+
+etica:
+  type: synthetic
+  name: 'USD Coin (Etica)'
+  symbol: 'USDC.e'
+  decimals: 6
+  owner: '0x0000000000000000000000000000000000000000'
+  # Messages arriving here originate on Ethereum -> signed by the EticaHub
+  # validator instance watching Ethereum.
+  interchainSecurityModule:
+    type: messageIdMultisigIsm
+    threshold: 1
+    validators:
+      - '0x0000000000000000000000000000000000000000'
