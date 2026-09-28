@@ -13,6 +13,7 @@ runForfeitSweep(config)
     for (const r of result.results) {
       console.info(`  ${r.status.padEnd(15)} ${r.branchGoalId} ${r.reason ?? r.tokenId ?? ''}`);
     }
+    if (result.error) process.exit(1);
   })
   .catch((err) => {
     console.error('[forfeit:dry-run] fatal:', err);

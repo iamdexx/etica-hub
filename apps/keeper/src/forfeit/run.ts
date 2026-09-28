@@ -124,6 +124,30 @@ export function forfeitEligibility(
   return { ok: true };
 }
 
+/** Custom-error selectors the NFT reverts with, keyed by 4-byte hash. */
+const REVERT_SELECTORS: Record<string, string> = {
+  '0x8baa579f': 'InvalidSignature',
+  '0x716dcc39': 'AttestationExpired',
+  '0x16e493f7': 'BranchAlreadyClaimed',
+  '0x03903520': 'SubmitterOnlyDuringExclusive',
+  '0x392334ed': 'InvalidWindow',
+  '0xc5729f17': 'ScoreTooHigh',
+  '0xe9a25741': 'EmptyBranchId',
+  '0xcf3fa1ed': 'EmptyParentGoal',
+  '0x1a9eacab': 'EmptySequence',
+  '0xae3d4de5': 'SubmitterZero',
+  '0x4033e4e3': 'FeeTransferFailed',
+  '0xf0c49d44': 'RefundFailed',
+};
+
+/** Name the revert instead of logging "reverted with the following signature:". */
+export function revertReason(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  const selector = text.match(/0x[0-9a-fA-F]{8}\b/)?.[0]?.toLowerCase();
+  const named = selector ? REVERT_SELECTORS[selector] : undefined;
+  return named ? `reverted: ${named}() [${selector}]` : (text.split('\n')[0] ?? text);
+}
+
 export async function fetchAttestations(
   config: ForfeitConfig,
   fetchImpl: typeof fetch = fetch,
@@ -197,16 +221,30 @@ export async function runForfeitSweep(
   }
 
   const results: ForfeitSettlement[] = [];
+  const submitted = new Set<string>();
   let settled = 0;
+
+  // The contract compares the windows against `block.timestamp`, which
+  // trails wall clock; judging eligibility on the chain's own clock keeps
+  // the keeper from submitting a claim the node still reads as exclusive.
+  const chainNow = await publicClient
+    .getBlock({ blockTag: 'latest' })
+    .then((b) => Number(b.timestamp))
+    .catch(() => Math.floor(Date.now() / 1000));
 
   for (const att of attestations) {
     const payload = decodePayload(att.payload);
     const base = { archiveId: att.archiveId, branchGoalId: att.branchGoalId };
-    const eligible = forfeitEligibility(payload, Math.floor(Date.now() / 1000));
+    const eligible = forfeitEligibility(payload, chainNow);
     if (!eligible.ok) {
       results.push({ ...base, status: 'skipped', reason: eligible.reason });
       continue;
     }
+    if (submitted.has(payload.branchGoalId)) {
+      results.push({ ...base, status: 'skipped', reason: 'duplicate branch in this batch' });
+      continue;
+    }
+    submitted.add(payload.branchGoalId);
 
     try {
       const claimed = await publicClient.readContract({
@@ -263,7 +301,7 @@ export async function runForfeitSweep(
       results.push({ ...base, status: 'settled', txHash, tokenId: tokenId.toString() });
       log.info(`[forfeit] settled ${att.branchGoalId} → token ${tokenId} (${txHash})`);
     } catch (err) {
-      const reason = err instanceof Error ? err.message.split('\n')[0] : String(err);
+      const reason = revertReason(err);
       log.warn(`[forfeit] ${att.branchGoalId}: ${reason}`);
       results.push({ ...base, status: 'error', reason });
     }

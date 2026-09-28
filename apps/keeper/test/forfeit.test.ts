@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
 import { loadForfeitConfig } from '../src/forfeit/config.js';
-import { decodePayload, forfeitEligibility, fetchAttestations } from '../src/forfeit/run.js';
+import {
+  decodePayload,
+  forfeitEligibility,
+  fetchAttestations,
+  revertReason,
+} from '../src/forfeit/run.js';
 
 const KEY = ('0x' + '11'.repeat(32)) as `0x${string}`;
 const NOW = 1_800_000_000;
@@ -64,6 +69,19 @@ describe('forfeitEligibility', () => {
 
   it('refuses an incomplete payload', () => {
     expect(forfeitEligibility(payload({ sequence: '' }), NOW).ok).toBe(false);
+  });
+});
+
+describe('revertReason', () => {
+  it('names the custom error the NFT reverted with', () => {
+    const err = new Error(
+      'The contract function "claim" reverted with the following signature:\n0x03903520',
+    );
+    expect(revertReason(err)).toBe('reverted: SubmitterOnlyDuringExclusive() [0x03903520]');
+  });
+
+  it('falls back to the first line for an unknown failure', () => {
+    expect(revertReason(new Error('HTTP request failed\nURL: ...'))).toBe('HTTP request failed');
   });
 });
 

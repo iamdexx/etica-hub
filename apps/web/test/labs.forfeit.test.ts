@@ -54,6 +54,11 @@ describe('forfeitPayload', () => {
     expect(p.expiresAt).toBeGreaterThan(BigInt(NOW));
   });
 
+  it('backdates the windows past chain-clock drift, so a keeper is never the exclusive caller', () => {
+    const p = forfeitPayload(record(), 'goal-1#2', NOW);
+    expect(Number(p.exclusiveUntil)).toBeLessThanOrEqual(NOW - 24 * 60 * 60);
+  });
+
   it('scores in basis points, clamped', () => {
     expect(forfeitPayload(record(), 'b', NOW).score).toBe(7400n);
     const hot = record({ bestCandidate: { ...record().bestCandidate, score: 3 } });
