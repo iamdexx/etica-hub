@@ -272,8 +272,8 @@ contract EticaResearchMarketplace is ReentrancyGuard {
     ///         {abandonedPriceBps}. Higher-scoring research lists higher.
     function abandonedPriceOf(uint256 tokenId) public view returns (uint128) {
         (,,, uint256 score,,,,,) = research.discoveryOf(tokenId);
-        uint256 mintFee = research.BASE_MINT_FEE_WEI()
-            + (research.MAX_SCORE_MINT_FEE_WEI() * score) / 10_000;
+        uint256 mintFee =
+            research.BASE_MINT_FEE_WEI() + (research.MAX_SCORE_MINT_FEE_WEI() * score) / 10_000;
         return uint128((mintFee * abandonedPriceBps) / 10_000);
     }
 
