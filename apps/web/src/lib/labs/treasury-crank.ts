@@ -126,11 +126,16 @@ export function prepareForfeit(
   return { goalId, branchGoalId: discoveryBranchId(goalId, entry.bestCandidate.index) };
 }
 
+/** Margin keeping both windows clear of chain-clock drift. */
+const WINDOW_BACKDATE_SECONDS = 24 * 60 * 60;
+
 /**
- * Build the claim payload. Both windows are set in the past so the
+ * Build the claim payload. Both windows are backdated a day so the
  * contract resolves the recipient to the treasury (tier 3) and waives the
- * fee; `expiresAt` leaves the attestation valid long enough for an
- * off-box keeper to submit it.
+ * fee even when the chain's `block.timestamp` trails wall clock — inside
+ * the exclusive window only `submitter` may call, which a keeper is not.
+ * `expiresAt` leaves the attestation valid long enough for an off-box
+ * keeper to submit it.
  */
 export function forfeitPayload(
   entry: ArchivedResearch,
@@ -146,8 +151,8 @@ export function forfeitPayload(
     branchGoalId,
     submitter: isAddress(entry.submitterWallet) ? entry.submitterWallet : TREASURY_ADDRESS,
     expiresAt: BigInt(nowSec + 24 * 60 * 60),
-    exclusiveUntil: BigInt(nowSec - 2),
-    marketOpenUntil: BigInt(nowSec - 1),
+    exclusiveUntil: BigInt(nowSec - WINDOW_BACKDATE_SECONDS),
+    marketOpenUntil: BigInt(nowSec - WINDOW_BACKDATE_SECONDS),
     parentBranchGoalId: parentDiscoveryBranchId(entry.parentGoalId, entry.parentCandidateIndex),
   };
 }
@@ -238,12 +243,14 @@ export async function listForfeitAttestations(opts: { max?: number } = {}): Prom
 
   const expired = await listExpiredUnminted(Date.now() - MARKET_OPEN_WINDOW_MS, max * 2);
   const attestations: ForfeitAttestation[] = [];
+  const offered = new Set<string>();
   let reconciled = 0;
 
   for (const entry of expired) {
     if (attestations.length >= max) break;
     const prepared = prepareForfeit(entry);
     if ('reason' in prepared) continue;
+    if (offered.has(prepared.branchGoalId)) continue;
     if (
       await isBranchSettled(publicClient, nftAddress, prepared.goalId, prepared.branchGoalId).catch(
         () => false,
@@ -253,6 +260,7 @@ export async function listForfeitAttestations(opts: { max?: number } = {}): Prom
       reconciled += 1;
       continue;
     }
+    offered.add(prepared.branchGoalId);
     const payload = forfeitPayload(entry, prepared.branchGoalId);
     const signature = await signForfeitPayload(payload, { attestor, chainId, nftAddress });
     attestations.push({
