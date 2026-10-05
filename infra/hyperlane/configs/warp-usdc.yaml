@@ -10,13 +10,29 @@
 # Burning USDC.e on Etica releases USDC on Ethereum. No yield, no rebase,
 # no admin mint. Supply on Etica == USDC locked on Ethereum by construction.
 #
-# 0x000…0 placeholders are filled by `infra/hyperlane/deploy.sh` from env
-# (OWNER, VALIDATOR). Both sides pin an explicit ISM so neither depends on the
-# other chain's default ISM (Ethereum's has no entry for domain 61803).
+# Placeholders are filled by `infra/hyperlane/deploy.sh` from env:
+#   0x000…0  -> OWNER (bridge owner / Safe), or VALIDATOR under `validators:`
+#   0x111…1  -> KEEPER (the gas-paying relayer EOA)
+# Both sides pin an explicit ISM so neither depends on the other chain's
+# default ISM (Ethereum's has no entry for domain 61803).
 #
 # No `hook:` on either side on purpose: a per-router hook deploys a *separate*
 # MerkleTreeHook that the validators do not watch, so messages would never be
 # signed. Routers fall back to the mailbox default hook (the core merkle tree).
+#
+# Gas is paid by the users, in the bridged asset: each router has a
+# `tokenFee` (Hyperlane `LinearFee`) that skims 10 bps of every transfer,
+# capped at 5 USDC, from the sender into a fee contract next to the router.
+#   fee = amount * maxFee / (2 * halfAmount), capped at maxFee
+#   -> 100 USDC pays 0.10, 2 500 USDC pays 2.50, >= 5 000 USDC pays 5.00
+# The fee contract is owned by KEEPER, so the relayer sweeps it to itself
+# (`claim(keeper)`) and swaps USDC -> ETH / USDC.e -> EGAZ when its gas runs
+# low (apps/keeper bridge-gas job). No treasury key is involved and the fee
+# never touches the collateral: on Ethereum it is pulled alongside the
+# locked amount and forwarded, on Etica it is re-minted to the fee contract
+# after the sender's burn, so `USDC.e supply == USDC locked` still holds.
+# Rate/cap are immutable; the router OWNER can only point `feeRecipient` at
+# a different fee contract (or none).
 ethereum:
   type: collateral
   # Circle USDC (Ethereum mainnet)
@@ -29,6 +45,12 @@ ethereum:
     threshold: 1
     validators:
       - '0x0000000000000000000000000000000000000000'
+  tokenFee:
+    type: LinearFee
+    owner: '0x1111111111111111111111111111111111111111'
+    beneficiary: '0x1111111111111111111111111111111111111111'
+    maxFee: '5000000'          # 5 USDC (6 decimals)
+    halfAmount: '2500000000'   # 2 500 USDC -> 10 bps below the cap
 
 etica:
   type: synthetic
@@ -43,3 +65,9 @@ etica:
     threshold: 1
     validators:
       - '0x0000000000000000000000000000000000000000'
+  tokenFee:
+    type: LinearFee
+    owner: '0x1111111111111111111111111111111111111111'
+    beneficiary: '0x1111111111111111111111111111111111111111'
+    maxFee: '5000000'          # 5 USDC (6 decimals)
+    halfAmount: '2500000000'   # 2 500 USDC -> 10 bps below the cap

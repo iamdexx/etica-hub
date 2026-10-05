@@ -2,11 +2,14 @@
 # Deploy Hyperlane core on Etica and the USDC (Ethereum) <-> USDC.e (Etica) warp route.
 #
 # Usage:
-#   OWNER=0x... VALIDATOR=0x... HYP_KEY=0x... ./infra/hyperlane/deploy.sh [core|warp|agent-config|all]
+#   OWNER=0x... VALIDATOR=0x... KEEPER=0x... HYP_KEY=0x... ./infra/hyperlane/deploy.sh [core|warp|agent-config|all]
 #
 #   OWNER      address that owns the mailbox/ISM/routers (a Safe, ideally; may
 #              equal the deployer at first and be transferred later)
 #   VALIDATOR  address of the validator key run by infra/hyperlane/agents
+#   KEEPER     address of the relayer / gas-paying EOA (RELAYER_KEY in
+#              agents/.env). Owns the per-router fee contracts so it can sweep
+#              the USDC fees that pay for its own gas (warp step only).
 #   HYP_KEY    deployer private key, funded with EGAZ on Etica and ETH on
 #              Ethereum (warp step only). Never written to disk by this script.
 #   REGISTRY   optional; defaults to ./infra/hyperlane/registry
@@ -25,6 +28,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY="${REGISTRY:-$HERE/registry}"
 STEP="${1:-all}"
 ZERO=0x0000000000000000000000000000000000000000
+KEEPER_PLACEHOLDER=0x1111111111111111111111111111111111111111
 CLI=(npx --yes @hyperlane-xyz/cli@44.0.2)
 
 need() { [[ -n "${!1:-}" ]] || { echo "missing env $1" >&2; exit 1; }; }
@@ -32,14 +36,20 @@ addr() { [[ "$1" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "$2 is not an address: $1" 
 
 need OWNER; need VALIDATOR; addr "$OWNER" OWNER; addr "$VALIDATOR" VALIDATOR
 [[ "$OWNER" != "$ZERO" && "$VALIDATOR" != "$ZERO" ]] || { echo "OWNER/VALIDATOR must not be zero" >&2; exit 1; }
+if [[ "$STEP" == "warp" || "$STEP" == "all" ]]; then
+  need KEEPER; addr "$KEEPER" KEEPER
+  [[ "$KEEPER" != "$ZERO" && "$KEEPER" != "$KEEPER_PLACEHOLDER" ]] || { echo "KEEPER must be a real address" >&2; exit 1; }
+fi
 if [[ "$STEP" != "agent-config" ]]; then need HYP_KEY; fi
 
 render() {
   # $1 = template, $2 = out. Placeholders: every zero address is OWNER except
-  # entries under `validators:` which are VALIDATOR.
-  awk -v owner="$OWNER" -v validator="$VALIDATOR" -v zero="$ZERO" '
+  # entries under `validators:` which are VALIDATOR; 0x111…1 is KEEPER.
+  awk -v owner="$OWNER" -v validator="$VALIDATOR" -v keeper="${KEEPER:-$KEEPER_PLACEHOLDER}" \
+      -v zero="$ZERO" -v kp="$KEEPER_PLACEHOLDER" '
+    { gsub(kp, keeper) }
     /^[[:space:]]*validators:/ { inval=1; print; next }
-    inval && /^[[:space:]]*-[[:space:]]*"?0x/ { gsub(zero, validator); print; next }
+    inval && /^[[:space:]]*-[[:space:]]*["\x27]?0x/ { gsub(zero, validator); print; next }
     { inval=0; gsub(zero, owner); print }
   ' "$1" > "$2"
   if grep -q "$ZERO" "$2"; then echo "unfilled placeholder in $2" >&2; exit 1; fi

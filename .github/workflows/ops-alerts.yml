@@ -3,6 +3,7 @@ name: Ops alerts
 on:
   workflow_run:
     workflows:
+      - Bridge gas keeper
       - Bridge execute (live)
       - Bridge heartbeat (live)
       - Bridge monitor (live)

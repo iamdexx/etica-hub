@@ -55,3 +55,33 @@ pnpm --filter @etica-hub/keeper dev
 ```bash
 pnpm --filter @etica-hub/keeper test
 ```
+
+## Bridge gas (`bridge-gas:*`)
+
+Keeps the Hyperlane USDC ⇄ USDC.e relayer fuelled from the fees users pay,
+with no treasury involvement. Each warp router skims 10 bps (≤ 5 USDC) of
+every transfer into a `LinearFee` contract owned by the relayer EOA; this job
+sweeps that into the relayer wallet and, when its ETH / EGAZ is under the
+minimum, swaps just enough stable for wrapped gas on the chain's V2 router
+(Uniswap on Ethereum, EticaSwap `USDC.e → ETX → WEGAZ` on Etica) and unwraps
+it. Legs whose fee contract / USDC.e address are unset are skipped.
+
+```bash
+pnpm --filter @etica-hub/keeper bridge-gas:dry-run   # snapshot + plan, no txs
+pnpm --filter @etica-hub/keeper bridge-gas:live      # needs HARVEST_PRIVATE_KEY
+```
+
+| Var | Default | Notes |
+| --- | --- | --- |
+| `HARVEST_PRIVATE_KEY` / `BRIDGE_GAS_PRIVATE_KEY` | — | The relayer EOA. Must be the fee contracts' owner. |
+| `BRIDGE_GAS_ETHEREUM_RPC_URL` | — (required) | Provider URL. |
+| `BRIDGE_GAS_ETICA_RPC_URL` | `HARVEST_RPC_URL` or rpc2.etica-stats.org | |
+| `BRIDGE_GAS_{ETHEREUM,ETICA}_FEE_CONTRACT` | — | From the warp deploy output; blank = leg skipped. |
+| `BRIDGE_GAS_ETICA_STABLE` | — | USDC.e router address; blank = leg skipped. |
+| `BRIDGE_GAS_{ETHEREUM,ETICA}_MIN_NATIVE` | `0.05` ETH / `20` EGAZ | Top up below this… |
+| `BRIDGE_GAS_{ETHEREUM,ETICA}_TARGET_NATIVE` | `0.15` ETH / `60` EGAZ | …to this. |
+| `BRIDGE_GAS_MAX_SLIPPAGE_BPS` | `300` | Max price impact vs. the marginal price; blocks instead of swapping into a thin pool. |
+| `BRIDGE_GAS_DRY_RUN` | `true` without a key | |
+
+Runs hourly from `.github/workflows/bridge-gas.yml`; a blocked or failed leg
+fails the job, which `ops-alerts` turns into a Telegram message.
