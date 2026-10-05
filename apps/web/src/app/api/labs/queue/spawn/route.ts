@@ -28,6 +28,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 
+import { cleanPrompt, editorialTitle } from '@/lib/labs/editorial';
 import { attachJobToGoal, createGoal, getGoal, updateGoal } from '@/lib/labs/goal-store';
 import {
   evaluateExpansion,
@@ -78,7 +79,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const goalId = typeof body.goalId === 'string' ? body.goalId.trim() : '';
-  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+  const rawPrompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+  // Everything the pipeline enqueues is published verbatim, so the model's
+  // narration (`Better: "Engineer …`) is stripped here rather than at the
+  // three call sites that can produce it.
+  const prompt = rawPrompt ? (cleanPrompt(rawPrompt) ?? '') : '';
   const kind =
     body.kind === 'cross-goal' ? 'cross-goal' : body.kind === 'auto-seed' ? 'auto-seed' : 'continuation';
   const parentJobId =
@@ -87,7 +92,13 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // goalId is only required for continuation/cross-goal — auto-seeds create their own goal.
   if (!goalId && kind !== 'auto-seed') return json({ ok: false, error: 'goalId is required.' }, { status: 400 });
-  if (!prompt) return json({ ok: false, error: 'prompt is required.' }, { status: 400 });
+  if (!rawPrompt) return json({ ok: false, error: 'prompt is required.' }, { status: 400 });
+  if (!prompt) {
+    return json(
+      { ok: false, reason: 'unpublishable-prompt', detail: rawPrompt.slice(0, 160) },
+      { status: 422 },
+    );
+  }
   if (prompt.length > MAX_PROMPT_CHARS) {
     return json(
       { ok: false, error: `prompt must be ${MAX_PROMPT_CHARS} chars or fewer.` },
@@ -127,19 +138,15 @@ export async function POST(req: NextRequest): Promise<Response> {
       return json({ ok: false, reason: 'global-pending-cap', pendingCount }, { status: 200 });
     }
 
-    // Use the provided title (topic category) for the goal name, not the raw prompt
-    const rawTitle = typeof body.title === 'string' && body.title.trim()
-      ? body.title.trim()
-      : prompt;
-    // Title-case the topic for a clean display name
-    const goalTitle = rawTitle
-      .split(/[\s-]+/)
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join(' ')
-      .slice(0, 120);
+    // Goal titles are public topic chips: "Condition — Research Specifics",
+    // never an internal label or the raw prompt.
+    const goalTitle = editorialTitle(
+      typeof body.title === 'string' ? body.title.trim() : undefined,
+      prompt,
+    );
     const newGoal = await createGoal({
       title: goalTitle,
-      description: `Auto-seeded from academic APIs. ${prompt}`,
+      description: prompt,
       submitterTag: 'autopilot-seed',
       origin: 'user', // treated as a root goal
     });

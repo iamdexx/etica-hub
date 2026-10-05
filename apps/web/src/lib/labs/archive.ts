@@ -261,6 +261,24 @@ export async function saveArchivedResearch(research: ArchivedResearch): Promise<
 }
 
 /**
+ * Move a record between disease facets. Needed when an editorial pass
+ * files a record that was archived without a condition, or merges an
+ * older facet name onto the canonical one.
+ */
+export async function reindexDisease(
+  research: ArchivedResearch,
+  previousDisease: string | undefined,
+): Promise<void> {
+  const store = labsStore();
+  if (previousDisease && previousDisease !== research.disease) {
+    await store.zrem(ARCHIVE_DISEASE(previousDisease), research.id);
+  }
+  if (research.disease) {
+    await store.zadd(ARCHIVE_DISEASE(research.disease), research.completedAt, research.id);
+  }
+}
+
+/**
  * Get a single archived research by ID.
  */
 export async function getArchivedResearch(id: string): Promise<ArchivedResearch | null> {
@@ -331,25 +349,34 @@ export async function listMintable(
  *
  * The archive index is a ZSET scored by `completedAt`, so the oldest
  * entries (lowest score) are exactly the ones most likely past their
- * window. We scan the oldest `scanLimit` ids ascending and keep those
- * under the cutoff that are still flagged unminted. On-chain
- * `branchClaimed` is the authoritative dedupe and is checked by the
- * caller; `minted` here is a cheap local pre-filter.
+ * window. Settled records keep their place in the index, so the walk
+ * pages through it rather than reading a single fixed-size head: with a
+ * fixed head the oldest slots fill up with already-minted records and
+ * the remaining backlog becomes unreachable.
+ *
+ * On-chain `branchClaimed` is the authoritative dedupe and is checked by
+ * the caller; `minted` here is a cheap local pre-filter.
  */
 export async function listExpiredUnminted(
   cutoffMs: number,
-  scanLimit = 50,
+  want = 50,
+  maxScan = 2_000,
 ): Promise<ArchivedResearch[]> {
   const store = labsStore();
-  const ids = await store.zrange(ARCHIVE_INDEX, 0, Math.max(0, scanLimit - 1));
+  const page = 200;
   const out: ArchivedResearch[] = [];
-  for (const id of ids) {
-    const raw = await store.get(ARCHIVE_KEY(id));
-    if (!raw) continue;
-    const entry = JSON.parse(raw) as ArchivedResearch;
-    if (entry.minted) continue;
-    if (entry.completedAt > cutoffMs) break; // ascending — nothing older follows
-    out.push(entry);
+  for (let offset = 0; offset < maxScan && out.length < want; offset += page) {
+    const ids = await store.zrange(ARCHIVE_INDEX, offset, offset + page - 1);
+    if (ids.length === 0) break;
+    for (const id of ids) {
+      const raw = await store.get(ARCHIVE_KEY(id));
+      if (!raw) continue;
+      const entry = JSON.parse(raw) as ArchivedResearch;
+      if (entry.completedAt > cutoffMs) return out; // ascending — nothing older follows
+      if (entry.minted) continue;
+      out.push(entry);
+      if (out.length >= want) break;
+    }
   }
   return out;
 }

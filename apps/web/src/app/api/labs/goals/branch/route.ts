@@ -27,6 +27,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 
+import { cleanProse, cleanPrompt, editorialTitle } from '@/lib/labs/editorial';
 import { attachJobToGoal, createGoal, getGoal, updateGoal } from '@/lib/labs/goal-store';
 import {
   EXPAND_PENDING_CAP,
@@ -84,15 +85,18 @@ export async function POST(req: NextRequest): Promise<Response> {
     typeof body.parentGoalId === 'string' ? body.parentGoalId.trim() : '';
   const parentJobId =
     typeof body.parentJobId === 'string' ? body.parentJobId.trim().slice(0, 80) : '';
-  const title =
-    typeof body.title === 'string'
-      ? body.title.trim().slice(0, MAX_GOAL_TITLE)
-      : '';
-  const description =
-    typeof body.description === 'string'
-      ? body.description.trim().slice(0, MAX_GOAL_DESCRIPTION)
-      : '';
-  const firstPrompt = typeof body.firstPrompt === 'string' ? body.firstPrompt.trim() : '';
+  const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
+  const description = (
+    typeof body.description === 'string' ? cleanProse(body.description) ?? '' : ''
+  ).slice(0, MAX_GOAL_DESCRIPTION);
+  const rawFirstPrompt =
+    typeof body.firstPrompt === 'string' ? body.firstPrompt.trim() : '';
+  // The branch plan comes straight from the planner, so strip narration
+  // before it becomes a public topic chip and research prompt.
+  const firstPrompt = rawFirstPrompt ? cleanPrompt(rawFirstPrompt) ?? '' : '';
+  const title = firstPrompt
+    ? editorialTitle(rawTitle, firstPrompt).slice(0, MAX_GOAL_TITLE)
+    : '';
   const parentCandidateIndex =
     typeof body.candidateIndex === 'number' && Number.isFinite(body.candidateIndex)
       ? Math.max(0, Math.floor(body.candidateIndex))
@@ -105,9 +109,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!parentJobId) {
     return json({ ok: false, error: 'parentJobId is required.' }, { status: 400 });
   }
-  if (!title) return json({ ok: false, error: 'title is required.' }, { status: 400 });
-  if (!firstPrompt) {
+  if (!rawTitle) return json({ ok: false, error: 'title is required.' }, { status: 400 });
+  if (!rawFirstPrompt) {
     return json({ ok: false, error: 'firstPrompt is required.' }, { status: 400 });
+  }
+  if (!firstPrompt) {
+    return json(
+      { ok: false, reason: 'unpublishable-prompt', detail: rawFirstPrompt.slice(0, 160) },
+      { status: 422 },
+    );
   }
   if (firstPrompt.length > MAX_PROMPT_CHARS) {
     return json(

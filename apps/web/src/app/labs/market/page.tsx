@@ -61,6 +61,13 @@ const erc721Abi = [
   },
   {
     type: 'function',
+    name: 'treasury',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'tokenOfOwnerByIndex',
     inputs: [
       { name: 'owner', type: 'address' },
@@ -96,6 +103,9 @@ function relativeTime(timestamp: bigint): string {
   return `${Math.floor(delta / 86400)}d ago`;
 }
 
+/** getListings page size; every page is fetched so listings never truncate. */
+const LISTINGS_PAGE = 50n;
+
 // ─── Marketplace Page ──────────────────────────────────────────────────
 
 export default function MarketPage() {
@@ -123,24 +133,38 @@ export default function MarketPage() {
     query: { enabled: !!marketplaceAddr },
   });
 
-  const { data: listingsData, refetch: refetchListings } = useReadContract({
-    address: marketplaceAddr ?? undefined,
-    abi: abis.eticaResearchMarketplaceAbi,
-    functionName: 'getListings',
-    args: [0n, 50n],
-    query: { enabled: !!marketplaceAddr && (totalListings ?? 0n) > 0n },
+  const listingPageCalls = useMemo(() => {
+    const total = totalListings ?? 0n;
+    if (!marketplaceAddr || total === 0n) return [];
+    const pages = Number((total + LISTINGS_PAGE - 1n) / LISTINGS_PAGE);
+    return Array.from({ length: pages }, (_, i) => ({
+      address: marketplaceAddr,
+      abi: abis.eticaResearchMarketplaceAbi,
+      functionName: 'getListings' as const,
+      args: [BigInt(i) * LISTINGS_PAGE, LISTINGS_PAGE] as const,
+    }));
+  }, [marketplaceAddr, totalListings]);
+
+  const { data: listingPages, refetch: refetchListings } = useReadContracts({
+    contracts: listingPageCalls,
+    query: { enabled: listingPageCalls.length > 0 },
   });
 
   const listings = useMemo<ListingData[]>(() => {
-    if (!listingsData) return [];
-    const [tokenIds, items] = listingsData as [bigint[], { seller: Address; price: bigint; listedAt: bigint }[]];
-    return tokenIds.map((tokenId, i) => ({
-      tokenId,
-      seller: items[i]!.seller,
-      price: items[i]!.price,
-      listedAt: items[i]!.listedAt,
-    }));
-  }, [listingsData]);
+    if (!listingPages) return [];
+    const out: ListingData[] = [];
+    for (const page of listingPages) {
+      if (page.status !== 'success') continue;
+      const [tokenIds, items] = page.result as unknown as [
+        readonly bigint[],
+        readonly { seller: Address; price: bigint; listedAt: bigint }[],
+      ];
+      tokenIds.forEach((tokenId, i) => {
+        out.push({ tokenId, seller: items[i]!.seller, price: items[i]!.price, listedAt: items[i]!.listedAt });
+      });
+    }
+    return out;
+  }, [listingPages]);
 
   // ─── Fetch user's owned NFTs ────────────────────────────────
   const { data: userBalance } = useReadContract({
@@ -185,6 +209,57 @@ export default function MarketPage() {
     }
     return ids;
   }, [ownerOfResults, connected]);
+
+  // ─── Treasury auto-listing ────────────────────────────────────
+  // Abandoned research is force-minted to the treasury, and the keeper
+  // lists it through the permissionless `listAbandoned`. That still needs
+  // the ERC-721 operator approval every seller needs — granted once, by
+  // the treasury wallet, here.
+  const { data: treasuryAddr } = useReadContract({
+    address: nftAddr ?? undefined,
+    abi: erc721Abi,
+    functionName: 'treasury',
+    query: { enabled: !!nftAddr },
+  });
+
+  const { data: treasuryApproved, refetch: refetchTreasuryApproval } = useReadContract({
+    address: nftAddr ?? undefined,
+    abi: erc721Abi,
+    functionName: 'isApprovedForAll',
+    args: treasuryAddr && marketplaceAddr ? [treasuryAddr as Address, marketplaceAddr] : undefined,
+    query: { enabled: !!nftAddr && !!marketplaceAddr && !!treasuryAddr },
+  });
+
+  const { data: treasuryBalance } = useReadContract({
+    address: nftAddr ?? undefined,
+    abi: erc721Abi,
+    functionName: 'balanceOf',
+    args: treasuryAddr ? [treasuryAddr as Address] : undefined,
+    query: { enabled: !!nftAddr && !!treasuryAddr },
+  });
+
+  // Listing is non-custodial, so the treasury still owns what it has listed:
+  // only the difference is actually waiting for the keeper.
+  const treasuryUnlisted = useMemo(() => {
+    const held = Number(treasuryBalance ?? 0n);
+    if (!treasuryAddr || held === 0) return 0;
+    const onMarket = listings.filter(
+      (l) => l.seller.toLowerCase() === (treasuryAddr as string).toLowerCase(),
+    ).length;
+    return Math.max(0, held - onMarket);
+  }, [treasuryBalance, treasuryAddr, listings]);
+
+  const isTreasuryWallet =
+    !!connected && !!treasuryAddr && connected.toLowerCase() === (treasuryAddr as string).toLowerCase();
+
+  const { writeContractAsync: treasuryApproveAsync, data: treasuryApproveTxHash } = useWriteContract();
+  const { isSuccess: treasuryApproveConfirmed } = useWaitForTransactionReceipt({
+    hash: treasuryApproveTxHash,
+  });
+
+  useEffect(() => {
+    if (treasuryApproveConfirmed) refetchTreasuryApproval();
+  }, [treasuryApproveConfirmed, refetchTreasuryApproval]);
 
   // ─── Sell flow state ──────────────────────────────────────────
   const [sellTokenId, setSellTokenId] = useState('');
@@ -284,6 +359,17 @@ export default function MarketPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approveConfirmed, sellStep]);
 
+  const handleTreasuryApprove = useCallback(async () => {
+    if (!nftAddr || !marketplaceAddr) return;
+    await ensureChain();
+    await treasuryApproveAsync({
+      address: nftAddr,
+      abi: erc721Abi,
+      functionName: 'setApprovalForAll',
+      args: [marketplaceAddr, true],
+    });
+  }, [nftAddr, marketplaceAddr, ensureChain, treasuryApproveAsync]);
+
   const handleBuy = useCallback(
     async (tokenId: bigint, price: bigint) => {
       if (!connected || !marketplaceAddr) return;
@@ -345,6 +431,37 @@ export default function MarketPage() {
           >
             Deploy Marketplace →
           </Link>
+        </div>
+      )}
+
+      {/* Treasury auto-listing status — abandoned research sells itself
+          once the treasury has approved the marketplace. */}
+      {marketplaceAddr && treasuryAddr && treasuryApproved === false && treasuryUnlisted > 0 && (
+        <div className="mb-8 rounded-xl border border-sky-400/20 bg-sky-400/5 p-5">
+          <p className="text-sm font-medium text-sky-200">
+            {treasuryUnlisted} abandoned discover{treasuryUnlisted === 1 ? 'y is' : 'ies are'}{' '}
+            waiting to be listed automatically
+          </p>
+          <p className="mt-1 text-xs text-white/50">
+            Research nobody minted within 7 days is forfeit to the treasury, and the keeper lists it here at a
+            price fixed on-chain from its original mint fee — with the proceeds going to the treasury. It needs one approval from{' '}
+            {truncateAddr(treasuryAddr as string)} before it can do that.
+          </p>
+          {isTreasuryWallet ? (
+            <button
+              onClick={handleTreasuryApprove}
+              disabled={!!treasuryApproveTxHash && !treasuryApproveConfirmed}
+              className="mt-3 rounded-lg bg-sky-500/20 px-4 py-2 text-sm font-medium text-sky-200 hover:bg-sky-500/30 disabled:opacity-50"
+            >
+              {treasuryApproveTxHash && !treasuryApproveConfirmed
+                ? 'Approving…'
+                : 'Approve marketplace for auto-listing'}
+            </button>
+          ) : (
+            <p className="mt-3 text-xs text-white/30">
+              Connect the treasury wallet to grant it.
+            </p>
+          )}
         </div>
       )}
 
@@ -474,6 +591,7 @@ export default function MarketPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 {listings.map((l) => (
                   <ListingCard
+              treasury={(treasuryAddr as Address | undefined) ?? null}
                     key={l.tokenId.toString()}
                     listing={l}
                     nftAddr={nftAddr}
@@ -497,16 +615,19 @@ function ListingCard({
   listing,
   nftAddr,
   connected,
+  treasury,
   onBuy,
   onCancel,
 }: {
   listing: ListingData;
   nftAddr: Address | null;
   connected: Address | undefined;
+  treasury: Address | null;
   onBuy: (tokenId: bigint, price: bigint) => void;
   onCancel: (tokenId: bigint) => void;
 }) {
   const isSeller = connected?.toLowerCase() === listing.seller.toLowerCase();
+  const isTreasury = !!treasury && listing.seller.toLowerCase() === treasury.toLowerCase();
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-white/20">
@@ -528,7 +649,7 @@ function ListingCard({
 
       {/* Seller */}
       <p className="mb-4 text-xs text-white/40">
-        Seller: {truncateAddr(listing.seller)}
+        Seller: {isTreasury ? 'Treasury (abandoned research)' : truncateAddr(listing.seller)}
       </p>
 
       {/* Action */}
