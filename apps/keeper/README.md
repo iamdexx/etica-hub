@@ -103,7 +103,7 @@ pnpm --filter @etica-hub/keeper bridge-gas:live      # needs HARVEST_PRIVATE_KEY
 | Var | Default | Notes |
 | --- | --- | --- |
 | `HARVEST_PRIVATE_KEY` / `BRIDGE_GAS_PRIVATE_KEY` | — | The relayer EOA. Must be the fee contracts' owner. |
-| `BRIDGE_GAS_ETHEREUM_RPC_URL` | — (required) | Provider URL. |
+| `BRIDGE_GAS_ETHEREUM_RPC_URL` | public rotation (tenderly, mevblocker, drpc, publicnode) | Optional comma-separated read endpoint(s); the public rotation is appended as failover unless a loopback fork is given. Reads only — writes use the URL below. |
 | `BRIDGE_GAS_ETICA_RPC_URL` | `HARVEST_RPC_URL` or rpc2.etica-stats.org | |
 | `BRIDGE_GAS_{ETHEREUM,ETICA}_FEE_CONTRACT` | — | From the warp deploy output; blank = leg skipped. |
 | `BRIDGE_GAS_ETICA_STABLE` | — | USDC.e router address; blank = leg skipped. |

@@ -9,6 +9,7 @@ import {
   ETHEREUM_MAILBOX,
   ETHEREUM_USDC,
   FLASHBOTS_PROTECT_RPC,
+  PUBLIC_ETHEREUM_RPCS,
   UNISWAP_V2_ROUTER,
 } from '../src/bridge-gas/config.js';
 import {
@@ -80,8 +81,11 @@ describe('loadBridgeGasConfig', () => {
     expect(cfg.dryRun).toBe(true);
   });
 
-  it('requires an Ethereum RPC and a sane threshold ordering', () => {
-    expect(() => loadBridgeGasConfig({})).toThrow('BRIDGE_GAS_ETHEREUM_RPC_URL');
+  it('defaults Ethereum reads to the public RPC rotation and requires a sane threshold ordering', () => {
+    const eth = loadBridgeGasConfig({}).legs[0]!;
+    expect(eth.rpcUrls).toEqual([...PUBLIC_ETHEREUM_RPCS]);
+    expect(eth.rpcUrl).toBe(PUBLIC_ETHEREUM_RPCS[0]);
+    expect(eth.writeRpcUrl).toBe(FLASHBOTS_PROTECT_RPC);
     expect(() =>
       loadBridgeGasConfig({
         BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC,
@@ -156,6 +160,37 @@ describe('loadBridgeGasConfig', () => {
     expect(() =>
       loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC, BRIDGE_GAS_ETHEREUM_WRITE_RPC_URL: 'ws://x' }),
     ).toThrow('http(s)');
+  });
+
+  it('reads fail over from the configured endpoint(s) to the public rotation, except on a fork', () => {
+    const one = loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC }).legs[0]!;
+    expect(one.rpcUrls).toEqual([ETH_RPC, ...PUBLIC_ETHEREUM_RPCS]);
+
+    const many = loadBridgeGasConfig({
+      BRIDGE_GAS_ETHEREUM_RPC_URL: ` ${ETH_RPC}, https://b.example ,${PUBLIC_ETHEREUM_RPCS[0]}`,
+    }).legs[0]!;
+    expect(many.rpcUrls).toEqual([ETH_RPC, 'https://b.example', ...PUBLIC_ETHEREUM_RPCS]);
+    expect(many.rpcUrl).toBe(ETH_RPC);
+
+    // A local fork must never be mixed with mainnet endpoints.
+    const fork = loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: 'http://127.0.0.1:8548' }).legs[0]!;
+    expect(fork.rpcUrls).toEqual(['http://127.0.0.1:8548']);
+
+    const etica = loadBridgeGasConfig({ HARVEST_RPC_URL: 'https://etica.example' }).legs[1]!;
+    expect(etica.rpcUrls[0]).toBe('https://etica.example');
+    expect(etica.rpcUrls).toEqual(expect.arrayContaining(eticaMainnet.rpcUrls.default.http));
+
+    expect(() => loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: `${ETH_RPC},ws://x` })).toThrow('http(s)');
+  });
+
+  it('rejects a mailbox override unless every Ethereum endpoint is a loopback fork', () => {
+    const fake = '0x00000000000000000000000000000000000000ab';
+    expect(() =>
+      loadBridgeGasConfig({
+        BRIDGE_GAS_ETHEREUM_RPC_URL: `http://127.0.0.1:8548,${ETH_RPC}`,
+        BRIDGE_GAS_ETHEREUM_MAILBOX: fake,
+      }),
+    ).toThrow('local fork');
   });
 
   it('defaults a 500-stable float on both legs; Etica claims stay cheap', () => {

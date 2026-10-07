@@ -45,8 +45,12 @@ jobs:
       BRIDGE_GAS_DRY_RUN: ${{ inputs.dry_run || 'false' }}
       # Same gas-paying EOA as the harvest / forfeit cranks and the Hyperlane relayer.
       HARVEST_PRIVATE_KEY: ${{ secrets.HARVEST_KEEPER_PRIVATE_KEY }}
-      # Ethereum needs a provider that serves eth_call reliably; set as a secret
-      # since provider URLs embed API keys.
+      # Optional. Comma-separated Ethereum read endpoint(s); blank = the public
+      # rotation built into the keeper (tenderly, mevblocker, drpc, publicnode),
+      # which is also appended as failover behind anything set here. Reads are
+      # verified against on-chain state, so a bad endpoint can only delay a run.
+      # Writes always go through Flashbots Protect. A secret because provider
+      # URLs embed API keys.
       BRIDGE_GAS_ETHEREUM_RPC_URL: ${{ secrets.BRIDGE_ETHEREUM_RPC_URL }}
       BRIDGE_GAS_ETICA_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
       # Filled from infra/hyperlane/registry/deployments/warp_routes/USDC/etica-config.yaml
@@ -69,12 +73,6 @@ jobs:
         if: ${{ env.HARVEST_PRIVATE_KEY == '' && env.BRIDGE_GAS_DRY_RUN != 'true' }}
         run: |
           echo "::error ::HARVEST_KEEPER_PRIVATE_KEY secret is unset on the 'harvest-live' environment."
-          exit 1
-
-      - name: Guard against missing Ethereum RPC
-        if: ${{ env.BRIDGE_GAS_ETHEREUM_RPC_URL == '' }}
-        run: |
-          echo "::error ::BRIDGE_ETHEREUM_RPC_URL secret is unset on the 'harvest-live' environment."
           exit 1
 
       - uses: actions/checkout@v4

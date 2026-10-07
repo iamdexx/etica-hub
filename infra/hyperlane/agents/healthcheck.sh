@@ -19,14 +19,18 @@ STATE=".healthcheck.state"
 USDC=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 problems=()
 
-first_rpc() { echo "${1%%,*}"; }
-ETH_RPC="$(first_rpc "${ETHEREUM_RPC_URLS:-https://ethereum-rpc.publicnode.com}")"
-ETI_RPC="$(first_rpc "${ETICA_RPC_URLS:-https://eticamainnet.eticaprotocol.org}")"
+# Comma-separated lists; `rpc` walks each list until an endpoint answers.
+ETH_RPC="${ETHEREUM_RPC_URLS:-https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io,https://eth.drpc.org,https://ethereum-rpc.publicnode.com}"
+ETI_RPC="${ETICA_RPC_URLS:-https://eticamainnet.eticaprotocol.org,https://rpc2.etica-stats.org}"
 
-rpc() { # rpc <url> <method> <params-json>
-  curl -sS -m 15 -X POST "$1" -H 'content-type: application/json' \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\",\"params\":$3}" |
-    python3 -c 'import sys,json; r=json.load(sys.stdin); print(r.get("result",""))' 2>/dev/null
+rpc() { # rpc <url[,url...]> <method> <params-json>
+  local url out
+  for url in ${1//,/ }; do
+    out="$(curl -sS -m 15 -X POST "$url" -H 'content-type: application/json' \
+      -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\",\"params\":$3}" 2>/dev/null |
+      python3 -c 'import sys,json; r=json.load(sys.stdin); print(r["result"])' 2>/dev/null)" && { echo "$out"; return 0; }
+  done
+  echo ""
 }
 hex2dec() { python3 -c 'import sys; v=sys.argv[1]; print(int(v,16) if v.startswith("0x") and len(v)>2 else -1)' "$1"; }
 pad() { printf '%064s' "${1#0x}" | tr ' ' 0; }

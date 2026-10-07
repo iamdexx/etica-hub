@@ -42,6 +42,10 @@ services:
       - --validator.key=${VALIDATOR_KEY}
       - --chains.ethereum.signer.key=${VALIDATOR_KEY}
       - --chains.ethereum.customRpcUrls=${ETHEREUM_RPC_URLS}
+      # The validator signs whatever mailbox state its RPC shows it, so it
+      # cross-checks several independent endpoints instead of trusting one.
+      - --chains.ethereum.rpcConsensusType=${VALIDATOR_RPC_CONSENSUS:-quorum}
+      - --chains.ethereum.index.chunk=${ETHEREUM_INDEX_CHUNK:-100}
       - --metrics-port=9091
     ports: ['127.0.0.1:9091:9091']
 
@@ -61,6 +65,7 @@ services:
       - --validator.key=${VALIDATOR_KEY}
       - --chains.etica.signer.key=${VALIDATOR_KEY}
       - --chains.etica.customRpcUrls=${ETICA_RPC_URLS}
+      - --chains.etica.rpcConsensusType=${VALIDATOR_RPC_CONSENSUS:-quorum}
       - --metrics-port=9092
     ports: ['127.0.0.1:9092:9092']
 
@@ -81,6 +86,12 @@ services:
       - --defaultSigner.key=${RELAYER_KEY}
       - --chains.ethereum.customRpcUrls=${ETHEREUM_RPC_URLS}
       - --chains.etica.customRpcUrls=${ETICA_RPC_URLS}
+      # The relayer only submits messages the on-chain ISM accepts, so a bad
+      # endpoint can cost it a retry, never a forged delivery: plain failover.
+      - --chains.ethereum.rpcConsensusType=fallback
+      - --chains.etica.rpcConsensusType=fallback
+      # Public Ethereum endpoints cap eth_getLogs ranges; index in small chunks.
+      - --chains.ethereum.index.chunk=${ETHEREUM_INDEX_CHUNK:-100}
       # Only relay our own warp route; ignore anything else on the mailboxes.
       - --whitelist=${RELAYER_WHITELIST:-[]}
       # Users don't pay IGP on Etica (no gas paymaster deployed): relay for free.
