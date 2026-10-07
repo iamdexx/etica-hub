@@ -99,17 +99,22 @@ fi
 # 5. relayer message loader stuck at nonce 0 while messages are indexed
 metrics="$(curl -sf -m 5 http://127.0.0.1:9090/metrics 2>/dev/null || true)"
 if [[ -n "$metrics" ]]; then
-  stuck="$(python3 - <<'PY' <<<"$metrics"
-import re, sys
-stored, loader = {}, {}
-for line in sys.stdin:
+  stuck="$(METRICS="$metrics" python3 - <<'PY'
+import os, re
+stored, loader, processed = {}, {}, {}
+for line in os.environ["METRICS"].splitlines():
     m = re.match(r'hyperlane_contract_sync_stored_events\{([^}]*)\} (\d+)', line)
     if m and 'data_type="dispatched_messages"' in m.group(1):
         stored[re.search(r'chain="(\w+)"', m.group(1)).group(1)] = int(m.group(2))
     m = re.match(r'hyperlane_last_known_message_nonce\{([^}]*)\} (\d+)', line)
     if m and 'phase="db_loader_loop"' in m.group(1):
         loader[re.search(r'origin="(\w+)"', m.group(1)).group(1)] = int(m.group(2))
-print(" ".join(c for c, n in stored.items() if n > 0 and loader.get(c, 0) == 0))
+    m = re.match(r'hyperlane_messages_processed_count\{([^}]*)\} (\d+)', line)
+    if m:
+        o = re.search(r'origin="(\w+)"', m.group(1)).group(1); processed[o] = processed.get(o, 0) + int(m.group(2))
+# Metrics are per process: indexed a message since start, processed none, loader never left nonce 0.
+# (A fresh mailbox's first message *is* nonce 0, hence the processed-count guard.)
+print(" ".join(c for c, n in stored.items() if n > 0 and loader.get(c, 0) == 0 and processed.get(c, 0) == 0))
 PY
 )"
   if [[ -n "$stuck" ]]; then
