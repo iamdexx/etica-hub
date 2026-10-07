@@ -47,3 +47,4 @@ pnpm-debug.log*
 # hyperlane agents — runtime state and secrets
 infra/hyperlane/agents/data/
 infra/hyperlane/agents/.healthcheck.state
+infra/droplet/data/
