@@ -365,13 +365,15 @@ export async function planSurplusChunk(
 ): Promise<{ plan: SwapPlan | null; blocked: string | null }> {
   if (leg.surplus.kind !== 'swap-to-native') return { plan: null, blocked: null };
   let chunk = surplus > leg.surplus.maxChunk ? leg.surplus.maxChunk : surplus;
-  let last: { plan: SwapPlan | null; blocked: string | null } = { plan: null, blocked: null };
-  while (chunk >= leg.minSweep) {
-    last = planSurplusSwap(chunk, chunk, leg.minSweep, await quoteSurplus(client, leg, chunk), maxSlippageBps);
+  if (chunk < leg.minSweep) return { plan: null, blocked: 'surplus chunk below minimum' };
+  for (;;) {
+    const last = planSurplusSwap(chunk, chunk, leg.minSweep, await quoteSurplus(client, leg, chunk), maxSlippageBps);
     if (last.plan || !last.blocked?.includes('price impact')) return last;
-    chunk /= 2n;
+    const half = chunk / 2n;
+    if (half >= leg.minSweep) chunk = half;
+    else if (chunk > leg.minSweep) chunk = leg.minSweep;
+    else return last;
   }
-  return last.blocked ? last : { plan: null, blocked: 'surplus chunk below minimum' };
 }
 
 /**

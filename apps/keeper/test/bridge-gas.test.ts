@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseEther, parseUnits } from 'viem';
+import { parseEther, parseUnits, type PublicClient } from 'viem';
 import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 
 import {
@@ -20,6 +20,7 @@ import {
   surplusAmount,
 } from '../src/bridge-gas/plan.js';
 import { bytes32ToAddress, planGasDrops, type InboundTransfer } from '../src/bridge-gas/gas-drop.js';
+import { planSurplusChunk } from '../src/bridge-gas/run.js';
 
 const KEY = ('0x' + '11'.repeat(32)) as `0x${string}`;
 const FEE = '0x00000000000000000000000000000000000000f1';
@@ -387,5 +388,40 @@ describe('gas drop planning', () => {
     expect(tight.drops).toEqual([A]);
     expect(tight.skipped.map((s) => s.reason)).toContain('keeper would fall below its gas floor');
     expect(planGasDrops(many, new Map(), KEEPER, parseEther('100'), parseEther('20'), cfg).drops).toEqual([]);
+  });
+});
+
+describe('planSurplusChunk', () => {
+  const leg = loadBridgeGasConfig({
+    BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC,
+    BRIDGE_GAS_ETICA_STABLE: USDCE,
+    BRIDGE_GAS_ETICA_MIN_SWEEP: '5',
+  }).legs[1]!;
+  // marginal 1 USDC.e -> 0.372 EGAZ; anything above 5 USDC.e moves the pool 5%, 5 itself only 1%
+  const client = {
+    readContract: async ({ args }: { args: readonly [bigint, readonly `0x${string}`[]] }) => {
+      const amountIn = args[0];
+      const impactBps = amountIn > parseUnits('5', 6) ? 500n : 100n;
+      const out = (((amountIn * parseEther('0.372')) / parseUnits('1', 6)) * (10000n - impactBps)) / 10000n;
+      return [amountIn, 0n, out];
+    },
+  } as unknown as PublicClient;
+
+  it('falls back to the minimum sweep when halving would skip it', async () => {
+    const { plan, blocked } = await planSurplusChunk(client, leg, parseUnits('8', 6), 150);
+    expect(blocked).toBeNull();
+    expect(plan!.amountIn).toBe(parseUnits('5', 6));
+  });
+
+  it('holds without quoting when the whole surplus is under the minimum', async () => {
+    const { plan, blocked } = await planSurplusChunk(client, leg, parseUnits('4', 6), 150);
+    expect(plan).toBeNull();
+    expect(blocked).toBe('surplus chunk below minimum');
+  });
+
+  it('rejects a per-run swap cap below the minimum sweep', () => {
+    expect(() =>
+      loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC, BRIDGE_GAS_ETICA_MAX_SURPLUS_SWAP: '3' }),
+    ).toThrow(/MAX_SURPLUS_SWAP must be at least/);
   });
 });

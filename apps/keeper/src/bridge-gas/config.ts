@@ -225,6 +225,9 @@ function leg(
   const reserveStable = optDecimal(env, `BRIDGE_GAS_${P}_RESERVE_STABLE`, base.reserveStableDefault, base.stableDecimals);
   const minSweep = optDecimal(env, `BRIDGE_GAS_${P}_MIN_SWEEP`, base.minSweepDefault, base.stableDecimals);
   if (minSweep === 0n) throw new Error(`BRIDGE_GAS_${P}_MIN_SWEEP must be positive`);
+  if (base.surplus.kind === 'swap-to-native' && base.surplus.maxChunk < minSweep) {
+    throw new Error(`BRIDGE_GAS_${P}_MAX_SURPLUS_SWAP must be at least BRIDGE_GAS_${P}_MIN_SWEEP`);
+  }
   const minNative = optDecimal(env, `BRIDGE_GAS_${P}_MIN_NATIVE`, base.minNativeDefault, 18);
   const targetNative = optDecimal(env, `BRIDGE_GAS_${P}_TARGET_NATIVE`, base.targetNativeDefault, 18);
   if (targetNative <= minNative) {
