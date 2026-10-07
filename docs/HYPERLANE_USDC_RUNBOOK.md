@@ -222,7 +222,11 @@ Roles: owner = treasury `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`
 `0xF077810FeD8908946402A34902109Fc4807744Fd` (PausableIsms); validator
 `0x52B8A1566E05eaF384Aba45c866005BA95Af781b`; keeper
 `0xfcDd0d3d9A167092d094287E109B9315f08d05a7` (deployer, fee-contract owner);
-relayer `0x25044F7A5280324D5c3788B97BE447f6165e4274` (droplet key). Full
+relayer `0x25044F7A5280324D5c3788B97BE447f6165e4274` (droplet key; the
+hourly bridge-gas keeper refuels it from fees — floor 0.03 ETH / 10 EGAZ,
+target 0.08 / 40, `BRIDGE_GAS_<CHAIN>_RELAYER_{MIN,TARGET}_NATIVE` — but it
+needs a first manual top-up before any delivery, and the keeper never sends
+more than it holds above its own floor). Full
 rendered registry: `infra/hyperlane/registry/`. Cost: 0.0025 ETH + ~4 EGAZ.
 
 The rate limit asked for 5,000 USDC/day; `RateLimitedIsm` needs

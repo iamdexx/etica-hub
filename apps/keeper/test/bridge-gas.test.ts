@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseEther, parseUnits, type PublicClient } from 'viem';
-import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
+import { BRIDGE_ROLES, DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 
 import {
   loadBridgeGasConfig,
@@ -16,6 +16,8 @@ import {
   decideLeg,
   nativeNeeded,
   planSurplusSwap,
+  relayerNeeded,
+  relayerTopUp,
   priceImpactBps,
   surplusAmount,
 } from '../src/bridge-gas/plan.js';
@@ -218,6 +220,47 @@ describe('loadGasDropConfig', () => {
     expect(() => loadGasDropConfig({ BRIDGE_GAS_DROP_MAX_PER_RUN: '1000' })).toThrow('MAX_PER_RUN');
     expect(() => loadGasDropConfig({ BRIDGE_GAS_DROP_THRESHOLD: '5' })).toThrow('THRESHOLD');
     expect(() => loadGasDropConfig({ BRIDGE_GAS_DROP_LOOKBACK_BLOCKS: '99999' })).toThrow('LOOKBACK');
+  });
+});
+
+describe('relayer refuel', () => {
+  const r = { ...t, relayer: { minNative: parseEther('0.03'), targetNative: parseEther('0.08') } };
+
+  it('pins the relayer address in code with sane floors on both legs, and can be switched off', () => {
+    const cfg = loadBridgeGasConfig({ HARVEST_PRIVATE_KEY: KEY, BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC, BRIDGE_GAS_ETICA_STABLE: USDCE });
+    for (const leg of cfg.legs) {
+      expect(leg.relayer?.address).toBe(BRIDGE_ROLES.relayer);
+      expect(leg.relayer!.targetNative).toBeGreaterThan(leg.relayer!.minNative);
+    }
+    expect(cfg.legs[0]!.relayer!.minNative).toBe(parseEther('0.03'));
+    expect(cfg.legs[1]!.relayer!.minNative).toBe(parseEther('10'));
+    const off = loadBridgeGasConfig({ HARVEST_PRIVATE_KEY: KEY, BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC, BRIDGE_GAS_RELAYER_TOPUP: 'false' });
+    expect(off.legs.every((l) => l.relayer === null)).toBe(true);
+    expect(() =>
+      loadBridgeGasConfig({ HARVEST_PRIVATE_KEY: KEY, BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC, BRIDGE_GAS_ETHEREUM_RELAYER_TARGET_NATIVE: '0.01' }),
+    ).toThrow(/RELAYER_TARGET_NATIVE/);
+  });
+
+  it('adds the relayer shortfall to what the swap must buy, net of the keeper spare gas', () => {
+    // relayer healthy -> only the keeper's own shortfall
+    expect(nativeNeeded(snap({ relayerNative: parseEther('0.05') }), r)).toBe(parseEther('0.14'));
+    // relayer empty, keeper empty -> both top-ups
+    expect(relayerNeeded(snap({ relayerNative: 0n }), r)).toBe(parseEther('0.08'));
+    expect(nativeNeeded(snap({ relayerNative: 0n }), r)).toBe(parseEther('0.22'));
+    // keeper comfortably above its floor pays part of the relayer need from spare gas
+    expect(nativeNeeded(snap({ nativeBalance: parseEther('0.10'), relayerNative: 0n }), r)).toBe(parseEther('0.03'));
+    expect(nativeNeeded(snap({ nativeBalance: parseEther('0.20'), relayerNative: 0n }), r)).toBe(0n);
+    // no relayer configured / no reading -> unchanged behaviour
+    expect(nativeNeeded(snap({ relayerNative: 0n }), t)).toBe(parseEther('0.14'));
+    expect(nativeNeeded(snap(), r)).toBe(parseEther('0.14'));
+  });
+
+  it('sends the relayer its shortfall but never dips the keeper under its own floor', () => {
+    expect(relayerTopUp(parseEther('0.20'), 0n, r)).toBe(parseEther('0.08'));
+    expect(relayerTopUp(parseEther('0.06'), 0n, r)).toBe(parseEther('0.01'));
+    expect(relayerTopUp(parseEther('0.04'), 0n, r)).toBe(0n);
+    expect(relayerTopUp(parseEther('0.20'), parseEther('0.03'), r)).toBe(0n);
+    expect(relayerTopUp(parseEther('0.20'), 0n, t)).toBe(0n);
   });
 });
 

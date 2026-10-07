@@ -5,8 +5,11 @@
  * Per run, in order:
  *   1. claim   — sweep the fee contract into the keeper wallet once it holds
  *                at least `minStable` (amortises Ethereum gas)
- *   2. swap    — if native gas is under `minNative`, swap just enough stable
- *                for wrapped native (bounded by price impact + slippage)
+ *   2. swap    — if native gas (keeper's, plus the relayer's shortfall) is
+ *                under `minNative`, swap just enough stable for wrapped
+ *                native (bounded by price impact + slippage)
+ *   2b. relayer — send the relayer up to its target from the keeper's gas,
+ *                never below the keeper's own floor
  *   3. surplus — everything left above `reserveStable` is converted to EGAZ:
  *                on Etica it is swapped (USDC.e -> ETX -> WEGAZ -> EGAZ) in
  *                bounded chunks and kept in the keeper wallet, with no upper
@@ -24,6 +27,8 @@ export interface LegSnapshot {
   walletStable: bigint;
   /** Whether the keeper is the fee contract's owner (can `claim`). */
   keeperOwnsFeeContract: boolean;
+  /** Relayer's native balance (wei), when the leg refuels a separate relayer. */
+  relayerNative?: bigint;
 }
 
 export interface LegThresholds {
@@ -36,6 +41,8 @@ export interface LegThresholds {
   reserveStable: bigint;
   /** Only swap / bridge the surplus when it is at least this. */
   minSweep: bigint;
+  /** Relayer floor/target; the shortfall is added to what the swap must buy. */
+  relayer?: { minNative: bigint; targetNative: bigint } | null;
 }
 
 export interface SwapQuote {
@@ -78,10 +85,36 @@ export function claimAmount(snap: LegSnapshot, t: LegThresholds): bigint {
   return snap.feeContractBalance >= t.minStable ? snap.feeContractBalance : 0n;
 }
 
-/** Native shortfall to reach the target; 0 when the balance is healthy. */
+/** Relayer's native shortfall to reach its target; 0 when healthy or not refuelled from this leg. */
+export function relayerNeeded(snap: LegSnapshot, t: LegThresholds): bigint {
+  if (!t.relayer || snap.relayerNative === undefined) return 0n;
+  if (snap.relayerNative >= t.relayer.minNative) return 0n;
+  return t.relayer.targetNative - snap.relayerNative;
+}
+
+/**
+ * Native shortfall the swap must cover: the keeper's own top-up plus
+ * whatever the relayer needs that the keeper's spare gas (above its floor)
+ * cannot already pay. 0 when both are healthy.
+ */
 export function nativeNeeded(snap: LegSnapshot, t: LegThresholds): bigint {
-  if (snap.nativeBalance >= t.minNative) return 0n;
-  return t.targetNative - snap.nativeBalance;
+  const own = snap.nativeBalance < t.minNative ? t.targetNative - snap.nativeBalance : 0n;
+  const relayer = relayerNeeded(snap, t);
+  if (relayer === 0n) return own;
+  const spare = snap.nativeBalance > t.minNative ? snap.nativeBalance - t.minNative : 0n;
+  return own + (relayer > spare ? relayer - spare : 0n);
+}
+
+/**
+ * Gas to send the relayer right now: its shortfall, capped by what the
+ * keeper holds above its own floor (so refuelling the relayer can never
+ * strand the keeper).
+ */
+export function relayerTopUp(keeperNative: bigint, relayerNative: bigint, t: LegThresholds): bigint {
+  const need = relayerNeeded({ nativeBalance: keeperNative, feeContractBalance: 0n, walletStable: 0n, keeperOwnsFeeContract: false, relayerNative }, t);
+  if (need === 0n) return 0n;
+  const spare = keeperNative > t.minNative ? keeperNative - t.minNative : 0n;
+  return need < spare ? need : spare;
 }
 
 /**

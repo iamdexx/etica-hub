@@ -11,6 +11,9 @@
  *   2. if the keeper's native balance is under `minNative`, swap just
  *      enough USDC / USDC.e for wrapped gas on the chain's V2 router and
  *      unwrap it
+ *   2b. if the relayer's native balance is under its floor, send it gas
+ *      from the keeper (address pinned in code), keeping the keeper above
+ *      its own floor
  *   3. turn the surplus into EGAZ for the keeper: on Etica it is swapped
  *      along the pinned USDC.e -> ETX -> WEGAZ path in bounded chunks and
  *      unwrapped, with no upper target — the keeper's gas pile just grows;
@@ -26,7 +29,7 @@
 
 import 'dotenv/config';
 import { isAddress, isHex, parseUnits, type Address, type Hex } from 'viem';
-import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
+import { BRIDGE_ROLES, DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 import { DEAD_ADDRESS } from '../harvest/config.js';
 
 export { DEAD_ADDRESS };
@@ -60,6 +63,12 @@ export interface BridgeGasLeg {
   minNative: bigint;
   /** Top up to this native balance. */
   targetNative: bigint;
+  /**
+   * Relayer gas floor/target. The address is `BRIDGE_ROLES.relayer` — not
+   * configurable, so a poisoned workflow variable cannot redirect the
+   * keeper's gas. Null when the relayer *is* the keeper.
+   */
+  relayer: RelayerTopUp | null;
   /** Don't bother claiming/swapping amounts smaller than this (stable units). */
   minStable: bigint;
   /** Stable kept in the keeper wallet as a gas-buying reserve; the rest is swapped to EGAZ / bridged to be swapped. */
@@ -82,6 +91,14 @@ export interface BridgeGasLeg {
    * exposure); reads always go through `rpcUrl`.
    */
   writeRpcUrl: string;
+}
+
+export interface RelayerTopUp {
+  address: Address;
+  /** Below this the keeper sends gas to the relayer. */
+  minNative: bigint;
+  /** ...up to this. */
+  targetNative: bigint;
 }
 
 export interface GasDropConfig {
@@ -198,7 +215,7 @@ function optInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number 
 
 function leg(
   env: NodeJS.ProcessEnv,
-  base: Omit<BridgeGasLeg, 'feeContract' | 'stable' | 'minNative' | 'targetNative' | 'minStable' | 'reserveStable' | 'minSweep' | 'writeRpcUrl' | 'path' | 'rpcUrl' | 'rpcUrls' | 'router' | 'wrappedNative' | 'surplus'> & {
+  base: Omit<BridgeGasLeg, 'feeContract' | 'stable' | 'minNative' | 'targetNative' | 'relayer' | 'minStable' | 'reserveStable' | 'minSweep' | 'writeRpcUrl' | 'path' | 'rpcUrl' | 'rpcUrls' | 'router' | 'wrappedNative' | 'surplus'> & {
     /** Configured endpoint(s) win; these are appended as failover. */
     rpcFailover: readonly string[];
     router: string;
@@ -208,6 +225,8 @@ function leg(
     via: Address[];
     minNativeDefault: string;
     targetNativeDefault: string;
+    relayerMinDefault: string;
+    relayerTargetDefault: string;
     minStableDefault: string;
     reserveStableDefault: string;
     minSweepDefault: string;
@@ -233,6 +252,16 @@ function leg(
   if (targetNative <= minNative) {
     throw new Error(`BRIDGE_GAS_${P}_TARGET_NATIVE must exceed BRIDGE_GAS_${P}_MIN_NATIVE`);
   }
+  const relayerMin = optDecimal(env, `BRIDGE_GAS_${P}_RELAYER_MIN_NATIVE`, base.relayerMinDefault, 18);
+  const relayerTarget = optDecimal(env, `BRIDGE_GAS_${P}_RELAYER_TARGET_NATIVE`, base.relayerTargetDefault, 18);
+  if (relayerTarget <= relayerMin) {
+    throw new Error(`BRIDGE_GAS_${P}_RELAYER_TARGET_NATIVE must exceed BRIDGE_GAS_${P}_RELAYER_MIN_NATIVE`);
+  }
+  const relayerEnabled = !/^(0|false|no)$/i.test(opt(env, 'BRIDGE_GAS_RELAYER_TOPUP') ?? '');
+  const relayer: RelayerTopUp | null =
+    relayerEnabled && BRIDGE_ROLES.relayer.toLowerCase() !== BRIDGE_ROLES.keeper.toLowerCase()
+      ? { address: BRIDGE_ROLES.relayer, minNative: relayerMin, targetNative: relayerTarget }
+      : null;
   const stable = optAddress(env, `BRIDGE_GAS_${P}_STABLE`, base.stableDefault);
   // Swap router, wrapped-native and the swap path are pinned in code: a hostile
   // router/path reachable through workflow variables could route every claimed
@@ -253,6 +282,7 @@ function leg(
     path: stable ? [stable, ...base.via, wrappedNative] : [],
     minNative,
     targetNative,
+    relayer,
     minStable,
     reserveStable,
     minSweep,
@@ -291,6 +321,9 @@ export function loadBridgeGasConfig(env: NodeJS.ProcessEnv = process.env): Bridg
       // Ethereum releases cost ~200k gas; 0.05 ETH is ~50 of them at 5 gwei.
       minNativeDefault: '0.05',
       targetNativeDefault: '0.15',
+      // A delivery is ~300k gas; 0.03 ETH is ~20 of them at 5 gwei (matches the droplet healthcheck floor).
+      relayerMinDefault: '0.03',
+      relayerTargetDefault: '0.08',
       // A claim + sweep is ~2 Ethereum txs; only do it once >= 200 USDC accrued (<~2% overhead).
       minStableDefault: '200',
       // Enough to buy a full ETH top-up at any plausible gas price without waiting for new fees.
@@ -313,6 +346,8 @@ export function loadBridgeGasConfig(env: NodeJS.ProcessEnv = process.env): Bridg
       via: [etica.etx],
       minNativeDefault: '20',
       targetNativeDefault: '60',
+      relayerMinDefault: '10',
+      relayerTargetDefault: '40',
       minStableDefault: '5',
       reserveStableDefault: '500',
       minSweepDefault: '5',

@@ -268,8 +268,10 @@ export const TREASURY_ADDRESS: Address = '0xB2B4bC9d02970A55efF64C2D84c622c87967
 export const BRIDGE_ROLES = {
   /** Owns mailbox, ISMs, routers and the rate limit at launch; transferable. */
   owner: TREASURY_ADDRESS,
-  /** Deployer, relayer and fee-contract owner; also the farm harvest keeper. */
+  /** Deployer and fee-contract owner; also the farm harvest keeper. Refuels itself and the relayer from fees. */
   keeper: '0xfcDd0d3d9A167092d094287E109B9315f08d05a7' as Address,
+  /** Hyperlane relayer signer on the droplet: pays delivery gas on both chains, holds nothing else. */
+  relayer: '0x25044F7A5280324D5c3788B97BE447f6165e4274' as Address,
   /** Signs mailbox checkpoints on both chains (1-of-1 at launch). */
   validator: '0x52B8A1566E05eaF384Aba45c866005BA95Af781b' as Address,
   /** Owns the PausableIsm on each router: can pause inbound delivery, nothing else. */
