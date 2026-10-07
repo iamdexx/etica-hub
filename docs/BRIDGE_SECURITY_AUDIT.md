@@ -55,7 +55,7 @@ Evidence (fork): 1 USDC.e redeem — user debited 3,005,000, fee contract
 Hyperlane `LinearFee` → 5,000,000; `WarpFlatLinearFee` → 7,000,000, both via
 `quoteTransferRemote(uint32,bytes32,uint256) → (address,uint256)[]`, so the
 router-facing interface is the one Hyperlane's router actually calls (the
-router on the fork charged exactly these amounts). 11 Foundry tests
+router on the fork charged exactly these amounts). 6 Foundry tests
 (`test/bridge/WarpFlatLinearFee.t.sol`) cover the curve, cap, rounding, and
 owner-only `claim`.
 
