@@ -34,7 +34,15 @@ export interface BridgeGasLeg {
   /** Human label, also the env prefix (ETHEREUM / ETICA). */
   name: 'ethereum' | 'etica';
   chainId: number;
+  /** First read endpoint; `rpcUrls` is the full failover list it heads. */
   rpcUrl: string;
+  /**
+   * Read endpoints in failover order. Reads are plain `eth_call`/balance
+   * lookups plus the gas-drop log scan, all verified against on-chain state
+   * (fee-contract owner, router bindings, mailbox), so a lying or flaky
+   * endpoint can only make a run skip or retry, never misdirect funds.
+   */
+  rpcUrls: string[];
   nativeSymbol: string;
   /** Hyperlane `LinearFee` contract the router forwards fees to. */
   feeContract: Address | null;
@@ -117,6 +125,34 @@ export const ETICA_DOMAIN = eticaMainnet.id;
 /** Flashbots Protect: private tx submission, falls through to public builders only after being unseen for a while. */
 export const FLASHBOTS_PROTECT_RPC = 'https://rpc.flashbots.net/fast';
 
+/**
+ * Public Ethereum endpoints that serve `eth_call`, balances and bounded
+ * `eth_getLogs` ranges without a key (probed 2026-10; order = preference).
+ * Used as the default read set and appended after any configured URL as
+ * failover. Writes never go here: they use `writeRpcUrl` (Flashbots Protect).
+ */
+export const PUBLIC_ETHEREUM_RPCS: readonly string[] = [
+  'https://gateway.tenderly.co/public/mainnet',
+  'https://rpc.mevblocker.io',
+  'https://eth.drpc.org',
+  'https://ethereum-rpc.publicnode.com',
+];
+
+/** Comma-separated URL list -> trimmed, de-duplicated, every entry http(s). */
+function rpcList(name: string, raw: string | null, failover: readonly string[]): string[] {
+  const configured = (raw ?? '')
+    .split(',')
+    .map((u) => u.trim())
+    .filter((u) => u.length > 0);
+  for (const url of configured) {
+    if (!/^https?:\/\//.test(url)) throw new Error(`${name} must be http(s) URL(s), got: ${url}`);
+  }
+  // A loopback (fork) endpoint must stay alone: public failovers would answer
+  // from mainnet state and silently mix two chains into one run.
+  const urls = configured.some(isLoopback) ? configured : [...configured, ...failover];
+  return Array.from(new Set(urls));
+}
+
 function isLoopback(url: string): boolean {
   try {
     const host = new URL(url).hostname;
@@ -160,8 +196,9 @@ function optInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number 
 
 function leg(
   env: NodeJS.ProcessEnv,
-  base: Omit<BridgeGasLeg, 'feeContract' | 'stable' | 'minNative' | 'targetNative' | 'minStable' | 'reserveStable' | 'minSweep' | 'writeRpcUrl' | 'path' | 'rpcUrl' | 'router' | 'wrappedNative' | 'surplus'> & {
-    rpcDefault: string | null;
+  base: Omit<BridgeGasLeg, 'feeContract' | 'stable' | 'minNative' | 'targetNative' | 'minStable' | 'reserveStable' | 'minSweep' | 'writeRpcUrl' | 'path' | 'rpcUrl' | 'rpcUrls' | 'router' | 'wrappedNative' | 'surplus'> & {
+    /** Configured endpoint(s) win; these are appended as failover. */
+    rpcFailover: readonly string[];
     router: string;
     wrappedNative: string;
     stableDefault: string | null;
@@ -177,12 +214,11 @@ function leg(
   },
 ): BridgeGasLeg {
   const P = base.name.toUpperCase();
-  const rpcUrl = opt(env, `BRIDGE_GAS_${P}_RPC_URL`) ?? base.rpcDefault;
-  if (!rpcUrl) throw new Error(`missing required env: BRIDGE_GAS_${P}_RPC_URL`);
+  const rpcUrls = rpcList(`BRIDGE_GAS_${P}_RPC_URL`, opt(env, `BRIDGE_GAS_${P}_RPC_URL`), base.rpcFailover);
+  if (rpcUrls.length === 0) throw new Error(`missing required env: BRIDGE_GAS_${P}_RPC_URL`);
+  const rpcUrl = rpcUrls[0]!;
   const writeRpcUrl = opt(env, `BRIDGE_GAS_${P}_WRITE_RPC_URL`) ?? base.writeRpcDefault ?? rpcUrl;
-  for (const [name, url] of [[`BRIDGE_GAS_${P}_RPC_URL`, rpcUrl], [`BRIDGE_GAS_${P}_WRITE_RPC_URL`, writeRpcUrl]] as const) {
-    if (!/^https?:\/\//.test(url)) throw new Error(`${name} must be an http(s) URL`);
-  }
+  if (!/^https?:\/\//.test(writeRpcUrl)) throw new Error(`BRIDGE_GAS_${P}_WRITE_RPC_URL must be an http(s) URL`);
   const minStable = optDecimal(env, `BRIDGE_GAS_${P}_MIN_STABLE`, base.minStableDefault, base.stableDecimals);
   const reserveStable = optDecimal(env, `BRIDGE_GAS_${P}_RESERVE_STABLE`, base.reserveStableDefault, base.stableDecimals);
   const minSweep = optDecimal(env, `BRIDGE_GAS_${P}_MIN_SWEEP`, base.minSweepDefault, base.stableDecimals);
@@ -202,6 +238,7 @@ function leg(
     name: base.name,
     chainId: optInt(env, `BRIDGE_GAS_${P}_CHAIN_ID`, base.chainId),
     rpcUrl,
+    rpcUrls,
     nativeSymbol: base.nativeSymbol,
     feeContract: optAddress(env, `BRIDGE_GAS_${P}_FEE_CONTRACT`, null),
     stable,
@@ -241,7 +278,7 @@ export function loadBridgeGasConfig(env: NodeJS.ProcessEnv = process.env): Bridg
       chainId: 1,
       nativeSymbol: 'ETH',
       stableDecimals: 6,
-      rpcDefault: null,
+      rpcFailover: PUBLIC_ETHEREUM_RPCS,
       router: UNISWAP_V2_ROUTER,
       wrappedNative: ETHEREUM_WETH,
       stableDefault: ETHEREUM_USDC,
@@ -263,7 +300,7 @@ export function loadBridgeGasConfig(env: NodeJS.ProcessEnv = process.env): Bridg
       chainId: eticaMainnet.id,
       nativeSymbol: 'EGAZ',
       stableDecimals: 6,
-      rpcDefault: opt(env, 'HARVEST_RPC_URL') ?? 'https://rpc2.etica-stats.org',
+      rpcFailover: [opt(env, 'HARVEST_RPC_URL') ?? 'https://rpc2.etica-stats.org', ...eticaMainnet.rpcUrls.default.http],
       router: etica.swapRouter,
       wrappedNative: etica.wegaz,
       // USDC.e exists only once the warp route is deployed.
@@ -280,9 +317,8 @@ export function loadBridgeGasConfig(env: NodeJS.ProcessEnv = process.env): Bridg
     }),
   ];
 
-  const ethRpc = legs[0]!.rpcUrl;
   const mailboxOverride = opt(env, 'BRIDGE_GAS_ETHEREUM_MAILBOX');
-  if (mailboxOverride !== null && !isLoopback(ethRpc)) {
+  if (mailboxOverride !== null && !legs[0]!.rpcUrls.every(isLoopback)) {
     throw new Error('BRIDGE_GAS_ETHEREUM_MAILBOX may only be set when the Ethereum RPC is a local fork');
   }
   const ethereumMailbox = mailboxOverride !== null ? reqAddress(env, 'BRIDGE_GAS_ETHEREUM_MAILBOX', ETHEREUM_MAILBOX) : ETHEREUM_MAILBOX;

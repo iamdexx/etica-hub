@@ -6,13 +6,14 @@
  * and addLiquidity(USDC.e/ETX) with the LP minted to the dead address; on
  * Ethereum transferRemote() the USDC to the keeper's own Etica wallet so the
  * next run burns it there. Finally, on Etica, the recipient gas drops. Every send goes through `leg.writeRpcUrl`
- * (Flashbots Protect on Ethereum); reads use `leg.rpcUrl`.
+ * (Flashbots Protect on Ethereum); reads fail over across `leg.rpcUrls`.
  */
 
 import {
   createPublicClient,
   createWalletClient,
   defineChain,
+  fallback,
   http,
   pad,
   parseAbi,
@@ -103,9 +104,15 @@ function makeClients(leg: BridgeGasLeg, config: BridgeGasConfig): Clients {
     id: leg.chainId,
     name: leg.name,
     nativeCurrency: { name: leg.nativeSymbol, symbol: leg.nativeSymbol, decimals: 18 },
-    rpcUrls: { default: { http: [leg.rpcUrl] } },
+    rpcUrls: { default: { http: leg.rpcUrls } },
   });
-  const publicClient = createPublicClient({ chain, transport: http(leg.rpcUrl) }) as PublicClient;
+  // Ordered failover, not latency-ranked: the configured endpoint stays first
+  // and a rate-limited or dead public node just hands the call to the next.
+  const readTransport = fallback(
+    leg.rpcUrls.map((url) => http(url, { timeout: 15_000, retryCount: 1 })),
+    { rank: false },
+  );
+  const publicClient = createPublicClient({ chain, transport: readTransport }) as PublicClient;
   const account = config.privateKey ? privateKeyToAccount(config.privateKey) : null;
   const walletClient =
     account && !config.dryRun

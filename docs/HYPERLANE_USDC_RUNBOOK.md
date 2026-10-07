@@ -109,16 +109,24 @@ Pre-reqs
 - [ ] Three fresh keys, never reused: deployer (`HYP_KEY`), `VALIDATOR_KEY`, `RELAYER_KEY`.
       Prefer AWS KMS for validator/relayer (`--validator.type aws`, see Hyperlane docs);
       hex keys are acceptable for launch if the host is locked down.
-- [ ] Funding: deployer ~0.15 ETH (core is _not_ deployed on Ethereum — only
-      the router + fee contract, ~0.02–0.05 ETH depending on gas) + 5 EGAZ;
+- [ ] Funding: deployer >= 0.05 ETH (core is _not_ deployed on Ethereum — only
+      the router + fee contract, ~0.02 ETH at 2 gwei; the workflow pre-flight
+      checks the balance against the live gas price) + 5 EGAZ;
       relayer 0.1 ETH + 50 EGAZ as the initial buffer (fees refill it after);
       validator 0.005 ETH + 1 EGAZ (one announcement tx per chain).
 - [ ] `KEEPER` = the relayer EOA's address. Same key as `HARVEST_KEEPER_PRIVATE_KEY`
       if you reuse the farm keeper; it becomes the fee contracts' owner.
-- [ ] `BRIDGE_ETHEREUM_RPC_URL` secret on the `harvest-live` GitHub environment
-      (the gas keeper's Ethereum provider).
-- [ ] Paid RPC endpoints for Ethereum (Alchemy/Infura). Public endpoints
-      rate-limit `eth_getLogs` and the agents will fall behind.
+- [ ] Ethereum RPC: optional. Everything defaults to a keyless public
+      rotation (tenderly, mevblocker, drpc, publicnode) with failover; the
+      `BRIDGE_ETHEREUM_RPC_URL` secret (comma-separated) on `harvest-live`
+      and `ETHEREUM_RPC_URLS` on the agent host only *prepend* your own
+      provider. Trust model: the keeper verifies every read against
+      on-chain state and the relayer can only deliver what the ISM accepts,
+      so a bad endpoint delays those; the validators run their endpoints in
+      quorum (`VALIDATOR_RPC_CONSENSUS=quorum`) because a validator signs
+      whatever its RPC shows it — keep >= 3 independent operators in the
+      list. Cost of going keyless: under throttling, deliveries and keeper
+      runs retry later instead of landing in ~2 minutes.
 - [ ] VPS (2 vCPU / 2 GB, Docker) with `git clone` of this repo.
 
 Deploy (from repo root, Node ≥ 22)

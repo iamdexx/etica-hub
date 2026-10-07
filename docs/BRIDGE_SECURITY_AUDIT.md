@@ -37,6 +37,7 @@ containment around that fact.
 | F-14 | Info | documented | Ethereum gas top-up waits for 200 USDC of fees |
 | F-15 | Info | — | Static analysis results |
 | F-17 | Medium | fixed | Ethereum self-bridge misread the warp quote and never released surplus |
+| F-18 | Medium | fixed | Validator trusted a single RPC for the state it signs; keeper/relayer had no RPC failover |
 
 ### F-1 Dust redemptions drain the relayer's ETH (High, fixed)
 A pure 50 bps fee on Etica→Ethereum redemptions means a 1-unit (0.000001 USDC.e)
@@ -242,19 +243,47 @@ test floats, Etica gas floor/target 20/25 EGAZ, Ethereum 0.05/0.06 ETH:
 * Treasury wallet USDC/USDC.e unchanged (0) throughout; user principal
   untouched (locked == USDC.e supply at every check).
 
+### F-18 Single-RPC trust in the validator; no read failover (Medium, fixed)
+The agents and the keeper each took one Ethereum RPC. For the relayer and
+keeper that is a liveness issue only — every read is checked against the
+chain (fee-contract owner, router bindings, mailbox) or enforced by the ISM
+on delivery — but the validator signs the mailbox root its RPC reports, so
+one dishonest endpoint could have had it attest to a fabricated lock and
+the relayer would then mint unbacked USDC.e (bounded by the 5k/day cap).
+Fix: validators run `rpcConsensusType=quorum` over >= 3 independent
+endpoints (`agents/docker-compose.yml`, verified accepted by
+`agents-v2.3.0`; an unknown value is rejected at startup); relayer uses
+`fallback` with `index.chunk=100` so public `eth_getLogs` caps are honoured
+(verified: it indexed mainnet in 100-block chunks from keyless endpoints);
+the keeper takes a comma-separated list, builds a viem `fallback` transport
+(ordered, not latency-ranked), appends the public rotation behind any
+configured URL unless the URL is a loopback fork, and scans gas-drop logs in
+200-block chunks. Writes stay on Flashbots Protect. Public endpoints trade
+latency for cost: throttled runs retry later, nothing is dropped.
+
 ## Not covered
 * Hyperlane core contract internals (upstream audits apply).
 * Real-mainnet MEV behaviour of the Etica swap (no private relay exists on
   Etica; mitigated by slippage/impact caps only).
 * Validator key compromise beyond what the rate limit bounds.
 * RPC/log provider truncation on mainnet (forks return complete logs); the
-  keeper fails closed — a failed scan skips drops for that run.
+  keeper fails closed — a failed scan skips drops for that run — and scans
+  in 200-block `eth_getLogs` chunks so public range caps error out loudly
+  instead of silently truncating.
+* RPC trust (F-18): reads fail over across several public endpoints. The
+  keeper and relayer verify everything against on-chain state / the ISM, so
+  an endpoint can only delay them. The validator cannot verify what it
+  signs, so it runs its endpoints in `quorum` mode; with one endpoint (or
+  `fallback`) a single malicious RPC could get it to sign a checkpoint for a
+  fabricated lock. Quorum over keyless public nodes is a weaker guarantee
+  than independent validators — still bounded by the 5k/day release cap.
 
 ## Mainnet blockers (in order)
 1. OWNER = Safe; GUARDIAN, KEEPER, VALIDATOR distinct keys; validator key
    generated on its host.
-2. Paid Ethereum RPC with full `eth_getLogs` for the relayer and keeper.
-3. Fund KEEPER to targets (0.15 ETH, 60 EGAZ) and VALIDATOR with dust ETH.
+2. Ethereum RPC list: >= 3 independent endpoints for the validator quorum
+   (public rotation is the default; a paid URL may lead the list).
+3. Fund KEEPER (>= 0.05 ETH for the deploy, 60 EGAZ) and VALIDATOR with dust ETH.
 4. `deploy.sh all`, then confirm on-chain: `feeRecipient()` on both routers,
    `owner()` of both fee contracts == KEEPER, ISM module lists/thresholds
    (Ethereum 3-of-3 aggregation, Etica 2-of-2), rate-limit capacity, and

@@ -94,15 +94,29 @@ export function planGasDrops(
   return { drops, skipped };
 }
 
+/**
+ * Largest `eth_getLogs` block span requested at once. Public endpoints cap
+ * ranges anywhere from 10 to 10k blocks; a run that exceeds a cap errors
+ * out (and the scan fails closed) instead of returning a truncated set, so
+ * stay well under the common limits.
+ */
+export const LOG_CHUNK_BLOCKS = 200n;
+
 export async function fetchInboundTransfers(
   client: PublicClient,
   router: Address,
   lookbackBlocks: bigint,
+  chunk: bigint = LOG_CHUNK_BLOCKS,
 ): Promise<{ transfers: InboundTransfer[]; fromBlock: bigint; toBlock: bigint }> {
+  if (chunk <= 0n) throw new Error('log chunk must be positive');
   const head = await client.getBlockNumber();
   const toBlock = head > REORG_SAFETY_BLOCKS ? head - REORG_SAFETY_BLOCKS : 0n;
   const fromBlock = toBlock > lookbackBlocks ? toBlock - lookbackBlocks : 0n;
-  const logs = await client.getLogs({ address: router, event: RECEIVED_TRANSFER_REMOTE, fromBlock, toBlock });
+  const logs: Awaited<ReturnType<typeof fetchChunk>> = [];
+  for (let start = fromBlock; start <= toBlock; start += chunk) {
+    const end = start + chunk - 1n < toBlock ? start + chunk - 1n : toBlock;
+    logs.push(...(await fetchChunk(client, router, start, end)));
+  }
   const transfers: InboundTransfer[] = [];
   for (const log of logs) {
     const recipient = log.args.recipient ? bytes32ToAddress(log.args.recipient) : null;
@@ -110,4 +124,8 @@ export async function fetchInboundTransfers(
     transfers.push({ recipient, amount: log.args.amountOrId, blockNumber: log.blockNumber, txHash: log.transactionHash });
   }
   return { transfers, fromBlock, toBlock };
+}
+
+function fetchChunk(client: PublicClient, router: Address, fromBlock: bigint, toBlock: bigint) {
+  return client.getLogs({ address: router, event: RECEIVED_TRANSFER_REMOTE, fromBlock, toBlock });
 }

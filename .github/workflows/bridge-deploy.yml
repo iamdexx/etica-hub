@@ -13,9 +13,11 @@ name: Bridge deploy (Hyperlane USDC.e)
 #   GUARDIAN   pause-only key held by the health-check host
 #   KEEPER     this workflow's signer (relayer, fee-contract owner, deployer)
 #
-# Needs in `harvest-live`: secret HARVEST_KEEPER_PRIVATE_KEY (exists),
-# secret BRIDGE_ETHEREUM_RPC_URL (paid Ethereum RPC). Fund the keeper with
-# ~0.15 ETH on Ethereum and ~5 EGAZ on Etica before dispatching.
+# Needs in `harvest-live`: secret HARVEST_KEEPER_PRIVATE_KEY (exists).
+# Optional: secret BRIDGE_ETHEREUM_RPC_URL (comma-separated Ethereum RPCs;
+# blank = public rotation below). Fund the keeper with >= 0.05 ETH on
+# Ethereum (the ~5 contracts cost ~0.02 ETH at 2 gwei; check gas on the day)
+# and ~5 EGAZ on Etica before dispatching.
 
 on:
   workflow_dispatch:
@@ -56,7 +58,9 @@ jobs:
       VALIDATOR: ${{ inputs.validator }}
       GUARDIAN: ${{ inputs.guardian }}
       ETICA_RPC: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
-      ETHEREUM_RPC: ${{ secrets.BRIDGE_ETHEREUM_RPC_URL }}
+      # Keyless public endpoints that serve eth_call + bounded eth_getLogs; the
+      # CLI fails over down the list. Same set as the bridge-gas keeper.
+      ETHEREUM_RPCS: ${{ secrets.BRIDGE_ETHEREUM_RPC_URL || 'https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io,https://eth.drpc.org,https://ethereum-rpc.publicnode.com' }}
       REGISTRY: ${{ github.workspace }}/infra/hyperlane/registry
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +78,9 @@ jobs:
         run: |
           set -euo pipefail
           [[ -n "$HYP_KEY" ]] || { echo "HARVEST_KEEPER_PRIVATE_KEY missing in harvest-live"; exit 1; }
-          [[ -n "$ETHEREUM_RPC" ]] || { echo "BRIDGE_ETHEREUM_RPC_URL secret missing in harvest-live"; exit 1; }
+          ETHEREUM_RPC="${ETHEREUM_RPCS%%,*}"
+          echo "::add-mask::$ETHEREUM_RPC"
+          echo "ETHEREUM_RPC=$ETHEREUM_RPC" >> "$GITHUB_ENV"
           KEEPER="$(cast wallet address --private-key "$HYP_KEY")"
           echo "::add-mask::$HYP_KEY"
           echo "KEEPER=$KEEPER" >> "$GITHUB_ENV"
@@ -91,21 +97,25 @@ jobs:
           egaz_wei="$(cast balance "$KEEPER" --rpc-url "$ETICA_RPC")"
           echo "keeper ETH  $(cast from-wei "$eth_wei")"
           echo "keeper EGAZ $(cast from-wei "$egaz_wei")"
-          need_eth=100000000000000000   # 0.1 ETH
+          need_eth=50000000000000000    # 0.05 ETH
           need_egaz=5000000000000000000 # 5 EGAZ
           if [[ "${{ inputs.step }}" == "warp" || "${{ inputs.step }}" == "all" ]]; then
-            python3 -c "import sys; sys.exit(0 if int('$eth_wei') >= $need_eth else 1)" || { echo "keeper needs >= 0.1 ETH on Ethereum for the warp deploy"; exit 1; }
+            python3 -c "import sys; sys.exit(0 if int('$eth_wei') >= $need_eth else 1)" || { echo "keeper needs >= 0.05 ETH on Ethereum for the warp deploy"; exit 1; }
+            gas_wei="$(cast gas-price --rpc-url "$ETHEREUM_RPC")"
+            echo "ethereum gas price: $(cast from-wei "$gas_wei" gwei) gwei"
+            # ~8M gas for the Ethereum side of the warp deploy; refuse if the wallet can't cover 2x that.
+            python3 -c "import sys; sys.exit(0 if int('$eth_wei') >= 2 * 8_000_000 * int('$gas_wei') else 1)" || { echo "keeper ETH would not cover ~16M gas at the current gas price; top up or wait for cheaper gas"; exit 1; }
           fi
           python3 -c "import sys; sys.exit(0 if int('$egaz_wei') >= $need_egaz else 1)" || { echo "keeper needs >= 5 EGAZ on Etica"; exit 1; }
           echo "ethereum chain id: $(cast chain-id --rpc-url "$ETHEREUM_RPC")"
           [[ "$(cast chain-id --rpc-url "$ETHEREUM_RPC")" == "1" ]] || { echo "BRIDGE_ETHEREUM_RPC_URL is not Ethereum mainnet"; exit 1; }
           [[ "$(cast chain-id --rpc-url "$ETICA_RPC")" == "61803" ]] || { echo "ETICA_RPC is not Etica mainnet"; exit 1; }
 
-      - name: Point the CLI's Ethereum reads at the paid RPC
+      - name: Point the CLI's Ethereum reads at our RPC list
         run: |
           set -euo pipefail
           # The CLI takes Ethereum metadata from the public Hyperlane registry; a
-          # local copy with our RPC URL takes precedence. Addresses stay canonical.
+          # local copy with our RPC list takes precedence. Addresses stay canonical.
           mkdir -p "$REGISTRY/chains/ethereum"
           base=https://raw.githubusercontent.com/hyperlane-xyz/hyperlane-registry/main/chains/ethereum
           curl -fsSL "$base/metadata.yaml" -o "$REGISTRY/chains/ethereum/metadata.yaml"
@@ -115,7 +125,7 @@ jobs:
           import os, yaml
           p = os.path.join(os.environ['REGISTRY'], 'chains/ethereum/metadata.yaml')
           d = yaml.safe_load(open(p))
-          d['rpcUrls'] = [{'http': os.environ['ETHEREUM_RPC']}]
+          d['rpcUrls'] = [{'http': u.strip()} for u in os.environ['ETHEREUM_RPCS'].split(',') if u.strip()]
           yaml.safe_dump(d, open(p, 'w'))
           PY
           grep -q 'mailbox: "0xc005dc82818d67AF737725bD4bf75435d065D239"' "$REGISTRY/chains/ethereum/addresses.yaml" \
@@ -127,8 +137,8 @@ jobs:
           HYP_KEY: ${{ secrets.HARVEST_KEEPER_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          # The RPC URL carries an API key; keep it out of the log.
-          echo "::add-mask::$ETHEREUM_RPC"
+          # A configured RPC URL may carry an API key; keep it out of the log.
+          for u in ${ETHEREUM_RPCS//,/ }; do echo "::add-mask::$u"; done
           chmod +x infra/hyperlane/deploy.sh
           infra/hyperlane/deploy.sh "${{ inputs.step }}" 2>&1 | sed -E 's#(private-key|HYP_KEY)[= ]+0x[0-9a-fA-F]+#\1 <redacted>#g'
 
@@ -140,7 +150,7 @@ jobs:
         if: ${{ inputs.confirm == 'DEPLOY-MAINNET' }}
         run: |
           set -euo pipefail
-          # Never publish the RPC override (it holds an API key).
+          # Never publish the RPC override (it may hold an API key).
           rm -f "$REGISTRY/chains/ethereum/metadata.yaml"
           git config user.name "etica-hub-bot"
           git config user.email "bot@eticahub.com"
