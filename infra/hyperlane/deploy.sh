@@ -25,7 +25,8 @@
 # 50 bps capped at 50) with `forge create` and points the router at it, so
 # dust redemptions can never drain the relayer's Ethereum gas.
 #
-# Requires Node >= 22, `npx @hyperlane-xyz/cli` and foundry (`forge`, `cast`).
+# Requires Node >= 22 (npm) and foundry (`forge`, `cast`); the Hyperlane CLI
+# is installed and rebuilt for Paris by paris-cli.sh on first run.
 # Rendered configs go to $REGISTRY/deployments/... and are meant to be
 # committed (they contain the deployed addresses — no secrets).
 #
@@ -41,7 +42,10 @@ STEP="${1:-all}"
 ZERO=0x0000000000000000000000000000000000000000
 KEEPER_PLACEHOLDER=0x1111111111111111111111111111111111111111
 GUARDIAN_PLACEHOLDER=0x2222222222222222222222222222222222222222
-CLI=(npx --yes @hyperlane-xyz/cli@44.0.2)
+# Etica (CoreGeth) has no Cancun opcodes and the stock CLI embeds Cancun
+# bytecode (`invalid opcode: MCOPY` on the first mainnet attempt), so deploy
+# with a CLI whose contracts are rebuilt for Paris. See paris-cli.sh.
+CLI=(node "$("$HERE/paris-cli.sh")")
 CONTRACTS="$(cd "$HERE/../../packages/contracts" && pwd)"
 ETICA_RPC="${ETICA_RPC:-https://eticamainnet.eticaprotocol.org}"
 ETHEREUM_RPC="${ETHEREUM_RPC:-https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io,https://eth.drpc.org,https://ethereum-rpc.publicnode.com}"
