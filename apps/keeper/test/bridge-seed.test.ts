@@ -5,15 +5,18 @@ import { DEPLOYMENTS, USDC_WARP_ROUTE, eticaMainnet } from '@etica-hub/shared';
 import { DEAD_ADDRESS, ETHEREUM_MAILBOX, FLASHBOTS_PROTECT_RPC, PUBLIC_ETHEREUM_RPCS, loadBridgeSeedConfig } from '../src/bridge-seed/config.js';
 import {
   affordableBridgeAmount,
+  bridgeNeeded,
   etxRequired,
   marketUsdPerEtx,
   poolUsdPerEtx,
   priceDeviationBps,
+  sum,
+  unmatchedAmounts,
   withSlippage,
 } from '../src/bridge-seed/plan.js';
 
 const KEY = ('0x' + '11'.repeat(32)) as `0x${string}`;
-const base = { HARVEST_PRIVATE_KEY: KEY, BRIDGE_SEED_ETX_AMOUNT: '5000' };
+const base = { HARVEST_PRIVATE_KEY: KEY, BRIDGE_SEED_ETX_AMOUNT: '5000', BRIDGE_SEED_ETX_USD: '0.00406' };
 
 describe('loadBridgeSeedConfig', () => {
   it('pins every contract address in code and reads only amounts/anchors from env', () => {
@@ -22,7 +25,9 @@ describe('loadBridgeSeedConfig', () => {
     expect(c.etxAmount).toBe(parseEther('5000'));
     expect(c.usdcAmount).toBe(parseUnits('20', 6));
     expect(c.egazUsd).toBe(parseEther('0.0142'));
+    expect(c.etxUsd).toBe(parseEther('0.00406'));
     expect(c.maxPriceDeviationBps).toBe(300);
+    expect(c.inflightLookbackBlocks).toBe(3_600);
     expect(c.ethereum.usdc).toBe(USDC_WARP_ROUTE.collateralToken);
     expect(c.ethereum.warpRouter).toBe(USDC_WARP_ROUTE.collateralRouter);
     expect(c.ethereum.mailbox).toBe(ETHEREUM_MAILBOX);
@@ -35,11 +40,15 @@ describe('loadBridgeSeedConfig', () => {
     expect(DEAD_ADDRESS).toBe('0x000000000000000000000000000000000000dEaD');
   });
 
-  it('defaults to bridging everything and skipping the price check when no USDC amount / anchor is set', () => {
-    const c = loadBridgeSeedConfig(base);
+  it('defaults to bridging everything; a dry run may skip the anchors but a live run needs one', () => {
+    const { BRIDGE_SEED_ETX_USD: _etx, ...noAnchor } = base;
+    const c = loadBridgeSeedConfig({ ...noAnchor, BRIDGE_SEED_DRY_RUN: 'true' });
     expect(c.usdcAmount).toBeNull();
     expect(c.egazUsd).toBeNull();
+    expect(c.etxUsd).toBeNull();
     expect(c.mintTimeoutMs).toBe(2_400_000);
+    expect(() => loadBridgeSeedConfig(noAnchor)).toThrow('price anchor');
+    expect(loadBridgeSeedConfig({ ...noAnchor, BRIDGE_SEED_EGAZ_USD: '0.0142' }).egazUsd).toBe(parseEther('0.0142'));
   });
 
   it('is a dry run without a key, or when the flag says so', () => {
@@ -53,6 +62,8 @@ describe('loadBridgeSeedConfig', () => {
     expect(() => loadBridgeSeedConfig({ ...base, BRIDGE_SEED_USDC_AMOUNT: '0' })).toThrow('BRIDGE_SEED_USDC_AMOUNT');
     expect(() => loadBridgeSeedConfig({ ...base, BRIDGE_SEED_USDC_AMOUNT: '1e3' })).toThrow('decimal');
     expect(() => loadBridgeSeedConfig({ ...base, BRIDGE_SEED_EGAZ_USD: '0' })).toThrow('BRIDGE_SEED_EGAZ_USD');
+    expect(() => loadBridgeSeedConfig({ ...base, BRIDGE_SEED_ETX_USD: '0' })).toThrow('BRIDGE_SEED_ETX_USD');
+    expect(() => loadBridgeSeedConfig({ ...base, BRIDGE_SEED_INFLIGHT_LOOKBACK_BLOCKS: '0' })).toThrow('INFLIGHT_LOOKBACK');
     expect(() => loadBridgeSeedConfig({ ...base, BRIDGE_SEED_MAX_PRICE_DEVIATION_BPS: '0' })).toThrow('MAX_PRICE_DEVIATION');
   });
 
@@ -100,6 +111,27 @@ describe('seed arithmetic', () => {
     expect(priceDeviationBps(market * 2n, market)).toBe(10_000n);
     expect(priceDeviationBps(pool, 0n)).toBeNull();
     expect(poolUsdPerEtx(1n, 6, 0n)).toBe(0n);
+  });
+
+  it('matches sent transfers against received ones by amount; the remainder is in flight', () => {
+    expect(unmatchedAmounts([20_271_803n], [])).toEqual([20_271_803n]);
+    expect(unmatchedAmounts([20_271_803n], [20_271_803n])).toEqual([]);
+    expect(unmatchedAmounts([5_000_000n, 5_000_000n, 7_000_000n], [5_000_000n])).toEqual([5_000_000n, 7_000_000n]);
+    expect(unmatchedAmounts([], [1n])).toEqual([]);
+    expect(sum([1n, 2n, 3n])).toBe(6n);
+    expect(sum([])).toBe(0n);
+  });
+
+  it('never bridges again while a transfer is in flight, and only the shortfall for a requested size', () => {
+    // blank: one transfer of the whole balance, nothing once USDC.e exists or is in flight
+    expect(bridgeNeeded(null, 20_373_671n, 0n, 0n)).toBe(20_373_671n);
+    expect(bridgeNeeded(null, 20_373_671n, 0n, 20_271_803n)).toBe(0n);
+    expect(bridgeNeeded(null, 509n, 20_271_803n, 0n)).toBe(0n);
+    // requested 20: 5 already on Etica + 5 in flight -> 10 more, capped by the Ethereum balance
+    expect(bridgeNeeded(20_000_000n, 50_000_000n, 5_000_000n, 5_000_000n)).toBe(10_000_000n);
+    expect(bridgeNeeded(20_000_000n, 3_000_000n, 5_000_000n, 5_000_000n)).toBe(3_000_000n);
+    expect(bridgeNeeded(20_000_000n, 50_000_000n, 20_000_000n, 0n)).toBe(0n);
+    expect(bridgeNeeded(20_000_000n, 50_000_000n, 0n, 25_000_000n)).toBe(0n);
   });
 
   it('applies liquidity slippage in bps', () => {

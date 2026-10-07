@@ -42,3 +42,32 @@ export function priceDeviationBps(pool: bigint, market: bigint): bigint | null {
   const diff = pool > market ? pool - market : market - pool;
   return (diff * BPS) / market;
 }
+
+export function sum(amounts: readonly bigint[]): bigint {
+  return amounts.reduce((acc, a) => acc + a, 0n);
+}
+
+/** Multiset difference `sent - received`: each received amount cancels one equal sent amount. */
+export function unmatchedAmounts(sent: readonly bigint[], received: readonly bigint[]): bigint[] {
+  const pool = [...received];
+  const pending: bigint[] = [];
+  for (const amount of sent) {
+    const i = pool.indexOf(amount);
+    if (i === -1) pending.push(amount);
+    else pool.splice(i, 1);
+  }
+  return pending;
+}
+
+/**
+ * USDC still to bridge. With a requested pool size it is the shortfall after
+ * the USDC.e already on Etica and the transfers still in flight, capped by the
+ * Ethereum balance. Without one it is the whole Ethereum balance in a single
+ * transfer — and nothing while USDC.e is already there or a transfer is in flight.
+ */
+export function bridgeNeeded(usdcAmount: bigint | null, ethUsdc: bigint, eticaUsdce: bigint, inflight: bigint): bigint {
+  if (usdcAmount === null) return eticaUsdce > 0n || inflight > 0n ? 0n : ethUsdc;
+  const have = eticaUsdce + inflight;
+  const missing = usdcAmount > have ? usdcAmount - have : 0n;
+  return missing < ethUsdc ? missing : ethUsdc;
+}

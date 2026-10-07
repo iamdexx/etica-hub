@@ -7,7 +7,7 @@
  *
  * Every address is pinned in code (same reasoning as bridge-gas: a router
  * or token reachable through workflow variables could redirect the seed).
- * Only amounts, the optional USD anchor and RPC endpoints are configurable.
+ * Only amounts, the USD price anchors and RPC endpoints are configurable.
  */
 
 import { isAddress, isHex, parseUnits, type Address, type Hex } from 'viem';
@@ -29,10 +29,14 @@ export interface BridgeSeedConfig {
   etxAmount: bigint;
   /** USDC to bridge and pool (6 dp); null = everything the wallet can afford including the bridge fee. */
   usdcAmount: bigint | null;
-  /** EGAZ/USD anchor (1e18 fixed point); null = skip the market-price check. */
+  /** EGAZ/USD anchor (1e18): the pool price is checked against the ETX/WEGAZ pool quote x this. */
   egazUsd: bigint | null;
-  /** Max |pool price - ETX/WEGAZ implied price| in BPS when `egazUsd` is set. */
+  /** ETX/USD anchor (1e18) from an off-chain source (CoinGecko), checked directly against the pool price. */
+  etxUsd: bigint | null;
+  /** Max |pool price - anchor| in BPS, for every anchor that is set. A live run needs at least one anchor. */
   maxPriceDeviationBps: number;
+  /** Blocks scanned on both chains for a previous run's transfer that is still in flight. */
+  inflightLookbackBlocks: number;
   /** addLiquidity min amounts = desired * (1 - this). */
   liquiditySlippageBps: number;
   /** How long a live run waits for the USDC.e mint before failing (re-dispatch resumes). */
@@ -110,6 +114,11 @@ export function loadBridgeSeedConfig(env: NodeJS.ProcessEnv = process.env): Brid
   if (usdcAmount === 0n) throw new Error('BRIDGE_SEED_USDC_AMOUNT must be positive when set');
   const egazUsd = optDecimal(env, 'BRIDGE_SEED_EGAZ_USD', 18);
   if (egazUsd === 0n) throw new Error('BRIDGE_SEED_EGAZ_USD must be positive when set');
+  const etxUsd = optDecimal(env, 'BRIDGE_SEED_ETX_USD', 18);
+  if (etxUsd === 0n) throw new Error('BRIDGE_SEED_ETX_USD must be positive when set');
+  if (!dryRun && egazUsd === null && etxUsd === null) {
+    throw new Error('a live run needs a price anchor: set BRIDGE_SEED_EGAZ_USD and/or BRIDGE_SEED_ETX_USD');
+  }
 
   const maxPriceDeviationBps = optInt(env, 'BRIDGE_SEED_MAX_PRICE_DEVIATION_BPS', 300);
   if (maxPriceDeviationBps === 0 || maxPriceDeviationBps > 2_000) {
@@ -119,6 +128,10 @@ export function loadBridgeSeedConfig(env: NodeJS.ProcessEnv = process.env): Brid
   if (liquiditySlippageBps > 500) throw new Error('BRIDGE_SEED_LIQUIDITY_SLIPPAGE_BPS must be <= 500');
   const mintTimeoutS = optInt(env, 'BRIDGE_SEED_MINT_TIMEOUT_S', 2_400);
   if (mintTimeoutS === 0) throw new Error('BRIDGE_SEED_MINT_TIMEOUT_S must be positive');
+  const inflightLookbackBlocks = optInt(env, 'BRIDGE_SEED_INFLIGHT_LOOKBACK_BLOCKS', 3_600);
+  if (inflightLookbackBlocks === 0 || inflightLookbackBlocks > 20_000) {
+    throw new Error('BRIDGE_SEED_INFLIGHT_LOOKBACK_BLOCKS must be in [1, 20000]');
+  }
 
   const ethRpcUrls = rpcList('BRIDGE_SEED_ETHEREUM_RPC_URL', opt(env, 'BRIDGE_SEED_ETHEREUM_RPC_URL'), PUBLIC_ETHEREUM_RPCS);
   const ethWrite = opt(env, 'BRIDGE_SEED_ETHEREUM_WRITE_RPC_URL') ?? (ethRpcUrls.every(isLoopback) ? ethRpcUrls[0]! : FLASHBOTS_PROTECT_RPC);
@@ -141,7 +154,9 @@ export function loadBridgeSeedConfig(env: NodeJS.ProcessEnv = process.env): Brid
     etxAmount,
     usdcAmount,
     egazUsd,
+    etxUsd,
     maxPriceDeviationBps,
+    inflightLookbackBlocks,
     liquiditySlippageBps,
     mintTimeoutMs: mintTimeoutS * 1_000,
     ethereum: {

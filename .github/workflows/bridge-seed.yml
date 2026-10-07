@@ -4,12 +4,14 @@ name: Bridge seed (USDC.e/ETX pool)
 # (`harvest-live`). In order:
 #   1. Ethereum: approve + transferRemote() the keeper's USDC to its own
 #      Etica address through the live warp route (Flashbots Protect),
-#   2. wait for the relayer to mint USDC.e (re-dispatch resumes if it times out),
+#   2. wait for the relayer to mint USDC.e (a re-dispatch after a timeout finds
+#      the transfer still in flight and waits instead of bridging again),
 #   3. Etica: router.addLiquidity(USDC.e, ETX) with the LP minted straight to
 #      0x…dEaD — opening the pair pays the factory's 10,000 ETX fee on top.
-# Idempotent: once the pair has reserves the run reports and exits 0.
-# Every contract address is pinned in code; only amounts, the optional
-# EGAZ/USD anchor and RPC endpoints come from inputs.
+# Idempotent: once the pair holds reserves with its LP at the dead address the
+# run reports and exits 0; a pair someone else opened is refused.
+# Every contract address is pinned in code; only amounts, the USD price
+# anchors and RPC endpoints come from inputs.
 
 on:
   workflow_dispatch:
@@ -22,7 +24,10 @@ on:
         description: 'USDC to bridge and pool; blank = everything the wallet can afford after the bridge fee'
         default: ''
       egaz_usd:
-        description: 'EGAZ price in USD (e.g. from CoinGecko). When set, the pool price must sit within 3% of the ETX/WEGAZ pool; blank = skip the check'
+        description: 'EGAZ price in USD (CoinGecko "etica"): the pool price must sit within 3% of the ETX/WEGAZ pool quote x this'
+        default: ''
+      etx_usd:
+        description: 'ETX price in USD from an off-chain source (CoinGecko "etx"), checked directly against the pool price. A live run needs egaz_usd and/or etx_usd; set both so a shifted on-chain quote cannot pass alone'
         default: ''
       dry_run:
         description: 'Snapshot and plan without submitting'
@@ -44,6 +49,7 @@ jobs:
       BRIDGE_SEED_ETX_AMOUNT: ${{ inputs.etx_amount }}
       BRIDGE_SEED_USDC_AMOUNT: ${{ inputs.usdc_amount }}
       BRIDGE_SEED_EGAZ_USD: ${{ inputs.egaz_usd }}
+      BRIDGE_SEED_ETX_USD: ${{ inputs.etx_usd }}
       # Same endpoints as the hourly bridge-gas keeper.
       BRIDGE_SEED_ETHEREUM_RPC_URL: ${{ secrets.BRIDGE_ETHEREUM_RPC_URL }}
       BRIDGE_SEED_ETICA_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}

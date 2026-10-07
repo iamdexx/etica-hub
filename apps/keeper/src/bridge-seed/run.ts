@@ -1,12 +1,16 @@
 /**
- * Bridge seed runner. Stages, each skipped when already done so a
+ * Bridge seed runner. Everything that can fail is checked before the first
+ * transaction (balances, route wiring, pool price against the anchors), and
+ * each stage is skipped when its effect already exists on-chain so a
  * re-dispatch resumes wherever the previous run stopped:
- *   1. bridge   — Ethereum: approve + transferRemote(USDC -> keeper on Etica)
- *   2. mint     — wait for the relayer to deliver the USDC.e
- *   3. pool     — Etica: approve USDC.e + ETX (+ pair fee), router.addLiquidity
- *                 with `to` = dead address, so the LP is burned as it is minted
- *   4. verify   — pair exists, reserves match, every LP share but the
- *                 factory's MINIMUM_LIQUIDITY sits at the dead address
+ *   0. in flight — a previous run's transfer not delivered yet is waited for,
+ *                  never repeated
+ *   1. bridge    — Ethereum: approve + transferRemote(USDC -> keeper on Etica)
+ *   2. mint      — wait for the relayer to deliver the USDC.e
+ *   3. pool      — Etica: approve USDC.e + ETX (+ pair fee), router.addLiquidity
+ *                  with `to` = dead address, so the LP is burned as it is minted
+ *   4. verify    — pair exists, reserves match, every LP share but the
+ *                  factory's MINIMUM_LIQUIDITY sits at the dead address
  * Dry run snapshots, plans and logs without sending anything.
  */
 
@@ -29,12 +33,15 @@ import { abis } from '@etica-hub/shared';
 import { DEAD_ADDRESS, ETICA_DOMAIN, ETX_DECIMALS, STABLE_DECIMALS, type BridgeSeedConfig } from './config.js';
 import {
   affordableBridgeAmount,
+  bridgeNeeded,
   etxRequired,
   marketUsdPerEtx,
   poolUsdPerEtx,
   priceDeviationBps,
+  sum,
   withSlippage,
 } from './plan.js';
+import { scanInflight } from './inflight.js';
 
 type Logger = Pick<Console, 'info' | 'warn' | 'error'>;
 
@@ -61,7 +68,7 @@ export interface BridgeSeedResult {
   /**
    * seeded    pool already live (nothing done) or just created and verified
    * planned   dry run: what a live run would do next
-   * waiting   live run bridged / found USDC in flight but the mint did not land in time
+   * waiting   live run bridged (or found a transfer in flight) but the mint did not land in time
    * error     a precondition failed
    */
   status: 'seeded' | 'planned' | 'waiting' | 'error';
@@ -71,8 +78,13 @@ export interface BridgeSeedResult {
   etx?: string;
   pairFee?: string;
   poolUsdPerEtx?: string;
+  /** ETX/WEGAZ pool quote x EGAZ/USD anchor. */
   marketUsdPerEtx?: string;
+  /** Off-chain ETX/USD anchor, when given. */
+  anchorUsdPerEtx?: string;
+  /** Largest deviation of the pool price from any anchor. */
   priceDeviationBps?: string;
+  inflight?: string;
   deadLp?: string;
   txHashes: Hex[];
   error?: string;
@@ -237,6 +249,14 @@ async function waitForMint(
   }
 }
 
+async function lpState(client: PublicClient, pair: Address): Promise<{ deadLp: bigint; totalLp: bigint }> {
+  const [deadLp, totalLp] = await Promise.all([
+    client.readContract({ address: pair, abi: abis.erc20Abi, functionName: 'balanceOf', args: [DEAD_ADDRESS] }),
+    client.readContract({ address: pair, abi: abis.pairAbi, functionName: 'totalSupply' }),
+  ]);
+  return { deadLp, totalLp };
+}
+
 export async function runBridgeSeed(
   config: BridgeSeedConfig,
   opts: { log?: Logger; sleep?: (ms: number) => Promise<void> } = {},
@@ -256,16 +276,16 @@ export async function runBridgeSeed(
   const account = eth.account;
   if (!account) return { dryRun, status: 'error', txHashes, error: 'no signer key: set HARVEST_PRIVATE_KEY (a dry run still needs the address)' };
   const keeper = account.address;
+  const fmtStable = (v: bigint) => formatUnits(v, STABLE_DECIMALS);
+  const fmtEtx = (v: bigint) => formatUnits(v, ETX_DECIMALS);
 
   try {
     // ---- snapshot --------------------------------------------------------
     const pair = await readPair(eti.publicClient, config);
     if (pair.address && pair.reserveUsdce > 0n && pair.reserveEtx > 0n) {
-      const deadLp = await eti.publicClient.readContract({ address: pair.address, abi: abis.erc20Abi, functionName: 'balanceOf', args: [DEAD_ADDRESS] });
-      log.info(`[bridge-seed] pool already live at ${pair.address}: ${formatUnits(pair.reserveUsdce, STABLE_DECIMALS)} USDC.e / ${formatUnits(pair.reserveEtx, ETX_DECIMALS)} ETX`);
-      return {
+      const { deadLp, totalLp } = await lpState(eti.publicClient, pair.address);
+      const summary = {
         dryRun,
-        status: 'seeded',
         pair: pair.address,
         usdce: pair.reserveUsdce.toString(),
         etx: pair.reserveEtx.toString(),
@@ -273,6 +293,18 @@ export async function runBridgeSeed(
         deadLp: deadLp.toString(),
         txHashes,
       };
+      if (deadLp === 0n) {
+        return {
+          ...summary,
+          status: 'error',
+          error: `pair ${pair.address} already holds ${fmtStable(pair.reserveUsdce)} USDC.e / ${fmtEtx(pair.reserveEtx)} ETX with no LP at the dead address: someone else opened it, refusing to add to a pool whose liquidity can be withdrawn`,
+        };
+      }
+      if (deadLp + MINIMUM_LIQUIDITY < totalLp) {
+        log.warn(`[bridge-seed] dead address holds ${deadLp} of ${totalLp} LP (someone else also provided liquidity)`);
+      }
+      log.info(`[bridge-seed] pool already live at ${pair.address}: ${fmtStable(pair.reserveUsdce)} USDC.e / ${fmtEtx(pair.reserveEtx)} ETX, ${deadLp} LP burned`);
+      return { ...summary, status: 'seeded' };
     }
 
     const [ethUsdc, ethNative, eticaUsdce, eticaEtx] = await Promise.all([
@@ -282,8 +314,8 @@ export async function runBridgeSeed(
       eti.publicClient.readContract({ address: config.etica.etx, abi: abis.erc20Abi, functionName: 'balanceOf', args: [keeper] }),
     ]);
     log.info(
-      `[bridge-seed] keeper ${keeper}: ${formatUnits(ethUsdc, STABLE_DECIMALS)} USDC + ${formatUnits(ethNative, 18)} ETH on Ethereum; ` +
-        `${formatUnits(eticaUsdce, STABLE_DECIMALS)} USDC.e + ${formatUnits(eticaEtx, ETX_DECIMALS)} ETX on Etica; pair ${pair.address ?? 'not created'}`,
+      `[bridge-seed] keeper ${keeper}: ${fmtStable(ethUsdc)} USDC + ${formatUnits(ethNative, 18)} ETH on Ethereum; ` +
+        `${fmtStable(eticaUsdce)} USDC.e + ${fmtEtx(eticaEtx)} ETX on Etica; pair ${pair.address ?? 'not created'}`,
     );
 
     // ETX side is checked first so a run never bridges USDC it then cannot pool.
@@ -296,83 +328,84 @@ export async function runBridgeSeed(
         txHashes,
         etx: config.etxAmount.toString(),
         pairFee: pairFee.toString(),
-        error: `keeper holds ${formatUnits(eticaEtx, ETX_DECIMALS)} ETX, needs ${formatUnits(etxNeeded, ETX_DECIMALS)} (${formatUnits(config.etxAmount, ETX_DECIMALS)} pool + ${formatUnits(pairFee, ETX_DECIMALS)} pair fee)`,
+        error: `keeper holds ${fmtEtx(eticaEtx)} ETX, needs ${fmtEtx(etxNeeded)} (${fmtEtx(config.etxAmount)} pool + ${fmtEtx(pairFee)} pair fee)`,
       };
     }
 
-    // ---- stage 1: bridge --------------------------------------------------
-    let usdceForPool = config.usdcAmount === null ? eticaUsdce : eticaUsdce < config.usdcAmount ? eticaUsdce : config.usdcAmount;
-    let bridged = 0n;
-    const wantMore = config.usdcAmount === null ? eticaUsdce === 0n : eticaUsdce < config.usdcAmount;
-    if (wantMore && ethUsdc >= MIN_BRIDGE_STABLE) {
-      await verifyWarpRoute(eth.publicClient, config);
-      const recipient = pad(keeper, { size: 32 });
-      const available = config.usdcAmount === null ? ethUsdc : ethUsdc < config.usdcAmount ? ethUsdc : config.usdcAmount;
-      // amount + fee(amount) must fit `available`; the fee quoted at `available` is an upper bound.
-      const upper = await quoteBridge(eth.publicClient, config, recipient, available);
-      let amount = affordableBridgeAmount(available, upper.tokenFee);
-      if (config.usdcAmount !== null && available + upper.tokenFee <= ethUsdc) amount = available;
-      if (amount < MIN_BRIDGE_STABLE) {
-        return { dryRun, status: 'error', txHashes, error: `USDC ${formatUnits(ethUsdc, STABLE_DECIMALS)} does not cover the bridge fee ${formatUnits(upper.tokenFee, STABLE_DECIMALS)}` };
+    // ---- stage 0: transfers still in flight -------------------------------
+    const flight = await scanInflight(eth.publicClient, eti.publicClient, config, keeper);
+    const inflight = sum(flight.pending);
+    log.info(
+      `[bridge-seed] in-flight scan: Ethereum ${flight.ethereumBlocks.from}-${flight.ethereumBlocks.to} sent ${flight.sent.length}, ` +
+        `Etica ${flight.eticaBlocks.from}-${flight.eticaBlocks.to} received ${flight.received.length}, pending ${flight.pending.length} (${fmtStable(inflight)} USDC)`,
+    );
+
+    // ---- stage 1 plan: bridge --------------------------------------------
+    const need = bridgeNeeded(config.usdcAmount, ethUsdc, eticaUsdce, inflight);
+    const recipient = pad(keeper, { size: 32 });
+    let amount = 0n;
+    let native = 0n;
+    let tokenFee = 0n;
+    if (need > 0n) {
+      if (need < MIN_BRIDGE_STABLE) {
+        return { dryRun, status: 'error', txHashes, error: `only ${fmtStable(need)} USDC left to bridge, below the ${fmtStable(MIN_BRIDGE_STABLE)} minimum` };
       }
-      const { native, tokenFee } = await quoteBridge(eth.publicClient, config, recipient, amount);
+      await verifyWarpRoute(eth.publicClient, config);
+      // amount + fee(amount) must fit the balance; the fee quoted at `need` is an upper bound.
+      const upper = await quoteBridge(eth.publicClient, config, recipient, need);
+      if (config.usdcAmount === null) {
+        amount = affordableBridgeAmount(need, upper.tokenFee);
+      } else if (need + upper.tokenFee <= ethUsdc) {
+        amount = need;
+      } else {
+        return {
+          dryRun,
+          status: 'error',
+          txHashes,
+          error: `keeper holds ${fmtStable(ethUsdc)} USDC, needs ${fmtStable(need + upper.tokenFee)} (${fmtStable(need)} + ${fmtStable(upper.tokenFee)} bridge fee) to reach the requested ${fmtStable(config.usdcAmount)} USDC.e`,
+        };
+      }
+      if (amount < MIN_BRIDGE_STABLE) {
+        return { dryRun, status: 'error', txHashes, error: `USDC ${fmtStable(ethUsdc)} does not cover the bridge fee ${fmtStable(upper.tokenFee)}` };
+      }
+      ({ native, tokenFee } = await quoteBridge(eth.publicClient, config, recipient, amount));
       if (ethNative < native + ETH_GAS_RESERVE_WEI) {
         return { dryRun, status: 'error', txHashes, error: `keeper has ${formatUnits(ethNative, 18)} ETH, needs ${formatUnits(native, 18)} delivery payment + gas` };
       }
-      log.info(`[bridge-seed] bridge ${formatUnits(amount, STABLE_DECIMALS)} USDC -> ${keeper} on Etica (fee ${formatUnits(tokenFee, STABLE_DECIMALS)} USDC, gas payment ${native} wei)`);
-      if (!eth.walletClient) {
-        // Dry run: assume the mint lands and keep going so the pool plan and price check are reported too.
-        bridged = amount;
-        usdceForPool = eticaUsdce + amount;
-      } else {
-        const send = async (hash: Hex, label: string) => {
-          txHashes.push(hash);
-          await confirm(eth.publicClient, hash, label, log);
+      log.info(`[bridge-seed] bridge ${fmtStable(amount)} USDC -> ${keeper} on Etica (fee ${fmtStable(tokenFee)} USDC, gas payment ${native} wei)`);
+    }
+    // USDC.e the keeper will hold once everything sent has landed.
+    const target = eticaUsdce + inflight + amount;
+    let usdceForPool = target;
+    if (config.usdcAmount !== null) {
+      if (target < config.usdcAmount) {
+        return {
+          dryRun,
+          status: 'error',
+          txHashes,
+          error: `${fmtStable(eticaUsdce)} USDC.e + ${fmtStable(inflight)} in flight + ${fmtStable(amount)} bridgeable is short of the requested ${fmtStable(config.usdcAmount)} USDC.e (${fmtStable(ethUsdc)} USDC on Ethereum)`,
         };
-        await approveExact(config.ethereum.usdc, config.ethereum.warpRouter, amount + tokenFee, eth, send);
-        const hash = await eth.walletClient.writeContract({
-          chain: null,
-          account,
-          address: config.ethereum.warpRouter,
-          abi: WARP_ABI,
-          functionName: 'transferRemote',
-          args: [ETICA_DOMAIN, recipient, amount],
-          value: native,
-        });
-        await send(hash, `transferRemote ${formatUnits(amount, STABLE_DECIMALS)} USDC -> Etica`);
-        bridged = amount;
-        // ---- stage 2: mint ----------------------------------------------
-        const target = eticaUsdce + amount;
-        const bal = await waitForMint(eti.publicClient, config, keeper, target, log, sleep);
-        if (bal < target) {
-          return { dryRun, status: 'waiting', txHashes, bridged: bridged.toString(), error: `USDC.e mint not seen within ${config.mintTimeoutMs / 1000}s (balance ${formatUnits(bal, STABLE_DECIMALS)}); re-dispatch to resume` };
-        }
-        usdceForPool = bal;
       }
-      if (config.usdcAmount !== null && usdceForPool > config.usdcAmount) usdceForPool = config.usdcAmount;
-    } else if (wantMore) {
-      // Nothing left to bridge: either a previous run's transfer is in flight or the wallet was never funded.
-      if (dryRun || ethUsdc > 0n || eticaUsdce > 0n) {
-        return { dryRun, status: dryRun ? 'planned' : 'waiting', txHashes, error: `no USDC to bridge (${formatUnits(ethUsdc, STABLE_DECIMALS)}) and only ${formatUnits(eticaUsdce, STABLE_DECIMALS)} USDC.e on Etica` };
-      }
-      return { dryRun, status: 'error', txHashes, error: 'keeper holds no USDC on Ethereum and no USDC.e on Etica' };
+      usdceForPool = config.usdcAmount;
     }
     if (usdceForPool < MIN_BRIDGE_STABLE) {
-      return { dryRun, status: 'error', txHashes, error: `only ${formatUnits(usdceForPool, STABLE_DECIMALS)} USDC.e available for the pool` };
+      return { dryRun, status: 'error', txHashes, error: `nothing to pool: ${fmtStable(ethUsdc)} USDC on Ethereum, ${fmtStable(eticaUsdce)} USDC.e on Etica` };
     }
 
-    // ---- price sanity ----------------------------------------------------
+    // ---- price sanity (before any tx) ------------------------------------
     const pool = poolUsdPerEtx(usdceForPool, STABLE_DECIMALS, config.etxAmount);
     const result: BridgeSeedResult = {
       dryRun,
       status: 'planned',
       txHashes,
-      bridged: bridged.toString(),
+      bridged: amount.toString(),
+      inflight: inflight.toString(),
       usdce: usdceForPool.toString(),
       etx: config.etxAmount.toString(),
       pairFee: pairFee.toString(),
       poolUsdPerEtx: formatUnits(pool, 18),
     };
+    const anchors: { label: string; price: bigint }[] = [];
     if (config.egazUsd !== null) {
       const amounts = await eti.publicClient.readContract({
         address: config.etica.swapRouter,
@@ -381,21 +414,68 @@ export async function runBridgeSeed(
         args: [10n ** 18n, [config.etica.etx, config.etica.wegaz]],
       });
       const market = marketUsdPerEtx(amounts[amounts.length - 1]!, config.egazUsd);
-      const deviation = priceDeviationBps(pool, market);
       result.marketUsdPerEtx = formatUnits(market, 18);
-      result.priceDeviationBps = deviation?.toString();
-      if (deviation === null || deviation > BigInt(config.maxPriceDeviationBps)) {
-        return { ...result, status: 'error', error: `pool price ${result.poolUsdPerEtx} USD/ETX is ${deviation ?? '∞'} bps off the ETX/WEGAZ-implied ${result.marketUsdPerEtx} (max ${config.maxPriceDeviationBps})` };
-      }
-    } else {
-      log.warn('[bridge-seed] BRIDGE_SEED_EGAZ_USD unset: skipping the market-price check');
+      anchors.push({ label: 'ETX/WEGAZ pool x EGAZ/USD', price: market });
     }
+    if (config.etxUsd !== null) {
+      result.anchorUsdPerEtx = formatUnits(config.etxUsd, 18);
+      anchors.push({ label: 'ETX/USD anchor', price: config.etxUsd });
+    }
+    if (anchors.length === 0) {
+      if (!dryRun) return { ...result, status: 'error', error: 'a live run needs a price anchor: set BRIDGE_SEED_EGAZ_USD and/or BRIDGE_SEED_ETX_USD' };
+      log.warn('[bridge-seed] no price anchor set: skipping the market-price check (a live run refuses without one)');
+    }
+    let worst = 0n;
+    for (const anchor of anchors) {
+      const deviation = priceDeviationBps(pool, anchor.price);
+      if (deviation === null || deviation > BigInt(config.maxPriceDeviationBps)) {
+        return {
+          ...result,
+          priceDeviationBps: deviation?.toString(),
+          status: 'error',
+          error: `pool price ${result.poolUsdPerEtx} USD/ETX is ${deviation ?? '∞'} bps off the ${anchor.label} ${formatUnits(anchor.price, 18)} (max ${config.maxPriceDeviationBps})`,
+        };
+      }
+      if (deviation > worst) worst = deviation;
+    }
+    if (anchors.length > 0) result.priceDeviationBps = worst.toString();
     log.info(
-      `[bridge-seed] pool: ${formatUnits(usdceForPool, STABLE_DECIMALS)} USDC.e + ${formatUnits(config.etxAmount, ETX_DECIMALS)} ETX ` +
-        `(${result.poolUsdPerEtx} USD/ETX${result.marketUsdPerEtx ? `, market ${result.marketUsdPerEtx}, Δ ${result.priceDeviationBps} bps` : ''}), ` +
-        `pair fee ${formatUnits(pairFee, ETX_DECIMALS)} ETX, LP -> ${DEAD_ADDRESS}`,
+      `[bridge-seed] pool: ${fmtStable(usdceForPool)} USDC.e + ${fmtEtx(config.etxAmount)} ETX (${result.poolUsdPerEtx} USD/ETX` +
+        anchors.map((a) => `, ${a.label} ${formatUnits(a.price, 18)}`).join('') +
+        `${anchors.length > 0 ? `, worst Δ ${result.priceDeviationBps} bps` : ''}), pair fee ${fmtEtx(pairFee)} ETX, LP -> ${DEAD_ADDRESS}`,
     );
-    if (!eti.walletClient) return result;
+    if (!eth.walletClient || !eti.walletClient) return result;
+
+    // ---- stage 1: bridge --------------------------------------------------
+    if (amount > 0n) {
+      const send = async (hash: Hex, label: string) => {
+        txHashes.push(hash);
+        await confirm(eth.publicClient, hash, label, log);
+      };
+      await approveExact(config.ethereum.usdc, config.ethereum.warpRouter, amount + tokenFee, eth, send);
+      const hash = await eth.walletClient.writeContract({
+        chain: null,
+        account,
+        address: config.ethereum.warpRouter,
+        abi: WARP_ABI,
+        functionName: 'transferRemote',
+        args: [ETICA_DOMAIN, recipient, amount],
+        value: native,
+      });
+      await send(hash, `transferRemote ${fmtStable(amount)} USDC -> Etica`);
+    }
+
+    // ---- stage 2: mint ----------------------------------------------------
+    if (amount > 0n || inflight > 0n) {
+      const bal = await waitForMint(eti.publicClient, config, keeper, target, log, sleep);
+      if (bal < target) {
+        return {
+          ...result,
+          status: 'waiting',
+          error: `USDC.e mint not seen within ${config.mintTimeoutMs / 1000}s (balance ${fmtStable(bal)} / ${fmtStable(target)}); re-dispatch to resume`,
+        };
+      }
+    }
 
     // ---- stage 3: pool ---------------------------------------------------
     const send = async (hash: Hex, label: string) => {
@@ -427,15 +507,12 @@ export async function runBridgeSeed(
     // ---- stage 4: verify -------------------------------------------------
     const after = await readPair(eti.publicClient, config);
     if (!after.address) throw new Error('addLiquidity confirmed but factory.getPair is still zero');
-    const [deadLp, totalLp] = await Promise.all([
-      eti.publicClient.readContract({ address: after.address, abi: abis.erc20Abi, functionName: 'balanceOf', args: [DEAD_ADDRESS] }),
-      eti.publicClient.readContract({ address: after.address, abi: abis.pairAbi, functionName: 'totalSupply' }),
-    ]);
+    const { deadLp, totalLp } = await lpState(eti.publicClient, after.address);
     if (deadLp === 0n) throw new Error(`pair ${after.address} minted no LP to the dead address`);
     if (deadLp + MINIMUM_LIQUIDITY < totalLp) {
       log.warn(`[bridge-seed] dead address holds ${deadLp} of ${totalLp} LP (someone else also provided liquidity)`);
     }
-    log.info(`[bridge-seed] pool ${after.address} live: ${formatUnits(after.reserveUsdce, STABLE_DECIMALS)} USDC.e / ${formatUnits(after.reserveEtx, ETX_DECIMALS)} ETX; ${deadLp} LP burned`);
+    log.info(`[bridge-seed] pool ${after.address} live: ${fmtStable(after.reserveUsdce)} USDC.e / ${fmtEtx(after.reserveEtx)} ETX; ${deadLp} LP burned`);
     return { ...result, status: 'seeded', pair: after.address, usdce: after.reserveUsdce.toString(), etx: after.reserveEtx.toString(), deadLp: deadLp.toString() };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -263,31 +263,54 @@ One-shot, keeper-signed (`harvest-live`), resumable. `.github/workflows/bridge-s
 → `apps/keeper/src/bridge-seed/`. Every contract address is pinned in code; the
 inputs are `etx_amount` (pool side; the factory's 10,000 ETX `pairCreationFee`
 is pulled on top by the router on first `addLiquidity`), `usdc_amount` (blank =
-everything the keeper holds after the 50 bps bridge fee), `egaz_usd` (optional
-CoinGecko `etica` price; when set the seed price must be within 3% of the
-ETX/WEGAZ pool) and `dry_run`.
+everything the keeper holds after the 50 bps bridge fee; set = exactly that
+much USDC.e in the pool, or the run refuses), the price anchors `egaz_usd`
+(CoinGecko `etica`; checked as ETX/WEGAZ pool quote × EGAZ/USD) and `etx_usd`
+(CoinGecko `etx`; checked directly), and `dry_run`. A live run needs at least
+one anchor; set both — the on-chain quote alone can be shifted by a trade
+before dispatch, the off-chain price cannot. The pool price must sit within
+`BRIDGE_SEED_MAX_PRICE_DEVIATION_BPS` (300) of every anchor given.
 
-1. Preconditions, read on-chain: keeper holds `etx_amount` + 10,000 ETX on
-   Etica, the USDC on Ethereum plus ≥ 0.001 ETH, and `factory.getPair(USDC.e, ETX)`
-   has no reserves. The collateral router is verified (`wrappedToken` = USDC,
-   `mailbox` = canonical, `routers(61803)` = USDC.e) before any approval.
-2. Ethereum: exact `approve` + `transferRemote(61803, keeper, amount)` via
-   Flashbots Protect, `amount + fee ≤ balance` from `quoteTransferRemote`.
-3. Waits (≤ `BRIDGE_SEED_MINT_TIMEOUT_S`, 40 min) for the relayer to mint the
-   USDC.e; on timeout the run exits 1 with `status: waiting` — re-dispatch,
-   the bridge step is skipped once the USDC has left Ethereum.
-4. Etica: exact approvals of USDC.e and ETX (+ fee) to the swap router, then
+Everything that can fail is checked before the first transaction, in order:
+
+1. `factory.getPair(USDC.e, ETX)`: no reserves → continue; reserves with LP at
+   the dead address → `status: seeded`, exit 0 (our earlier run); reserves with
+   **no** dead-address LP → error, the pair was opened by someone else and the
+   run never adds to liquidity it does not control.
+2. Keeper holds `etx_amount` + the pair fee on Etica, and ≥ 0.001 ETH on Ethereum.
+3. In-flight scan: `SentTransferRemote` to the keeper on the Ethereum router over
+   the last `BRIDGE_SEED_INFLIGHT_LOOKBACK_BLOCKS` (3,600) blocks, matched by
+   amount against `ReceivedTransferRemote` for the keeper on the Etica router.
+   Unmatched transfers are still in flight: they count towards the pool and are
+   waited for, never repeated.
+4. Bridge plan: blank `usdc_amount` → one transfer of the whole balance minus the
+   quoted fee, and nothing while USDC.e exists or a transfer is in flight;
+   set `usdc_amount` → only the shortfall after USDC.e held + in flight, and an
+   error if balance < shortfall + fee. The collateral router is verified
+   (`wrappedToken` = USDC, `mailbox` = canonical, `routers(61803)` = USDC.e).
+5. Price check of the planned pool against every anchor.
+
+Then, live only:
+
+6. Ethereum: exact `approve` + `transferRemote(61803, keeper, amount)` via
+   Flashbots Protect.
+7. Waits (≤ `BRIDGE_SEED_MINT_TIMEOUT_S`, 40 min) for the USDC.e balance to
+   reach held + in flight + bridged; on timeout the run exits 1 with
+   `status: waiting` — re-dispatch, step 3 finds the transfer and waits.
+8. Etica: exact approvals of USDC.e and ETX (+ fee) to the swap router, then
    `router.addLiquidity(USDC.e, ETX, …, to = 0x…dEaD)` — the LP is minted
    straight to the dead address, so there is nothing to burn afterwards and
    no moment where the keeper holds withdrawable LP.
-5. Verifies the pair, reserves and that the dead address holds every LP share
-   except the factory's 1,000-wei `MINIMUM_LIQUIDITY`; re-running afterwards
-   reports `status: seeded` and does nothing.
+9. Verifies the pair, reserves and that the dead address holds every LP share
+   except the factory's 1,000-wei `MINIMUM_LIQUIDITY`.
 
 Fork rehearsal: `BRIDGE_SEED_ETHEREUM_RPC_URL=http://127.0.0.1:<eth-fork>`
 (a loopback endpoint disables Flashbots and allows `BRIDGE_SEED_ETHEREUM_MAILBOX`),
-`BRIDGE_SEED_ETICA_RPC_URL=http://127.0.0.1:<etica-fork>`, then
+`BRIDGE_SEED_ETICA_RPC_URL=http://127.0.0.1:<etica-fork>`, a small
+`BRIDGE_SEED_INFLIGHT_LOOKBACK_BLOCKS` so the log scan stays on the fork, then
 `pnpm --filter @etica-hub/keeper bridge-seed:dry-run` / `BRIDGE_SEED_DRY_RUN=false … bridge-seed:live`.
+The mint can be simulated by impersonating the Etica mailbox and calling
+`USDC.e.handle(1, bytes32(collateralRouter), abi.encode(bytes32(recipient), amount))`.
 
 ## Operations
 
