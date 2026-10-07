@@ -28,8 +28,9 @@ on:
         options: [core, warp, agent-config, all]
         default: all
       owner:
-        description: 'OWNER address (Safe or cold wallet; not the keeper)'
+        description: 'OWNER address (treasury wallet at launch; transferable later; never the keeper)'
         required: true
+        default: '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D'
       validator:
         description: 'VALIDATOR address (from the agent host)'
         required: true

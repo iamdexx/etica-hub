@@ -41,7 +41,7 @@ the public Hyperlane explorer and warp UI pick the route up.
 | Pause (`pausableIsm` on both routers)                     | Owned by `GUARDIAN`                       | Halts inbound delivery on that chain; cannot move funds or change anything else. Intended for a hot key on the healthcheck host so a `supply != locked` breach pauses within one check interval. |
 | Relayer                                                   | EticaHub key, automated                   | Pays gas, cannot alter messages. Whitelisted to the two routers only.                                                                                                                                                                                                   |
 | Fee contracts (one per router)                            | Owned by the relayer EOA (`KEEPER`)       | Ethereum: `LinearFee` 50 bps ≤ 50 USDC. Etica: `WarpFlatLinearFee` flat 2 USDC.e + 50 bps ≤ 50. Owner can only `claim` the balance to an address; rate and cap are immutable. The router owner can repoint `feeRecipient` (or clear it) at any time. |
-| Router/mailbox owner                                      | `OWNER` (a Safe + timelock before launch) | Can pause the route, swap ISM/hook, transfer ownership. Never touches user balances.                                                                                                                                                                                    |
+| Router/mailbox owner                                      | `OWNER` = treasury wallet `0xB2B4…C19D` at launch | Can pause the route, swap ISM/hook, raise the cap, transfer ownership (to a Safe later, see Operations). Receives no fees. Never touches user balances.                                                                                                              |
 | Reserve                                                   | `HypERC20Collateral` contract on Ethereum | Only released by a verified message from the Etica router.                                                                                                                                                                                                              |
 
 Normal operation needs no human signature — this is the "fully autonomous"
@@ -105,7 +105,10 @@ multi-validator upgrade above and hardware/KMS custody of `VALIDATOR_KEY`.
 Pre-reqs
 
 - [ ] Legal review of the operator/issuer position (see below) signed off.
-- [ ] Owner Safe created (Ethereum + Etica). `OWNER` = Safe address.
+- [ ] `OWNER` = treasury wallet `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D` (the
+      workflow default). It owns everything and earns nothing; move it to a
+      Safe with `transferOwnership` once one exists (recipe under Operations).
+      It needs ~0.01 ETH and a few EGAZ for admin calls.
 - [ ] Three fresh keys, never reused: deployer (`HYP_KEY`), `VALIDATOR_KEY`, `RELAYER_KEY`.
       Prefer AWS KMS for validator/relayer (`--validator.type aws`, see Hyperlane docs);
       hex keys are acceptable for launch if the host is locked down.
@@ -199,6 +202,23 @@ Wire into the app
 
   The ISM address is in the rendered registry (`warp-usdc` → ethereum →
   `interchainSecurityModule.modules[rateLimitedIsm]`).
+- **Move ownership** (treasury → Safe or any wallet): the current OWNER
+  signs one `transferOwnership(newOwner)` per owned contract, after which it
+  has no power over the route. Addresses are in the rendered registry
+  (`registry/chains/etica/addresses.yaml`, `registry/deployments/warp_routes/USDC/etica-config.yaml`).
+  Unrecoverable if `newOwner` is wrong — send a 0-value test tx to it first.
+
+  ```sh
+  # Etica (--legacy): mailbox, defaultIsm, proxyAdmin, synthetic router, its ISM and pausable module
+  for c in $MAILBOX $DEFAULT_ISM $PROXY_ADMIN $ETICA_ROUTER $ETICA_PAUSABLE_ISM; do
+    cast send $c 'transferOwnership(address)' $NEW_OWNER --rpc-url $ETICA_RPC --private-key $OWNER_KEY --legacy
+  done
+  # Ethereum: collateral router, its proxyAdmin, rateLimitedIsm, pausable module
+  for c in $ETH_ROUTER $ETH_PROXY_ADMIN $RATE_LIMITED_ISM $ETH_PAUSABLE_ISM; do
+    cast send $c 'transferOwnership(address)' $NEW_OWNER --rpc-url $ETHEREUM_RPC --private-key $OWNER_KEY
+  done
+  cast call $ETH_ROUTER 'owner()(address)' --rpc-url $ETHEREUM_RPC   # verify each
+  ```
 - **Security audit**: findings, fork evidence and the mainnet blocker list live
   in `docs/BRIDGE_SECURITY_AUDIT.md`.
 - **Rotate validator**: run a second validator with the new key, deploy a
