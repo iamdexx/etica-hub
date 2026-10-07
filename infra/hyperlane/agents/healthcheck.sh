@@ -9,6 +9,13 @@
 #   3. relayer wallet has gas on both chains
 #   4. invariant: USDC.e totalSupply on Etica <= USDC held by the Ethereum
 #      collateral router (a strict violation means unbacked supply -> pause)
+#   5. relayer has not stalled on the first message from an origin: with
+#      `index.from` pinned near head (see deploy.sh) the relayer's message
+#      loader starts at nonce 0 on an empty DB and never advances to the first
+#      indexed nonce until restarted (agents-v2.3.0 db_loader). Seen on the
+#      Sepolia rehearsal: a mint sat indexed-but-unprocessed for 11 min until
+#      `docker restart`. Detected from /metrics and fixed with one restart;
+#      afterwards the DB remembers the highest nonce.
 # Needs: docker, curl, python3 (stdlib only). Reads ./.env.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -86,6 +93,28 @@ EOF
     else
       problems+=("could not read supply/locked (eth=$locked, etica=$supply)")
     fi
+  fi
+fi
+
+# 5. relayer message loader stuck at nonce 0 while messages are indexed
+metrics="$(curl -sf -m 5 http://127.0.0.1:9090/metrics 2>/dev/null || true)"
+if [[ -n "$metrics" ]]; then
+  stuck="$(python3 - <<'PY' <<<"$metrics"
+import re, sys
+stored, loader = {}, {}
+for line in sys.stdin:
+    m = re.match(r'hyperlane_contract_sync_stored_events\{([^}]*)\} (\d+)', line)
+    if m and 'data_type="dispatched_messages"' in m.group(1):
+        stored[re.search(r'chain="(\w+)"', m.group(1)).group(1)] = int(m.group(2))
+    m = re.match(r'hyperlane_last_known_message_nonce\{([^}]*)\} (\d+)', line)
+    if m and 'phase="db_loader_loop"' in m.group(1):
+        loader[re.search(r'origin="(\w+)"', m.group(1)).group(1)] = int(m.group(2))
+print(" ".join(c for c, n in stored.items() if n > 0 and loader.get(c, 0) == 0))
+PY
+)"
+  if [[ -n "$stuck" ]]; then
+    docker restart hl-relayer >/dev/null 2>&1 || true
+    problems+=("relayer loader stuck at nonce 0 with messages indexed from: $stuck — restarted hl-relayer")
   fi
 fi
 

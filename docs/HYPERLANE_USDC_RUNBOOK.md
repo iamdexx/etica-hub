@@ -135,7 +135,7 @@ Deploy (from repo root, Node ≥ 22)
 export OWNER=0x… VALIDATOR=0x… KEEPER=0x… HYP_KEY=0x…
 ./infra/hyperlane/deploy.sh core          # Mailbox/ISM/hooks on Etica (~2.5 EGAZ)
 ./infra/hyperlane/deploy.sh warp          # routers + fee contracts on Ethereum + Etica, enrolls both
-./infra/hyperlane/deploy.sh agent-config  # infra/hyperlane/agents/agent-config.json
+./infra/hyperlane/deploy.sh agent-config  # infra/hyperlane/agents/agent-config.json (index.from pinned near head)
 unset HYP_KEY
 git add infra/hyperlane/registry infra/hyperlane/agents/agent-config.json && git commit
 ```
@@ -177,6 +177,20 @@ Wire into the app
 
 - **Agent down**: `docker compose ps`; `restart: unless-stopped` covers crashes.
   Messages sent while the relayer is down are delivered when it returns.
+- **First message from a chain never delivers** (indexed, no `Processing`
+  logs, `hyperlane_last_known_message_nonce{phase="db_loader_loop"}` = 0):
+  the relayer's message loader starts at nonce 0 on an empty DB and, because
+  `index.from` is pinned near head, nonce 0 is never indexed so it never
+  advances (agents-v2.3.0). `docker restart hl-relayer` once: on restart it
+  resumes from the highest nonce in its DB. `healthcheck.sh` detects this from
+  `/metrics` and performs the restart itself (so the cron must be installed
+  before the launch smoke test); expect the very first transfer per origin to
+  take up to one cron interval longer.
+- **Validator "Please send tokens to your chain signer address to announce"**:
+  the validator key needs a little gas on *both* chains for its one-time
+  announcement (0.005 ETH / 1 EGAZ). Never announce with a key anyone else
+  knows: the Sepolia rehearsal showed Anvil's default key already announced
+  by a stranger and swept the moment it was funded.
 - **Relayer out of gas**: the gas keeper refills from accrued fees every hour;
   the healthcheck alert below `MIN_RELAYER_ETH/EGAZ` means fees are not covering
   usage (no volume, thin USDC.e/ETX pool, or the keeper job is failing — check
@@ -201,12 +215,52 @@ Wire into the app
   `interchainSecurityModule.modules[rateLimitedIsm]`).
 - **Security audit**: findings, fork evidence and the mainnet blocker list live
   in `docs/BRIDGE_SECURITY_AUDIT.md`.
-- **Rotate validator**: run a second validator with the new key, deploy a
-  2-of-2 ISM via `hyperlane warp apply`, retire the old one. Never change the
-  ISM to a set whose signatures you cannot produce.
+- **Rotate / add validators**: run the new validator (announced on both
+  chains), then deploy the new ISM with the core factories and point the
+  router at it as OWNER. `hyperlane warp apply` does **not** work on this
+  route: it reads the Etica fee contract as a CLI `LinearFee` (`maxFee()`),
+  which `WarpFlatLinearFee` does not expose, and aborts before writing. The
+  factory path is three calls per chain (addresses in
+  `registry/chains/<chain>/addresses.yaml`):
+
+  ```sh
+  MS=$(cast call $staticMessageIdMultisigIsmFactory 'deploy(address[],uint8)(address)' "[$V1,$V2]" 2 --rpc-url $RPC)
+  cast send $staticMessageIdMultisigIsmFactory 'deploy(address[],uint8)' "[$V1,$V2]" 2 --rpc-url $RPC --private-key $OWNER_KEY
+  AGG=$(cast call $staticAggregationIsmFactory 'deploy(address[],uint8)(address)' "[$MS,$RATE_LIMITED_ISM,$PAUSABLE_ISM]" 3 --rpc-url $RPC)
+  cast send $staticAggregationIsmFactory 'deploy(address[],uint8)' "[$MS,$RATE_LIMITED_ISM,$PAUSABLE_ISM]" 3 --rpc-url $RPC --private-key $OWNER_KEY
+  cast send $ROUTER 'setInterchainSecurityModule(address)' $AGG --rpc-url $RPC --private-key $OWNER_KEY
+  ```
+
+  (Etica router: multisig + pausable, threshold 2. Ethereum router: multisig +
+  rateLimited + pausable, threshold 3.) Never change the ISM to a set whose
+  signatures you cannot produce.
 - **Upgrade agents**: bump `HYPERLANE_AGENT_TAG`, `docker compose pull && up -d`. Never below `agents-v2.3.0`: older relayers cannot deliver through the
   RateLimitedIsm aggregation and every redemption stalls with `Aggregation threshold not met`.
   DBs under `data/` are safe across upgrades.
+
+## Testnet rehearsal (Ethereum Sepolia ↔ Etica anvil fork)
+
+Run before any mainnet gas was spent, with this repo's compose/agent flags
+(agents-v2.3.0, validator `quorum` over three keyless Sepolia RPCs, relayer
+`fallback`, 100-block log chunks) against Hyperlane's canonical Sepolia core
+and our Etica core on a fork at `127.0.0.1:8547`. Throwaway keys only.
+
+| Step | Evidence |
+| --- | --- |
+| Warp deploy, Sepolia collateral `0xBe28…4490` ↔ Etica synthetic `0x4A21…8bA3`, fee contracts on both | `quoteTransferRemote(10 USDC)` = 10.05 USDC (50 bps) |
+| Sepolia → Etica, 10 USDC | lock [`0x373b…f2f6`](https://sepolia.etherscan.io/tx/0x373b4d0cbafdeec735839fa1e40a28b18d273e89a02b9b3bda6487409fbfd2f6) → mint on Etica `0x0e3c…e509`: 10 USDC.e to a wallet holding 0 EGAZ; 0.05 USDC in the Sepolia fee contract |
+| Gas drop | `bridge-gas` keeper scanned the inbound mint and sent 2 EGAZ; second run skipped the same recipient |
+| Etica → Sepolia, 3 USDC.e | burn on Etica `0xa370…63bf` → release on Sepolia; Etica fee contract 2.015 USDC.e (flat 2 + 0.5 %); supply 7.000000 == locked 7.000000 |
+| Fee sweep | keeper `claim` on Etica 2.015 USDC.e → keeper wallet; owner `claim` on Sepolia 0.05 USDC [`0xe111…08b0`](https://sepolia.etherscan.io/tx/0xe11146d28252455d56c84260ffad3aa126804d030a26e95e7d0635b85c0d08b0) |
+| Public-RPC behaviour | PublicNode/Tenderly returned `-32005 rate limit exceeded` throughout; agents deprioritised and retried, nothing dropped |
+
+Two defects found and fixed here, both of which would have stalled the first
+mainnet transfer: the CLI's `index.from` (mailbox deploy block) made the
+agents backfill history over throttled public RPCs (`deploy.sh agent-config`
+now pins it near head), and the relayer's first-message stall described under
+Operations (now auto-restarted by `healthcheck.sh`). Not exercised on
+Sepolia: the Ethereum keeper leg (chain id 1 only; proven on the mainnet
+fork in `docs/BRIDGE_SECURITY_AUDIT.md`).
 
 ## Legal position (engineering summary — not advice)
 
