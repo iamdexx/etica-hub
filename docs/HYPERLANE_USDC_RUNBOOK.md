@@ -64,7 +64,7 @@ USDC.e. The relayer closes that gap itself, with no treasury key anywhere:
    locked amount; on Etica it is moved from the sender to the fee contract
    before the burn (never minted). `USDC.e supply == USDC locked` still holds.
 2. The hourly `Bridge gas keeper` workflow (`apps/keeper`, `bridge-gas:*`),
-   signed by the relayer EOA, sweeps the fee contracts (`claim(keeper)`) and
+   signed by the relayer EOA, claims the fee contracts (`claim(keeper)`) and
    — only when ETH / EGAZ is under `MIN_NATIVE` — swaps just enough:
    `USDC → WETH` on Uniswap V2 and unwraps; `USDC.e → ETX → WEGAZ` on
    EticaSwap and unwraps. Swaps use exact-amount approvals, `amountOutMin`
@@ -74,8 +74,14 @@ USDC.e. The relayer closes that gap itself, with no treasury key anywhere:
    by the same `amountOutMin`; the chain has no public MEV infrastructure).
    A blocked/failed leg fails the job → Telegram via `ops-alerts`.
 3. Whatever stable remains above a small operating reserve (500 USDC /
-   25 USDC.e) is transferred to the treasury. The destination is the
-   `TREASURY_ADDRESS` constant compiled into the keeper, not a variable.
+   25 USDC.e) is burned as protocol-owned liquidity, the same way the pool
+   fees are: on Etica half is swapped to ETX, paired into the USDC.e/ETX
+   pool and the LP minted to `0x…dEaD`; on Ethereum the USDC is bridged
+   over the route itself to the keeper's own Etica address and burned on the
+   next run. No wallet receives bridge revenue. The destinations (dead
+   address, ETX, factory, canonical Ethereum Mailbox) are compiled into the
+   keeper; the collateral router named in CI is verified on-chain against
+   them before every send.
 4. On Etica the keeper also sends 2 EGAZ to wallets that just received
    ≥ 20 USDC.e and hold < 0.5 EGAZ, so a fresh wallet can move its funds.
    Recipients are read from the router's own `ReceivedTransferRemote` events

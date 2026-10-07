@@ -10,10 +10,13 @@ name: Bridge gas keeper
 #   2. if its ETH (Ethereum) or EGAZ (Etica) is under the minimum, swaps just
 #      enough USDC / USDC.e for gas (Ethereum sends go through Flashbots
 #      Protect so the swap is never visible in the public mempool),
-#   3. transfers everything above a small operating reserve to the protocol
-#      treasury (hard-coded in the keeper, not configurable here),
+#   3. burns everything above a small operating reserve as protocol-owned
+#      liquidity, like the pool fees: Etica pairs USDC.e/ETX and sends the LP
+#      to the dead address; Ethereum bridges the USDC to the keeper's own
+#      Etica address to be burned there (destinations hard-coded in the
+#      keeper; the collateral router below is verified on-chain each run),
 #   4. on Etica, sends 2 EGAZ to fresh wallets that just received USDC.e.
-# No treasury key is involved anywhere.
+# No treasury key is involved anywhere, and no wallet receives fee revenue.
 #
 # Legs whose fee contract / USDC.e address are not configured yet are
 # skipped, so this can stay enabled ahead of the mainnet deploy. A failed
@@ -35,7 +38,7 @@ permissions:
 
 jobs:
   refuel:
-    name: Sweep fees and top up relayer gas
+    name: Claim fees, top up relayer gas, burn surplus as POL
     runs-on: ubuntu-latest
     environment: harvest-live
     env:
@@ -55,7 +58,7 @@ jobs:
       BRIDGE_GAS_ETHEREUM_TARGET_NATIVE: ${{ vars.BRIDGE_ETHEREUM_TARGET_NATIVE || '0.15' }}
       BRIDGE_GAS_ETICA_MIN_NATIVE: ${{ vars.BRIDGE_ETICA_MIN_NATIVE || '20' }}
       BRIDGE_GAS_ETICA_TARGET_NATIVE: ${{ vars.BRIDGE_ETICA_TARGET_NATIVE || '60' }}
-      # Stable kept in the wallet as a gas reserve; everything above it is swept to the treasury.
+      # Stable kept in the wallet as a gas reserve; everything above it is burned as POL.
       BRIDGE_GAS_ETHEREUM_RESERVE_STABLE: ${{ vars.BRIDGE_ETHEREUM_RESERVE_STABLE || '500' }}
       BRIDGE_GAS_ETICA_RESERVE_STABLE: ${{ vars.BRIDGE_ETICA_RESERVE_STABLE || '25' }}
       # Recipient gas drop (Etica): set BRIDGE_GAS_DROP_ENABLED=false to switch off.

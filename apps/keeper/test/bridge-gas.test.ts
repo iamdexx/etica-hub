@@ -1,15 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import { parseEther, parseUnits } from 'viem';
-import { TREASURY_ADDRESS } from '@etica-hub/shared';
+import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 
 import {
   loadBridgeGasConfig,
   loadGasDropConfig,
+  DEAD_ADDRESS,
+  ETHEREUM_MAILBOX,
   ETHEREUM_USDC,
   FLASHBOTS_PROTECT_RPC,
   UNISWAP_V2_ROUTER,
 } from '../src/bridge-gas/config.js';
-import { claimAmount, decideLeg, nativeNeeded, priceImpactBps, sweepAmount } from '../src/bridge-gas/plan.js';
+import {
+  claimAmount,
+  decideLeg,
+  nativeNeeded,
+  planPolBurn,
+  priceImpactBps,
+  surplusAmount,
+} from '../src/bridge-gas/plan.js';
 import { bytes32ToAddress, planGasDrops, type InboundTransfer } from '../src/bridge-gas/gas-drop.js';
 
 const KEY = ('0x' + '11'.repeat(32)) as `0x${string}`;
@@ -90,13 +99,28 @@ describe('loadBridgeGasConfig', () => {
     expect(loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC }).maxSlippageBps).toBe(150);
   });
 
-  it('pins the treasury to the protocol constant regardless of environment', () => {
+  it('pins the surplus destinations: Ethereum bridges via the canonical mailbox, Etica burns LP to the dead address', () => {
     const cfg = loadBridgeGasConfig({
       BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC,
       BRIDGE_GAS_TREASURY: '0x000000000000000000000000000000000000dEaD',
-      TREASURY_ADDRESS: '0x000000000000000000000000000000000000dEaD',
+      BRIDGE_GAS_ETHEREUM_WARP_ROUTER: '0x00000000000000000000000000000000000000a1',
     });
-    expect(cfg.treasury).toBe(TREASURY_ADDRESS);
+    expect(cfg).not.toHaveProperty('treasury');
+    expect(cfg.ethereumMailbox).toBe(ETHEREUM_MAILBOX);
+    const [eth, etica] = cfg.legs;
+    expect(eth!.surplus).toEqual({ kind: 'bridge-to-etica', warpRouter: '0x00000000000000000000000000000000000000a1' });
+    const etx = DEPLOYMENTS[eticaMainnet.id].etx;
+    expect(etica!.surplus).toEqual({ kind: 'pol-burn', etx, factory: DEPLOYMENTS[eticaMainnet.id].swapFactory });
+    expect(DEAD_ADDRESS).toBe('0x000000000000000000000000000000000000dEaD');
+  });
+
+  it('only lets a local fork override the Ethereum mailbox', () => {
+    const fake = '0x00000000000000000000000000000000000000ab';
+    expect(() =>
+      loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC, BRIDGE_GAS_ETHEREUM_MAILBOX: fake }),
+    ).toThrow('local fork');
+    const cfg = loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: 'http://127.0.0.1:8548', BRIDGE_GAS_ETHEREUM_MAILBOX: fake });
+    expect(cfg.ethereumMailbox).toBe(fake);
   });
 
   it('pins the swap router, wrapped-native and path in code regardless of environment', () => {
@@ -185,52 +209,81 @@ describe('priceImpactBps', () => {
   });
 });
 
-describe('sweepAmount', () => {
-  it('sweeps only the excess over the reserve, and only above the minimum', () => {
-    expect(sweepAmount(snap(), t, parseUnits('120', 6), 0n, false)).toBe(parseUnits('70', 6));
-    expect(sweepAmount(snap(), t, parseUnits('55', 6), 0n, false)).toBe(0n); // 5 excess < minSweep
-    expect(sweepAmount(snap(), t, parseUnits('40', 6), 0n, false)).toBe(0n); // below reserve
+describe('surplusAmount', () => {
+  it('releases only the excess over the reserve, and only above the minimum', () => {
+    expect(surplusAmount(snap(), t, parseUnits('120', 6), 0n, false)).toBe(parseUnits('70', 6));
+    expect(surplusAmount(snap(), t, parseUnits('55', 6), 0n, false)).toBe(0n); // 5 excess < minSweep
+    expect(surplusAmount(snap(), t, parseUnits('40', 6), 0n, false)).toBe(0n); // below reserve
   });
 
   it('deducts what the swap spends and holds everything while a swap is blocked', () => {
-    expect(sweepAmount(snap(), t, parseUnits('120', 6), parseUnits('30', 6), false)).toBe(parseUnits('40', 6));
-    expect(sweepAmount(snap(), t, parseUnits('120', 6), 0n, true)).toBe(0n);
+    expect(surplusAmount(snap(), t, parseUnits('120', 6), parseUnits('30', 6), false)).toBe(parseUnits('40', 6));
+    expect(surplusAmount(snap(), t, parseUnits('120', 6), 0n, true)).toBe(0n);
+  });
+});
+
+describe('planPolBurn', () => {
+  // 113 USDC.e / 200k ETX pool (the seeded fork pool)
+  const reserves = { stable: parseUnits('113', 6), etx: parseEther('200000') };
+
+  it('splits the surplus in half, buys ETX with one half and pairs the other, with slippage on every minimum', () => {
+    const { plan, blocked } = planPolBurn(parseUnits('2', 6), reserves, 150);
+    expect(blocked).toBeNull();
+    expect(plan!.stableForSwap).toBe(parseUnits('1', 6));
+    expect(plan!.stableForPair).toBe(parseUnits('1', 6));
+    // 1 USDC.e into 113/200k: out = 200000e18*1e6*997/(113e6*1000+1e6*997) ≈ 1749.6 ETX
+    expect(plan!.expectedEtxOut).toBeGreaterThan(parseEther('1740'));
+    expect(plan!.expectedEtxOut).toBeLessThan(parseEther('1760'));
+    expect(plan!.minEtxOut).toBe((plan!.expectedEtxOut * 9850n) / 10000n);
+    expect(plan!.minStableIn).toBeLessThanOrEqual(parseUnits('1', 6));
+    expect(plan!.minEtxIn).toBeGreaterThan(0n);
+    expect(plan!.minEtxIn).toBeLessThan(plan!.expectedEtxOut);
+  });
+
+  it('holds the surplus when the pool is missing or the swap half would move the price past the ceiling', () => {
+    expect(planPolBurn(parseUnits('2', 6), null, 150)).toEqual({ plan: null, blocked: 'no USDC.e/ETX pool liquidity' });
+    expect(planPolBurn(parseUnits('2', 6), { stable: 0n, etx: 0n }, 150).plan).toBeNull();
+    // 100 USDC.e into a 113 USDC.e pool is ~30% impact
+    const thin = planPolBurn(parseUnits('200', 6), reserves, 150);
+    expect(thin.plan).toBeNull();
+    expect(thin.blocked).toMatch(/price impact/);
+    expect(planPolBurn(0n, reserves, 150)).toEqual({ plan: null, blocked: null });
   });
 });
 
 describe('decideLeg', () => {
-  it('claims and sweeps the surplus when gas is healthy', () => {
+  it('claims and releases the surplus when gas is healthy', () => {
     const d = decideLeg(snap({ nativeBalance: parseEther('1') }), t, null);
     expect(d.swap).toBeNull();
     expect(d.blocked).toBeNull();
     expect(d.claim).toBe(parseUnits('120', 6));
-    expect(d.sweep).toBe(parseUnits('70', 6));
+    expect(d.surplus).toBe(parseUnits('70', 6));
   });
 
-  it('swaps the quoted amount when fees cover it, then sweeps what is left over the reserve', () => {
+  it('swaps the quoted amount when fees cover it, then releases what is left over the reserve', () => {
     const d = decideLeg(snap({ feeContractBalance: parseUnits('1000', 6) }), t, quote);
     expect(d.swap).not.toBeNull();
     expect(d.swap!.amountIn).toBe(quote.amountIn);
     expect(d.swap!.minOut).toBe((quote.amountOut * 9700n) / 10000n);
     expect(d.claim).toBe(parseUnits('1000', 6));
-    expect(d.sweep).toBe(parseUnits('1000', 6) - quote.amountIn - t.reserveStable);
+    expect(d.surplus).toBe(parseUnits('1000', 6) - quote.amountIn - t.reserveStable);
   });
 
-  it('spends everything available when fees do not cover the full top-up and sweeps nothing', () => {
+  it('spends everything available when fees do not cover the full top-up and releases nothing', () => {
     const d = decideLeg(snap({ feeContractBalance: parseUnits('100', 6), walletStable: parseUnits('20', 6) }), t, quote);
     expect(d.swap!.amountIn).toBe(parseUnits('120', 6));
     const expected = (parseUnits('120', 6) * quote.amountOut) / quote.amountIn;
     expect(d.swap!.minOut).toBe((expected * 9700n) / 10000n);
-    expect(d.sweep).toBe(0n);
+    expect(d.surplus).toBe(0n);
   });
 
-  it('blocks instead of swapping into a thin pool, and keeps the stable instead of sweeping it', () => {
+  it('blocks instead of swapping into a thin pool, and keeps the stable instead of releasing it', () => {
     const thin = { ...quote, amountOut: parseEther('0.10') }; // ~29% impact
     const d = decideLeg(snap({ feeContractBalance: parseUnits('1000', 6) }), t, thin);
     expect(d.swap).toBeNull();
     expect(d.blocked).toMatch(/price impact/);
     expect(d.claim).toBe(parseUnits('1000', 6));
-    expect(d.sweep).toBe(0n);
+    expect(d.surplus).toBe(0n);
   });
 
   it('blocks when nothing has accrued yet, and when the router cannot quote', () => {

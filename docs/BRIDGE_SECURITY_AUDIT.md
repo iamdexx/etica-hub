@@ -23,9 +23,9 @@ containment around that fact.
 |---|----------|--------|-------|
 | F-1 | High | fixed | Dust redemptions drain the relayer's ETH |
 | F-2 | High | fixed | Keeper swap router / path were configurable from CI variables |
-| F-3 | High | fixed | Treasury sweep destination was configurable from CI variables |
+| F-3 | High | fixed | Surplus destination was configurable from CI variables |
 | F-4 | High | fixed | Keeper swaps were sandwichable in the public mempool |
-| F-5 | Medium | fixed | Surplus could be swept while a gas top-up was blocked |
+| F-5 | Medium | fixed | Surplus could be released while a gas top-up was blocked |
 | F-6 | Medium | fixed | Unbounded ERC-20 allowance left on the swap router |
 | F-7 | Medium | fixed | Relayer v2.2.0 could not deliver aggregation-ISM messages |
 | F-8 | Medium | fixed | Fee-contract ownership / `feeRecipient` wiring in `deploy.sh` |
@@ -66,11 +66,17 @@ point every claimed fee at an attacker-controlled "router". Router,
 wrapped-native and swap path are now constants in `config.ts`; the env keys are
 ignored (unit test `pins the swap router, wrapped-native and path in code`).
 
-### F-3 Treasury sweep destination configurable (High, fixed)
-Same class of bug for `BRIDGE_GAS_TREASURY`. The sweep target is now the
-`TREASURY_ADDRESS` constant from `@etica/shared`. Evidence (fork, live run with
-`BRIDGE_GAS_TREASURY=<attacker>`): Ethereum sweep 763,816,728 and Etica sweep
-85,996,856 both landed at `0xB2B4…C19D`; attacker balance stayed 0.
+### F-3 Surplus destination configurable (High, fixed)
+Same class of bug for `BRIDGE_GAS_TREASURY`: the first hardening pass pinned
+the sweep to the `TREASURY_ADDRESS` constant (fork evidence: with
+`BRIDGE_GAS_TREASURY=<attacker>` the Ethereum sweep 763,816,728 and Etica
+sweep 85,996,856 both landed at `0xB2B4…C19D`, attacker balance 0).
+
+The surplus now never goes to a wallet at all — it is burned as
+protocol-owned liquidity like the pool fees (see F-16), so there is no
+destination address left to redirect. `BRIDGE_GAS_TREASURY` is ignored and
+the config has no `treasury` field (unit test `pins the surplus
+destinations`).
 
 ### F-4 Keeper swaps sandwichable (High, fixed)
 The keeper converts fee USDC → ETH (Uniswap V2) and USDC.e → ETX → WEGAZ
@@ -88,10 +94,10 @@ a sandwich bot. Mitigations now in place:
 Etica has no private relay; exposure there is bounded by the slippage cap and
 the small swap sizes (tens of USDC.e).
 
-### F-5 Sweep while top-up blocked (Medium, fixed)
+### F-5 Surplus released while top-up blocked (Medium, fixed)
 If the swap was blocked (no quote, impact too high) the keeper would still
-sweep surplus to the treasury, leaving the relayer under-fuelled. `sweepAmount`
-now returns 0 whenever a needed swap is blocked.
+release the surplus, leaving the relayer under-fuelled. `surplusAmount` now
+returns 0 whenever a needed swap is blocked, so gas always comes first.
 
 ### F-6 Unbounded allowance (Medium, fixed)
 The keeper approves exactly `amountIn` immediately before each swap. A router
@@ -167,6 +173,38 @@ All reported items are in `src/bridge/Bridge*`, `RateLimitISM`,
 deployed (all zero addresses in `packages/shared/src/addresses.ts`) and not
 part of this route. Foundry: 610 tests pass. Keeper: 23 unit tests pass,
 typecheck clean.
+
+### F-16 Surplus is burned as POL; Ethereum leg bridges to self (Design)
+Bridge fees above the keeper's gas reserves follow the pool fees: on Etica
+half the USDC.e surplus is swapped to ETX on the pinned EticaSwap router,
+paired with the other half via `addLiquidity(ETX, USDC.e)` and the LP minted
+to `0x…dEaD` (same sink as `TreasuryHarvester`'s POL-burn slice). On Ethereum
+the surplus USDC is sent with `transferRemote(61803, keeper, amount)` to the
+keeper's **own** Etica address, so it arrives as USDC.e and is burned on the
+next Etica run. Properties relied on:
+* No wallet, hot or cold, ever receives fee revenue; the keeper key can at
+  most hold fees in its own wallet (by setting reserves high), never move
+  them elsewhere. Reserves are bounded by the env validation and the swap
+  path is pinned (F-2).
+* The POL swap half is bounded by the same `maxSlippageBps` price-impact
+  check as the gas swap, measured against the pool's spot price from
+  `getReserves()`; `amountOutMin` / `amountAMin` / `amountBMin` all carry
+  slippage and a 5-minute deadline. A thin or manipulated pool makes the
+  keeper *hold* the stable, not burn it badly.
+* The Ethereum collateral router named by `BRIDGE_GAS_ETHEREUM_WARP_ROUTER`
+  is verified before every send: `wrappedToken() == USDC`, `mailbox() ==`
+  the canonical Ethereum Mailbox pinned in code (`ETHEREUM_MAILBOX`;
+  overridable only when the RPC is a loopback fork, unit-tested), `routers
+  (61803) == bytes32(USDC.e)` and `feeRecipient() == BRIDGE_ETHEREUM_FEE_CONTRACT`.
+  A poisoned variable pointing at a look-alike router therefore reverts the
+  leg instead of handing it the USDC. The approval is exact (`amount + fee`)
+  and the recipient is the keeper itself, so even a bug here cannot pay a
+  third party.
+* Bridging the surplus pays the route's own fee (recovered by the Ethereum
+  fee contract on the next claim) and the IGP gas quote; the leg refuses to
+  bridge if that would push the keeper's ETH under `MIN_NATIVE`.
+* User principal is never involved: only balances already claimed from the
+  fee contracts into the keeper wallet are touched.
 
 ## Not covered
 * Hyperlane core contract internals (upstream audits apply).

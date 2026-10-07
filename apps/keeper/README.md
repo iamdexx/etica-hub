@@ -59,7 +59,8 @@ pnpm --filter @etica-hub/keeper test
 ## Bridge gas (`bridge-gas:*`)
 
 Keeps the Hyperlane USDC ⇄ USDC.e relayer fuelled from the fees users pay and
-forwards the surplus to the treasury, with no treasury key involved. Each warp
+burns the surplus as protocol-owned liquidity, exactly like the pool fees — no
+wallet, treasury or otherwise, receives bridge revenue. Each warp
 router skims 50 bps (≤ 50 USDC; Etica redemptions add a flat 2 USDC.e) of
 every transfer into a fee contract owned by the relayer EOA. Each run, per leg:
 
@@ -70,9 +71,20 @@ every transfer into a fee contract owned by the relayer EOA. Each run, per leg:
    deadline, `amountOutMin` from a marginal-price probe, slippage ceiling 5 %;
    Ethereum sends go through Flashbots Protect so the swap never sits in the
    public mempool;
-3. transfer everything above `RESERVE_STABLE` to the treasury
-   (`TREASURY_ADDRESS` from `@etica-hub/shared` — not an env var, so a leaked
-   workflow variable cannot redirect it);
+3. release everything above `RESERVE_STABLE`:
+   - Etica: swap half the USDC.e to ETX on EticaSwap, pair it with the other
+     half (`addLiquidity(ETX, USDC.e)`) and mint the LP to
+     `0x…dEaD` — permanent POL in the USDC.e/ETX pool, same destination as
+     the harvester's POL-burn slice. Held (not burned) when the pool is
+     missing or the swap half would move the price more than
+     `MAX_SLIPPAGE_BPS`;
+   - Ethereum: `transferRemote()` the USDC over the warp route to the
+     keeper's **own** address on Etica, where the next run burns it. The
+     collateral router (`BRIDGE_GAS_ETHEREUM_WARP_ROUTER`) is verified
+     on-chain before every send — it must wrap this USDC, hang off the
+     canonical Ethereum Mailbox (pinned in code), route domain 61803 to the
+     configured USDC.e and forward fees to the configured fee contract — so
+     a poisoned variable cannot name a look-alike that keeps the USDC;
 4. Etica only: send `BRIDGE_GAS_DROP_AMOUNT` EGAZ to each wallet that received
    ≥ 20 USDC.e in the last 600 blocks and still holds < 0.5 EGAZ. Recipients
    come from the router's own `ReceivedTransferRemote` events (i.e. messages
@@ -81,7 +93,7 @@ every transfer into a fee contract owned by the relayer EOA. Each run, per leg:
    own gas floor.
 
 Legs whose fee contract / USDC.e address are unset are skipped; a blocked
-swap (thin pool, no quote) holds the stable instead of sweeping it.
+swap (thin pool, no quote) holds the stable instead of releasing it.
 
 ```bash
 pnpm --filter @etica-hub/keeper bridge-gas:dry-run   # snapshot + plan, no txs
@@ -95,9 +107,11 @@ pnpm --filter @etica-hub/keeper bridge-gas:live      # needs HARVEST_PRIVATE_KEY
 | `BRIDGE_GAS_ETICA_RPC_URL` | `HARVEST_RPC_URL` or rpc2.etica-stats.org | |
 | `BRIDGE_GAS_{ETHEREUM,ETICA}_FEE_CONTRACT` | — | From the warp deploy output; blank = leg skipped. |
 | `BRIDGE_GAS_ETICA_STABLE` | — | USDC.e router address; blank = leg skipped. |
+| `BRIDGE_GAS_ETHEREUM_WARP_ROUTER` | — | Collateral router on Ethereum (warp deploy output); blank = Ethereum surplus is held. |
+| `BRIDGE_GAS_ETHEREUM_MAILBOX` | canonical mailbox | Only accepted when the Ethereum RPC is a loopback fork; production ignores/rejects it. |
 | `BRIDGE_GAS_ETHEREUM_WRITE_RPC_URL` | `https://rpc.flashbots.net/fast` | Where Ethereum transactions are *sent* (reads use the RPC above). Point at the fork when testing. |
-| `BRIDGE_GAS_{ETHEREUM,ETICA}_RESERVE_STABLE` | `500` / `25` | Stable kept as a gas reserve; the excess is swept to the treasury. |
-| `BRIDGE_GAS_{ETHEREUM,ETICA}_MIN_SWEEP` | `200` / `5` | Smallest sweep worth a transaction. |
+| `BRIDGE_GAS_{ETHEREUM,ETICA}_RESERVE_STABLE` | `500` / `25` | Stable kept as a gas reserve; the excess is burned as POL (Etica) / bridged to be burned (Ethereum). |
+| `BRIDGE_GAS_{ETHEREUM,ETICA}_MIN_SWEEP` | `200` / `5` | Smallest surplus worth releasing. |
 | `BRIDGE_GAS_MAX_SLIPPAGE_BPS` | `150` (max 500) | `amountOutMin` and price-impact ceiling for swaps. |
 | `BRIDGE_GAS_DROP_ENABLED` / `_AMOUNT` / `_THRESHOLD` / `_MIN_TRANSFER` / `_MAX_PER_RUN` / `_LOOKBACK_BLOCKS` | `true` / `2` / `0.5` / `20` / `25` / `600` | Recipient gas drop on Etica. |
 | `BRIDGE_GAS_{ETHEREUM,ETICA}_MIN_NATIVE` | `0.05` ETH / `20` EGAZ | Top up below this… |
