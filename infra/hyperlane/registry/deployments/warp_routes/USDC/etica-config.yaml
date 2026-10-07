@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../schema.json
+tokens:
+  - addressOrDenom: "0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335"
+    chainName: etica
+    connections:
+      - token: ethereum|ethereum|0xf8AAEd754cC3d55B8Fe2d87aAf9768ef20f9B099
+    decimals: 6
+    name: USD Coin (Etica)
+    standard: EvmHypSynthetic
+    symbol: USDC.e
+    tokenType: synthetic
+  - addressOrDenom: "0xf8AAEd754cC3d55B8Fe2d87aAf9768ef20f9B099"
+    chainName: ethereum
+    collateralAddressOrDenom: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    connections:
+      - token: ethereum|etica|0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335
+    decimals: 6
+    name: USD Coin
+    standard: EvmHypCollateral
+    symbol: USDC
+    tokenType: collateral

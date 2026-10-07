@@ -1,0 +1,161 @@
+{
+  "chains": {
+    "ethereum": {
+      "blockExplorers": [
+        {
+          "apiUrl": "https://api.etherscan.io/v2/api?chainid=1",
+          "family": "etherscan",
+          "name": "Etherscan",
+          "url": "https://etherscan.io"
+        },
+        {
+          "apiUrl": "https://eth.blockscout.com/api",
+          "family": "blockscout",
+          "name": "Blockscout",
+          "url": "https://blockscout.com/eth/mainnet"
+        },
+        {
+          "apiUrl": "https://api.routescan.io/v2/network/mainnet/evm/1/etherscan/api",
+          "family": "routescan",
+          "name": "Ethereum Explorer",
+          "url": "https://1.routescan.io"
+        }
+      ],
+      "blocks": {
+        "confirmations": 2,
+        "estimateBlockTime": 13,
+        "reorgPeriod": 15
+      },
+      "chainId": 1,
+      "deployer": {
+        "name": "Abacus Works",
+        "url": "https://www.hyperlane.xyz"
+      },
+      "displayName": "Ethereum",
+      "domainId": 1,
+      "gasCurrencyCoinGeckoId": "ethereum",
+      "gnosisSafeTransactionServiceUrl": "https://api.safe.global/tx-service/eth",
+      "name": "ethereum",
+      "nativeToken": {
+        "decimals": 18,
+        "name": "Ether",
+        "symbol": "ETH"
+      },
+      "protocol": "ethereum",
+      "rpcUrls": [
+        {
+          "http": "https://ethereum.publicnode.com"
+        },
+        {
+          "http": "https://eth.drpc.org"
+        },
+        {
+          "http": "https://rpc.flashbots.net"
+        },
+        {
+          "http": "https://eth.blockrazor.xyz"
+        },
+        {
+          "http": "https://eth-pokt.nodies.app"
+        }
+      ],
+      "technicalStack": "other",
+      "aggregationHook": "0x3d166d2424e47747D81bd71A305A8aee23d33397",
+      "domainRoutingIsm": "0xBA328338044e0C0AFd0591FB6E5e2F83C4e8F742",
+      "domainRoutingIsmFactory": "0x28fA9552F19039b450498B0d8e5DEAe0d0aAc559",
+      "fallbackRoutingHook": "0x571f1435613381208477ac5d6974310d88AC7cB7",
+      "interchainAccountRouter": "0xC00b94c115742f711a6F9EA90373c33e9B72A4A9",
+      "interchainGasPaymaster": "0x9e6B1022bE9BBF5aFd152483DAD9b88911bC8611",
+      "interchainSecurityModule": "0xDD0998A3533b137a3520bca7c0Fb0b4F5886Ae82",
+      "mailbox": "0xc005dc82818d67AF737725bD4bf75435d065D239",
+      "merkleTreeHook": "0x48e6c30B97748d1e2e03bf3e9FbE3890ca5f8CCA",
+      "pausableHook": "0x3A66Dc852e56d3748838b3C27CF381105b83705b",
+      "pausableIsm": "0xDC98a856fb9112894c2fE32267DA8bF35645FAF3",
+      "protocolFee": "0x8B05BF30F6247a90006c5837eA63C7905D79e6d8",
+      "proxyAdmin": "0x75EE15Ee1B4A75Fa3e2fDF5DF3253c25599cc659",
+      "quotedCalls": "0xe38E2E3B4d9Aef4556e62e4D2B1e6Fc155bCc985",
+      "staticAggregationHookFactory": "0x8E0c6231F36cb081ccBcae5810C1793268D6CA7C",
+      "staticAggregationIsm": "0x5447cdC0f4B1Afd827BF9d2F6b6cE7668d5dc284",
+      "staticAggregationIsmFactory": "0x46FA191Ad972D9674Ed752B69f9659A0d7b22846",
+      "staticMerkleRootMultisigIsmFactory": "0x47e8aF9e30C32Ab91060ED587894288786761B45",
+      "staticMerkleRootWeightedMultisigIsmFactory": "0xA2502bF73e5313c1bf48E47C887cdcbf2640FA41",
+      "staticMessageIdMultisigIsmFactory": "0xfA21D9628ADce86531854C2B7ef00F07394B0B69",
+      "staticMessageIdWeightedMultisigIsmFactory": "0x4272124Fba59CbA076D85375895f94B6a3485c3E",
+      "storageGasOracle": "0xc9a103990A8dB11b4f627bc5CD1D0c2685484Ec5",
+      "testRecipient": "0x36FdA966CfffF8a9Cdc814f546db0e6378bFef35",
+      "testTokenRecipient": "0x85ac1164878e017b67660a74ff1f41f3D05C02Bb",
+      "timelockController": "0x0000000000000000000000000000000000000000",
+      "universalRouter": "0x52dd779c1b5eeb54d5f218EfA72D52117ca04115",
+      "validatorAnnounce": "0xCe74905e51497b4adD3639366708b821dcBcff96",
+      "index": {
+        "from": 26143188,
+        "chunk": 100
+      }
+    },
+    "etica": {
+      "blockExplorers": [
+        {
+          "name": "Eticascan",
+          "url": "https://eticascan.org",
+          "apiUrl": "https://eticascan.org/api",
+          "family": "other"
+        }
+      ],
+      "blocks": {
+        "confirmations": 3,
+        "estimateBlockTime": 13,
+        "reorgPeriod": 32
+      },
+      "chainId": 61803,
+      "deployer": {
+        "name": "EticaHub",
+        "url": "https://eticahub.com"
+      },
+      "displayName": "Etica",
+      "domainId": 61803,
+      "isTestnet": false,
+      "name": "etica",
+      "nativeToken": {
+        "decimals": 18,
+        "name": "Etica Gas",
+        "symbol": "EGAZ"
+      },
+      "protocol": "ethereum",
+      "rpcUrls": [
+        {
+          "http": "https://eticamainnet.eticaprotocol.org"
+        },
+        {
+          "http": "https://rpc2.etica-stats.org"
+        },
+        {
+          "http": "https://61803.rpc.thirdweb.com"
+        }
+      ],
+      "technicalStack": "other",
+      "transactionOverrides": {
+        "gasPrice": 81000000000
+      },
+      "domainRoutingIsmFactory": "0xC83005ba5f7Cf1A7A3F106F302ECbcB64d735f8A",
+      "incrementalDomainRoutingIsmFactory": "0xeaC46380aad5E383285c9af5BF8Ee91C30326FdF",
+      "interchainAccountRouter": "0x7318c7F2Fa8a029e4ce711E60445bf6dBE54127d",
+      "mailbox": "0x9E0aFCF74FF2B0E9F7b6318ad6Ab0DC929Ef22ec",
+      "merkleTreeHook": "0x3EB14607cd32111E9E447A3e624504b4a51B6de5",
+      "proxyAdmin": "0xc71701d8D53D1e3268d40606b955aD68b1360557",
+      "quotedCalls": "0xa5e4396967AECeFDD47db2b7FD6F89F7b2108AC4",
+      "staticAggregationHookFactory": "0x1255DDB2164465003784b15649041817171f1798",
+      "staticAggregationIsmFactory": "0xC33bd8976A851993E82b115bb13b3B0ebCC013EC",
+      "staticMerkleRootMultisigIsmFactory": "0xe0E0F965B464cE720849943Eb8aF6eFa685c9A66",
+      "staticMerkleRootWeightedMultisigIsmFactory": "0x0E633DE1Bd816282073153B91FEADdCCbde7489c",
+      "staticMessageIdMultisigIsmFactory": "0xf2841CbCFBeA7D8EDE90028cF7F66684cA48b5AA",
+      "staticMessageIdWeightedMultisigIsmFactory": "0x680B6A47f2eac6846DBd287D5EC2aBc1dB6a72d7",
+      "testRecipient": "0xbd11A12D9366F2e4A5cc8D3D00D04e325bcEb214",
+      "validatorAnnounce": "0xCedB6c197C99dec2000082bBE9E03282Ac3e51b8",
+      "interchainGasPaymaster": "0x0000000000000000000000000000000000000000",
+      "index": {
+        "from": 10940818,
+        "chunk": 100
+      }
+    }
+  }
+}

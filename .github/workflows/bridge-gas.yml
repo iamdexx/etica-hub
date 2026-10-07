@@ -57,9 +57,11 @@ jobs:
       BRIDGE_GAS_ETICA_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
       # Filled from infra/hyperlane/registry/deployments/warp_routes/USDC/etica-config.yaml
       # after `deploy.sh warp`; blank = leg skipped.
-      BRIDGE_GAS_ETHEREUM_FEE_CONTRACT: ${{ vars.BRIDGE_ETHEREUM_FEE_CONTRACT }}
-      BRIDGE_GAS_ETICA_FEE_CONTRACT: ${{ vars.BRIDGE_ETICA_FEE_CONTRACT }}
-      BRIDGE_GAS_ETICA_STABLE: ${{ vars.BRIDGE_USDCE_ADDRESS }}
+      BRIDGE_GAS_ETHEREUM_FEE_CONTRACT: ${{ vars.BRIDGE_ETHEREUM_FEE_CONTRACT || '0x383C76362899c4bdd43a6a5a57BAf6f83D2d7527' }}
+      BRIDGE_GAS_ETICA_FEE_CONTRACT: ${{ vars.BRIDGE_ETICA_FEE_CONTRACT || '0x995A1a7c8b301a72fFb2cCe3AE3e5a54ff96CC95' }}
+      BRIDGE_GAS_ETICA_STABLE: ${{ vars.BRIDGE_USDCE_ADDRESS || '0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335' }}
+      # Ethereum surplus is bridged through this collateral router (verified on-chain before every send).
+      BRIDGE_GAS_ETHEREUM_WARP_ROUTER: ${{ vars.BRIDGE_ETHEREUM_WARP_ROUTER || '0xf8AAEd754cC3d55B8Fe2d87aAf9768ef20f9B099' }}
       BRIDGE_GAS_ETHEREUM_MIN_NATIVE: ${{ vars.BRIDGE_ETHEREUM_MIN_NATIVE || '0.05' }}
       BRIDGE_GAS_ETHEREUM_TARGET_NATIVE: ${{ vars.BRIDGE_ETHEREUM_TARGET_NATIVE || '0.15' }}
       BRIDGE_GAS_ETICA_MIN_NATIVE: ${{ vars.BRIDGE_ETICA_MIN_NATIVE || '20' }}

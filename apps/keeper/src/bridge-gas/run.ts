@@ -5,7 +5,8 @@
  * native) + wrapped.withdraw(), then the surplus: on Etica swap a bounded
  * chunk of it along the same path and keep the EGAZ; on Ethereum
  * transferRemote() the USDC to the keeper's own Etica wallet so the next run
- * swaps it there. Finally, on Etica, the recipient gas drops. Every send goes through `leg.writeRpcUrl`
+ * swaps it there; then a plain value transfer to the relayer when it is under
+ * its gas floor. Finally, on Etica, the recipient gas drops. Every send goes through `leg.writeRpcUrl`
  * (Flashbots Protect on Ethereum); reads fail over across `leg.rpcUrls`.
  */
 
@@ -26,7 +27,7 @@ import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { abis } from '@etica-hub/shared';
 import { ETICA_DOMAIN, type BridgeGasConfig, type BridgeGasLeg } from './config.js';
 import { fetchInboundTransfers, planGasDrops } from './gas-drop.js';
-import { decideLeg, planSurplusSwap, type LegDecision, type LegSnapshot, type SwapPlan, type SwapQuote } from './plan.js';
+import { decideLeg, nativeNeeded, planSurplusSwap, relayerTopUp, type LegDecision, type LegSnapshot, type SwapPlan, type SwapQuote } from './plan.js';
 
 type Logger = Pick<Console, 'info' | 'warn' | 'error'>;
 
@@ -76,6 +77,8 @@ export interface LegResult {
   /** Why the surplus was held instead (thin pool, router unset / failed verification). */
   surplusBlocked?: string;
   gasDrops?: number;
+  /** Native sent to the relayer this run (wei). */
+  relayerTopUp?: string;
   reason?: string;
   txHashes: Hex[];
 }
@@ -121,12 +124,13 @@ export async function snapshotLeg(
 ): Promise<LegSnapshot> {
   const feeContract = leg.feeContract as Address;
   const stable = leg.stable as Address;
-  const [nativeBalance, feeOwner, feeToken, feeContractBalance, walletStable] = await Promise.all([
+  const [nativeBalance, feeOwner, feeToken, feeContractBalance, walletStable, relayerNative] = await Promise.all([
     client.getBalance({ address: keeper }),
     client.readContract({ address: feeContract, abi: FEE_ABI, functionName: 'owner' }),
     client.readContract({ address: feeContract, abi: FEE_ABI, functionName: 'token' }),
     client.readContract({ address: stable, abi: abis.erc20Abi, functionName: 'balanceOf', args: [feeContract] }),
     client.readContract({ address: stable, abi: abis.erc20Abi, functionName: 'balanceOf', args: [keeper] }),
+    leg.relayer ? client.getBalance({ address: leg.relayer.address }) : Promise.resolve(undefined),
   ]);
   if (feeToken.toLowerCase() !== stable.toLowerCase()) {
     throw new Error(`fee contract ${feeContract} collects ${feeToken}, configured stable is ${stable}`);
@@ -136,7 +140,41 @@ export async function snapshotLeg(
     feeContractBalance,
     walletStable,
     keeperOwnsFeeContract: feeOwner.toLowerCase() === keeper.toLowerCase(),
+    ...(relayerNative !== undefined ? { relayerNative } : {}),
   };
+}
+
+/** Plain value transfer keeper -> relayer, sized by `relayerTopUp` against fresh balances. */
+async function refuelRelayer(
+  leg: BridgeGasLeg,
+  thresholds: Parameters<typeof relayerTopUp>[2],
+  { publicClient, walletClient, account }: Clients,
+  dryRun: boolean,
+  log: Logger,
+): Promise<{ sent: bigint; txHash: Hex | null }> {
+  if (!leg.relayer || !account) return { sent: 0n, txHash: null };
+  const [keeperNative, relayerNative, gasPrice] = await Promise.all([
+    publicClient.getBalance({ address: account.address }),
+    publicClient.getBalance({ address: leg.relayer.address }),
+    publicClient.getGasPrice(),
+  ]);
+  // A plain transfer is 21k gas; budget 2x the current price so the keeper
+  // still clears its own floor after paying for it.
+  const feeBuffer = 21_000n * gasPrice * 2n;
+  const sent = relayerTopUp(keeperNative, relayerNative, thresholds, feeBuffer);
+  if (sent === 0n) {
+    if (relayerNative < leg.relayer.minNative) {
+      log.warn(`[bridge-gas:${leg.name}] relayer ${leg.relayer.address} low (${relayerNative}) but keeper has no spare ${leg.nativeSymbol}`);
+    }
+    return { sent: 0n, txHash: null };
+  }
+  if (dryRun || !walletClient) {
+    log.info(`[bridge-gas:${leg.name}] would send ${sent} ${leg.nativeSymbol} to relayer ${leg.relayer.address}`);
+    return { sent, txHash: null };
+  }
+  const hash = await walletClient.sendTransaction({ chain: null, account, to: leg.relayer.address, value: sent });
+  await confirm(leg, publicClient, hash, `refuel relayer ${sent}`, log);
+  return { sent, txHash: hash };
 }
 
 export async function quoteLeg(
@@ -578,6 +616,7 @@ export async function runLeg(
     maxSlippageBps: config.maxSlippageBps,
     reserveStable: leg.reserveStable,
     minSweep: leg.minSweep,
+    relayer: leg.relayer ? { minNative: leg.relayer.minNative, targetNative: leg.relayer.targetNative } : null,
   };
   const txHashes: Hex[] = [];
   try {
@@ -592,7 +631,7 @@ export async function runLeg(
       feeContractBalance: snap.feeContractBalance.toString(),
       walletStable: snap.walletStable.toString(),
     };
-    const shortfall = snap.nativeBalance < leg.minNative ? leg.targetNative - snap.nativeBalance : 0n;
+    const shortfall = nativeNeeded(snap, thresholds);
     const quote = shortfall > 0n ? await quoteLeg(clients.publicClient, leg, shortfall) : null;
     const decision = decideLeg(snap, thresholds, quote);
     log.info(
@@ -622,9 +661,10 @@ export async function runLeg(
       } else if (decision.surplus > 0n) {
         log.info(`[bridge-gas:${leg.name}] would bridge ${decision.surplus} USDC to the keeper on Etica to be swapped to EGAZ`);
       }
+      const refuel = await refuelRelayer(leg, thresholds, clients, true, log);
       const drops = await runGasDrops(leg, config, clients, log);
-      const status = decision.blocked ? 'blocked' : hasWork || drops.count > 0 ? 'planned' : 'idle';
-      return { ...base, ...planned, status, gasDrops: drops.count, reason: decision.reason, txHashes };
+      const status = decision.blocked ? 'blocked' : hasWork || refuel.sent > 0n || drops.count > 0 ? 'planned' : 'idle';
+      return { ...base, ...planned, status, gasDrops: drops.count, relayerTopUp: refuel.sent.toString(), reason: decision.reason, txHashes };
     }
 
     let nativeReceived = 0n;
@@ -636,6 +676,14 @@ export async function runLeg(
       txHashes.push(...sur.txHashes);
       planned.surplus = sur.released.toString();
       if (sur.blocked) Object.assign(planned, { surplusTo: 'held' as const, surplusBlocked: sur.blocked });
+    }
+    let relayerSent = 0n;
+    try {
+      const refuel = await refuelRelayer(leg, thresholds, clients, false, log);
+      relayerSent = refuel.sent;
+      if (refuel.txHash) txHashes.push(refuel.txHash);
+    } catch (err) {
+      log.warn(`[bridge-gas:${leg.name}] relayer refuel failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
     }
     let gasDrops = 0;
     try {
@@ -652,6 +700,7 @@ export async function runLeg(
       status,
       nativeReceived: nativeReceived.toString(),
       gasDrops,
+      relayerTopUp: relayerSent.toString(),
       reason: decision.reason,
       txHashes,
     };
