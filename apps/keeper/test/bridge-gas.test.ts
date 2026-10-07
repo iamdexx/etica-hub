@@ -261,6 +261,9 @@ describe('relayer refuel', () => {
     expect(relayerTopUp(parseEther('0.04'), 0n, r)).toBe(0n);
     expect(relayerTopUp(parseEther('0.20'), parseEther('0.03'), r)).toBe(0n);
     expect(relayerTopUp(parseEther('0.20'), 0n, t)).toBe(0n);
+    // the transfer's own fee comes out of the spare, never the floor
+    expect(relayerTopUp(parseEther('0.06'), 0n, r, parseEther('0.004'))).toBe(parseEther('0.006'));
+    expect(relayerTopUp(parseEther('0.052'), 0n, r, parseEther('0.004'))).toBe(0n);
   });
 });
 

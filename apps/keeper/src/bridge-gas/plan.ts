@@ -107,13 +107,14 @@ export function nativeNeeded(snap: LegSnapshot, t: LegThresholds): bigint {
 
 /**
  * Gas to send the relayer right now: its shortfall, capped by what the
- * keeper holds above its own floor (so refuelling the relayer can never
- * strand the keeper).
+ * keeper holds above its own floor after paying for the transfer itself
+ * (`feeBuffer`), so refuelling the relayer can never strand the keeper.
  */
-export function relayerTopUp(keeperNative: bigint, relayerNative: bigint, t: LegThresholds): bigint {
+export function relayerTopUp(keeperNative: bigint, relayerNative: bigint, t: LegThresholds, feeBuffer = 0n): bigint {
   const need = relayerNeeded({ nativeBalance: keeperNative, feeContractBalance: 0n, walletStable: 0n, keeperOwnsFeeContract: false, relayerNative }, t);
   if (need === 0n) return 0n;
-  const spare = keeperNative > t.minNative ? keeperNative - t.minNative : 0n;
+  const floor = t.minNative + feeBuffer;
+  const spare = keeperNative > floor ? keeperNative - floor : 0n;
   return need < spare ? need : spare;
 }
 

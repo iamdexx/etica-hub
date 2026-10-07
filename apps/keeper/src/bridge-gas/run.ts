@@ -153,11 +153,15 @@ async function refuelRelayer(
   log: Logger,
 ): Promise<{ sent: bigint; txHash: Hex | null }> {
   if (!leg.relayer || !account) return { sent: 0n, txHash: null };
-  const [keeperNative, relayerNative] = await Promise.all([
+  const [keeperNative, relayerNative, gasPrice] = await Promise.all([
     publicClient.getBalance({ address: account.address }),
     publicClient.getBalance({ address: leg.relayer.address }),
+    publicClient.getGasPrice(),
   ]);
-  const sent = relayerTopUp(keeperNative, relayerNative, thresholds);
+  // A plain transfer is 21k gas; budget 2x the current price so the keeper
+  // still clears its own floor after paying for it.
+  const feeBuffer = 21_000n * gasPrice * 2n;
+  const sent = relayerTopUp(keeperNative, relayerNative, thresholds, feeBuffer);
   if (sent === 0n) {
     if (relayerNative < leg.relayer.minNative) {
       log.warn(`[bridge-gas:${leg.name}] relayer ${leg.relayer.address} low (${relayerNative}) but keeper has no spare ${leg.nativeSymbol}`);

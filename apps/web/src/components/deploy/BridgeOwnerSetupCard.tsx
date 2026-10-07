@@ -62,9 +62,10 @@ export function BridgeOwnerSetupCard() {
   });
   const receipt = useWaitForTransactionReceipt({ hash, chainId: eticaMainnet.id, query: { enabled: Boolean(hash) } });
 
+  const refetchRecipient = recipientQuery.refetch;
   useEffect(() => {
-    if (receipt.isSuccess) void recipientQuery.refetch();
-  }, [receipt.isSuccess, recipientQuery]);
+    if (receipt.isSuccess) void refetchRecipient();
+  }, [receipt.isSuccess, refetchRecipient]);
 
   if (!live) return null;
 
