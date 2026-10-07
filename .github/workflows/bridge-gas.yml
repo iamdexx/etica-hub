@@ -2,14 +2,18 @@ name: Bridge gas keeper
 
 # Keeps the Hyperlane USDC.e bridge relayer fuelled from the fees users pay.
 #
-# Every transfer on the warp route pays 10 bps (capped at 5 USDC) in the
-# bridged asset into a fee contract owned by the relayer EOA — see
-# infra/hyperlane/configs/warp-usdc.yaml. This job sweeps those fees into
-# the relayer wallet and, when its ETH (Ethereum) or EGAZ (Etica) drops
-# under the minimum, swaps just enough USDC / USDC.e for gas. Nothing is
-# funded from the treasury and no treasury key is involved: the signer is
-# the same unprivileged gas-paying EOA as the farm harvest, which is also
-# the Hyperlane relayer key.
+# Every transfer on the warp route pays 50 bps (capped at 50 USDC; Etica
+# redemptions add a flat 2 USDC.e) in the bridged asset into a fee contract
+# owned by the relayer EOA — see infra/hyperlane/configs/warp-usdc.yaml.
+# Each hour this job, signed by that EOA:
+#   1. claims accrued fees into the relayer wallet,
+#   2. if its ETH (Ethereum) or EGAZ (Etica) is under the minimum, swaps just
+#      enough USDC / USDC.e for gas (Ethereum sends go through Flashbots
+#      Protect so the swap is never visible in the public mempool),
+#   3. transfers everything above a small operating reserve to the protocol
+#      treasury (hard-coded in the keeper, not configurable here),
+#   4. on Etica, sends 2 EGAZ to fresh wallets that just received USDC.e.
+# No treasury key is involved anywhere.
 #
 # Legs whose fee contract / USDC.e address are not configured yet are
 # skipped, so this can stay enabled ahead of the mainnet deploy. A failed
@@ -51,6 +55,12 @@ jobs:
       BRIDGE_GAS_ETHEREUM_TARGET_NATIVE: ${{ vars.BRIDGE_ETHEREUM_TARGET_NATIVE || '0.15' }}
       BRIDGE_GAS_ETICA_MIN_NATIVE: ${{ vars.BRIDGE_ETICA_MIN_NATIVE || '20' }}
       BRIDGE_GAS_ETICA_TARGET_NATIVE: ${{ vars.BRIDGE_ETICA_TARGET_NATIVE || '60' }}
+      # Stable kept in the wallet as a gas reserve; everything above it is swept to the treasury.
+      BRIDGE_GAS_ETHEREUM_RESERVE_STABLE: ${{ vars.BRIDGE_ETHEREUM_RESERVE_STABLE || '500' }}
+      BRIDGE_GAS_ETICA_RESERVE_STABLE: ${{ vars.BRIDGE_ETICA_RESERVE_STABLE || '25' }}
+      # Recipient gas drop (Etica): set BRIDGE_GAS_DROP_ENABLED=false to switch off.
+      BRIDGE_GAS_DROP_ENABLED: ${{ vars.BRIDGE_GAS_DROP_ENABLED || 'true' }}
+      BRIDGE_GAS_DROP_AMOUNT: ${{ vars.BRIDGE_GAS_DROP_AMOUNT || '2' }}
     steps:
       - name: Guard against missing gas-payer key
         if: ${{ env.HARVEST_PRIVATE_KEY == '' && env.BRIDGE_GAS_DRY_RUN != 'true' }}

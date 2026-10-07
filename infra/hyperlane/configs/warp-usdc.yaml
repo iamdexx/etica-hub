@@ -1,56 +1,62 @@
-# Hyperlane warp route: Circle USDC on Ethereum (collateral) <-> USDC.e on Etica (synthetic).
+# USDC warp route: Ethereum (collateral, real USDC) -> Etica (synthetic USDC.e).
 #
-#   The CLI reads deploy configs from the registry, so this file is copied to
-#   infra/hyperlane/registry/deployments/warp_routes/USDC/etica-deploy.yaml
-#   by deploy.sh and deployed with:
 #   hyperlane warp deploy --warp-route-id USDC/etica --registry ./infra/hyperlane/registry
 #
-# Model: real USDC is locked in the Ethereum `HypERC20Collateral` router;
-# exactly that many USDC.e are minted on Etica by the `HypERC20` router.
-# Burning USDC.e on Etica releases USDC on Ethereum. No yield, no rebase,
-# no admin mint. Supply on Etica == USDC locked on Ethereum by construction.
-#
 # Placeholders are filled by `infra/hyperlane/deploy.sh` from env:
-#   0x000…0  -> OWNER (bridge owner / Safe), or VALIDATOR under `validators:`
-#   0x111…1  -> KEEPER (the gas-paying relayer EOA)
-# Both sides pin an explicit ISM so neither depends on the other chain's
-# default ISM (Ethereum's has no entry for domain 61803).
+#   0x000…0  OWNER     bridge owner (routers, rate-limit ISM). A Safe/timelock, never a hot key.
+#   validators: entries  VALIDATOR   the EticaHub validator EOA
+#   0x111…1  KEEPER    relayer / gas-paying EOA; owns the fee contracts (fees only, never collateral)
+#   0x222…2  GUARDIAN  owner of the PausableIsm on each router. Pausing is the
+#                      only power it has (deny-all), so a hot key is acceptable and
+#                      the health check can halt the route on an invariant breach.
 #
-# No `hook:` on either side on purpose: a per-router hook deploys a *separate*
-# MerkleTreeHook that the validators do not watch, so messages would never be
-# signed. Routers fall back to the mailbox default hook (the core merkle tree).
+# Security model (see docs/BRIDGE_SECURITY_AUDIT.md):
+#   * Every inbound message must pass ALL modules of the aggregation ISM:
+#       - messageIdMultisigIsm   1-of-1 validator at launch (raise via `warp apply`)
+#       - rateLimitedIsm         (Ethereum only) caps USDC released per 24h window so a
+#                                validator/relayer compromise or an Etica reorg can only
+#                                drain one window's capacity before the guardian pauses
+#       - pausableIsm            guardian kill-switch
+#   * Collateral release on Ethereum is the only place real value leaves; mints on
+#     Etica are bounded by the Ethereum rate limit on the way back out.
 #
-# Gas is paid by the users, in the bridged asset: each router has a
-# `tokenFee` (Hyperlane `LinearFee`) that skims 10 bps of every transfer,
-# capped at 5 USDC, from the sender into a fee contract next to the router.
+# Fees (docs/BRIDGE_SECURITY_AUDIT.md F-1): both legs charge 50 bps capped at
+# 50 USDC. Ethereum uses Hyperlane's LinearFee (deployed by the CLI):
 #   fee = amount * maxFee / (2 * halfAmount), capped at maxFee
-#   -> 100 USDC pays 0.10, 2 500 USDC pays 2.50, >= 5 000 USDC pays 5.00
-# The fee contract is owned by KEEPER, so the relayer sweeps it to itself
-# (`claim(keeper)`) and swaps USDC -> ETH / USDC.e -> EGAZ when its gas runs
-# low (apps/keeper bridge-gas job). No treasury key is involved and the fee
-# never touches the collateral: on Ethereum it is pulled alongside the
-# locked amount and forwarded, on Etica it is re-minted to the fee contract
-# after the sender's burn, so `USDC.e supply == USDC locked` still holds.
-# Rate/cap are immutable; the router OWNER can only point `feeRecipient` at
-# a different fee contract (or none).
+#   maxFee = 50 USDC, halfAmount = 5,000 USDC  ->  $100 pays $0.50, $1k $5, >= $10k $50
+# Etica has NO tokenFee here on purpose: deploy.sh deploys
+# packages/contracts/src/bridge/WarpFlatLinearFee.sol (flat 2 USDC.e + the same
+# 50 bps/50 cap) and sets it as feeRecipient. The flat part covers the Ethereum
+# delivery gas the relayer fronts on every redemption, so dust redemptions
+# cannot drain the relayer's ETH.
+
 ethereum:
   type: collateral
-  # Circle USDC (Ethereum mainnet)
   token: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
   owner: '0x0000000000000000000000000000000000000000'
-  # Messages arriving here originate on Etica -> signed by the EticaHub
-  # validator instance watching Etica.
   interchainSecurityModule:
-    type: messageIdMultisigIsm
-    threshold: 1
-    validators:
-      - '0x0000000000000000000000000000000000000000'
+    type: staticAggregationIsm
+    threshold: 3
+    modules:
+      - type: messageIdMultisigIsm
+        threshold: 1
+        validators:
+          - '0x0000000000000000000000000000000000000000'
+      # 51,840 USDC per rolling 24h (refill 0.6 USDC/s). Owner raises it with
+      # setRefillRate once volume and validator set justify it.
+      - type: rateLimitedIsm
+        maxCapacity: '51840000000'
+        duration: 86400
+        owner: '0x0000000000000000000000000000000000000000'
+      - type: pausableIsm
+        paused: false
+        owner: '0x2222222222222222222222222222222222222222'
   tokenFee:
     type: LinearFee
     owner: '0x1111111111111111111111111111111111111111'
     beneficiary: '0x1111111111111111111111111111111111111111'
-    maxFee: '5000000'          # 5 USDC (6 decimals)
-    halfAmount: '2500000000'   # 2 500 USDC -> 10 bps below the cap
+    maxFee: '50000000'
+    halfAmount: '5000000000'
 
 etica:
   type: synthetic
@@ -58,16 +64,14 @@ etica:
   symbol: 'USDC.e'
   decimals: 6
   owner: '0x0000000000000000000000000000000000000000'
-  # Messages arriving here originate on Ethereum -> signed by the EticaHub
-  # validator instance watching Ethereum.
   interchainSecurityModule:
-    type: messageIdMultisigIsm
-    threshold: 1
-    validators:
-      - '0x0000000000000000000000000000000000000000'
-  tokenFee:
-    type: LinearFee
-    owner: '0x1111111111111111111111111111111111111111'
-    beneficiary: '0x1111111111111111111111111111111111111111'
-    maxFee: '5000000'          # 5 USDC (6 decimals)
-    halfAmount: '2500000000'   # 2 500 USDC -> 10 bps below the cap
+    type: staticAggregationIsm
+    threshold: 2
+    modules:
+      - type: messageIdMultisigIsm
+        threshold: 1
+        validators:
+          - '0x0000000000000000000000000000000000000000'
+      - type: pausableIsm
+        paused: false
+        owner: '0x2222222222222222222222222222222222222222'

@@ -1,8 +1,10 @@
 /**
  * Bridge gas runner — snapshots each leg, lets `plan.ts` decide, and
- * either logs (dry-run) or submits: claim(keeper) on the fee contract,
- * approve + swapExactTokensForTokens(stable -> ... -> wrapped native),
- * wrapped.withdraw().
+ * either logs (dry-run) or submits, in order: claim(keeper) on the fee
+ * contract, approve + swapExactTokensForTokens(stable -> ... -> wrapped
+ * native) + wrapped.withdraw(), transfer(treasury, surplus), and on Etica
+ * the recipient gas drops. Every send goes through `leg.writeRpcUrl`
+ * (Flashbots Protect on Ethereum); reads use `leg.rpcUrl`.
  */
 
 import {
@@ -19,6 +21,7 @@ import {
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { abis } from '@etica-hub/shared';
 import type { BridgeGasConfig, BridgeGasLeg } from './config.js';
+import { fetchInboundTransfers, planGasDrops } from './gas-drop.js';
 import { decideLeg, type LegDecision, type LegSnapshot, type SwapQuote } from './plan.js';
 
 type Logger = Pick<Console, 'info' | 'warn' | 'error'>;
@@ -39,13 +42,21 @@ const DEADLINE_BUFFER_S = 300;
 
 export interface LegResult {
   leg: BridgeGasLeg['name'];
-  status: 'unconfigured' | 'idle' | 'topped-up' | 'planned' | 'blocked' | 'error';
+  /**
+   * idle      nothing to do
+   * executed  at least one tx sent (claim / swap / sweep / gas drop)
+   * planned   dry run with work pending
+   * blocked   gas is low and no swap could be planned (fees still claimed/held)
+   */
+  status: 'unconfigured' | 'idle' | 'executed' | 'planned' | 'blocked' | 'error';
   nativeBalance?: string;
   feeContractBalance?: string;
   walletStable?: string;
   claimed?: string;
   swappedIn?: string;
   nativeReceived?: string;
+  swept?: string;
+  gasDrops?: number;
   reason?: string;
   txHashes: Hex[];
 }
@@ -73,7 +84,7 @@ function makeClients(leg: BridgeGasLeg, config: BridgeGasConfig): Clients {
   const account = config.privateKey ? privateKeyToAccount(config.privateKey) : null;
   const walletClient =
     account && !config.dryRun
-      ? createWalletClient({ account, chain, transport: http(leg.rpcUrl) })
+      ? createWalletClient({ account, chain, transport: http(leg.writeRpcUrl) })
       : null;
   return { publicClient, walletClient, account };
 }
@@ -175,7 +186,8 @@ async function unwrapStranded(
 
 async function executeLeg(
   leg: BridgeGasLeg,
-  decision: Extract<LegDecision, { action: 'swap' }>,
+  decision: LegDecision,
+  treasury: Address,
   { publicClient, walletClient, account }: Clients,
   log: Logger,
 ): Promise<{ txHashes: Hex[]; nativeReceived: bigint }> {
@@ -200,55 +212,125 @@ async function executeLeg(
     await send(hash, `claim ${decision.claim}`);
   }
 
-  const allowance = await publicClient.readContract({
-    address: stable,
-    abi: abis.erc20Abi,
-    functionName: 'allowance',
-    args: [account.address, leg.router],
-  });
-  if (allowance < decision.amountIn) {
-    const hash = await walletClient.writeContract({
-      chain: null,
-      account,
+  if (decision.swap) {
+    const { amountIn, minOut } = decision.swap;
+    const allowance = await publicClient.readContract({
       address: stable,
       abi: abis.erc20Abi,
-      functionName: 'approve',
-      args: [leg.router, decision.amountIn],
+      functionName: 'allowance',
+      args: [account.address, leg.router],
     });
-    await send(hash, 'approve');
-  }
+    if (allowance < amountIn) {
+      // Exact-amount approval: the router never holds a standing allowance.
+      const hash = await walletClient.writeContract({
+        chain: null,
+        account,
+        address: stable,
+        abi: abis.erc20Abi,
+        functionName: 'approve',
+        args: [leg.router, amountIn],
+      });
+      await send(hash, 'approve');
+    }
 
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + DEADLINE_BUFFER_S);
-  const swapHash = await walletClient.writeContract({
-    chain: null,
-    account,
-    address: leg.router,
-    abi: ROUTER_ABI,
-    functionName: 'swapExactTokensForTokens',
-    args: [decision.amountIn, decision.minOut, leg.path, account.address, deadline],
-  });
-  await send(swapHash, `swap ${decision.amountIn} stable`);
-
-  const wrapped = await publicClient.readContract({
-    address: leg.wrappedNative,
-    abi: abis.erc20Abi,
-    functionName: 'balanceOf',
-    args: [account.address],
-  });
-  if (wrapped > 0n) {
-    const hash = await walletClient.writeContract({
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + DEADLINE_BUFFER_S);
+    const swapHash = await walletClient.writeContract({
       chain: null,
       account,
-      address: leg.wrappedNative,
-      abi: abis.wegazAbi,
-      functionName: 'withdraw',
-      args: [wrapped],
+      address: leg.router,
+      abi: ROUTER_ABI,
+      functionName: 'swapExactTokensForTokens',
+      args: [amountIn, minOut, leg.path, account.address, deadline],
     });
-    await send(hash, `unwrap ${wrapped}`);
+    await send(swapHash, `swap ${amountIn} stable`);
+
+    const wrapped = await publicClient.readContract({
+      address: leg.wrappedNative,
+      abi: abis.erc20Abi,
+      functionName: 'balanceOf',
+      args: [account.address],
+    });
+    if (wrapped > 0n) {
+      const hash = await walletClient.writeContract({
+        chain: null,
+        account,
+        address: leg.wrappedNative,
+        abi: abis.wegazAbi,
+        functionName: 'withdraw',
+        args: [wrapped],
+      });
+      await send(hash, `unwrap ${wrapped}`);
+    }
+  }
+
+  if (decision.sweep > 0n) {
+    // Re-read rather than trust the plan: a swap may have spent slightly
+    // more/less than quoted. Never sweep below the reserve.
+    const held = await publicClient.readContract({
+      address: stable,
+      abi: abis.erc20Abi,
+      functionName: 'balanceOf',
+      args: [account.address],
+    });
+    const excess = held > leg.reserveStable ? held - leg.reserveStable : 0n;
+    const amount = excess < decision.sweep ? excess : decision.sweep;
+    if (amount >= leg.minSweep) {
+      const hash = await walletClient.writeContract({
+        chain: null,
+        account,
+        address: stable,
+        abi: abis.erc20Abi,
+        functionName: 'transfer',
+        args: [treasury, amount],
+      });
+      await send(hash, `sweep ${amount} stable to treasury ${treasury}`);
+    } else {
+      log.info(`[bridge-gas:${leg.name}] sweep skipped: excess ${excess} after swap is below minimum`);
+    }
   }
 
   const after = await publicClient.getBalance({ address: account.address });
   return { txHashes, nativeReceived: after > before ? after - before : 0n };
+}
+
+/**
+ * Etica only: stipend fresh recipients with EGAZ. Failures here are logged
+ * and never fail the leg — gas drops are a courtesy, the bridge does not
+ * depend on them.
+ */
+async function runGasDrops(
+  leg: BridgeGasLeg,
+  config: BridgeGasConfig,
+  { publicClient, walletClient, account }: Clients,
+  log: Logger,
+): Promise<{ count: number; txHashes: Hex[] }> {
+  const cfg = config.gasDrop;
+  if (!cfg || !account || leg.name !== 'etica' || !leg.stable) return { count: 0, txHashes: [] };
+  const { transfers, fromBlock, toBlock } = await fetchInboundTransfers(publicClient, leg.stable, cfg.lookbackBlocks);
+  const unique = [...new Map(transfers.map((t) => [t.recipient.toLowerCase(), t])).values()];
+  const balances = new Map<string, bigint>();
+  await Promise.all(
+    unique.map(async (t) => {
+      balances.set(t.recipient.toLowerCase(), await publicClient.getBalance({ address: t.recipient }));
+    }),
+  );
+  const keeperNative = await publicClient.getBalance({ address: account.address });
+  const plan = planGasDrops(transfers, balances, account.address, keeperNative, leg.minNative, cfg);
+  log.info(
+    `[bridge-gas:${leg.name}] gas drop scan blocks ${fromBlock}-${toBlock}: ${transfers.length} inbound, ` +
+      `${plan.drops.length} to fund, ${plan.skipped.length} skipped`,
+  );
+  if (!walletClient) {
+    for (const r of plan.drops) log.info(`[bridge-gas:${leg.name}] would send ${cfg.amount} wei to ${r}`);
+    return { count: plan.drops.length, txHashes: [] };
+  }
+  const txHashes: Hex[] = [];
+  for (const recipient of plan.drops) {
+    const hash = await walletClient.sendTransaction({ chain: null, account, to: recipient, value: cfg.amount });
+    txHashes.push(hash);
+    await confirm(leg, publicClient, hash, `gas drop ${cfg.amount} -> ${recipient}`, log);
+  }
+  return { count: txHashes.length, txHashes };
 }
 
 export async function runLeg(
@@ -271,6 +353,8 @@ export async function runLeg(
     targetNative: leg.targetNative,
     minStable: leg.minStable,
     maxSlippageBps: config.maxSlippageBps,
+    reserveStable: leg.reserveStable,
+    minSweep: leg.minSweep,
   };
   const txHashes: Hex[] = [];
   try {
@@ -290,32 +374,48 @@ export async function runLeg(
     const decision = decideLeg(snap, thresholds, quote);
     log.info(
       `[bridge-gas:${leg.name}] native=${snap.nativeBalance} fees=${snap.feeContractBalance} ` +
-        `wallet=${snap.walletStable} owns=${snap.keeperOwnsFeeContract} -> ${decision.action}` +
-        ('reason' in decision ? ` (${decision.reason})` : ''),
+        `wallet=${snap.walletStable} owns=${snap.keeperOwnsFeeContract} -> claim=${decision.claim} ` +
+        `swap=${decision.swap?.amountIn ?? 0n} sweep=${decision.sweep} (${decision.reason})`,
     );
     if (!snap.keeperOwnsFeeContract && snap.feeContractBalance > 0n) {
       log.warn(`[bridge-gas:${leg.name}] keeper is not the fee contract owner; fees cannot be swept`);
     }
-    if (decision.action === 'idle') return { ...base, status: 'idle', reason: decision.reason, txHashes };
-    if (decision.action === 'blocked') return { ...base, status: 'blocked', reason: decision.reason, txHashes };
+    const planned = {
+      claimed: decision.claim.toString(),
+      swappedIn: (decision.swap?.amountIn ?? 0n).toString(),
+      swept: decision.sweep.toString(),
+    };
+    const hasWork = decision.claim > 0n || decision.swap !== null || decision.sweep > 0n;
+
     if (config.dryRun) {
-      return {
-        ...base,
-        status: 'planned',
-        claimed: decision.claim.toString(),
-        swappedIn: decision.amountIn.toString(),
-        reason: `would swap ${decision.amountIn} for >= ${decision.minOut} wei`,
-        txHashes,
-      };
+      const drops = await runGasDrops(leg, config, clients, log);
+      const status = decision.blocked ? 'blocked' : hasWork || drops.count > 0 ? 'planned' : 'idle';
+      return { ...base, ...planned, status, gasDrops: drops.count, reason: decision.reason, txHashes };
     }
-    const done = await executeLeg(leg, decision, clients, log);
+
+    let nativeReceived = 0n;
+    if (hasWork) {
+      const done = await executeLeg(leg, decision, config.treasury, clients, log);
+      txHashes.push(...done.txHashes);
+      nativeReceived = done.nativeReceived;
+    }
+    let gasDrops = 0;
+    try {
+      const drops = await runGasDrops(leg, config, clients, log);
+      gasDrops = drops.count;
+      txHashes.push(...drops.txHashes);
+    } catch (err) {
+      log.warn(`[bridge-gas:${leg.name}] gas drop failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
+    }
+    const status = decision.blocked ? 'blocked' : txHashes.length > 0 ? 'executed' : 'idle';
     return {
       ...base,
-      status: 'topped-up',
-      claimed: decision.claim.toString(),
-      swappedIn: decision.amountIn.toString(),
-      nativeReceived: done.nativeReceived.toString(),
-      txHashes: [...txHashes, ...done.txHashes],
+      ...planned,
+      status,
+      nativeReceived: nativeReceived.toString(),
+      gasDrops,
+      reason: decision.reason,
+      txHashes,
     };
   } catch (err) {
     const reason = err instanceof Error ? err.message.split('\n')[0] ?? err.message : String(err);

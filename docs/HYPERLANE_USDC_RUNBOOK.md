@@ -36,9 +36,11 @@ the public Hyperlane explorer and warp UI pick the route up.
 
 | Component                                                 | Who                                       | Bound by                                                                                                                                                                                                                                                                |
 | --------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Validator (1-of-1 `messageIdMultisigIsm` on both routers) | EticaHub key, automated                   | Can only attest to what the origin mailbox actually emitted; a compromised validator + relayer could forge a message, so **raise to ≥2-of-3 with an external validator before meaningful TVL** (`hyperlane warp apply` with a new ISM — no redeploy, no fund movement). |
+| Validator (1-of-1 `messageIdMultisigIsm` module on both routers) | EticaHub key, automated                   | Can only attest to what the origin mailbox actually emitted; a compromised validator + relayer could forge a message, so **raise to ≥2-of-3 with an external validator before meaningful TVL** (`hyperlane warp apply` with a new ISM — no redeploy, no fund movement). Until then the two rows below cap the damage. |
+| Rate limit (`rateLimitedIsm`, Ethereum router only)       | Owned by `OWNER`                          | Caps USDC *released from the collateral* at 51,840 USDC per rolling 24 h (0.6 USDC/s refill). A forged redemption drains at most that per day before the pause lands. Raise with volume via `setRefillRate`. |
+| Pause (`pausableIsm` on both routers)                     | Owned by `GUARDIAN`                       | Halts inbound delivery on that chain; cannot move funds or change anything else. Intended for a hot key on the healthcheck host so a `supply != locked` breach pauses within one check interval. |
 | Relayer                                                   | EticaHub key, automated                   | Pays gas, cannot alter messages. Whitelisted to the two routers only.                                                                                                                                                                                                   |
-| Fee contracts (`LinearFee`, one per router)               | Owned by the relayer EOA (`KEEPER`)       | Receive 10 bps (≤ 5 USDC) of every transfer in the bridged asset. Owner can only `claim` the balance to an address; rate and cap are immutable. The router owner can repoint `feeRecipient` (or clear it) at any time.                                                   |
+| Fee contracts (one per router)                            | Owned by the relayer EOA (`KEEPER`)       | Ethereum: `LinearFee` 50 bps ≤ 50 USDC. Etica: `WarpFlatLinearFee` flat 2 USDC.e + 50 bps ≤ 50. Owner can only `claim` the balance to an address; rate and cap are immutable. The router owner can repoint `feeRecipient` (or clear it) at any time. |
 | Router/mailbox owner                                      | `OWNER` (a Safe + timelock before launch) | Can pause the route, swap ISM/hook, transfer ownership. Never touches user balances.                                                                                                                                                                                    |
 | Reserve                                                   | `HypERC20Collateral` contract on Ethereum | Only released by a verified message from the Etica router.                                                                                                                                                                                                              |
 
@@ -55,17 +57,29 @@ trust the operator exactly as with any lock-and-mint bridge.
 Gas is ETH on Ethereum and EGAZ on Etica; the fee is collected in USDC /
 USDC.e. The relayer closes that gap itself, with no treasury key anywhere:
 
-1. Each transfer pays `amount × 10 bps` (cap 5 USDC) into the router's fee
-   contract. On Ethereum the fee is pulled from the sender alongside the
+1. Each transfer pays `amount × 50 bps` (cap 50 USDC) into the router's fee
+   contract; Etica redemptions add a flat 2 USDC.e on top, so a 1 USDC.e
+   redemption cannot make the relayer spend ~$3 of Ethereum gas for a
+   0.005 fee. On Ethereum the fee is pulled from the sender alongside the
    locked amount; on Etica it is moved from the sender to the fee contract
    before the burn (never minted). `USDC.e supply == USDC locked` still holds.
 2. The hourly `Bridge gas keeper` workflow (`apps/keeper`, `bridge-gas:*`),
    signed by the relayer EOA, sweeps the fee contracts (`claim(keeper)`) and
    — only when ETH / EGAZ is under `MIN_NATIVE` — swaps just enough:
    `USDC → WETH` on Uniswap V2 and unwraps; `USDC.e → ETX → WEGAZ` on
-   EticaSwap and unwraps. Swaps are capped by a price-impact guard
-   (`BRIDGE_GAS_MAX_SLIPPAGE_BPS`, 3 %) and a blocked/failed leg fails the
-   job → Telegram via `ops-alerts`.
+   EticaSwap and unwraps. Swaps use exact-amount approvals, `amountOutMin`
+   from a marginal-price probe (`BRIDGE_GAS_MAX_SLIPPAGE_BPS`, 1.5 %, hard
+   ceiling 5 %) and are sent through Flashbots Protect on Ethereum so they
+   never appear in the public mempool (sandwich exposure on Etica is bounded
+   by the same `amountOutMin`; the chain has no public MEV infrastructure).
+   A blocked/failed leg fails the job → Telegram via `ops-alerts`.
+3. Whatever stable remains above a small operating reserve (500 USDC /
+   25 USDC.e) is transferred to the treasury. The destination is the
+   `TREASURY_ADDRESS` constant compiled into the keeper, not a variable.
+4. On Etica the keeper also sends 2 EGAZ to wallets that just received
+   ≥ 20 USDC.e and hold < 0.5 EGAZ, so a fresh wallet can move its funds.
+   Recipients are read from the router's own `ReceivedTransferRemote` events
+   (only emitted after the ISM accepted the message), never from user input.
 
 Limits, stated plainly: this funds gas from _volume_. Zero transfers means
 zero fees, so launch with the relayer buffer below and keep the low-balance
@@ -153,9 +167,13 @@ Wire into the app
   the healthcheck alert below `MIN_RELAYER_ETH/EGAZ` means fees are not covering
   usage (no volume, thin USDC.e/ETX pool, or the keeper job is failing — check
   its Actions log). Top up by hand only then.
-- **Invariant alert** (`supply > locked`): pause both routers from the Safe
-  (`hyperlane warp apply` with `paused` ISM, or `pause()` on the router if the
-  deployed version exposes it), then investigate the message log before resuming.
+- **Invariant alert** (`supply > locked`): the GUARDIAN calls `pause()` on the
+  `pausableIsm` of both routers (no Safe round-trip needed), then investigate
+  the message log before `unpause()`. After unpause, expect the relayer to
+  redeliver queued messages within a few minutes, not seconds — it backs off
+  on repeated `Pausable: paused` reverts (audit F-13).
+- **Security audit**: findings, fork evidence and the mainnet blocker list live
+  in `docs/BRIDGE_SECURITY_AUDIT.md`.
 - **Rotate validator**: run a second validator with the new key, deploy a
   2-of-2 ISM via `hyperlane warp apply`, retire the old one. Never change the
   ISM to a set whose signatures you cannot produce.
