@@ -164,6 +164,17 @@ unset HYP_KEY
 git add infra/hyperlane/registry infra/hyperlane/agents/agent-config.json && git commit
 ```
 
+`deploy.sh` does not run the stock `@hyperlane-xyz/cli`: Etica's CoreGeth has
+no Cancun fork (MCOPY, TSTORE/TLOAD and BASEFEE are invalid opcodes), and the
+CLI embeds Cancun bytecode — the first mainnet attempt died at the first
+contract creation with `invalid opcode: MCOPY`. `infra/hyperlane/paris-cli.sh`
+installs the pinned CLI, rebuilds the matching `@hyperlane-xyz/core` sources
+with `evm_version = paris` (`TransientStorage` rewritten to plain storage; the
+only user on this route is the token router's reentrancy guard, which clears
+its slot in the same call) and swaps every embedded `*_factory_bytecode`
+constant. Same sources, same ABIs; only the EVM target changes. Cached under
+`~/.cache/eticahub-hyperlane-paris`; delete it to rebuild.
+
 Agents (on the VPS)
 
 ```bash
@@ -312,6 +323,14 @@ now pins it near head), and the relayer's first-message stall described under
 Operations (now auto-restarted by `healthcheck.sh`). Not exercised on
 Sepolia: the Ethereum keeper leg (chain id 1 only; proven on the mainnet
 fork in `docs/BRIDGE_SECURITY_AUDIT.md`).
+
+Neither rehearsal caught the Cancun problem because anvil runs the latest
+EVM by default. Fork Etica with `anvil --fork-url … --hardfork shanghai`
+(PUSH0 yes, MCOPY no — the same opcode set as Etica mainnet) for any further
+local run: the stock CLI reproduces the mainnet failure there (`EVM error
+NotActivated`), and the Paris CLI from `paris-cli.sh` deployed core + warp
+route and passed 100 USDC → 100 USDC.e, 30 USDC.e → 30 USDC, fee contracts
+0.5 USDC / 2.15 USDC.e and the keeper claim on that fork.
 
 ## Legal position (engineering summary — not advice)
 
