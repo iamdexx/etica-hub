@@ -1,8 +1,12 @@
 /**
  * Bridge gas runner — snapshots each leg, lets `plan.ts` decide, and
- * either logs (dry-run) or submits: claim(keeper) on the fee contract,
- * approve + swapExactTokensForTokens(stable -> ... -> wrapped native),
- * wrapped.withdraw().
+ * either logs (dry-run) or submits, in order: claim(keeper) on the fee
+ * contract, approve + swapExactTokensForTokens(stable -> ... -> wrapped
+ * native) + wrapped.withdraw(), then the surplus: on Etica swap half to ETX
+ * and addLiquidity(USDC.e/ETX) with the LP minted to the dead address; on
+ * Ethereum transferRemote() the USDC to the keeper's own Etica wallet so the
+ * next run burns it there. Finally, on Etica, the recipient gas drops. Every send goes through `leg.writeRpcUrl`
+ * (Flashbots Protect on Ethereum); reads use `leg.rpcUrl`.
  */
 
 import {
@@ -10,6 +14,7 @@ import {
   createWalletClient,
   defineChain,
   http,
+  pad,
   parseAbi,
   type Address,
   type Hex,
@@ -18,8 +23,16 @@ import {
 } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { abis } from '@etica-hub/shared';
-import type { BridgeGasConfig, BridgeGasLeg } from './config.js';
-import { decideLeg, type LegDecision, type LegSnapshot, type SwapQuote } from './plan.js';
+import { DEAD_ADDRESS, ETICA_DOMAIN, type BridgeGasConfig, type BridgeGasLeg } from './config.js';
+import { fetchInboundTransfers, planGasDrops } from './gas-drop.js';
+import {
+  decideLeg,
+  planPolBurn,
+  type LegDecision,
+  type LegSnapshot,
+  type PolReserves,
+  type SwapQuote,
+} from './plan.js';
 
 type Logger = Pick<Console, 'info' | 'warn' | 'error'>;
 
@@ -35,17 +48,40 @@ const ROUTER_ABI = parseAbi([
   'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)',
 ]);
 
+/** Hyperlane HypERC20Collateral (TokenRouter + MailboxClient) surface the keeper relies on. */
+const WARP_ABI = parseAbi([
+  'struct Quote { address token; uint256 amount; }',
+  'function wrappedToken() view returns (address)',
+  'function mailbox() view returns (address)',
+  'function routers(uint32 domain) view returns (bytes32)',
+  'function feeRecipient() view returns (address)',
+  'function quoteTransferRemote(uint32 destination, bytes32 recipient, uint256 amount) view returns (Quote[] quotes)',
+  'function transferRemote(uint32 destination, bytes32 recipient, uint256 amount) payable returns (bytes32 messageId)',
+]);
+
 const DEADLINE_BUFFER_S = 300;
 
 export interface LegResult {
   leg: BridgeGasLeg['name'];
-  status: 'unconfigured' | 'idle' | 'topped-up' | 'planned' | 'blocked' | 'error';
+  /**
+   * idle      nothing to do
+   * executed  at least one tx sent (claim / swap / burn / bridge / gas drop)
+   * planned   dry run with work pending
+   * blocked   gas is low and no swap could be planned (fees still claimed/held)
+   */
+  status: 'unconfigured' | 'idle' | 'executed' | 'planned' | 'blocked' | 'error';
   nativeBalance?: string;
   feeContractBalance?: string;
   walletStable?: string;
   claimed?: string;
   swappedIn?: string;
   nativeReceived?: string;
+  /** Stable released from the wallet this run and where it went. */
+  surplus?: string;
+  surplusTo?: 'pol-burn' | 'bridge-to-etica' | 'held';
+  /** Why the surplus was held instead (thin pool, router unset / failed verification). */
+  surplusBlocked?: string;
+  gasDrops?: number;
   reason?: string;
   txHashes: Hex[];
 }
@@ -73,7 +109,7 @@ function makeClients(leg: BridgeGasLeg, config: BridgeGasConfig): Clients {
   const account = config.privateKey ? privateKeyToAccount(config.privateKey) : null;
   const walletClient =
     account && !config.dryRun
-      ? createWalletClient({ account, chain, transport: http(leg.rpcUrl) })
+      ? createWalletClient({ account, chain, transport: http(leg.writeRpcUrl) })
       : null;
   return { publicClient, walletClient, account };
 }
@@ -175,7 +211,7 @@ async function unwrapStranded(
 
 async function executeLeg(
   leg: BridgeGasLeg,
-  decision: Extract<LegDecision, { action: 'swap' }>,
+  decision: LegDecision,
   { publicClient, walletClient, account }: Clients,
   log: Logger,
 ): Promise<{ txHashes: Hex[]; nativeReceived: bigint }> {
@@ -200,55 +236,318 @@ async function executeLeg(
     await send(hash, `claim ${decision.claim}`);
   }
 
-  const allowance = await publicClient.readContract({
-    address: stable,
-    abi: abis.erc20Abi,
-    functionName: 'allowance',
-    args: [account.address, leg.router],
-  });
-  if (allowance < decision.amountIn) {
-    const hash = await walletClient.writeContract({
-      chain: null,
-      account,
+  if (decision.swap) {
+    const { amountIn, minOut } = decision.swap;
+    const allowance = await publicClient.readContract({
       address: stable,
       abi: abis.erc20Abi,
-      functionName: 'approve',
-      args: [leg.router, decision.amountIn],
+      functionName: 'allowance',
+      args: [account.address, leg.router],
     });
-    await send(hash, 'approve');
+    if (allowance < amountIn) {
+      // Exact-amount approval: the router never holds a standing allowance.
+      const hash = await walletClient.writeContract({
+        chain: null,
+        account,
+        address: stable,
+        abi: abis.erc20Abi,
+        functionName: 'approve',
+        args: [leg.router, amountIn],
+      });
+      await send(hash, 'approve');
+    }
+
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + DEADLINE_BUFFER_S);
+    const swapHash = await walletClient.writeContract({
+      chain: null,
+      account,
+      address: leg.router,
+      abi: ROUTER_ABI,
+      functionName: 'swapExactTokensForTokens',
+      args: [amountIn, minOut, leg.path, account.address, deadline],
+    });
+    await send(swapHash, `swap ${amountIn} stable`);
+
+    const wrapped = await publicClient.readContract({
+      address: leg.wrappedNative,
+      abi: abis.erc20Abi,
+      functionName: 'balanceOf',
+      args: [account.address],
+    });
+    if (wrapped > 0n) {
+      const hash = await walletClient.writeContract({
+        chain: null,
+        account,
+        address: leg.wrappedNative,
+        abi: abis.wegazAbi,
+        functionName: 'withdraw',
+        args: [wrapped],
+      });
+      await send(hash, `unwrap ${wrapped}`);
+    }
   }
 
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + DEADLINE_BUFFER_S);
+  const after = await publicClient.getBalance({ address: account.address });
+  return { txHashes, nativeReceived: after > before ? after - before : 0n };
+}
+
+async function approveExact(
+  token: Address,
+  spender: Address,
+  amount: bigint,
+  { publicClient, walletClient, account }: Clients,
+  send: (hash: Hex, label: string) => Promise<void>,
+): Promise<void> {
+  if (!walletClient || !account) throw new Error('live run without a signer');
+  const allowance = await publicClient.readContract({
+    address: token,
+    abi: abis.erc20Abi,
+    functionName: 'allowance',
+    args: [account.address, spender],
+  });
+  if (allowance >= amount) return;
+  // Exact-amount approval: the spender never holds a standing allowance.
+  const hash = await walletClient.writeContract({
+    chain: null,
+    account,
+    address: token,
+    abi: abis.erc20Abi,
+    functionName: 'approve',
+    args: [spender, amount],
+  });
+  await send(hash, `approve ${amount} -> ${spender}`);
+}
+
+/** Stable actually above the reserve right now, capped at what the plan released. */
+async function releasable(
+  leg: BridgeGasLeg,
+  planned: bigint,
+  publicClient: PublicClient,
+  keeper: Address,
+): Promise<bigint> {
+  const held = await publicClient.readContract({
+    address: leg.stable as Address,
+    abi: abis.erc20Abi,
+    functionName: 'balanceOf',
+    args: [keeper],
+  });
+  const excess = held > leg.reserveStable ? held - leg.reserveStable : 0n;
+  const amount = excess < planned ? excess : planned;
+  return amount >= leg.minSweep ? amount : 0n;
+}
+
+/** USDC.e/ETX pool reserves oriented as (stable, etx), or null when the pair does not exist. */
+export async function polReserves(
+  client: PublicClient,
+  leg: BridgeGasLeg,
+): Promise<PolReserves | null> {
+  if (leg.surplus.kind !== 'pol-burn' || !leg.stable) return null;
+  const pair = await client.readContract({
+    address: leg.surplus.factory,
+    abi: abis.factoryAbi,
+    functionName: 'getPair',
+    args: [leg.stable, leg.surplus.etx],
+  });
+  if (pair.toLowerCase() === '0x0000000000000000000000000000000000000000') return null;
+  const [token0, reserves] = await Promise.all([
+    client.readContract({ address: pair, abi: abis.pairAbi, functionName: 'token0' }),
+    client.readContract({ address: pair, abi: abis.pairAbi, functionName: 'getReserves' }),
+  ]);
+  const [r0, r1] = reserves;
+  return token0.toLowerCase() === leg.stable.toLowerCase() ? { stable: r0, etx: r1 } : { stable: r1, etx: r0 };
+}
+
+/**
+ * Etica: burn the surplus as protocol-owned liquidity. Half the stable buys
+ * ETX on the pinned router, the ETX received is paired with the other half
+ * and the LP tokens are minted straight to the dead address. Leftover ETX
+ * dust (price moved between swap and pair) stays in the wallet for the next
+ * run. Returns the stable released, or 0 with a reason when held.
+ */
+async function executePolBurn(
+  leg: BridgeGasLeg,
+  planned: bigint,
+  maxSlippageBps: number,
+  clients: Clients,
+  send: (hash: Hex, label: string) => Promise<void>,
+  log: Logger,
+): Promise<{ released: bigint; blocked: string | null }> {
+  const { publicClient, walletClient, account } = clients;
+  if (!walletClient || !account || leg.surplus.kind !== 'pol-burn') throw new Error('live run without a signer');
+  const stable = leg.stable as Address;
+  const etx = leg.surplus.etx;
+  const amount = await releasable(leg, planned, publicClient, account.address);
+  if (amount === 0n) return { released: 0n, blocked: 'surplus below minimum after swap' };
+  const { plan, blocked } = planPolBurn(amount, await polReserves(publicClient, leg), maxSlippageBps);
+  if (!plan) return { released: 0n, blocked };
+
+  await approveExact(stable, leg.router, plan.stableForSwap + plan.stableForPair, clients, send);
+  const etxBefore = await publicClient.readContract({ address: etx, abi: abis.erc20Abi, functionName: 'balanceOf', args: [account.address] });
+  const deadline = () => BigInt(Math.floor(Date.now() / 1000) + DEADLINE_BUFFER_S);
   const swapHash = await walletClient.writeContract({
     chain: null,
     account,
     address: leg.router,
     abi: ROUTER_ABI,
     functionName: 'swapExactTokensForTokens',
-    args: [decision.amountIn, decision.minOut, leg.path, account.address, deadline],
+    args: [plan.stableForSwap, plan.minEtxOut, [stable, etx], account.address, deadline()],
   });
-  await send(swapHash, `swap ${decision.amountIn} stable`);
+  await send(swapHash, `POL swap ${plan.stableForSwap} stable -> ETX`);
+  const etxAfter = await publicClient.readContract({ address: etx, abi: abis.erc20Abi, functionName: 'balanceOf', args: [account.address] });
+  const etxGot = etxAfter > etxBefore ? etxAfter - etxBefore : 0n;
+  if (etxGot < plan.minEtxOut) throw new Error(`POL swap returned ${etxGot} ETX, below minimum ${plan.minEtxOut}`);
 
-  const wrapped = await publicClient.readContract({
-    address: leg.wrappedNative,
-    abi: abis.erc20Abi,
-    functionName: 'balanceOf',
-    args: [account.address],
+  await approveExact(etx, leg.router, etxGot, clients, send);
+  const addHash = await walletClient.writeContract({
+    chain: null,
+    account,
+    address: leg.router,
+    abi: abis.routerAbi,
+    functionName: 'addLiquidity',
+    args: [etx, stable, etxGot, plan.stableForPair, plan.minEtxIn, plan.minStableIn, DEAD_ADDRESS, deadline()],
   });
-  if (wrapped > 0n) {
-    const hash = await walletClient.writeContract({
-      chain: null,
-      account,
-      address: leg.wrappedNative,
-      abi: abis.wegazAbi,
-      functionName: 'withdraw',
-      args: [wrapped],
-    });
-    await send(hash, `unwrap ${wrapped}`);
+  await send(addHash, `POL burn: addLiquidity(ETX ${etxGot}, USDC.e ${plan.stableForPair}) LP -> ${DEAD_ADDRESS}`);
+  log.info(`[bridge-gas:${leg.name}] burned ${amount} stable into USDC.e/ETX POL`);
+  return { released: amount, blocked: null };
+}
+
+/**
+ * Ethereum: bridge the surplus USDC to the keeper's own address on Etica
+ * through the collateral router, so it lands as USDC.e and joins the POL
+ * burn on the next Etica run. The router is verified on-chain first — it
+ * must wrap this leg's USDC, hang off the canonical Mailbox, route Etica to
+ * the configured USDC.e and forward fees to the configured fee contract —
+ * so a poisoned `BRIDGE_GAS_ETHEREUM_WARP_ROUTER` cannot be a sink.
+ */
+async function executeBridgeToEtica(
+  leg: BridgeGasLeg,
+  planned: bigint,
+  config: BridgeGasConfig,
+  clients: Clients,
+  send: (hash: Hex, label: string) => Promise<void>,
+  log: Logger,
+): Promise<{ released: bigint; blocked: string | null }> {
+  const { publicClient, walletClient, account } = clients;
+  if (!walletClient || !account || leg.surplus.kind !== 'bridge-to-etica') throw new Error('live run without a signer');
+  const router = leg.surplus.warpRouter;
+  if (!router) return { released: 0n, blocked: 'BRIDGE_GAS_ETHEREUM_WARP_ROUTER not set' };
+  const stable = leg.stable as Address;
+  const eticaStable = config.legs.find((l) => l.name === 'etica')?.stable ?? null;
+  if (!eticaStable) return { released: 0n, blocked: 'Etica USDC.e not configured; cannot verify the route' };
+
+  const [wrapped, mailbox, remote, feeRecipient] = await Promise.all([
+    publicClient.readContract({ address: router, abi: WARP_ABI, functionName: 'wrappedToken' }),
+    publicClient.readContract({ address: router, abi: WARP_ABI, functionName: 'mailbox' }),
+    publicClient.readContract({ address: router, abi: WARP_ABI, functionName: 'routers', args: [ETICA_DOMAIN] }),
+    publicClient.readContract({ address: router, abi: WARP_ABI, functionName: 'feeRecipient' }),
+  ]);
+  const lc = (a: string) => a.toLowerCase();
+  if (lc(wrapped) !== lc(stable)) throw new Error(`warp router ${router} wraps ${wrapped}, not ${stable}`);
+  if (lc(mailbox) !== lc(config.ethereumMailbox)) throw new Error(`warp router ${router} uses mailbox ${mailbox}, expected ${config.ethereumMailbox}`);
+  if (lc(remote) !== lc(pad(eticaStable, { size: 32 }))) throw new Error(`warp router ${router} routes Etica to ${remote}, expected ${eticaStable}`);
+  if (lc(feeRecipient) !== lc(leg.feeContract as Address)) throw new Error(`warp router ${router} pays fees to ${feeRecipient}, not ${leg.feeContract}`);
+
+  const available = await releasable(leg, planned, publicClient, account.address);
+  if (available === 0n) return { released: 0n, blocked: 'surplus below minimum after swap' };
+  const recipient = pad(account.address, { size: 32 });
+  // The router pulls amount + fee and quotes the stable leg as that total;
+  // fee is monotonic in amount, so quoting at `available` over-estimates and
+  // amount + fee(amount) <= available.
+  const quoteAt = async (amt: bigint) => {
+    const quotes = await publicClient.readContract({ address: router, abi: WARP_ABI, functionName: 'quoteTransferRemote', args: [ETICA_DOMAIN, recipient, amt] });
+    let native = 0n;
+    let stableTotal = 0n;
+    for (const q of quotes) {
+      if (lc(q.token) === '0x0000000000000000000000000000000000000000') native += q.amount;
+      else if (lc(q.token) === lc(stable)) stableTotal += q.amount;
+      else if (q.amount > 0n) throw new Error(`warp router quotes a fee in unexpected token ${q.token}`);
+    }
+    if (stableTotal < amt) throw new Error(`warp router quotes ${stableTotal} stable for a ${amt} transfer`);
+    return { native, tokenFee: stableTotal - amt };
+  };
+  const upper = await quoteAt(available);
+  const amount = available - upper.tokenFee;
+  if (amount < leg.minSweep) return { released: 0n, blocked: `surplus ${available} does not cover the bridge fee ${upper.tokenFee}` };
+  const { native, tokenFee } = await quoteAt(amount);
+  const nativeBalance = await publicClient.getBalance({ address: account.address });
+  if (nativeBalance - native < leg.minNative) {
+    return { released: 0n, blocked: `bridging needs ${native} wei of gas payment; keeper would drop below its floor` };
   }
 
-  const after = await publicClient.getBalance({ address: account.address });
-  return { txHashes, nativeReceived: after > before ? after - before : 0n };
+  await approveExact(stable, router, amount + tokenFee, clients, send);
+  const hash = await walletClient.writeContract({
+    chain: null,
+    account,
+    address: router,
+    abi: WARP_ABI,
+    functionName: 'transferRemote',
+    args: [ETICA_DOMAIN, recipient, amount],
+    value: native,
+  });
+  await send(hash, `bridge ${amount} USDC -> keeper on Etica (fee ${tokenFee}, gas payment ${native} wei)`);
+  log.info(`[bridge-gas:${leg.name}] bridged ${amount} stable to Etica for POL burn`);
+  return { released: amount + tokenFee, blocked: null };
+}
+
+async function executeSurplus(
+  leg: BridgeGasLeg,
+  decision: LegDecision,
+  config: BridgeGasConfig,
+  clients: Clients,
+  log: Logger,
+): Promise<{ txHashes: Hex[]; released: bigint; blocked: string | null }> {
+  const txHashes: Hex[] = [];
+  const send = async (hash: Hex, label: string) => {
+    txHashes.push(hash);
+    await confirm(leg, clients.publicClient, hash, label, log);
+  };
+  if (decision.surplus === 0n) return { txHashes, released: 0n, blocked: null };
+  const out =
+    leg.surplus.kind === 'pol-burn'
+      ? await executePolBurn(leg, decision.surplus, config.maxSlippageBps, clients, send, log)
+      : await executeBridgeToEtica(leg, decision.surplus, config, clients, send, log);
+  if (out.blocked) log.warn(`[bridge-gas:${leg.name}] surplus ${decision.surplus} held: ${out.blocked}`);
+  return { txHashes, ...out };
+}
+
+/**
+ * Etica only: stipend fresh recipients with EGAZ. Failures here are logged
+ * and never fail the leg — gas drops are a courtesy, the bridge does not
+ * depend on them.
+ */
+async function runGasDrops(
+  leg: BridgeGasLeg,
+  config: BridgeGasConfig,
+  { publicClient, walletClient, account }: Clients,
+  log: Logger,
+): Promise<{ count: number; txHashes: Hex[] }> {
+  const cfg = config.gasDrop;
+  if (!cfg || !account || leg.name !== 'etica' || !leg.stable) return { count: 0, txHashes: [] };
+  const { transfers, fromBlock, toBlock } = await fetchInboundTransfers(publicClient, leg.stable, cfg.lookbackBlocks);
+  const unique = [...new Map(transfers.map((t) => [t.recipient.toLowerCase(), t])).values()];
+  const balances = new Map<string, bigint>();
+  await Promise.all(
+    unique.map(async (t) => {
+      balances.set(t.recipient.toLowerCase(), await publicClient.getBalance({ address: t.recipient }));
+    }),
+  );
+  const keeperNative = await publicClient.getBalance({ address: account.address });
+  const plan = planGasDrops(transfers, balances, account.address, keeperNative, leg.minNative, cfg);
+  log.info(
+    `[bridge-gas:${leg.name}] gas drop scan blocks ${fromBlock}-${toBlock}: ${transfers.length} inbound, ` +
+      `${plan.drops.length} to fund, ${plan.skipped.length} skipped`,
+  );
+  if (!walletClient) {
+    for (const r of plan.drops) log.info(`[bridge-gas:${leg.name}] would send ${cfg.amount} wei to ${r}`);
+    return { count: plan.drops.length, txHashes: [] };
+  }
+  const txHashes: Hex[] = [];
+  for (const recipient of plan.drops) {
+    const hash = await walletClient.sendTransaction({ chain: null, account, to: recipient, value: cfg.amount });
+    txHashes.push(hash);
+    await confirm(leg, publicClient, hash, `gas drop ${cfg.amount} -> ${recipient}`, log);
+  }
+  return { count: txHashes.length, txHashes };
 }
 
 export async function runLeg(
@@ -271,6 +570,8 @@ export async function runLeg(
     targetNative: leg.targetNative,
     minStable: leg.minStable,
     maxSlippageBps: config.maxSlippageBps,
+    reserveStable: leg.reserveStable,
+    minSweep: leg.minSweep,
   };
   const txHashes: Hex[] = [];
   try {
@@ -290,32 +591,63 @@ export async function runLeg(
     const decision = decideLeg(snap, thresholds, quote);
     log.info(
       `[bridge-gas:${leg.name}] native=${snap.nativeBalance} fees=${snap.feeContractBalance} ` +
-        `wallet=${snap.walletStable} owns=${snap.keeperOwnsFeeContract} -> ${decision.action}` +
-        ('reason' in decision ? ` (${decision.reason})` : ''),
+        `wallet=${snap.walletStable} owns=${snap.keeperOwnsFeeContract} -> claim=${decision.claim} ` +
+        `swap=${decision.swap?.amountIn ?? 0n} surplus=${decision.surplus}->${leg.surplus.kind} (${decision.reason})`,
     );
     if (!snap.keeperOwnsFeeContract && snap.feeContractBalance > 0n) {
       log.warn(`[bridge-gas:${leg.name}] keeper is not the fee contract owner; fees cannot be swept`);
     }
-    if (decision.action === 'idle') return { ...base, status: 'idle', reason: decision.reason, txHashes };
-    if (decision.action === 'blocked') return { ...base, status: 'blocked', reason: decision.reason, txHashes };
+    const planned = {
+      claimed: decision.claim.toString(),
+      swappedIn: (decision.swap?.amountIn ?? 0n).toString(),
+      surplus: decision.surplus.toString(),
+      surplusTo: leg.surplus.kind,
+    };
+    const hasWork = decision.claim > 0n || decision.swap !== null || decision.surplus > 0n;
+
     if (config.dryRun) {
-      return {
-        ...base,
-        status: 'planned',
-        claimed: decision.claim.toString(),
-        swappedIn: decision.amountIn.toString(),
-        reason: `would swap ${decision.amountIn} for >= ${decision.minOut} wei`,
-        txHashes,
-      };
+      if (decision.surplus > 0n && leg.surplus.kind === 'pol-burn') {
+        const { plan, blocked } = planPolBurn(decision.surplus, await polReserves(clients.publicClient, leg), config.maxSlippageBps);
+        log.info(
+          plan
+            ? `[bridge-gas:${leg.name}] would burn ${decision.surplus} USDC.e as POL: swap ${plan.stableForSwap} -> >=${plan.minEtxOut} ETX, pair ${plan.stableForPair}, LP -> ${DEAD_ADDRESS}`
+            : `[bridge-gas:${leg.name}] would hold surplus ${decision.surplus}: ${blocked}`,
+        );
+      } else if (decision.surplus > 0n) {
+        log.info(`[bridge-gas:${leg.name}] would bridge ${decision.surplus} USDC to the keeper on Etica for the POL burn`);
+      }
+      const drops = await runGasDrops(leg, config, clients, log);
+      const status = decision.blocked ? 'blocked' : hasWork || drops.count > 0 ? 'planned' : 'idle';
+      return { ...base, ...planned, status, gasDrops: drops.count, reason: decision.reason, txHashes };
     }
-    const done = await executeLeg(leg, decision, clients, log);
+
+    let nativeReceived = 0n;
+    if (hasWork) {
+      const done = await executeLeg(leg, decision, clients, log);
+      txHashes.push(...done.txHashes);
+      nativeReceived = done.nativeReceived;
+      const sur = await executeSurplus(leg, decision, config, clients, log);
+      txHashes.push(...sur.txHashes);
+      planned.surplus = sur.released.toString();
+      if (sur.blocked) Object.assign(planned, { surplusTo: 'held' as const, surplusBlocked: sur.blocked });
+    }
+    let gasDrops = 0;
+    try {
+      const drops = await runGasDrops(leg, config, clients, log);
+      gasDrops = drops.count;
+      txHashes.push(...drops.txHashes);
+    } catch (err) {
+      log.warn(`[bridge-gas:${leg.name}] gas drop failed: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
+    }
+    const status = decision.blocked ? 'blocked' : txHashes.length > 0 ? 'executed' : 'idle';
     return {
       ...base,
-      status: 'topped-up',
-      claimed: decision.claim.toString(),
-      swappedIn: decision.amountIn.toString(),
-      nativeReceived: done.nativeReceived.toString(),
-      txHashes: [...txHashes, ...done.txHashes],
+      ...planned,
+      status,
+      nativeReceived: nativeReceived.toString(),
+      gasDrops,
+      reason: decision.reason,
+      txHashes,
     };
   } catch (err) {
     const reason = err instanceof Error ? err.message.split('\n')[0] ?? err.message : String(err);

@@ -13,7 +13,7 @@
 #   hyperlane registry agent-config --chains etica ethereum -r ../registry -o agent-config.json
 
 x-agent: &agent
-  image: ghcr.io/hyperlane-xyz/hyperlane-agent:${HYPERLANE_AGENT_TAG:-agents-v2.2.0}
+  image: ghcr.io/hyperlane-xyz/hyperlane-agent:${HYPERLANE_AGENT_TAG:-agents-v2.3.0}
   restart: unless-stopped
   environment:
     CONFIG_FILES: /config/agent-config.json
