@@ -17,6 +17,8 @@
 #   HYP_KEY    deployer private key, funded with EGAZ on Etica and ETH on
 #              Ethereum (warp step only). Never written to disk by this script.
 #   REGISTRY   optional; defaults to ./infra/hyperlane/registry
+#   ETHEREUM_RPC / ETICA_RPC  optional comma-separated RPC URLs (agent-config
+#              step reads the head block from them; defaults to public endpoints)
 #
 # The Etica router's fee contract is NOT the CLI's LinearFee: the warp step
 # deploys packages/contracts/src/bridge/WarpFlatLinearFee.sol (flat 2 USDC.e +
@@ -42,6 +44,7 @@ GUARDIAN_PLACEHOLDER=0x2222222222222222222222222222222222222222
 CLI=(npx --yes @hyperlane-xyz/cli@44.0.2)
 CONTRACTS="$(cd "$HERE/../../packages/contracts" && pwd)"
 ETICA_RPC="${ETICA_RPC:-https://eticamainnet.eticaprotocol.org}"
+ETHEREUM_RPC="${ETHEREUM_RPC:-https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io,https://eth.drpc.org,https://ethereum-rpc.publicnode.com}"
 # Etica fee: flat 2 USDC.e + 50 bps capped at 50 USDC.e (6 decimals).
 ETICA_FEE_FLAT=2000000; ETICA_FEE_MAX_LINEAR=50000000; ETICA_FEE_HALF_AMOUNT=5000000000
 
@@ -123,10 +126,39 @@ deploy_etica_fee() {
   echo ">> fee contract recorded in $REGISTRY/deployments/warp_routes/USDC/etica-fee-contract.txt"
 }
 
+block_number() {  # $1 = comma-separated RPC URLs -> latest block (decimal), first endpoint that answers
+  local url
+  for url in ${1//,/ }; do
+    curl -sS -m 15 -X POST "$url" -H 'content-type: application/json' \
+      -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' 2>/dev/null |
+      python3 -c 'import sys,json; print(int(json.load(sys.stdin)["result"],16))' 2>/dev/null && return 0
+  done
+  echo "no RPC in '$1' answered eth_blockNumber" >&2; return 1
+}
+
 agent_config() {
   # Etica has no IGP at launch; the CLI asks to zero it, hence the piped "y".
   printf 'y\ny\n' | "${CLI[@]}" registry agent-config --chains etica ethereum \
     --registry "$REGISTRY" -o "$HERE/agents/agent-config.json" --yes
+  # The CLI emits `index.from` = each mailbox's deploy block. Ethereum's is
+  # millions of blocks back: over keyless public RPCs (100-block log chunks)
+  # the agents would backfill for weeks before seeing a live message. Nothing
+  # older than the warp route matters to us, so start both chains a little
+  # before the current head.
+  local eth_from eti_from
+  eth_from=$(( $(block_number "$ETHEREUM_RPC") - 300 ))
+  eti_from=$(( $(block_number "$ETICA_RPC") - 300 ))
+  python3 - "$HERE/agents/agent-config.json" "$eth_from" "$eti_from" <<'PY'
+import json, sys
+path, eth_from, eti_from = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+cfg = json.load(open(path))
+for chain, start in (("ethereum", eth_from), ("etica", eti_from)):
+    index = cfg["chains"][chain].setdefault("index", {})
+    index["from"] = max(start, 0)
+    index["chunk"] = 100
+    print(f"   {chain}: index.from={index['from']}")
+json.dump(cfg, open(path, "w"), indent=2)
+PY
   echo ">> $HERE/agents/agent-config.json"
 }
 
