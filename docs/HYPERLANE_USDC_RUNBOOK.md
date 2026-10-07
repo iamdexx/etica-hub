@@ -208,16 +208,24 @@ Wire into the app
   (`registry/chains/etica/addresses.yaml`, `registry/deployments/warp_routes/USDC/etica-config.yaml`).
   Unrecoverable if `newOwner` is wrong — send a 0-value test tx to it first.
 
+  Only `Ownable` contracts take the call: the static multisig/aggregation
+  ISMs have no owner, and both `pausableIsm` modules belong to `GUARDIAN`
+  (rotate those separately with `GUARDIAN_KEY`). Don't forget the Etica
+  `protocolFee` required hook — it is owned by `OWNER` too.
+
   ```sh
-  # Etica (--legacy): mailbox, defaultIsm, proxyAdmin, synthetic router, its ISM and pausable module
-  for c in $MAILBOX $DEFAULT_ISM $PROXY_ADMIN $ETICA_ROUTER $ETICA_PAUSABLE_ISM; do
+  # Etica (--legacy): mailbox, core proxyAdmin, protocolFee required hook, synthetic router + its proxyAdmin
+  for c in $MAILBOX $CORE_PROXY_ADMIN $PROTOCOL_FEE_HOOK $ETICA_ROUTER $ETICA_PROXY_ADMIN; do
     cast send $c 'transferOwnership(address)' $NEW_OWNER --rpc-url $ETICA_RPC --private-key $OWNER_KEY --legacy
   done
-  # Ethereum: collateral router, its proxyAdmin, rateLimitedIsm, pausable module
-  for c in $ETH_ROUTER $ETH_PROXY_ADMIN $RATE_LIMITED_ISM $ETH_PAUSABLE_ISM; do
+  # Ethereum: collateral router + its proxyAdmin, rateLimitedIsm
+  for c in $ETH_ROUTER $ETH_PROXY_ADMIN $RATE_LIMITED_ISM; do
     cast send $c 'transferOwnership(address)' $NEW_OWNER --rpc-url $ETHEREUM_RPC --private-key $OWNER_KEY
   done
-  cast call $ETH_ROUTER 'owner()(address)' --rpc-url $ETHEREUM_RPC   # verify each
+  # pause switches, signed by the guardian, only if the guardian is rotating as well
+  for c in $ETICA_PAUSABLE_ISM; do cast send $c 'transferOwnership(address)' $NEW_GUARDIAN --rpc-url $ETICA_RPC --private-key $GUARDIAN_KEY --legacy; done
+  for c in $ETH_PAUSABLE_ISM;   do cast send $c 'transferOwnership(address)' $NEW_GUARDIAN --rpc-url $ETHEREUM_RPC --private-key $GUARDIAN_KEY; done
+  for c in $MAILBOX $CORE_PROXY_ADMIN $PROTOCOL_FEE_HOOK $ETICA_ROUTER $ETICA_PROXY_ADMIN; do cast call $c 'owner()(address)' --rpc-url $ETICA_RPC; done   # verify each
   ```
 - **Security audit**: findings, fork evidence and the mainnet blocker list live
   in `docs/BRIDGE_SECURITY_AUDIT.md`.
