@@ -297,3 +297,27 @@ export function isBridgeRemoteLive(domain: BridgeRemoteDomain): boolean {
   const z = '0x0000000000000000000000000000000000000000';
   return BRIDGE_REMOTE_DEPLOYMENTS[domain].bridgeMinter !== z;
 }
+
+/**
+ * USDC.e — Circle USDC bridged Ethereum → Etica over a Hyperlane warp route.
+ *
+ * `collateralRouter` (Ethereum, `HypERC20Collateral`) holds the real USDC;
+ * `syntheticToken` (Etica, `HypERC20`) is the USDC.e ERC-20 whose supply is
+ * minted/burned 1:1 against it. Both stay `0x000…000` until
+ * `infra/hyperlane/deploy.sh` has run on mainnet — then copy the addresses
+ * from `infra/hyperlane/registry/deployments/warp_routes/USDC/etica-config.yaml`.
+ * See `docs/HYPERLANE_USDC_RUNBOOK.md`.
+ */
+export const USDC_WARP_ROUTE = {
+  /** Ethereum mainnet USDC (Circle). */
+  collateralToken: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as Address,
+  collateralRouter: '0x0000000000000000000000000000000000000000' as Address,
+  syntheticToken: '0x0000000000000000000000000000000000000000' as Address,
+  symbol: 'USDC.e',
+  decimals: 6,
+} as const;
+
+export function isUsdcWarpRouteLive(): boolean {
+  const z = '0x0000000000000000000000000000000000000000';
+  return USDC_WARP_ROUTE.collateralRouter !== z && USDC_WARP_ROUTE.syntheticToken !== z;
+}

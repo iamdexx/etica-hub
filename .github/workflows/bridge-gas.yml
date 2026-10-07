@@ -1,0 +1,85 @@
+name: Bridge gas keeper
+
+# Keeps the Hyperlane USDC.e bridge relayer fuelled from the fees users pay.
+#
+# Every transfer on the warp route pays 10 bps (capped at 5 USDC) in the
+# bridged asset into a fee contract owned by the relayer EOA — see
+# infra/hyperlane/configs/warp-usdc.yaml. This job sweeps those fees into
+# the relayer wallet and, when its ETH (Ethereum) or EGAZ (Etica) drops
+# under the minimum, swaps just enough USDC / USDC.e for gas. Nothing is
+# funded from the treasury and no treasury key is involved: the signer is
+# the same unprivileged gas-paying EOA as the farm harvest, which is also
+# the Hyperlane relayer key.
+#
+# Legs whose fee contract / USDC.e address are not configured yet are
+# skipped, so this can stay enabled ahead of the mainnet deploy. A failed
+# swap fails the job, which the ops-alerts workflow turns into a Telegram
+# message.
+
+on:
+  schedule:
+    - cron: '20 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Snapshot and plan without submitting'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  refuel:
+    name: Sweep fees and top up relayer gas
+    runs-on: ubuntu-latest
+    environment: harvest-live
+    env:
+      BRIDGE_GAS_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+      # Same gas-paying EOA as the harvest / forfeit cranks and the Hyperlane relayer.
+      HARVEST_PRIVATE_KEY: ${{ secrets.HARVEST_KEEPER_PRIVATE_KEY }}
+      # Ethereum needs a provider that serves eth_call reliably; set as a secret
+      # since provider URLs embed API keys.
+      BRIDGE_GAS_ETHEREUM_RPC_URL: ${{ secrets.BRIDGE_ETHEREUM_RPC_URL }}
+      BRIDGE_GAS_ETICA_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      # Filled from infra/hyperlane/registry/deployments/warp_routes/USDC/etica-config.yaml
+      # after `deploy.sh warp`; blank = leg skipped.
+      BRIDGE_GAS_ETHEREUM_FEE_CONTRACT: ${{ vars.BRIDGE_ETHEREUM_FEE_CONTRACT }}
+      BRIDGE_GAS_ETICA_FEE_CONTRACT: ${{ vars.BRIDGE_ETICA_FEE_CONTRACT }}
+      BRIDGE_GAS_ETICA_STABLE: ${{ vars.BRIDGE_USDCE_ADDRESS }}
+      BRIDGE_GAS_ETHEREUM_MIN_NATIVE: ${{ vars.BRIDGE_ETHEREUM_MIN_NATIVE || '0.05' }}
+      BRIDGE_GAS_ETHEREUM_TARGET_NATIVE: ${{ vars.BRIDGE_ETHEREUM_TARGET_NATIVE || '0.15' }}
+      BRIDGE_GAS_ETICA_MIN_NATIVE: ${{ vars.BRIDGE_ETICA_MIN_NATIVE || '20' }}
+      BRIDGE_GAS_ETICA_TARGET_NATIVE: ${{ vars.BRIDGE_ETICA_TARGET_NATIVE || '60' }}
+    steps:
+      - name: Guard against missing gas-payer key
+        if: ${{ env.HARVEST_PRIVATE_KEY == '' && env.BRIDGE_GAS_DRY_RUN != 'true' }}
+        run: |
+          echo "::error ::HARVEST_KEEPER_PRIVATE_KEY secret is unset on the 'harvest-live' environment."
+          exit 1
+
+      - name: Guard against missing Ethereum RPC
+        if: ${{ env.BRIDGE_GAS_ETHEREUM_RPC_URL == '' }}
+        run: |
+          echo "::error ::BRIDGE_ETHEREUM_RPC_URL secret is unset on the 'harvest-live' environment."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Refuel (dry run)
+        if: ${{ env.BRIDGE_GAS_DRY_RUN == 'true' }}
+        run: pnpm --filter @etica-hub/keeper run bridge-gas:dry-run
+
+      - name: Refuel (live)
+        if: ${{ env.BRIDGE_GAS_DRY_RUN != 'true' }}
+        run: pnpm --filter @etica-hub/keeper run bridge-gas:live

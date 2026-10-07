@@ -12,6 +12,8 @@
     "harvest:live": "tsx src/harvest/run-live.ts",
     "forfeit:dry-run": "tsx src/forfeit/dry-run.ts",
     "forfeit:live": "tsx src/forfeit/run-live.ts",
+    "bridge-gas:dry-run": "tsx src/bridge-gas/dry-run.ts",
+    "bridge-gas:live": "tsx src/bridge-gas/run-live.ts",
     "marketplace:deploy": "tsx src/marketplace/deploy.ts",
     "build": "tsc -p tsconfig.json",
     "lint": "echo 'no lint'",

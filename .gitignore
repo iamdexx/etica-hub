@@ -43,3 +43,7 @@ pnpm-debug.log*
 # tmp
 *.tmp
 .tmp
+
+# hyperlane agents — runtime state and secrets
+infra/hyperlane/agents/data/
+infra/hyperlane/agents/.healthcheck.state

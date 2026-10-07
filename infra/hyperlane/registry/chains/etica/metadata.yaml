@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hyperlane-xyz/hyperlane-registry/main/chains/schema.json
+#
+# Hyperlane chain metadata for Etica mainnet. Used as a local registry
+# (`--registry ./infra/hyperlane/registry`) until this is upstreamed to
+# https://github.com/hyperlane-xyz/hyperlane-registry.
+blockExplorers:
+  - name: Eticascan
+    url: https://eticascan.org
+    apiUrl: https://eticascan.org/api
+    family: other
+blocks:
+  # Etica is Etchash proof-of-work (~13s blocks). No finality gadget, so
+  # validators wait a deep reorg period before signing checkpoints.
+  confirmations: 3
+  estimateBlockTime: 13
+  reorgPeriod: 32
+chainId: 61803
+deployer:
+  name: EticaHub
+  url: https://eticahub.com
+displayName: Etica
+domainId: 61803
+isTestnet: false
+name: etica
+nativeToken:
+  decimals: 18
+  name: Etica Gas
+  symbol: EGAZ
+protocol: ethereum
+rpcUrls:
+  - http: https://eticamainnet.eticaprotocol.org
+  - http: https://rpc2.etica-stats.org
+  - http: https://61803.rpc.thirdweb.com
+technicalStack: other
+# Legacy (type 0) transactions only — Etica has no EIP-1559 base fee.
+transactionOverrides:
+  gasPrice: 81000000000
