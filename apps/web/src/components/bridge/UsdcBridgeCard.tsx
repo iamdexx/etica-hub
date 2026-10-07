@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BaseError,
   UserRejectedRequestError,
@@ -136,6 +136,8 @@ export function UsdcBridgeCard() {
   const [sendHash, setSendHash] = useState<Hex | undefined>();
 
   const leg = USDC_LEGS[direction];
+  const legRef = useRef(leg);
+  legRef.current = leg;
   const live = isUsdcWarpRouteLive();
   const onSourceChain = chainId === leg.sourceChainId;
   const amount = useMemo(() => parseUsdcAmount(amountInput), [amountInput]);
@@ -212,9 +214,13 @@ export function UsdcBridgeCard() {
   const needsApproval =
     leg.needsApproval && total !== null && allowance.data !== undefined && allowance.data < total;
   const insufficientToken = total !== null && balance.data !== undefined && balance.data < total;
-  const gasReserve = (fees.data?.maxFeePerGas ?? fees.data?.gasPrice ?? 0n) * TX_GAS_RESERVE_UNITS;
+  const feePerGas = fees.data?.maxFeePerGas ?? fees.data?.gasPrice;
+  const gasReserve = feePerGas === undefined ? null : feePerGas * TX_GAS_RESERVE_UNITS;
   const insufficientNative =
-    quoted !== null && native.data !== undefined && native.data.value < quoted.native + gasReserve;
+    quoted !== null &&
+    native.data !== undefined &&
+    gasReserve !== null &&
+    native.data.value < quoted.native + gasReserve;
 
   const blocker = !live
     ? 'The USDC.e route is not deployed.'
@@ -230,9 +236,13 @@ export function UsdcBridgeCard() {
               ? `Quote failed: ${shortError(quote.error)}`
               : insufficientToken
                 ? `Not enough ${leg.tokenSymbol} for amount + fee.`
-                : insufficientNative
-                  ? `Not enough ${leg.nativeSymbol} for the delivery gas payment plus transaction gas.`
-                  : null;
+                : gasReserve === null
+                  ? fees.isError
+                    ? `Could not fetch the ${leg.sourceName} gas price.`
+                    : 'Estimating gas…'
+                  : insufficientNative
+                    ? `Not enough ${leg.nativeSymbol} for the delivery gas payment plus transaction gas.`
+                    : null;
 
   function flip() {
     setDirection((d) => (d === 'toEtica' ? 'toEthereum' : 'toEtica'));
@@ -285,10 +295,11 @@ export function UsdcBridgeCard() {
 
   /** Largest amount whose amount + router fee still fits the balance (fee quoted at the full balance is an upper bound). */
   async function setMax() {
-    if (balance.data === undefined || !recipient) return;
+    if (balance.data === undefined || !recipient || !sourceClient) return;
+    const startLeg = leg;
     const bal = balance.data;
     let fee = 0n;
-    if (sourceClient && bal > 0n) {
+    if (bal > 0n) {
       try {
         const quotes = await sourceClient.readContract({
           abi: warpAbi,
@@ -297,10 +308,13 @@ export function UsdcBridgeCard() {
           args: [leg.destinationDomain, toBytes32Recipient(recipient), bal],
         });
         fee = splitWarpQuote(quotes, leg.token, bal).tokenFee;
-      } catch {
-        fee = 0n;
+      } catch (err) {
+        if (legRef.current === startLeg)
+          setError(`Could not quote the max fee: ${shortError(err)}`);
+        return;
       }
     }
+    if (legRef.current !== startLeg) return;
     setAmountInput(formatUnits(bal > fee ? bal - fee : 0n, DECIMALS));
   }
 
