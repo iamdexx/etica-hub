@@ -281,8 +281,9 @@ latency for cost: throttled runs retry later, nothing is dropped.
   than independent validators — still bounded by the 5k/day release cap.
 
 ## Mainnet blockers (in order)
-1. OWNER = Safe; GUARDIAN, KEEPER, VALIDATOR distinct keys; validator key
-   generated on its host.
+1. OWNER = treasury wallet `0xB2B4…C19D` at launch (a hot key; move to a
+   Safe via `transferOwnership` when one exists); GUARDIAN, KEEPER,
+   VALIDATOR distinct keys; validator key generated on its host.
 2. Ethereum RPC list: >= 3 independent endpoints for the validator quorum
    (public rotation is the default; a paid URL may lead the list).
 3. Fund KEEPER (>= 0.05 ETH for the deploy, 60 EGAZ) and VALIDATOR with dust ETH.
