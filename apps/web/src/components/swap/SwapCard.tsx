@@ -23,11 +23,13 @@ import { eticaMainnet, supportedChains } from '@etica-hub/shared/chains';
 import {
   DEPLOYMENTS,
   EXTERNAL_ADDRESSES,
+  USDC_WARP_ROUTE,
   abis,
   isSupportedChainId,
+  isUsdcWarpRouteLive,
 } from '@etica-hub/shared';
 
-type TokenSymbol = 'EGAZ' | 'ETI' | 'ETX' | 'stETX';
+type TokenSymbol = 'EGAZ' | 'ETI' | 'ETX' | 'stETX' | 'USDC.e';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -48,6 +50,9 @@ type SwapCtx = {
   // for stETX/ETX (which has no pair, so the swap will simply fail to
   // quote — this matches today's behaviour).
   stableSwapPool: Address;
+  // USDC.e (bridged USDC, 6 decimals). Zero off Etica mainnet or before the
+  // warp route is live; the token picker hides the option in that case.
+  usdce: Address;
 };
 
 function useCtx(): SwapCtx | null {
@@ -66,6 +71,10 @@ function useCtx(): SwapCtx | null {
       etx: d.etx,
       stetx: d.stakedETX,
       stableSwapPool: d.eticaStableSwap,
+      usdce:
+        chainId === eticaMainnet.id && isUsdcWarpRouteLive()
+          ? USDC_WARP_ROUTE.syntheticToken
+          : ZERO,
     };
   }, [chainId]);
 }
@@ -74,7 +83,12 @@ function tokenAddress(ctx: SwapCtx, s: TokenSymbol): Address {
   if (s === 'EGAZ') return ctx.wegaz;
   if (s === 'ETI') return ctx.eti;
   if (s === 'stETX') return ctx.stetx;
+  if (s === 'USDC.e') return ctx.usdce;
   return ctx.etx;
+}
+
+function tokenDecimals(s: TokenSymbol): number {
+  return s === 'USDC.e' ? USDC_WARP_ROUTE.decimals : 18;
 }
 
 /**
@@ -117,11 +131,13 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
   const amountIn = useMemo(() => {
     if (!amountInStr) return 0n;
     try {
-      return parseUnits(amountInStr, 18);
+      return parseUnits(amountInStr, tokenDecimals(fromSymbol));
     } catch {
       return 0n;
     }
-  }, [amountInStr]);
+  }, [amountInStr, fromSymbol]);
+  const fromDecimals = tokenDecimals(fromSymbol);
+  const toDecimals = tokenDecimals(toSymbol);
 
   const fromIsNative = fromSymbol === 'EGAZ';
   const toIsNative = toSymbol === 'EGAZ';
@@ -183,10 +199,21 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
     },
   });
 
+  const usdceBal = useReadContract({
+    abi: abis.erc20Abi,
+    address: ctx?.usdce,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: Boolean(address && ctx && ctx.usdce !== ZERO),
+    },
+  });
+
   function balFor(symbol: TokenSymbol): bigint {
     if (symbol === 'EGAZ') return nativeBal.data?.value ?? 0n;
     if (symbol === 'ETI') return (etiBal.data as bigint | undefined) ?? 0n;
     if (symbol === 'stETX') return (stetxBal.data as bigint | undefined) ?? 0n;
+    if (symbol === 'USDC.e') return (usdceBal.data as bigint | undefined) ?? 0n;
     return (etxBal.data as bigint | undefined) ?? 0n;
   }
 
@@ -332,6 +359,7 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
       etiBal.refetch(),
       etxBal.refetch(),
       stetxBal.refetch(),
+      usdceBal.refetch(),
       allowance.refetch(),
       v2Quote.refetch(),
       ssQuote.refetch(),
@@ -403,6 +431,7 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
           options={pickerOptions}
           onChangeSymbol={onChangeFrom}
           balance={fromBal}
+          decimals={fromDecimals}
           amount={amountInStr}
           editable
           onAmount={setAmountInStr}
@@ -424,7 +453,8 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
           options={pickerOptions}
           onChangeSymbol={onChangeTo}
           balance={toBal}
-          amount={amountOut === 0n ? '' : formatUnits(amountOut, 18)}
+          decimals={toDecimals}
+          amount={amountOut === 0n ? '' : formatUnits(amountOut, toDecimals)}
           editable={false}
         />
       </div>
@@ -434,7 +464,7 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
         <Row k="Min received">
           {amountOutMin === 0n
             ? '—'
-            : `${truncate(formatUnits(amountOutMin, 18), 8)} ${toSymbol}`}
+            : `${truncate(formatUnits(amountOutMin, toDecimals), 8)} ${toSymbol}`}
         </Row>
         <Row k="Slippage">0.50%</Row>
         {priceImpactText && <Row k="Price impact">{priceImpactText}</Row>}
@@ -494,6 +524,7 @@ function describePath(path: Address[] | null, ctx: SwapCtx | null): string {
     if (low === ctx.wegaz.toLowerCase()) return 'EGAZ';
     if (low === ctx.eti.toLowerCase()) return 'ETI';
     if (ctx.stetx !== ZERO && low === ctx.stetx.toLowerCase()) return 'stETX';
+    if (ctx.usdce !== ZERO && low === ctx.usdce.toLowerCase()) return 'USDC.e';
     return 'ETX';
   };
   return path.map(lookup).join(' → ');
@@ -505,9 +536,10 @@ function tokenOptions(
   ctx: SwapCtx | null,
   geoRestricted: boolean,
 ): TokenSymbol[] {
-  if (geoRestricted) return BASE_TOKEN_OPTIONS;
-  if (!ctx || ctx.stetx === ZERO) return BASE_TOKEN_OPTIONS;
-  return [...BASE_TOKEN_OPTIONS, 'stETX'];
+  const options = [...BASE_TOKEN_OPTIONS];
+  if (ctx && ctx.usdce !== ZERO) options.push('USDC.e');
+  if (!geoRestricted && ctx && ctx.stetx !== ZERO) options.push('stETX');
+  return options;
 }
 
 function TokenInput(props: {
@@ -516,6 +548,7 @@ function TokenInput(props: {
   options: readonly TokenSymbol[];
   onChangeSymbol?: (s: TokenSymbol) => void;
   balance: bigint;
+  decimals: number;
   amount: string;
   editable: boolean;
   onAmount?: (v: string) => void;
@@ -555,12 +588,12 @@ function TokenInput(props: {
         <span>{props.label}</span>
         <button
           onClick={() =>
-            props.editable && props.onAmount?.(formatUnits(props.balance, 18))
+            props.editable && props.onAmount?.(formatUnits(props.balance, props.decimals))
           }
           disabled={!props.editable}
           className="hover:text-white/80 disabled:cursor-default disabled:hover:text-white/40"
         >
-          Balance: {truncate(formatUnits(props.balance, 18), 6)}
+          Balance: {truncate(formatUnits(props.balance, props.decimals), 6)}
         </button>
       </div>
     </div>

@@ -12,7 +12,7 @@ const ROUTE_STATS = [
   { label: 'Hub route', value: 'ETX routed', detail: 'Shared routing asset', tone: 'emerald' as const },
   { label: 'LP fee', value: '0.30%', detail: 'AMM swap fee', tone: 'emerald' as const },
   { label: 'Protection', value: 'Slippage guarded', detail: 'User-defined max impact' },
-  { label: 'Markets', value: 'EGAZ · ETI · ETX', detail: 'Configured swap assets' },
+  { label: 'Markets', value: 'EGAZ · ETI · ETX · USDC.e', detail: 'Configured swap assets' },
 ];
 
 export default function SwapPage() {
@@ -29,7 +29,7 @@ export default function SwapPage() {
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Swap with scanner-grade context.</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Trade EGAZ, ETI, ETX, and routed Etica assets from the same terminal surface as EticaHub Scan. TVL, volume, route rules, and market entry points stay visible around the swap card.
+                Trade EGAZ, ETI, ETX, USDC.e, and routed Etica assets from the same terminal surface as EticaHub Scan. TVL, volume, route rules, and market entry points stay visible around the swap card.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
