@@ -259,6 +259,24 @@ export const DEPLOYMENTS: Record<
 export const TREASURY_ADDRESS: Address = '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D';
 
 /**
+ * Off-chain roles of the USDC.e Hyperlane route (public addresses only).
+ * Keys: keeper in the GitHub `harvest-live` environment; validator and
+ * guardian generated on the agent droplet (`/root/eticahub-keys`), never in
+ * the repo. `infra/hyperlane/deploy.sh` refuses to run unless owner, keeper
+ * and validator are distinct.
+ */
+export const BRIDGE_ROLES = {
+  /** Owns mailbox, ISMs, routers and the rate limit at launch; transferable. */
+  owner: TREASURY_ADDRESS,
+  /** Deployer, relayer and fee-contract owner; also the farm harvest keeper. */
+  keeper: '0xfcDd0d3d9A167092d094287E109B9315f08d05a7' as Address,
+  /** Signs mailbox checkpoints on both chains (1-of-1 at launch). */
+  validator: '0x52B8A1566E05eaF384Aba45c866005BA95Af781b' as Address,
+  /** Owns the PausableIsm on each router: can pause inbound delivery, nothing else. */
+  guardian: '0xF077810FeD8908946402A34902109Fc4807744Fd' as Address,
+} as const;
+
+/**
  * Phase 3 ETX bridge — deployed addresses per chain.
  *
  * Source-of-truth contracts live on Etica ({@link BRIDGE_ETICA_DEPLOYMENT}) and

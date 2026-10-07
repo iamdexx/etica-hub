@@ -135,7 +135,25 @@ Pre-reqs
       runs retry later instead of landing in ~2 minutes.
 - [ ] VPS (2 vCPU / 2 GB, Docker) with `git clone` of this repo.
 
-Deploy (from repo root, Node ≥ 22)
+Deploy — from the app (preferred)
+
+1. Open https://eticahub.com/deploy/bridge with the keeper wallet
+   (`BRIDGE_ROLES.keeper`) in MetaMask on Etica Mainnet.
+2. Check the pre-flight (keeper ETH/EGAZ vs live gas, RPC chain ids, roles,
+   dispatch token). Owner / validator / guardian default to `BRIDGE_ROLES`
+   in `packages/shared/src/addresses.ts`; the validator and guardian keys
+   were generated on the agent droplet (`/root/eticahub-keys/*.env`).
+3. Sign *pre-flight only* — the wallet signs an EIP-712 `BridgeDeploy`
+   message, `/api/bridge/deploy` checks it recovers to the keeper, burns the
+   nonce in Redis and dispatches the `Bridge deploy` workflow with
+   `confirm=''`, which stops after its own checks.
+4. Type `DEPLOY-MAINNET`, sign *deploy*. The workflow runs `deploy.sh` with
+   the keeper key from `harvest-live` (it never leaves GitHub) and pushes the
+   rendered registry to `bridge-deploy/<run_id>`; the page lists the
+   addresses once the run is green. Open a PR from that branch and wire the
+   addresses (below).
+
+Deploy — by hand (from repo root, Node ≥ 22)
 
 ```bash
 export OWNER=0x… VALIDATOR=0x… KEEPER=0x… HYP_KEY=0x…
@@ -150,7 +168,7 @@ Agents (on the VPS)
 
 ```bash
 cd infra/hyperlane/agents
-cp .env.example .env && $EDITOR .env      # keys, RPCs, RELAYER_WHITELIST from etica-config.yaml
+cp .env.example .env && $EDITOR .env      # VALIDATOR_KEY from /root/eticahub-keys/validator.env, RELAYER_KEY, RELAYER_WHITELIST from etica-config.yaml
 docker compose up -d
 docker compose logs -f                    # validators: "announced signature storage location"
 ./healthcheck.sh                          # then add to cron: */5 * * * *

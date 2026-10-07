@@ -13,6 +13,10 @@ name: Bridge deploy (Hyperlane USDC.e)
 #   GUARDIAN   pause-only key held by the health-check host
 #   KEEPER     this workflow's signer (relayer, fee-contract owner, deployer)
 #
+# Dispatched from https://eticahub.com/deploy/bridge after the keeper wallet
+# signs an EIP-712 authorisation (apps/web/src/lib/bridge-deploy.ts), or by
+# hand from the Actions tab.
+#
 # Needs in `harvest-live`: secret HARVEST_KEEPER_PRIVATE_KEY (exists).
 # Optional: secret BRIDGE_ETHEREUM_RPC_URL (comma-separated Ethereum RPCs;
 # blank = public rotation below). Fund the keeper with >= 0.05 ETH on
@@ -32,11 +36,13 @@ on:
         required: true
         default: '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D'
       validator:
-        description: 'VALIDATOR address (from the agent host)'
+        description: 'VALIDATOR address (key generated on the agent droplet)'
         required: true
+        default: '0x52B8A1566E05eaF384Aba45c866005BA95Af781b'
       guardian:
-        description: 'GUARDIAN address (pause-only)'
+        description: 'GUARDIAN address (pause-only; key on the agent droplet)'
         required: true
+        default: '0xF077810FeD8908946402A34902109Fc4807744Fd'
       confirm:
         description: 'Type DEPLOY-MAINNET to run; anything else only pre-flights'
         default: ''
