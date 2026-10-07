@@ -123,7 +123,7 @@ was transferred). Deploy script also rejects `OWNER == KEEPER`,
 ### F-9 Single validator (Medium, accepted at launch)
 1-of-1 `messageIdMultisigIsm`. A compromised validator key + a relayer can
 forge a "USDC locked" message and mint USDC.e; the Ethereum `rateLimitedIsm`
-(51,840 USDC / 24h, refill 0.6 USDC/s) bounds what can be *released* before
+(5,000 USDC / 24h at launch, refill ~0.0579 USDC/s) bounds what can be *released* before
 the guardian pauses. Evidence (fork): forged body, altered nonce, replayed
 message all rejected by the Mailbox/ISM; attacker `pause()`, `setRefillRate`,
 `enrollRemoteRouter`, direct `mint`, direct `handle` all reverted; guardian

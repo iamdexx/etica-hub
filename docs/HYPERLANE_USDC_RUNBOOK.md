@@ -37,7 +37,7 @@ the public Hyperlane explorer and warp UI pick the route up.
 | Component                                                 | Who                                       | Bound by                                                                                                                                                                                                                                                                |
 | --------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Validator (1-of-1 `messageIdMultisigIsm` module on both routers) | EticaHub key, automated                   | Can only attest to what the origin mailbox actually emitted; a compromised validator + relayer could forge a message, so **raise to ≥2-of-3 with an external validator before meaningful TVL** (`hyperlane warp apply` with a new ISM — no redeploy, no fund movement). Until then the two rows below cap the damage. |
-| Rate limit (`rateLimitedIsm`, Ethereum router only)       | Owned by `OWNER`                          | Caps USDC *released from the collateral* at 51,840 USDC per rolling 24 h (0.6 USDC/s refill). A forged redemption drains at most that per day before the pause lands. Raise with volume via `setRefillRate`. |
+| Rate limit (`rateLimitedIsm`, Ethereum router only)       | Owned by `OWNER`                          | Caps USDC *released from the collateral* at 5,000 USDC per rolling 24 h at launch (~0.0579 USDC/s refill). A forged redemption drains at most that per day before the pause lands. Raise with volume via `setRefillRate`. |
 | Pause (`pausableIsm` on both routers)                     | Owned by `GUARDIAN`                       | Halts inbound delivery on that chain; cannot move funds or change anything else. Intended for a hot key on the healthcheck host so a `supply != locked` breach pauses within one check interval. |
 | Relayer                                                   | EticaHub key, automated                   | Pays gas, cannot alter messages. Whitelisted to the two routers only.                                                                                                                                                                                                   |
 | Fee contracts (one per router)                            | Owned by the relayer EOA (`KEEPER`)       | Ethereum: `LinearFee` 50 bps ≤ 50 USDC. Etica: `WarpFlatLinearFee` flat 2 USDC.e + 50 bps ≤ 50. Owner can only `claim` the balance to an address; rate and cap are immutable. The router owner can repoint `feeRecipient` (or clear it) at any time. |
@@ -178,6 +178,19 @@ Wire into the app
   the message log before `unpause()`. After unpause, expect the relayer to
   redeliver queued messages within a few minutes, not seconds — it backs off
   on repeated `Pausable: paused` reverts (audit F-13).
+- **Raise the daily cap**: the Ethereum router's `rateLimitedIsm` launches at
+  5,000 USDC per rolling 24 h. The OWNER signs one call with the new 24 h
+  capacity in USDC base units (6 decimals); it takes effect immediately, no
+  redeploy or pause:
+
+  ```sh
+  # 25,000 USDC / 24h
+  cast send $RATE_LIMITED_ISM 'setRefillRate(uint256)' 25000000000 \
+    --rpc-url $ETHEREUM_RPC --private-key $OWNER_KEY   # or via the Safe UI
+  ```
+
+  The ISM address is in the rendered registry (`warp-usdc` → ethereum →
+  `interchainSecurityModule.modules[rateLimitedIsm]`).
 - **Security audit**: findings, fork evidence and the mainnet blocker list live
   in `docs/BRIDGE_SECURITY_AUDIT.md`.
 - **Rotate validator**: run a second validator with the new key, deploy a
