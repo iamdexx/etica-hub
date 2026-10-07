@@ -257,6 +257,38 @@ operation.
   `idle`/`planned`, not `unconfigured`.
 - Mint/redeem UI behind the existing geo-gate until counsel clears US access.
 
+## Seeding the USDC.e/ETX pool (`Bridge seed` workflow)
+
+One-shot, keeper-signed (`harvest-live`), resumable. `.github/workflows/bridge-seed.yml`
+→ `apps/keeper/src/bridge-seed/`. Every contract address is pinned in code; the
+inputs are `etx_amount` (pool side; the factory's 10,000 ETX `pairCreationFee`
+is pulled on top by the router on first `addLiquidity`), `usdc_amount` (blank =
+everything the keeper holds after the 50 bps bridge fee), `egaz_usd` (optional
+CoinGecko `etica` price; when set the seed price must be within 3% of the
+ETX/WEGAZ pool) and `dry_run`.
+
+1. Preconditions, read on-chain: keeper holds `etx_amount` + 10,000 ETX on
+   Etica, the USDC on Ethereum plus ≥ 0.001 ETH, and `factory.getPair(USDC.e, ETX)`
+   has no reserves. The collateral router is verified (`wrappedToken` = USDC,
+   `mailbox` = canonical, `routers(61803)` = USDC.e) before any approval.
+2. Ethereum: exact `approve` + `transferRemote(61803, keeper, amount)` via
+   Flashbots Protect, `amount + fee ≤ balance` from `quoteTransferRemote`.
+3. Waits (≤ `BRIDGE_SEED_MINT_TIMEOUT_S`, 40 min) for the relayer to mint the
+   USDC.e; on timeout the run exits 1 with `status: waiting` — re-dispatch,
+   the bridge step is skipped once the USDC has left Ethereum.
+4. Etica: exact approvals of USDC.e and ETX (+ fee) to the swap router, then
+   `router.addLiquidity(USDC.e, ETX, …, to = 0x…dEaD)` — the LP is minted
+   straight to the dead address, so there is nothing to burn afterwards and
+   no moment where the keeper holds withdrawable LP.
+5. Verifies the pair, reserves and that the dead address holds every LP share
+   except the factory's 1,000-wei `MINIMUM_LIQUIDITY`; re-running afterwards
+   reports `status: seeded` and does nothing.
+
+Fork rehearsal: `BRIDGE_SEED_ETHEREUM_RPC_URL=http://127.0.0.1:<eth-fork>`
+(a loopback endpoint disables Flashbots and allows `BRIDGE_SEED_ETHEREUM_MAILBOX`),
+`BRIDGE_SEED_ETICA_RPC_URL=http://127.0.0.1:<etica-fork>`, then
+`pnpm --filter @etica-hub/keeper bridge-seed:dry-run` / `BRIDGE_SEED_DRY_RUN=false … bridge-seed:live`.
+
 ## Operations
 
 - **Agent down**: `docker compose ps`; `restart: unless-stopped` covers crashes.
