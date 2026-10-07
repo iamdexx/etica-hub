@@ -142,8 +142,11 @@ block_number() {  # $1 = comma-separated RPC URLs -> latest block (decimal), fir
 
 agent_config() {
   # Etica has no IGP at launch; the CLI asks to zero it, hence the piped "y".
+  # Ethereum's metadata comes from the public registry; name it explicitly
+  # so the merge is the same on a laptop as in CI.
   printf 'y\ny\n' | "${CLI[@]}" registry agent-config --chains etica ethereum \
-    --registry "$REGISTRY" -o "$HERE/agents/agent-config.json" --yes
+    --registry "$REGISTRY" --registry https://github.com/hyperlane-xyz/hyperlane-registry \
+    -o "$HERE/agents/agent-config.json" --yes
   # The CLI emits `index.from` = each mailbox's deploy block. Ethereum's is
   # millions of blocks back: over keyless public RPCs (100-block log chunks)
   # the agents would backfill for weeks before seeing a live message. Nothing

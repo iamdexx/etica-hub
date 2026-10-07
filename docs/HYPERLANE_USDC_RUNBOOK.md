@@ -133,7 +133,8 @@ Pre-reqs
       whatever its RPC shows it — keep >= 3 independent operators in the
       list. Cost of going keyless: under throttling, deliveries and keeper
       runs retry later instead of landing in ~2 minutes.
-- [ ] VPS (2 vCPU / 2 GB, Docker) with `git clone` of this repo.
+- [ ] VPS (2 vCPU / 4 GB, Docker) with `git clone` of this repo — `eticahub-1`
+      (DigitalOcean, `/opt/eticahub`, see `docs/DROPLET_RUNBOOK.md`).
 
 Deploy — from the app (preferred)
 
@@ -180,6 +181,7 @@ Agents (on the VPS)
 ```bash
 cd infra/hyperlane/agents
 cp .env.example .env && $EDITOR .env      # VALIDATOR_KEY from /root/eticahub-keys/validator.env, RELAYER_KEY, RELAYER_WHITELIST from etica-config.yaml
+mkdir -p data && chown -R 1000:1000 data   # the agent image runs as uid 1000; root-owned bind mounts -> "/hyperlane_db/LOG: Permission denied" crash loop
 docker compose up -d
 docker compose logs -f                    # validators: "announced signature storage location"
 ./healthcheck.sh                          # then add to cron: */5 * * * *
@@ -196,8 +198,51 @@ hyperlane warp send --warp-route-id USDC/etica --origin etica --destination ethe
 
 Wire into the app
 
-- `USDC_WARP_ROUTE.collateralRouter` / `.syntheticToken` in `packages/shared/src/addresses.ts`.
+- `USDC_WARP_ROUTE.collateralRouter` / `.syntheticToken` / `.collateralFee` /
+  `.syntheticFee` in `packages/shared/src/addresses.ts` (done for mainnet, below).
 - EticaSwap USDC.e/ETX pool; list USDC.e in the token registry (6 decimals).
+
+## Mainnet deployment (2026-10-07, `Bridge deploy` run 37690097436)
+
+| What | Chain | Address |
+| --- | --- | --- |
+| Mailbox (ours) | Etica | `0x9E0aFCF74FF2B0E9F7b6318ad6Ab0DC929Ef22ec` |
+| ValidatorAnnounce | Etica | `0xCedB6c197C99dec2000082bBE9E03282Ac3e51b8` |
+| MerkleTreeHook (default hook) | Etica | `0x3EB14607cd32111E9E447A3e624504b4a51B6de5` |
+| USDC.e token = synthetic router (`HypERC20`) | Etica | `0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335` |
+| Etica fee (`WarpFlatLinearFee`, keeper-owned) | Etica | `0x995A1a7c8b301a72fFb2cCe3AE3e5a54ff96CC95` |
+| Route ISM (aggregation: 1-of-1 multisig + pausable) | Etica | `0x828dBf0690E745EC3B8756E68C7A9BD54da0e727` |
+| Mailbox (Hyperlane canonical) | Ethereum | `0xc005dc82818d67AF737725bD4bf75435d065D239` |
+| Collateral router (`HypERC20Collateral`, holds USDC) | Ethereum | `0xf8AAEd754cC3d55B8Fe2d87aAf9768ef20f9B099` |
+| Ethereum fee (`LinearFee`, keeper-owned) | Ethereum | `0x383C76362899c4bdd43a6a5a57BAf6f83D2d7527` |
+| Route ISM (aggregation: multisig + rate-limit 4,999.968 USDC/24h + pausable) | Ethereum | `0x57e3822e6066b7e004C7585dBeae9Ff931C0292c` |
+
+Roles: owner = treasury `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`
+(mailbox, ISMs, both routers, rate limit); guardian
+`0xF077810FeD8908946402A34902109Fc4807744Fd` (PausableIsms); validator
+`0x52B8A1566E05eaF384Aba45c866005BA95Af781b`; keeper
+`0xfcDd0d3d9A167092d094287E109B9315f08d05a7` (deployer, fee-contract owner);
+relayer `0x25044F7A5280324D5c3788B97BE447f6165e4274` (droplet key). Full
+rendered registry: `infra/hyperlane/registry/`. Cost: 0.0025 ETH + ~4 EGAZ.
+
+The rate limit asked for 5,000 USDC/day; `RateLimitedIsm` needs
+`maxCapacity % duration == 0`, so the CLI rounded to 4,999.968.
+
+Post-deploy, owner-only: `HypERC20.setFeeRecipient` is `onlyOwner` and the
+workflow signs as the keeper, so the Etica router left the deploy with
+`feeRecipient = 0x0` (Etica → Ethereum transfers charge no fee until fixed).
+Either the *Owner: Etica fee recipient* card on `/deploy/bridge` with the
+treasury wallet, or:
+
+```bash
+cast send 0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335 'setFeeRecipient(address)' \
+  0x995A1a7c8b301a72fFb2cCe3AE3e5a54ff96CC95 --rpc-url https://rpc2.etica-stats.org --legacy  # as OWNER
+```
+
+Etherscan verification of the Ethereum router/ISMs failed in the run (the
+CLI's build artifacts don't match our Paris rebuild); verify by hand from
+`~/.cache/eticahub-hyperlane-paris/core/out` if needed — it does not affect
+operation.
   The pool is also the gas keeper's EGAZ source — seed it with enough depth
   that a few-hundred-EGAZ swap stays under 3 % impact. EticaSwap's factory
   charges `pairCreationFee` (10,000 ETX at time of writing, paid to the

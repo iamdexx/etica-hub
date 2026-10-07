@@ -351,16 +351,21 @@ export function isBridgeRemoteLive(domain: BridgeRemoteDomain): boolean {
  *
  * `collateralRouter` (Ethereum, `HypERC20Collateral`) holds the real USDC;
  * `syntheticToken` (Etica, `HypERC20`) is the USDC.e ERC-20 whose supply is
- * minted/burned 1:1 against it. Both stay `0x000…000` until
- * `infra/hyperlane/deploy.sh` has run on mainnet — then copy the addresses
- * from `infra/hyperlane/registry/deployments/warp_routes/USDC/etica-config.yaml`.
- * See `docs/HYPERLANE_USDC_RUNBOOK.md`.
+ * minted/burned 1:1 against it. Deployed 2026-10-07 by the `Bridge deploy`
+ * workflow (run 37690097436); source of truth is
+ * `infra/hyperlane/registry/deployments/warp_routes/USDC/etica-config.yaml`.
+ * Owner of mailbox/ISMs/routers = treasury, guardian owns the PausableIsms,
+ * keeper owns both fee contracts. See `docs/HYPERLANE_USDC_RUNBOOK.md`.
  */
 export const USDC_WARP_ROUTE = {
   /** Ethereum mainnet USDC (Circle). */
   collateralToken: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as Address,
-  collateralRouter: '0x0000000000000000000000000000000000000000' as Address,
-  syntheticToken: '0x0000000000000000000000000000000000000000' as Address,
+  collateralRouter: '0xf8AAEd754cC3d55B8Fe2d87aAf9768ef20f9B099' as Address,
+  syntheticToken: '0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335' as Address,
+  /** Hyperlane `LinearFee` next to the collateral router (50 bps, 50 USDC cap); owner + beneficiary = keeper. */
+  collateralFee: '0x383C76362899c4bdd43a6a5a57BAf6f83D2d7527' as Address,
+  /** `WarpFlatLinearFee` next to the synthetic router (flat 2 USDC.e + 50 bps, 50 cap); owner = keeper. */
+  syntheticFee: '0x995A1a7c8b301a72fFb2cCe3AE3e5a54ff96CC95' as Address,
   symbol: 'USDC.e',
   decimals: 6,
 } as const;

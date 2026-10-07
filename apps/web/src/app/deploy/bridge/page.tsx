@@ -1,3 +1,4 @@
+import { BridgeOwnerSetupCard } from '@/components/deploy/BridgeOwnerSetupCard';
 import { DeployBridgeCard } from '@/components/deploy/DeployBridgeCard';
 import { OperatorBanner } from '@/components/OperatorBanner';
 
@@ -22,7 +23,10 @@ export default function DeployBridgePage() {
           5,000 USDC/day launch cap. Run the pre-flight first.
         </p>
       </header>
-      <DeployBridgeCard />
+      <div className="space-y-6">
+        <BridgeOwnerSetupCard />
+        <DeployBridgeCard />
+      </div>
     </div>
   );
 }
