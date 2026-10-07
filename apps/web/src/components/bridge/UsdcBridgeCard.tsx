@@ -136,8 +136,7 @@ export function UsdcBridgeCard() {
   const [sendHash, setSendHash] = useState<Hex | undefined>();
 
   const leg = USDC_LEGS[direction];
-  const legRef = useRef(leg);
-  legRef.current = leg;
+  const maxRequest = useRef(0);
   const live = isUsdcWarpRouteLive();
   const onSourceChain = chainId === leg.sourceChainId;
   const amount = useMemo(() => parseUsdcAmount(amountInput), [amountInput]);
@@ -245,6 +244,7 @@ export function UsdcBridgeCard() {
                     : null;
 
   function flip() {
+    maxRequest.current += 1;
     setDirection((d) => (d === 'toEtica' ? 'toEthereum' : 'toEtica'));
     setApproveHash(undefined);
     setSendHash(undefined);
@@ -296,7 +296,7 @@ export function UsdcBridgeCard() {
   /** Largest amount whose amount + router fee still fits the balance (fee quoted at the full balance is an upper bound). */
   async function setMax() {
     if (balance.data === undefined || !recipient || !sourceClient) return;
-    const startLeg = leg;
+    const request = ++maxRequest.current;
     const bal = balance.data;
     let fee = 0n;
     if (bal > 0n) {
@@ -309,12 +309,13 @@ export function UsdcBridgeCard() {
         });
         fee = splitWarpQuote(quotes, leg.token, bal).tokenFee;
       } catch (err) {
-        if (legRef.current === startLeg)
+        if (maxRequest.current === request)
           setError(`Could not quote the max fee: ${shortError(err)}`);
         return;
       }
     }
-    if (legRef.current !== startLeg) return;
+    if (maxRequest.current !== request) return;
+    setError(null);
     setAmountInput(formatUnits(bal > fee ? bal - fee : 0n, DECIMALS));
   }
 
