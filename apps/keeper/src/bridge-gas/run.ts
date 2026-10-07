@@ -450,18 +450,20 @@ async function executeBridgeToEtica(
   const available = await releasable(leg, planned, publicClient, account.address);
   if (available === 0n) return { released: 0n, blocked: 'surplus below minimum after swap' };
   const recipient = pad(account.address, { size: 32 });
-  // The router pulls amount + fee; fee is monotonic in amount, so quoting at
-  // `available` over-estimates and amount + fee(amount) <= available.
+  // The router pulls amount + fee and quotes the stable leg as that total;
+  // fee is monotonic in amount, so quoting at `available` over-estimates and
+  // amount + fee(amount) <= available.
   const quoteAt = async (amt: bigint) => {
     const quotes = await publicClient.readContract({ address: router, abi: WARP_ABI, functionName: 'quoteTransferRemote', args: [ETICA_DOMAIN, recipient, amt] });
     let native = 0n;
-    let tokenFee = 0n;
+    let stableTotal = 0n;
     for (const q of quotes) {
       if (lc(q.token) === '0x0000000000000000000000000000000000000000') native += q.amount;
-      else if (lc(q.token) === lc(stable)) tokenFee += q.amount;
-      else throw new Error(`warp router quotes a fee in unexpected token ${q.token}`);
+      else if (lc(q.token) === lc(stable)) stableTotal += q.amount;
+      else if (q.amount > 0n) throw new Error(`warp router quotes a fee in unexpected token ${q.token}`);
     }
-    return { native, tokenFee };
+    if (stableTotal < amt) throw new Error(`warp router quotes ${stableTotal} stable for a ${amt} transfer`);
+    return { native, tokenFee: stableTotal - amt };
   };
   const upper = await quoteAt(available);
   const amount = available - upper.tokenFee;

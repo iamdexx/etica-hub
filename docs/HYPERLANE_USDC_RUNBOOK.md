@@ -196,7 +196,8 @@ Wire into the app
 - **Rotate validator**: run a second validator with the new key, deploy a
   2-of-2 ISM via `hyperlane warp apply`, retire the old one. Never change the
   ISM to a set whose signatures you cannot produce.
-- **Upgrade agents**: bump `HYPERLANE_AGENT_TAG`, `docker compose pull && up -d`.
+- **Upgrade agents**: bump `HYPERLANE_AGENT_TAG`, `docker compose pull && up -d`. Never below `agents-v2.3.0`: older relayers cannot deliver through the
+  RateLimitedIsm aggregation and every redemption stalls with `Aggregation threshold not met`.
   DBs under `data/` are safe across upgrades.
 
 ## Legal position (engineering summary — not advice)

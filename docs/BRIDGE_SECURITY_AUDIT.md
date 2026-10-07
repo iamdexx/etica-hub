@@ -36,6 +36,7 @@ containment around that fact.
 | F-13 | Info | documented | Delivery resumes minutes, not seconds, after unpause |
 | F-14 | Info | documented | Ethereum gas top-up waits for 200 USDC of fees |
 | F-15 | Info | — | Static analysis results |
+| F-17 | Medium | fixed | Ethereum self-bridge misread the warp quote and never released surplus |
 
 ### F-1 Dust redemptions drain the relayer's ETH (High, fixed)
 A pure 50 bps fee on Etica→Ethereum redemptions means a 1-unit (0.000001 USDC.e)
@@ -206,6 +207,41 @@ next Etica run. Properties relied on:
 * User principal is never involved: only balances already claimed from the
   fee contracts into the keeper wallet are touched.
 
+### F-17 Self-bridge misread the warp quote (Medium, fixed)
+`quoteTransferRemote` returns the stable leg as `amount + fee` (the total the
+router pulls), not the fee. The Ethereum leg treated it as the fee, so every
+surplus was held with `surplus 30000000 does not cover the bridge fee
+30150000` and the Ethereum half of the POL loop silently never ran. Fixed:
+fee = quoted total − amount (reverts if the quote is below the amount); the
+exact approval is the quoted total. Fork evidence (same run as F-16):
+`approve 29999250`, `bridge 29850000 USDC -> keeper on Etica (fee 149250)`,
+collateral lock 15,200,000,000 → 15,229,850,000, keeper USDC 35,000,000 →
+5,000,750 (5 USDC test float kept), USDC.e on the keeper's Etica address
+4,969,893 → 34,819,893 after relayer delivery.
+
+### Fork evidence for the full fee → gas → float → POL loop
+Local Ethereum + Etica forks, real validator/relayer (`agents-v2.3.0`), 5 USDC
+test floats, Etica gas floor/target 20/25 EGAZ, Ethereum 0.05/0.06 ETH:
+* Ethereum, fees 30.5 USDC, ETH 0.049: `claim 30500000` → Uniswap swap →
+  `unwrap 11825096825635584` → ETH 0.0606. All fees went to gas because the
+  gas deficit exceeded them; float 0, nothing bridged (gas before POL).
+* Ethereum, next run, fees 35 USDC, gas above floor: claim, keep 5 USDC,
+  bridge 29.85 USDC to self (F-17).
+* Etica, 34.819893 USDC.e, EGAZ 10 (< 20): `swap 30116 stable` →
+  `unwrap 15000408342133709921` → EGAZ 25.0; float exactly 5,000,000 kept;
+  surplus 29,789,777 → `POL swap 14894888 stable -> ETX` (4,893.3 ETX) →
+  `addLiquidity(ETX 4893315522696975350908, USDC.e 14894889)`; the pair
+  (`factory.getPair(USDC.e, ETX)` = `0x4e91…CbFa`) emitted `Transfer(0x0 →
+  0x…dEaD, 268412762060614)`; keeper LP balance 0. The same tx also minted
+  67,379,195,469 LP to the factory's `feeTo` (the treasury): that is
+  EticaSwap's own protocol-fee mint on liquidity events, not a keeper payment.
+* Outbound: a 4,000 USDC.e redemption was delivered by the relayer
+  (collateral 12,200 → 8,200 USDC) only after the agent tag bump (F-7).
+* Gas drop: recipient B received exactly 2 EGAZ on the first run; the second
+  run logged `0 to fund` (F-10 evidence).
+* Treasury wallet USDC/USDC.e unchanged (0) throughout; user principal
+  untouched (locked == USDC.e supply at every check).
+
 ## Not covered
 * Hyperlane core contract internals (upstream audits apply).
 * Real-mainnet MEV behaviour of the Etica swap (no private relay exists on
@@ -221,7 +257,8 @@ next Etica run. Properties relied on:
 3. Fund KEEPER to targets (0.15 ETH, 60 EGAZ) and VALIDATOR with dust ETH.
 4. `deploy.sh all`, then confirm on-chain: `feeRecipient()` on both routers,
    `owner()` of both fee contracts == KEEPER, ISM module lists/thresholds
-   (Ethereum 3-of-3 aggregation, Etica 2-of-2), rate-limit capacity.
+   (Ethereum 3-of-3 aggregation, Etica 2-of-2), rate-limit capacity, and
+   that the agents run `agents-v2.3.0` or later (F-7).
 5. Seed the USDC.e/ETX pool (10,000 ETX pair-creation fee) so the Etica
    top-up has liquidity.
 6. Bridge-gas workflow dry run against mainnet, then live.
