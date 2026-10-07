@@ -208,7 +208,7 @@ export const DEPLOYMENTS: Record<
     eticaResearchMarkets: '0x6605d2F6A8b77a8dC7f53Fd1EDe0974d85937D17',
     eticaResearchNftMetadataLib: '0x66aa725d9d18481bB937F4DF2DA68f82DF964219',
     eticaResearchNft: '0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9',
-    eticaResearchMarketplace: '0xefa71266318c3787c6d3f63d7ba40fd69fc840a3',
+    eticaResearchMarketplace: '0x176b9dd241483480178e7e3ab63fcf60a249fc16',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
