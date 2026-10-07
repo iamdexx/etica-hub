@@ -207,12 +207,13 @@ export const BURN_ADDRESS: Address = '0x000000000000000000000000000000000000dEaD
 
 /**
  * For circulating-supply math we subtract a fixed list of "not-in-circulation"
- * holders. The treasury multisig counts because it is the programmatic source
- * of supply for the stETX vault + TreasuryHarvester and is not freely tradable.
+ * holders: the burn address plus every protocol-frozen holder (node-level
+ * blacklisted senders, e.g. the Xeggex wallet frozen by the Themis hardfork).
  * Keeping this list tight so we don't accidentally under-report.
  */
 function circulatingExcludedHolders(): Address[] {
-  return [BURN_ADDRESS];
+  const { ext } = assertMainnetDeployments();
+  return [BURN_ADDRESS, ...ext.frozenHolders.map((h) => h.address)];
 }
 
 export async function fetchErc20TotalSupply(

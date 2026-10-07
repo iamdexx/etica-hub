@@ -91,6 +91,7 @@ function buildAddressLabelMap(): Record<string, string> {
   if (ext) {
     const entries: Array<[Address | undefined, string]> = [
       [ext.eti, 'ETI Token'],
+      ...ext.frozenHolders.map((h): [Address, string] => [h.address, h.label]),
     ];
     for (const [addr, label] of entries) {
       if (addr && addr !== ZERO_ADDRESS) {

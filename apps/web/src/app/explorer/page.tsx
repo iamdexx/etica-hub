@@ -199,7 +199,7 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
       </section>
 
       <section className="grid gap-3 md:grid-cols-5">
-        <Action href="/explorer/tokens" title="Tokens" body="ETX, ETI, WEGAZ and known EticaHub asset surfaces." />
+        <Action href="/explorer/tokens" title="Tokens" body="EGAZ (native coin), ETI, ETX and WEGAZ with total vs circulating supply." />
         <Action href="/explorer/pairs" title="Pairs" body="OHLC, volume, and liquidity-depth market analytics." />
         <Action href="/explorer/contracts" title="Contracts" body="Known EticaHub contracts, labels, code status, and source verification paths." />
         <Action href="/explorer/deploy" title="Deploy Contract" body="Wallet-native contract deployment and advanced bytecode mode." />
