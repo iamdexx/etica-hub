@@ -1,16 +1,27 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { BaseError, UserRejectedRequestError, formatUnits, isAddress, type Address, type Hex } from 'viem';
+import {
+  BaseError,
+  UserRejectedRequestError,
+  formatUnits,
+  isAddress,
+  type Address,
+  type Hex,
+} from 'viem';
 import {
   useAccount,
   useBalance,
   useChainId,
+  useConfig,
+  useEstimateFeesPerGas,
+  usePublicClient,
   useReadContract,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
+import { waitForTransactionReceipt } from 'wagmi/actions';
 import { USDC_WARP_ROUTE, isUsdcWarpRouteLive } from '@etica-hub/shared';
 import {
   USDC_LEGS,
@@ -87,7 +98,9 @@ const DECIMALS: number = USDC_WARP_ROUTE.decimals;
 
 function fmt(value: bigint | undefined, decimals = DECIMALS, digits = 2): string {
   if (value === undefined) return '…';
-  return Number(formatUnits(value, decimals)).toLocaleString('en-US', { maximumFractionDigits: digits });
+  return Number(formatUnits(value, decimals)).toLocaleString('en-US', {
+    maximumFractionDigits: digits,
+  });
 }
 
 function shortError(err: unknown): string {
@@ -96,7 +109,10 @@ function shortError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-type Stage = 'idle' | 'switching' | 'approving' | 'sending';
+type Stage = 'idle' | 'switching' | 'approving' | 'confirming' | 'sending';
+
+/** Upper bound on gas units for approve + transferRemote, reserved from the native balance on top of the quoted delivery payment. */
+const TX_GAS_RESERVE_UNITS = 300_000n;
 
 /**
  * Hyperlane warp transfer: Ethereum USDC ⇄ Etica USDC.e. The user signs
@@ -109,6 +125,7 @@ export function UsdcBridgeCard() {
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+  const config = useConfig();
 
   const [direction, setDirection] = useState<UsdcDirection>('toEtica');
   const [amountInput, setAmountInput] = useState('');
@@ -144,12 +161,24 @@ export function UsdcBridgeCard() {
     chainId: leg.sourceChainId,
     query: { enabled: live && !!address && leg.needsApproval },
   });
-  const native = useBalance({ address, chainId: leg.sourceChainId, query: { enabled: live && !!address } });
+  const native = useBalance({
+    address,
+    chainId: leg.sourceChainId,
+    query: { enabled: live && !!address },
+  });
+  const fees = useEstimateFeesPerGas({
+    chainId: leg.sourceChainId,
+    query: { enabled: live && !!address },
+  });
+  const sourceClient = usePublicClient({ chainId: leg.sourceChainId });
   const quote = useReadContract({
     abi: warpAbi,
     address: leg.router,
     functionName: 'quoteTransferRemote',
-    args: amount && recipient ? [leg.destinationDomain, toBytes32Recipient(recipient), amount] : undefined,
+    args:
+      amount && recipient
+        ? [leg.destinationDomain, toBytes32Recipient(recipient), amount]
+        : undefined,
     chainId: leg.sourceChainId,
     query: { enabled: live && !!amount && !!recipient },
   });
@@ -164,7 +193,10 @@ export function UsdcBridgeCard() {
   }, [quote.data, amount, leg.token]);
   const quoted = split && !('error' in split) ? split : null;
 
-  const approveReceipt = useWaitForTransactionReceipt({ hash: approveHash, chainId: leg.sourceChainId });
+  const approveReceipt = useWaitForTransactionReceipt({
+    hash: approveHash,
+    chainId: leg.sourceChainId,
+  });
   const sendReceipt = useWaitForTransactionReceipt({ hash: sendHash, chainId: leg.sourceChainId });
 
   const refetchAllowance = allowance.refetch;
@@ -180,8 +212,9 @@ export function UsdcBridgeCard() {
   const needsApproval =
     leg.needsApproval && total !== null && allowance.data !== undefined && allowance.data < total;
   const insufficientToken = total !== null && balance.data !== undefined && balance.data < total;
+  const gasReserve = (fees.data?.maxFeePerGas ?? fees.data?.gasPrice ?? 0n) * TX_GAS_RESERVE_UNITS;
   const insufficientNative =
-    quoted !== null && native.data !== undefined && native.data.value < quoted.native;
+    quoted !== null && native.data !== undefined && native.data.value < quoted.native + gasReserve;
 
   const blocker = !live
     ? 'The USDC.e route is not deployed.'
@@ -198,7 +231,7 @@ export function UsdcBridgeCard() {
               : insufficientToken
                 ? `Not enough ${leg.tokenSymbol} for amount + fee.`
                 : insufficientNative
-                  ? `Not enough ${leg.nativeSymbol} for the delivery gas payment.`
+                  ? `Not enough ${leg.nativeSymbol} for the delivery gas payment plus transaction gas.`
                   : null;
 
   function flip() {
@@ -226,6 +259,12 @@ export function UsdcBridgeCard() {
           chainId: leg.sourceChainId,
         });
         setApproveHash(hash);
+        setStage('confirming');
+        const receipt = await waitForTransactionReceipt(config, {
+          hash,
+          chainId: leg.sourceChainId,
+        });
+        if (receipt.status !== 'success') throw new Error('Approval transaction reverted.');
       }
       setStage('sending');
       const hash = await writeContractAsync({
@@ -244,19 +283,42 @@ export function UsdcBridgeCard() {
     }
   }
 
+  /** Largest amount whose amount + router fee still fits the balance (fee quoted at the full balance is an upper bound). */
+  async function setMax() {
+    if (balance.data === undefined || !recipient) return;
+    const bal = balance.data;
+    let fee = 0n;
+    if (sourceClient && bal > 0n) {
+      try {
+        const quotes = await sourceClient.readContract({
+          abi: warpAbi,
+          address: leg.router,
+          functionName: 'quoteTransferRemote',
+          args: [leg.destinationDomain, toBytes32Recipient(recipient), bal],
+        });
+        fee = splitWarpQuote(quotes, leg.token, bal).tokenFee;
+      } catch {
+        fee = 0n;
+      }
+    }
+    setAmountInput(formatUnits(bal > fee ? bal - fee : 0n, DECIMALS));
+  }
+
   const busy = stage !== 'idle';
   const label =
     stage === 'switching'
       ? `Switching to ${leg.sourceName}…`
       : stage === 'approving'
         ? `Approve ${leg.tokenSymbol} in wallet…`
-        : stage === 'sending'
-          ? 'Confirm transfer in wallet…'
-          : !onSourceChain && isConnected
-            ? `Switch to ${leg.sourceName} & bridge`
-            : needsApproval
-              ? `Approve & bridge to ${leg.destinationName}`
-              : `Bridge to ${leg.destinationName}`;
+        : stage === 'confirming'
+          ? 'Waiting for approval to confirm…'
+          : stage === 'sending'
+            ? 'Confirm transfer in wallet…'
+            : !onSourceChain && isConnected
+              ? `Switch to ${leg.sourceName} & bridge`
+              : needsApproval
+                ? `Approve & bridge to ${leg.destinationName}`
+                : `Bridge to ${leg.destinationName}`;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
@@ -291,15 +353,16 @@ export function UsdcBridgeCard() {
           />
           <button
             type="button"
-            disabled={busy || balance.data === undefined}
-            onClick={() => balance.data !== undefined && setAmountInput(formatUnits(balance.data, DECIMALS))}
+            disabled={busy || balance.data === undefined || !recipient}
+            onClick={() => void setMax()}
             className="text-xs text-fuchsia-200 hover:underline disabled:opacity-40"
           >
             max
           </button>
         </div>
         <div className="mt-1 text-[11px] text-white/40">
-          Balance: {fmt(balance.data)} {leg.tokenSymbol} · {fmt(native.data?.value, 18, 4)} {leg.nativeSymbol}
+          Balance: {fmt(balance.data)} {leg.tokenSymbol} · {fmt(native.data?.value, 18, 4)}{' '}
+          {leg.nativeSymbol}
         </div>
       </label>
 
@@ -334,7 +397,9 @@ export function UsdcBridgeCard() {
           {total !== null ? `${fmt(total)} ${leg.tokenSymbol}` : '—'}
         </dd>
       </dl>
-      <div className="mt-2 text-[11px] text-white/40">{leg.feeNote}. Delivery usually lands within a few minutes.</div>
+      <div className="mt-2 text-[11px] text-white/40">
+        {leg.feeNote}. Delivery usually lands within a few minutes.
+      </div>
 
       <button
         type="button"
@@ -344,11 +409,17 @@ export function UsdcBridgeCard() {
       >
         {label}
       </button>
-      {blocker && isConnected && amountInput && <div className="mt-2 text-xs text-amber-300/80">{blocker}</div>}
+      {blocker && isConnected && amountInput && (
+        <div className="mt-2 text-xs text-amber-300/80">{blocker}</div>
+      )}
       {error && <div className="mt-2 text-xs text-rose-300">{error}</div>}
 
       {approveHash && (
-        <TxLine label={`Approval ${approveReceipt.isSuccess ? 'confirmed' : 'pending'}`} href={leg.explorerTx(approveHash)} hash={approveHash} />
+        <TxLine
+          label={`Approval ${approveReceipt.isSuccess ? 'confirmed' : 'pending'}`}
+          href={leg.explorerTx(approveHash)}
+          hash={approveHash}
+        />
       )}
       {sendHash && (
         <TxLine
@@ -371,7 +442,12 @@ function TxLine({ label, href, hash }: { label: string; href: string; hash: Hex 
   return (
     <div className="mt-2 text-xs text-white/60">
       {label}:{' '}
-      <a href={href} target="_blank" rel="noreferrer" className="font-mono text-fuchsia-200 hover:underline">
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="font-mono text-fuchsia-200 hover:underline"
+      >
         {hash.slice(0, 10)}…{hash.slice(-6)}
       </a>
     </div>
