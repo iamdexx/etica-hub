@@ -75,7 +75,9 @@ curl -fsSL "https://registry.npmjs.org/@hyperlane-xyz/core/-/core-$CORE_VERSION.
 
 # tstore/tload -> sstore/sload (see header).
 sed -i -E 's/\btstore\(/sstore(/g; s/\btload\(/sload(/g' "$DIR/core/contracts/libs/TransientStorage.sol"
-! grep -q 'tstore\|tload' "$DIR/core/contracts/libs/TransientStorage.sol"
+if grep -qE '\b(tstore|tload)\(' "$DIR/core/contracts/libs/TransientStorage.sol"; then
+  echo "paris-cli.sh: transient-storage opcodes survived the rewrite" >&2; exit 1
+fi
 rm -f "$DIR/core/contracts/hooks/CCIPHook.sol" "$DIR/core/contracts/isms/hook/CCIPIsm.sol"
 
 # Same remappings as hyperlane-monorepo/solidity/remappings.txt.
