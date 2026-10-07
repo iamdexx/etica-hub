@@ -7,14 +7,13 @@
  *                at least `minStable` (amortises Ethereum gas)
  *   2. swap    — if native gas is under `minNative`, swap just enough stable
  *                for wrapped native (bounded by price impact + slippage)
- *   3. surplus — everything left above `reserveStable` leaves the wallet for
- *                good: on Etica it is paired into the USDC.e/ETX pool and the
- *                LP is burned (protocol-owned liquidity, like the pool fees);
- *                on Ethereum it is bridged to the keeper's Etica wallet so the
- *                next run burns it there. Nothing ever goes to a wallet.
+ *   3. surplus — everything left above `reserveStable` is converted to EGAZ:
+ *                on Etica it is swapped (USDC.e -> ETX -> WEGAZ -> EGAZ) in
+ *                bounded chunks and kept in the keeper wallet, with no upper
+ *                target; on Ethereum it is bridged to the keeper's Etica
+ *                wallet so the next Etica run swaps it there. Nothing ever
+ *                leaves the keeper.
  */
-
-import { estimateSwapOut } from '../harvest/plan.js';
 
 export interface LegSnapshot {
   /** Keeper's native balance (wei). */
@@ -35,7 +34,7 @@ export interface LegThresholds {
   maxSlippageBps: number;
   /** Stable kept in the wallet for future top-ups; only the excess leaves. */
   reserveStable: bigint;
-  /** Only burn / bridge the surplus when it is at least this. */
+  /** Only swap / bridge the surplus when it is at least this. */
   minSweep: bigint;
 }
 
@@ -60,32 +59,11 @@ export interface LegDecision {
   claim: bigint;
   /** Stable -> native swap, or null when gas is healthy / swap not possible. */
   swap: SwapPlan | null;
-  /** Stable leaving the wallet after claim + swap: POL burn on Etica, bridged on Ethereum (0 = skip). */
+  /** Stable above the reserve after claim + swap: swapped to EGAZ on Etica, bridged on Ethereum (0 = skip). */
   surplus: bigint;
   /** Why no swap was planned although gas is low (null otherwise). */
   blocked: string | null;
   reason: string;
-}
-
-/** Reserves of the USDC.e/ETX pool, oriented by token. */
-export interface PolReserves {
-  stable: bigint;
-  etx: bigint;
-}
-
-/**
- * One POL burn: half the surplus buys ETX, the other half is paired with
- * that ETX and the LP tokens go to the dead address. Mirrors the
- * harvester's `add-liquidity-burn-lp` branch.
- */
-export interface PolBurnPlan {
-  stableForSwap: bigint;
-  minEtxOut: bigint;
-  /** ETX expected from the swap at current reserves (desired amount for addLiquidity). */
-  expectedEtxOut: bigint;
-  stableForPair: bigint;
-  minStableIn: bigint;
-  minEtxIn: bigint;
 }
 
 const BPS = 10_000n;
@@ -140,51 +118,28 @@ export function surplusAmount(
 }
 
 /**
- * Split a surplus into swap + pair legs against the pool's current reserves.
- * Returns `blocked` (and no plan) when the pool is missing/too thin for the
- * swap half to clear within `maxSlippageBps` of the spot price — the stable
- * is then simply held until the pool is deeper or the surplus smaller.
+ * One chunk of surplus -> native. Bounded by `maxChunk` per run and by the
+ * same price-impact ceiling as the gas swap; a thin pool makes the keeper
+ * hold the stable (or the runner retries a smaller chunk), never dump it.
  */
-export function planPolBurn(
+export function planSurplusSwap(
   surplus: bigint,
-  reserves: PolReserves | null,
+  maxChunk: bigint,
+  minSweep: bigint,
+  quote: SwapQuote | null,
   maxSlippageBps: number,
-): { plan: PolBurnPlan | null; blocked: string | null } {
+): { plan: SwapPlan | null; blocked: string | null } {
   if (surplus <= 0n) return { plan: null, blocked: null };
-  if (!reserves || reserves.stable === 0n || reserves.etx === 0n) {
-    return { plan: null, blocked: 'no USDC.e/ETX pool liquidity' };
-  }
-  const stableForSwap = surplus / 2n;
-  const stableForPair = surplus - stableForSwap;
-  if (stableForSwap === 0n) return { plan: null, blocked: 'surplus too small to split' };
-
-  const etxOut = estimateSwapOut(stableForSwap, reserves.stable, reserves.etx);
-  const spotOut = (stableForSwap * reserves.etx) / reserves.stable;
-  if (etxOut === 0n || spotOut === 0n) return { plan: null, blocked: 'swap too small to price' };
-  const impact = ((spotOut - etxOut) * BPS) / spotOut;
+  const amountIn = surplus > maxChunk ? maxChunk : surplus;
+  if (amountIn < minSweep) return { plan: null, blocked: 'surplus chunk below minimum' };
+  if (!quote || quote.amountIn !== amountIn) return { plan: null, blocked: 'router returned no quote' };
+  const impact = priceImpactBps(quote);
   if (impact > BigInt(maxSlippageBps)) {
-    return { plan: null, blocked: `POL swap price impact ${impact} bps exceeds ${maxSlippageBps} bps` };
+    return { plan: null, blocked: `surplus swap price impact ${impact} bps exceeds ${maxSlippageBps} bps` };
   }
-
-  // After the swap the pool holds (stable + stableForSwap, etx - etxOut); the
-  // router pairs at that ratio, so the stable side we actually deposit is
-  // min(stableForPair, etxOut * stable' / etx'). Both minimums get slippage.
-  const stableAfter = reserves.stable + stableForSwap;
-  const etxAfter = reserves.etx - etxOut;
-  const stableMatched = (etxOut * stableAfter) / etxAfter;
-  const stableIn = stableMatched < stableForPair ? stableMatched : stableForPair;
-  const etxIn = (stableIn * etxAfter) / stableAfter;
-  return {
-    plan: {
-      stableForSwap,
-      minEtxOut: withSlippage(etxOut, maxSlippageBps),
-      expectedEtxOut: etxOut,
-      stableForPair,
-      minStableIn: withSlippage(stableIn, maxSlippageBps),
-      minEtxIn: withSlippage(etxIn, maxSlippageBps),
-    },
-    blocked: null,
-  };
+  const minOut = withSlippage(quote.amountOut, maxSlippageBps);
+  if (minOut === 0n) return { plan: null, blocked: 'swap too small to price' };
+  return { plan: { amountIn, minOut, nativeNeeded: 0n }, blocked: null };
 }
 
 export function decideLeg(

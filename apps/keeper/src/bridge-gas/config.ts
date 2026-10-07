@@ -11,12 +11,13 @@
  *   2. if the keeper's native balance is under `minNative`, swap just
  *      enough USDC / USDC.e for wrapped gas on the chain's V2 router and
  *      unwrap it
- *   3. burn the surplus as protocol-owned liquidity, exactly like the pool
- *      fees: on Etica half is swapped to ETX, paired into USDC.e/ETX and
- *      the LP sent to the dead address; on Ethereum the surplus USDC is
- *      bridged over the warp route to the keeper's own Etica wallet, where
- *      the next run burns it. No wallet — treasury or otherwise — receives
- *      fee revenue, and nothing here is configurable from the environment.
+ *   3. turn the surplus into EGAZ for the keeper: on Etica it is swapped
+ *      along the pinned USDC.e -> ETX -> WEGAZ path in bounded chunks and
+ *      unwrapped, with no upper target — the keeper's gas pile just grows;
+ *      on Ethereum the surplus USDC is bridged over the warp route to the
+ *      keeper's own Etica wallet, where the next run swaps it. Fee revenue
+ *      never reaches any other wallet, and no recipient is configurable
+ *      from the environment.
  *
  * One leg per chain. A leg whose fee contract or stable address is unset
  * is reported as `unconfigured` and skipped, so the cron can be enabled
@@ -61,19 +62,20 @@ export interface BridgeGasLeg {
   targetNative: bigint;
   /** Don't bother claiming/swapping amounts smaller than this (stable units). */
   minStable: bigint;
-  /** Stable kept in the keeper wallet as a gas-buying reserve; the rest is burned as POL / bridged to be burned. */
+  /** Stable kept in the keeper wallet as a gas-buying reserve; the rest is swapped to EGAZ / bridged to be swapped. */
   reserveStable: bigint;
   /** Only release the surplus when it is at least this (amortises gas). */
   minSweep: bigint;
   /**
    * Where the surplus goes. Ethereum: the collateral warp router the USDC is
    * bridged through (verified on-chain against `ethereumMailbox`, the Etica
-   * route and the fee contract before every send). Etica: the USDC.e/ETX pool
-   * on EticaSwap, LP burned to `DEAD_ADDRESS`.
+   * route and the fee contract before every send). Etica: swapped along
+   * `path` to EGAZ and kept in the keeper wallet, at most `maxChunk` stable
+   * per run (the rest waits for the next run).
    */
   surplus:
     | { kind: 'bridge-to-etica'; warpRouter: Address | null }
-    | { kind: 'pol-burn'; etx: Address; factory: Address };
+    | { kind: 'swap-to-native'; maxChunk: bigint };
   /**
    * RPC used for *sending* transactions. On Ethereum this defaults to Flashbots
    * Protect so the keeper's swaps never sit in the public mempool (no sandwich
@@ -223,6 +225,9 @@ function leg(
   const reserveStable = optDecimal(env, `BRIDGE_GAS_${P}_RESERVE_STABLE`, base.reserveStableDefault, base.stableDecimals);
   const minSweep = optDecimal(env, `BRIDGE_GAS_${P}_MIN_SWEEP`, base.minSweepDefault, base.stableDecimals);
   if (minSweep === 0n) throw new Error(`BRIDGE_GAS_${P}_MIN_SWEEP must be positive`);
+  if (base.surplus.kind === 'swap-to-native' && base.surplus.maxChunk < minSweep) {
+    throw new Error(`BRIDGE_GAS_${P}_MAX_SURPLUS_SWAP must be at least BRIDGE_GAS_${P}_MIN_SWEEP`);
+  }
   const minNative = optDecimal(env, `BRIDGE_GAS_${P}_MIN_NATIVE`, base.minNativeDefault, 18);
   const targetNative = optDecimal(env, `BRIDGE_GAS_${P}_TARGET_NATIVE`, base.targetNativeDefault, 18);
   if (targetNative <= minNative) {
@@ -312,8 +317,7 @@ export function loadBridgeGasConfig(env: NodeJS.ProcessEnv = process.env): Bridg
       reserveStableDefault: '500',
       minSweepDefault: '5',
       writeRpcDefault: null,
-      // ETX and the factory are pinned deployments, like the swap router above.
-      surplus: { kind: 'pol-burn', etx: etica.etx, factory: etica.swapFactory },
+      surplus: { kind: 'swap-to-native', maxChunk: optDecimal(env, 'BRIDGE_GAS_ETICA_MAX_SURPLUS_SWAP', '250', 6) },
     }),
   ];
 

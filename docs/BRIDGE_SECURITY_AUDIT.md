@@ -74,9 +74,9 @@ the sweep to the `TREASURY_ADDRESS` constant (fork evidence: with
 `BRIDGE_GAS_TREASURY=<attacker>` the Ethereum sweep 763,816,728 and Etica
 sweep 85,996,856 both landed at `0xB2B4…C19D`, attacker balance 0).
 
-The surplus now never goes to a wallet at all — it is burned as
-protocol-owned liquidity like the pool fees (see F-16), so there is no
-destination address left to redirect. `BRIDGE_GAS_TREASURY` is ignored and
+The surplus now never leaves the keeper — it is swapped into EGAZ that
+stays in the keeper wallet (see F-16), so there is no destination address
+left to redirect. `BRIDGE_GAS_TREASURY` is ignored and
 the config has no `treasury` field (unit test `pins the surplus
 destinations`).
 
@@ -176,23 +176,25 @@ deployed (all zero addresses in `packages/shared/src/addresses.ts`) and not
 part of this route. Foundry: 610 tests pass. Keeper: 23 unit tests pass,
 typecheck clean.
 
-### F-16 Surplus is burned as POL; Ethereum leg bridges to self (Design)
-Bridge fees above the keeper's gas reserves follow the pool fees: on Etica
-half the USDC.e surplus is swapped to ETX on the pinned EticaSwap router,
-paired with the other half via `addLiquidity(ETX, USDC.e)` and the LP minted
-to `0x…dEaD` (same sink as `TreasuryHarvester`'s POL-burn slice). On Ethereum
-the surplus USDC is sent with `transferRemote(61803, keeper, amount)` to the
-keeper's **own** Etica address, so it arrives as USDC.e and is burned on the
-next Etica run. Properties relied on:
-* No wallet, hot or cold, ever receives fee revenue; the keeper key can at
-  most hold fees in its own wallet (by setting reserves high), never move
-  them elsewhere. Reserves are bounded by the env validation and the swap
-  path is pinned (F-2).
-* The POL swap half is bounded by the same `maxSlippageBps` price-impact
-  check as the gas swap, measured against the pool's spot price from
-  `getReserves()`; `amountOutMin` / `amountAMin` / `amountBMin` all carry
-  slippage and a 5-minute deadline. A thin or manipulated pool makes the
-  keeper *hold* the stable, not burn it badly.
+### F-16 Surplus becomes keeper EGAZ; Ethereum leg bridges to self (Design)
+Bridge fees above the keeper's 500-stable reserve are turned into EGAZ for
+the keeper (owner's decision: the gas pile grows without a cap instead of
+being burned as POL): on Etica the USDC.e surplus is swapped along the
+pinned `USDC.e → ETX → WEGAZ` path and unwrapped, at most
+`BRIDGE_GAS_ETICA_MAX_SURPLUS_SWAP` (250 USDC.e) per run, halving the chunk
+while the price-impact ceiling is exceeded. On Ethereum the surplus USDC is
+sent with `transferRemote(61803, keeper, amount)` to the keeper's **own**
+Etica address, so it arrives as USDC.e and is swapped on the next Etica run.
+Properties relied on:
+* Fee revenue only ever accrues in the keeper wallet; no env var names a
+  recipient, so the keeper key (or a CI-variable attacker) can at most hold
+  stable instead of swapping it, never move it elsewhere. The swap path is
+  pinned (F-2) and `to` is always the keeper itself.
+* The surplus swap is bounded by the same `maxSlippageBps` price-impact
+  check as the gas swap (one-unit probe vs. the chunk's `getAmountsOut`),
+  carries `amountOutMin` with slippage and a 5-minute deadline, and is
+  capped per run. A thin or manipulated pool makes the keeper *hold* the
+  stable (or swap a smaller chunk), never dump it.
 * The Ethereum collateral router named by `BRIDGE_GAS_ETHEREUM_WARP_ROUTER`
   is verified before every send: `wrappedToken() == USDC`, `mailbox() ==`
   the canonical Ethereum Mailbox pinned in code (`ETHEREUM_MAILBOX`;
