@@ -1,0 +1,45 @@
+ethereum:
+  interchainSecurityModule:
+    modules:
+      - threshold: 1
+        type: messageIdMultisigIsm
+        validators:
+          - "0x52B8A1566E05eaF384Aba45c866005BA95Af781b"
+      - duration: 86400
+        maxCapacity: "4999968000"
+        owner: "0xB2B4bC9d02970A55efF64C2D84c622c87967C19D"
+        type: rateLimitedIsm
+      - owner: "0xF077810FeD8908946402A34902109Fc4807744Fd"
+        paused: false
+        type: pausableIsm
+    threshold: 3
+    type: staticAggregationIsm
+  mailbox: "0xc005dc82818d67AF737725bD4bf75435d065D239"
+  owner: "0xB2B4bC9d02970A55efF64C2D84c622c87967C19D"
+  token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+  tokenFee:
+    beneficiary: "0xfcDd0d3d9A167092d094287E109B9315f08d05a7"
+    bps: 50
+    halfAmount: 5000000000
+    maxFee: 50000000
+    owner: "0xfcDd0d3d9A167092d094287E109B9315f08d05a7"
+    type: LinearFee
+  type: collateral
+etica:
+  decimals: 6
+  interchainSecurityModule:
+    modules:
+      - threshold: 1
+        type: messageIdMultisigIsm
+        validators:
+          - "0x52B8A1566E05eaF384Aba45c866005BA95Af781b"
+      - owner: "0xF077810FeD8908946402A34902109Fc4807744Fd"
+        paused: false
+        type: pausableIsm
+    threshold: 2
+    type: staticAggregationIsm
+  mailbox: "0x9E0aFCF74FF2B0E9F7b6318ad6Ab0DC929Ef22ec"
+  name: USD Coin (Etica)
+  owner: "0xB2B4bC9d02970A55efF64C2D84c622c87967C19D"
+  symbol: USDC.e
+  type: synthetic
