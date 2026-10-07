@@ -5,7 +5,6 @@ import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 import {
   loadBridgeGasConfig,
   loadGasDropConfig,
-  DEAD_ADDRESS,
   ETHEREUM_MAILBOX,
   ETHEREUM_USDC,
   FLASHBOTS_PROTECT_RPC,
@@ -16,7 +15,7 @@ import {
   claimAmount,
   decideLeg,
   nativeNeeded,
-  planPolBurn,
+  planSurplusSwap,
   priceImpactBps,
   surplusAmount,
 } from '../src/bridge-gas/plan.js';
@@ -103,7 +102,7 @@ describe('loadBridgeGasConfig', () => {
     expect(loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC }).maxSlippageBps).toBe(150);
   });
 
-  it('pins the surplus destinations: Ethereum bridges via the canonical mailbox, Etica burns LP to the dead address', () => {
+  it('pins the surplus destinations: Ethereum bridges via the canonical mailbox, Etica swaps to EGAZ for the keeper', () => {
     const cfg = loadBridgeGasConfig({
       BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC,
       BRIDGE_GAS_TREASURY: '0x000000000000000000000000000000000000dEaD',
@@ -113,9 +112,10 @@ describe('loadBridgeGasConfig', () => {
     expect(cfg.ethereumMailbox).toBe(ETHEREUM_MAILBOX);
     const [eth, etica] = cfg.legs;
     expect(eth!.surplus).toEqual({ kind: 'bridge-to-etica', warpRouter: '0x00000000000000000000000000000000000000a1' });
-    const etx = DEPLOYMENTS[eticaMainnet.id].etx;
-    expect(etica!.surplus).toEqual({ kind: 'pol-burn', etx, factory: DEPLOYMENTS[eticaMainnet.id].swapFactory });
-    expect(DEAD_ADDRESS).toBe('0x000000000000000000000000000000000000dEaD');
+    expect(etica!.surplus).toEqual({ kind: 'swap-to-native', maxChunk: parseUnits('250', 6) });
+    expect(
+      loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC, BRIDGE_GAS_ETICA_MAX_SURPLUS_SWAP: '40' }).legs[1]!.surplus,
+    ).toEqual({ kind: 'swap-to-native', maxChunk: parseUnits('40', 6) });
   });
 
   it('only lets a local fork override the Ethereum mailbox', () => {
@@ -257,32 +257,28 @@ describe('surplusAmount', () => {
   });
 });
 
-describe('planPolBurn', () => {
-  // 113 USDC.e / 200k ETX pool (the seeded fork pool)
-  const reserves = { stable: parseUnits('113', 6), etx: parseEther('200000') };
+describe('planSurplusSwap', () => {
+  // 100 USDC.e -> 37 EGAZ, marginal 1 USDC.e -> 0.372 EGAZ (~0.5% impact)
+  const q = (amountIn: bigint) => ({ amountIn, amountOut: parseEther('37'), probeIn: parseUnits('1', 6), probeOut: parseEther('0.372') });
+  const min = parseUnits('5', 6);
+  const chunk = parseUnits('100', 6);
 
-  it('splits the surplus in half, buys ETX with one half and pairs the other, with slippage on every minimum', () => {
-    const { plan, blocked } = planPolBurn(parseUnits('2', 6), reserves, 150);
+  it('swaps at most the chunk, keeps the EGAZ (no target), with slippage on the minimum', () => {
+    const { plan, blocked } = planSurplusSwap(parseUnits('1000', 6), chunk, min, q(chunk), 150);
     expect(blocked).toBeNull();
-    expect(plan!.stableForSwap).toBe(parseUnits('1', 6));
-    expect(plan!.stableForPair).toBe(parseUnits('1', 6));
-    // 1 USDC.e into 113/200k: out = 200000e18*1e6*997/(113e6*1000+1e6*997) ≈ 1749.6 ETX
-    expect(plan!.expectedEtxOut).toBeGreaterThan(parseEther('1740'));
-    expect(plan!.expectedEtxOut).toBeLessThan(parseEther('1760'));
-    expect(plan!.minEtxOut).toBe((plan!.expectedEtxOut * 9850n) / 10000n);
-    expect(plan!.minStableIn).toBeLessThanOrEqual(parseUnits('1', 6));
-    expect(plan!.minEtxIn).toBeGreaterThan(0n);
-    expect(plan!.minEtxIn).toBeLessThan(plan!.expectedEtxOut);
+    expect(plan).toEqual({ amountIn: chunk, minOut: (parseEther('37') * 9850n) / 10000n, nativeNeeded: 0n });
+    // a surplus under the chunk is swapped whole
+    expect(planSurplusSwap(parseUnits('60', 6), chunk, min, q(parseUnits('60', 6)), 150).plan!.amountIn).toBe(parseUnits('60', 6));
   });
 
-  it('holds the surplus when the pool is missing or the swap half would move the price past the ceiling', () => {
-    expect(planPolBurn(parseUnits('2', 6), null, 150)).toEqual({ plan: null, blocked: 'no USDC.e/ETX pool liquidity' });
-    expect(planPolBurn(parseUnits('2', 6), { stable: 0n, etx: 0n }, 150).plan).toBeNull();
-    // 100 USDC.e into a 113 USDC.e pool is ~30% impact
-    const thin = planPolBurn(parseUnits('200', 6), reserves, 150);
+  it('holds the surplus when the chunk is dust, the quote is missing / stale, or impact exceeds the ceiling', () => {
+    expect(planSurplusSwap(parseUnits('2', 6), chunk, min, q(parseUnits('2', 6)), 150).blocked).toMatch(/below minimum/);
+    expect(planSurplusSwap(chunk, chunk, min, null, 150).blocked).toBe('router returned no quote');
+    expect(planSurplusSwap(chunk, chunk, min, q(parseUnits('90', 6)), 150).blocked).toBe('router returned no quote');
+    const thin = planSurplusSwap(chunk, chunk, min, { ...q(chunk), amountOut: parseEther('30') }, 150);
     expect(thin.plan).toBeNull();
     expect(thin.blocked).toMatch(/price impact/);
-    expect(planPolBurn(0n, reserves, 150)).toEqual({ plan: null, blocked: null });
+    expect(planSurplusSwap(0n, chunk, min, null, 150)).toEqual({ plan: null, blocked: null });
   });
 });
 

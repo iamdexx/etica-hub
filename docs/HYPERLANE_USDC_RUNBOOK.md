@@ -73,15 +73,18 @@ USDC.e. The relayer closes that gap itself, with no treasury key anywhere:
    never appear in the public mempool (sandwich exposure on Etica is bounded
    by the same `amountOutMin`; the chain has no public MEV infrastructure).
    A blocked/failed leg fails the job → Telegram via `ops-alerts`.
-3. Whatever stable remains above a small operating reserve (500 USDC /
-   500 USDC.e) is burned as protocol-owned liquidity, the same way the pool
-   fees are: on Etica half is swapped to ETX, paired into the USDC.e/ETX
-   pool and the LP minted to `0x…dEaD`; on Ethereum the USDC is bridged
-   over the route itself to the keeper's own Etica address and burned on the
-   next run. No wallet receives bridge revenue. The destinations (dead
-   address, ETX, factory, canonical Ethereum Mailbox) are compiled into the
-   keeper; the collateral router named in CI is verified on-chain against
-   them before every send.
+3. Whatever stable remains above the operating reserve (500 USDC /
+   500 USDC.e) becomes keeper EGAZ: on Etica it is swapped
+   USDC.e → ETX → WEGAZ → EGAZ on the pinned router, at most
+   `BRIDGE_ETICA_MAX_SURPLUS_SWAP` (250 USDC.e) per hourly run and within the
+   same price-impact ceiling as the gas swap, and simply stays in the keeper
+   wallet — there is no upper EGAZ target, the balance just grows and also
+   fuels the farm harvest / forfeit jobs that share the key. On Ethereum
+   the USDC surplus is bridged over the route itself to the keeper's own
+   Etica address and swapped on the next run. Bridge revenue never reaches
+   any other wallet: the swap path and the canonical Ethereum Mailbox are
+   compiled into the keeper, and the collateral router named in CI is
+   verified on-chain against them before every send.
 4. On Etica the keeper also sends 2 EGAZ to wallets that just received
    ≥ 20 USDC.e and hold < 0.5 EGAZ, so a fresh wallet can move its funds.
    Recipients are read from the router's own `ReceivedTransferRemote` events
