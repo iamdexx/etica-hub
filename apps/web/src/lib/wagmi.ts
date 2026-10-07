@@ -1,7 +1,9 @@
 import { fallback, http } from 'viem';
 import { createConfig, type CreateConnectorFn } from 'wagmi';
 import { injected, walletConnect } from 'wagmi/connectors';
+import { mainnet } from 'wagmi/chains';
 import { eticaMainnet, eticaLocalFork } from '@etica-hub/shared/chains';
+import { ETHEREUM_PUBLIC_RPCS } from '@/lib/bridge/ethereum-rpcs';
 
 /**
  * Single source of truth for the wallet/RPC config.
@@ -24,9 +26,11 @@ import { eticaMainnet, eticaLocalFork } from '@etica-hub/shared/chains';
  * operator (Reown) rate-limits abuse. It can be overridden at deploy time
  * via `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` for rotation.
  *
- * Mainnet is the only live chain. The local anvil fork is registered so
- * devs can run the UI against a local dev node; it's gated at the UI layer
- * so production builds treat only mainnet as supported.
+ * Etica mainnet is the only live Etica chain; Ethereum mainnet is registered
+ * for the USDC → USDC.e bridge leg only (keyless public RPCs, failover). The
+ * local anvil fork is registered so devs can run the UI against a local dev
+ * node; it's gated at the UI layer so production builds treat only mainnet
+ * as supported.
  */
 
 // Public, non-secret identifier. Overridable via env for rotation.
@@ -55,7 +59,7 @@ const walletConnectConnector: CreateConnectorFn = (config) => {
 };
 
 export const wagmiConfig = createConfig({
-  chains: [eticaMainnet, eticaLocalFork],
+  chains: [eticaMainnet, mainnet, eticaLocalFork],
   connectors: [injected({ shimDisconnect: true }), walletConnectConnector],
   transports: {
     [eticaMainnet.id]: fallback(
@@ -66,6 +70,10 @@ export const wagmiConfig = createConfig({
           batch: { batchSize: 20, wait: 50 },
         }),
       ),
+      { rank: true },
+    ),
+    [mainnet.id]: fallback(
+      ETHEREUM_PUBLIC_RPCS.map((url) => http(url, { timeout: 8_000, retryCount: 1 })),
       { rank: true },
     ),
     [eticaLocalFork.id]: http(),

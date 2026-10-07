@@ -24,17 +24,13 @@ import {
   DEPLOY_SIGNATURE_TTL_SECONDS,
   type BridgeDeployMessage,
 } from './typed-data';
+import { ETHEREUM_PUBLIC_RPCS } from '@/lib/bridge/ethereum-rpcs';
 
 export const BRIDGE_DEPLOY_WORKFLOW = 'bridge-deploy.yml';
 export const BRIDGE_DEPLOY_REF = 'main';
 
 /** Same keyless rotation the keeper and the workflow use. */
-export const ETHEREUM_PUBLIC_RPCS = [
-  'https://gateway.tenderly.co/public/mainnet',
-  'https://rpc.mevblocker.io',
-  'https://eth.drpc.org',
-  'https://ethereum-rpc.publicnode.com',
-] as const;
+export { ETHEREUM_PUBLIC_RPCS };
 
 /** Mirrors the workflow pre-flight: ~8M gas for the Ethereum side, 2x margin. */
 export const WARP_DEPLOY_GAS = 8_000_000n;

@@ -1,22 +1,19 @@
 /**
- * Spec-derived parameter table. Values mirror docs/BRIDGE_CONTRACT_SPEC.md
- * and the parameter lock summary recorded in PR #157. When the bridge goes
- * live, BridgeStatusBoard reads the actual on-chain values; this table
- * documents what the operator committed to at deploy time.
+ * Deployed USDC.e route parameters (Bridge deploy run 37690097436). Values
+ * mirror infra/hyperlane/registry/deployments/warp_routes/USDC/etica-config.yaml
+ * and docs/HYPERLANE_USDC_RUNBOOK.md; BridgeStatusBoard reads live state.
  */
 const ROWS: { label: string; value: string; note?: string }[] = [
-  { label: 'Architecture', value: 'Optimistic-veto over Hyperlane' },
-  { label: 'Asset', value: 'ETX (lock-and-mint to wETX)' },
-  { label: 'Chains at launch', value: 'Ethereum + BNB Smart Chain' },
-  { label: 'Challenge window', value: '48 hours', note: 'Default-pass; vetoable by operator during window.' },
-  { label: 'Submitter bond', value: '25% of claim amount', note: 'Refunded on execute, slashed 25/50/25 prover/treasury/insurance on veto.' },
-  { label: 'Bridge fee', value: '0.1%', note: 'Routed 20/80 to insurance fund / harvester via FeeRouter.' },
-  { label: 'Initial TVL cap', value: '1,000,000 ETX', note: 'Auto-raises +1M / month after 30 d clean ops, ceiling 10M ETX.' },
-  { label: 'Per-claim cap', value: '1% of TVL' },
-  { label: 'Daily rate limit', value: '5% of TVL' },
-  { label: 'Insurance backstop', value: '10,000,000 ETX', note: 'Pre-funded on Etica before first deposit.' },
-  { label: 'Watcher cadence', value: 'heartbeat 15 m / monitor 5 m / execute 30 m', note: 'Free GitHub Actions cron — alert-only, no auto-veto.' },
-  { label: 'Successor key timelock', value: '90 days', note: 'Activates only after operator key has been silent for the full window.' },
+  { label: 'Architecture', value: 'Hyperlane warp route', note: 'HypERC20Collateral on Ethereum, HypERC20 (USDC.e) on Etica.' },
+  { label: 'Asset', value: 'USDC → USDC.e (6 decimals)', note: '1:1 lock-and-mint; Circle USDC stays in the collateral router.' },
+  { label: 'Chains', value: 'Ethereum mainnet + Etica (61803)' },
+  { label: 'Fee, Ethereum → Etica', value: '0.5%', note: 'Capped at 50 USDC per transfer.' },
+  { label: 'Fee, Etica → Ethereum', value: '2 USDC.e + 0.5%', note: 'Capped at 50 USDC.e per transfer.' },
+  { label: 'Fee destination', value: 'Keeper', note: 'Pays relayer gas and gas drops, keeps a 500 float, converts the rest to EGAZ.' },
+  { label: 'Release cap', value: '5,000 USDC / 24h', note: 'Rate-limited USDC release on Ethereum; owner-adjustable.' },
+  { label: 'Security', value: 'Validator-signed checkpoints', note: 'Single validator at launch, RPC quorum; guardian can pause both routers.' },
+  { label: 'Owner', value: 'Treasury', note: 'Admin only (ISM, cap, upgrades); earns no fees. Transferable to a Safe.' },
+  { label: 'Gas drop', value: '2 EGAZ', note: 'Once per recipient that lands USDC.e with an empty EGAZ balance.' },
 ];
 
 export function BridgeParamsTable() {

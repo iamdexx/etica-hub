@@ -5,6 +5,7 @@ import { BridgeStatusBoard } from '@/components/bridge/BridgeStatusBoard';
 import { BridgeFlowsCard } from '@/components/bridge/BridgeFlowsCard';
 import { BridgeParamsTable } from '@/components/bridge/BridgeParamsTable';
 import { BridgeAddressBook } from '@/components/bridge/BridgeAddressBook';
+import { UsdcBridgeCard } from '@/components/bridge/UsdcBridgeCard';
 import { SourceBadge, TelemetrySection, UnavailableMetric } from '@/components/telemetry/TelemetryCards';
 
 export const metadata = { title: 'Bridge · EticaHub' };
@@ -14,18 +15,18 @@ const BRIDGE_STATS = [
   {
     label: 'Transport',
     value: 'Hyperlane',
-    detail: 'Cross-chain messaging layer',
+    detail: 'Warp route: USDC locked on Ethereum, USDC.e minted on Etica',
     tone: 'fuchsia' as const,
   },
   {
     label: 'Security',
-    value: 'Optimistic veto',
-    detail: 'Fraud-challenge protection',
+    value: 'Validator ISM',
+    detail: 'Signed checkpoints; guardian can pause either side',
   },
   {
-    label: 'Challenge',
-    value: '48h',
-    detail: 'Claim dispute window',
+    label: 'Release cap',
+    value: '5,000 USDC / 24h',
+    detail: 'Rate-limited USDC release on Ethereum',
   },
   {
     label: 'Bridge volume',
@@ -45,9 +46,9 @@ export default function BridgePage() {
               Cross-chain Bridge Terminal
             </div>
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Bridge ETX across execution domains.</h1>
+              <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Bridge USDC to Etica as USDC.e.</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Lock ETX on Etica and mint wrapped ETX on Ethereum or BNB through Hyperlane rails with optimistic-veto security and visible bridge flow telemetry.
+                Lock Circle USDC on Ethereum and receive USDC.e on Etica over Hyperlane, or burn USDC.e to release USDC back on Ethereum. 0.5% fee (capped at 50), first-time recipients get an EGAZ gas drop.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
@@ -69,26 +70,27 @@ export default function BridgePage() {
       <section className="grid gap-6 lg:grid-cols-[0.7fr_1fr] lg:items-start">
         <aside className="space-y-4">
           <div className="rounded-2xl border border-white/10 bg-[#07120f] p-5">
-            <div className="text-xs uppercase tracking-wider text-white/40">Bridge mechanics</div>
+            <div className="text-xs uppercase tracking-wider text-white/40">How it works</div>
             <div className="mt-4 space-y-3">
-              <InfoCard title="No LP model" body="Bridge flow locks native ETX and mints wrapped ETX instead of depending on external liquidity providers." />
-              <InfoCard title="Optimistic veto" body="Claims enter a 48h challenge window where operator or community fraud proofs can veto invalid bridge execution." />
-              <InfoCard title="Automatic completion" body="After the challenge period expires without veto, watcher bots finalize the claim and refund submitter bonds." />
+              <InfoCard title="1:1 backed" body="Every USDC.e is minted against USDC held by the collateral router on Ethereum; burning USDC.e releases the same USDC." />
+              <InfoCard title="Signed checkpoints" body="A validator signs each mailbox checkpoint; the destination chain only mints or releases against a valid signature. Releases are capped at 5,000 USDC per 24h and the guardian can pause both sides." />
+              <InfoCard title="Gas drop" body="A wallet that receives USDC.e with no EGAZ gets a small EGAZ drop from the keeper so it can move the funds." />
             </div>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-white/50">
-            <div className="font-medium text-white/70">Deposit flow</div>
+            <div className="font-medium text-white/70">Transfer flow</div>
             <ol className="mt-2 list-decimal space-y-1 pl-5 leading-5">
-              <li>Deposit ETX into BridgeVault on Etica.</li>
-              <li>Hyperlane relays the bridge message cross-chain.</li>
-              <li>Submitter posts claim bond and enters challenge period.</li>
-              <li>Claim auto-executes after the veto window expires.</li>
+              <li>Approve and send USDC to the collateral router on Ethereum.</li>
+              <li>The validator signs the checkpoint; the relayer delivers it to Etica.</li>
+              <li>USDC.e is minted to the recipient, usually within a few minutes.</li>
+              <li>Going back: burn USDC.e on Etica and USDC is released on Ethereum.</li>
             </ol>
           </div>
         </aside>
 
         <div className="space-y-6">
+          <UsdcBridgeCard />
           <div className="rounded-2xl border border-fuchsia-400/20 bg-white/[0.03] p-3 shadow-xl shadow-fuchsia-950/20">
             <BridgeStatusBoard />
           </div>
