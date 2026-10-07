@@ -158,12 +158,12 @@ describe('loadBridgeGasConfig', () => {
     ).toThrow('http(s)');
   });
 
-  it('defaults reserves so Ethereum claims are amortised and Etica stays cheap', () => {
+  it('defaults a 500-stable float on both legs; Etica claims stay cheap', () => {
     const [eth, etica] = loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC }).legs;
     expect(eth!.minStable).toBe(parseUnits('200', 6));
     expect(eth!.reserveStable).toBe(parseUnits('500', 6));
     expect(etica!.minStable).toBe(parseUnits('5', 6));
-    expect(etica!.reserveStable).toBe(parseUnits('25', 6));
+    expect(etica!.reserveStable).toBe(parseUnits('500', 6));
     expect(() =>
       loadBridgeGasConfig({ BRIDGE_GAS_ETHEREUM_RPC_URL: ETH_RPC, BRIDGE_GAS_ETICA_MIN_SWEEP: '0' }),
     ).toThrow('MIN_SWEEP');

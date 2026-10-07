@@ -60,7 +60,7 @@ jobs:
       BRIDGE_GAS_ETICA_TARGET_NATIVE: ${{ vars.BRIDGE_ETICA_TARGET_NATIVE || '60' }}
       # Stable kept in the wallet as a gas reserve; everything above it is burned as POL.
       BRIDGE_GAS_ETHEREUM_RESERVE_STABLE: ${{ vars.BRIDGE_ETHEREUM_RESERVE_STABLE || '500' }}
-      BRIDGE_GAS_ETICA_RESERVE_STABLE: ${{ vars.BRIDGE_ETICA_RESERVE_STABLE || '25' }}
+      BRIDGE_GAS_ETICA_RESERVE_STABLE: ${{ vars.BRIDGE_ETICA_RESERVE_STABLE || '500' }}
       # Recipient gas drop (Etica): set BRIDGE_GAS_DROP_ENABLED=false to switch off.
       BRIDGE_GAS_DROP_ENABLED: ${{ vars.BRIDGE_GAS_DROP_ENABLED || 'true' }}
       BRIDGE_GAS_DROP_AMOUNT: ${{ vars.BRIDGE_GAS_DROP_AMOUNT || '2' }}

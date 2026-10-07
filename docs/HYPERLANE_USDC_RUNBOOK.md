@@ -74,7 +74,7 @@ USDC.e. The relayer closes that gap itself, with no treasury key anywhere:
    by the same `amountOutMin`; the chain has no public MEV infrastructure).
    A blocked/failed leg fails the job → Telegram via `ops-alerts`.
 3. Whatever stable remains above a small operating reserve (500 USDC /
-   25 USDC.e) is burned as protocol-owned liquidity, the same way the pool
+   500 USDC.e) is burned as protocol-owned liquidity, the same way the pool
    fees are: on Etica half is swapped to ETX, paired into the USDC.e/ETX
    pool and the LP minted to `0x…dEaD`; on Ethereum the USDC is bridged
    over the route itself to the keeper's own Etica address and burned on the

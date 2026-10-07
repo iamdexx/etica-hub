@@ -110,7 +110,7 @@ pnpm --filter @etica-hub/keeper bridge-gas:live      # needs HARVEST_PRIVATE_KEY
 | `BRIDGE_GAS_ETHEREUM_WARP_ROUTER` | — | Collateral router on Ethereum (warp deploy output); blank = Ethereum surplus is held. |
 | `BRIDGE_GAS_ETHEREUM_MAILBOX` | canonical mailbox | Only accepted when the Ethereum RPC is a loopback fork; production ignores/rejects it. |
 | `BRIDGE_GAS_ETHEREUM_WRITE_RPC_URL` | `https://rpc.flashbots.net/fast` | Where Ethereum transactions are *sent* (reads use the RPC above). Point at the fork when testing. |
-| `BRIDGE_GAS_{ETHEREUM,ETICA}_RESERVE_STABLE` | `500` / `25` | Stable kept as a gas reserve; the excess is burned as POL (Etica) / bridged to be burned (Ethereum). |
+| `BRIDGE_GAS_{ETHEREUM,ETICA}_RESERVE_STABLE` | `500` / `500` | Stable kept as a gas reserve; the excess is burned as POL (Etica) / bridged to be burned (Ethereum). |
 | `BRIDGE_GAS_{ETHEREUM,ETICA}_MIN_SWEEP` | `200` / `5` | Smallest surplus worth releasing. |
 | `BRIDGE_GAS_MAX_SLIPPAGE_BPS` | `150` (max 500) | `amountOutMin` and price-impact ceiling for swaps. |
 | `BRIDGE_GAS_DROP_ENABLED` / `_AMOUNT` / `_THRESHOLD` / `_MIN_TRANSFER` / `_MAX_PER_RUN` / `_LOOKBACK_BLOCKS` | `true` / `2` / `0.5` / `20` / `25` / `600` | Recipient gas drop on Etica. |

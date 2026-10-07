@@ -272,7 +272,7 @@ export function loadBridgeGasConfig(env: NodeJS.ProcessEnv = process.env): Bridg
       minNativeDefault: '20',
       targetNativeDefault: '60',
       minStableDefault: '5',
-      reserveStableDefault: '25',
+      reserveStableDefault: '500',
       minSweepDefault: '5',
       writeRpcDefault: null,
       // ETX and the factory are pinned deployments, like the swap router above.
