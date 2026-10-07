@@ -1,6 +1,27 @@
 import type { Address } from 'viem';
 import type { SupportedChainId } from './chains';
 
+export interface FrozenHolder {
+  address: Address;
+  label: string;
+  /** Why the balance is frozen, with the enforcing hardfork. */
+  reason: string;
+  source: string;
+}
+
+/**
+ * Xeggex exchange hot wallet. Frozen by the Themis hardfork (Etica v6,
+ * May 2025) after the exchange went dark holding ~1M ETI and ~3.6M EGAZ:
+ * core-geth's `BlacklistedAddressesSubset2` rejects every tx it sends and
+ * the ETI contract's `networkGuardAddresses` reverts its transfers.
+ */
+export const XEGGEX_FROZEN_HOLDER: FrozenHolder = {
+  address: '0x5CcCcb6d334197c7C4ba94E7873d0ef11381CD4e',
+  label: 'Xeggex (frozen)',
+  reason: 'Frozen by the Themis hardfork (Etica v6) after the Xeggex exchange shutdown',
+  source: 'https://github.com/etica/core-geth/releases/tag/themis-hardfork',
+};
+
 /**
  * Canonical, externally-controlled addresses on each chain.
  *
@@ -14,20 +35,29 @@ export const EXTERNAL_ADDRESSES: Record<
     eticaCore: Address;
     /** ETI token address (same as eticaCore on Etica). */
     eti: Address;
+    /**
+     * Holders frozen at protocol level: the node refuses any transaction
+     * from these senders and the ETI contract blocks transfers from them,
+     * so whatever they hold (ETI, EGAZ, any ERC-20) is out of circulation.
+     */
+    frozenHolders: FrozenHolder[];
   }
 > = {
   61803: {
     eticaCore: '0x34c61EA91bAcdA647269d4e310A86b875c09946f',
     eti: '0x34c61EA91bAcdA647269d4e310A86b875c09946f',
+    frozenHolders: [XEGGEX_FROZEN_HOLDER],
   },
   61888: {
     eticaCore: '0x558593Bc92E6F242a604c615d93902fc98efcA82',
     eti: '0x558593Bc92E6F242a604c615d93902fc98efcA82',
+    frozenHolders: [],
   },
   31337: {
     // Local anvil fork inherits mainnet state, so ETI lives at the mainnet address.
     eticaCore: '0x34c61EA91bAcdA647269d4e310A86b875c09946f',
     eti: '0x34c61EA91bAcdA647269d4e310A86b875c09946f',
+    frozenHolders: [XEGGEX_FROZEN_HOLDER],
   },
 };
 
