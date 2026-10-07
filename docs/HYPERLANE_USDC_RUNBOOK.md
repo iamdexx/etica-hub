@@ -222,9 +222,11 @@ Wire into the app
   for c in $ETH_ROUTER $ETH_PROXY_ADMIN $RATE_LIMITED_ISM; do
     cast send $c 'transferOwnership(address)' $NEW_OWNER --rpc-url $ETHEREUM_RPC --private-key $OWNER_KEY
   done
-  # pause switches, signed by the guardian, only if the guardian is rotating as well
-  for c in $ETICA_PAUSABLE_ISM; do cast send $c 'transferOwnership(address)' $NEW_GUARDIAN --rpc-url $ETICA_RPC --private-key $GUARDIAN_KEY --legacy; done
-  for c in $ETH_PAUSABLE_ISM;   do cast send $c 'transferOwnership(address)' $NEW_GUARDIAN --rpc-url $ETHEREUM_RPC --private-key $GUARDIAN_KEY; done
+  # pause switches belong to the guardian: skipped unless NEW_GUARDIAN is set (separate key, separate decision)
+  if [ -n "${NEW_GUARDIAN:-}" ]; then
+    cast send $ETICA_PAUSABLE_ISM 'transferOwnership(address)' $NEW_GUARDIAN --rpc-url $ETICA_RPC --private-key $GUARDIAN_KEY --legacy
+    cast send $ETH_PAUSABLE_ISM   'transferOwnership(address)' $NEW_GUARDIAN --rpc-url $ETHEREUM_RPC --private-key $GUARDIAN_KEY
+  fi
   for c in $MAILBOX $CORE_PROXY_ADMIN $PROTOCOL_FEE_HOOK $ETICA_ROUTER $ETICA_PROXY_ADMIN; do cast call $c 'owner()(address)' --rpc-url $ETICA_RPC; done   # verify each
   ```
 - **Security audit**: findings, fork evidence and the mainnet blocker list live
