@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1.6
+# apps/eticascan (Next.js explorer UI). Build context is the repo root.
+FROM node:20-alpine
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY apps/eticascan/package.json ./apps/eticascan/
+RUN pnpm install --frozen-lockfile --filter @etica-hub/eticascan
+COPY apps/eticascan ./apps/eticascan
+# Server components fetch the engine over the compose network; no browser ever sees this URL.
+ARG NEXT_PUBLIC_API_URL=http://engine:6633
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=1536
+RUN pnpm --filter @etica-hub/eticascan build
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
+EXPOSE 3000
+CMD ["pnpm", "--filter", "@etica-hub/eticascan", "start"]

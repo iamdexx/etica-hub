@@ -1,0 +1,67 @@
+# Self-hosted Etica explorer for the EticaHub droplet:
+#   db        PostgreSQL holding the engine's indexed chain data
+#   engine    etica-explorer-engine sync scripts + its /api server (:6633)
+#   eticascan apps/eticascan Next.js UI (:3000), reads the engine API
+#   caddy     :80/:443 in front of both (TLS automatic once SITE_ADDRESS is a hostname)
+# The Hyperlane bridge agents live in ../hyperlane/agents and have their own compose file.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: '20m', max-file: '5' }
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: eticaenginedb
+      POSTGRES_USER: etica
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?set PG_PASSWORD in .env}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U etica -d eticaenginedb']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    <<: *logging
+
+  engine:
+    build: ./engine
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      CONTRACT_ADDRESS: '0x34c61EA91bAcdA647269d4e310A86b875c09946f'
+      MAIN_RPC: ${ETICA_RPC_URL:-https://eticamainnet.eticaprotocol.org}
+      API_PORT: '6633'
+      DB_CLIENT_TYPE: pg
+      PG_HOST: db
+      PG_PORT: '5432'
+      PG_DATABASE: eticaenginedb
+      PG_USER: etica
+      PG_PASSWORD: ${PG_PASSWORD}
+      SEED_LOOKBACK_BLOCKS: ${SEED_LOOKBACK_BLOCKS:-5000}
+    expose: ['6633']
+    <<: *logging
+
+  eticascan:
+    build:
+      context: ../..
+      dockerfile: infra/droplet/Dockerfile.eticascan
+    restart: unless-stopped
+    depends_on: [engine]
+    expose: ['3000']
+    <<: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [eticascan, engine]
+    ports: ['80:80', '443:443']
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+    <<: *logging

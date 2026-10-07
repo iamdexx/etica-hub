@@ -1,0 +1,11 @@
+# SITE_ADDRESS=:80 serves plain HTTP on the droplet IP; set it to a hostname
+# (e.g. eticascan.eticahub.com) once DNS points here and Caddy issues TLS itself.
+{$SITE_ADDRESS::80} {
+	encode gzip
+	handle /api/* {
+		reverse_proxy engine:6633
+	}
+	handle {
+		reverse_proxy eticascan:3000
+	}
+}
