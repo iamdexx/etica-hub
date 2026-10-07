@@ -47,6 +47,12 @@ describe('loadForfeitConfig', () => {
     expect(() => loadForfeitConfig({ FORFEIT_BASE_URL: 'http://evil.example' })).toThrow();
   });
 
+  it('keeps a 5 EGAZ floor for the shared farm keeper unless overridden', () => {
+    expect(loadForfeitConfig({}).minKeeperBalanceWei).toBe(5n * 10n ** 18n);
+    expect(loadForfeitConfig({ FORFEIT_MIN_KEEPER_EGAZ: '12.5' }).minKeeperBalanceWei).toBe(125n * 10n ** 17n);
+    expect(() => loadForfeitConfig({ FORFEIT_MIN_KEEPER_EGAZ: '-1' })).toThrow();
+  });
+
   it('rejects an out-of-range batch size', () => {
     expect(() => loadForfeitConfig({ FORFEIT_MAX_PER_RUN: '100' })).toThrow();
   });

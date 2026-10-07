@@ -202,6 +202,18 @@ export async function runForfeitSweep(
   }
   const clients: Clients = { publicClient, walletClient, account };
 
+  if (account && !config.dryRun) {
+    const balance = await publicClient.getBalance({ address: account.address });
+    if (balance < config.minKeeperBalanceWei) {
+      const error =
+        `keeper ${account.address} holds ${Number(balance) / 1e18} EGAZ, below the ` +
+        `${Number(config.minKeeperBalanceWei) / 1e18} EGAZ floor shared with the farm harvest; ` +
+        'skipping the sweep until it is refuelled';
+      log.error(`[forfeit] ${error}`);
+      return { dryRun: false, fetched: 0, settled: 0, results: [], keeperBalanceWei: balance, error };
+    }
+  }
+
   const settlement = await settleForfeits(config, clients, log, opts.fetchImpl);
 
   let listing: AutoListResult | undefined;

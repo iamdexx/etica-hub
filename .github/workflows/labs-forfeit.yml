@@ -54,6 +54,8 @@ jobs:
       FORFEIT_TREASURY_ADDRESS: ${{ vars.HARVEST_TREASURY_ADDRESS || '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D' }}
       FORFEIT_BASE_URL: ${{ vars.LABS_BASE_URL || 'https://eticahub.com' }}
       FORFEIT_MAX_PER_RUN: ${{ inputs.max_per_run || '10' }}
+      # Never spend the shared keeper below this: the daily harvest needs ~1 EGAZ.
+      FORFEIT_MIN_KEEPER_EGAZ: ${{ vars.FORFEIT_MIN_KEEPER_EGAZ || '5' }}
       # Marketplace defaults to the shared deployment table; set the var to
       # `off` to skip listing entirely.
       FORFEIT_MARKETPLACE_ADDRESS: ${{ vars.FORFEIT_MARKETPLACE_ADDRESS }}

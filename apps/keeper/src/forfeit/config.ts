@@ -12,7 +12,7 @@
  */
 
 import 'dotenv/config';
-import { isAddress, isHex, type Address, type Hex } from 'viem';
+import { isAddress, isHex, parseEther, type Address, type Hex } from 'viem';
 import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 
 export interface ForfeitConfig {
@@ -37,6 +37,12 @@ export interface ForfeitConfig {
   workerToken: string | null;
   /** Records to settle per run. */
   maxPerRun: number;
+  /**
+   * Keeper EGAZ balance (wei) below which the sweep does nothing. The same
+   * EOA pays for the daily farm harvest; the hourly sweep must never spend
+   * it down to where the harvest (and the farms' reward distribution) stalls.
+   */
+  minKeeperBalanceWei: bigint;
   /** Gas-paying signer. Required unless dryRun. */
   privateKey: Hex | null;
   /** When true, simulate every claim but submit nothing. */
@@ -99,6 +105,12 @@ export function loadForfeitConfig(env: NodeJS.ProcessEnv = process.env): Forfeit
     marketplace = v.toLowerCase() === ZERO ? null : (v as Address);
   }
 
+  const minKeeperRaw = opt(env, 'FORFEIT_MIN_KEEPER_EGAZ') ?? '5';
+  if (!/^\d+(\.\d+)?$/.test(minKeeperRaw)) {
+    throw new Error(`FORFEIT_MIN_KEEPER_EGAZ must be a decimal EGAZ amount, got: ${minKeeperRaw}`);
+  }
+  const minKeeperBalanceWei = parseEther(minKeeperRaw);
+
   const baseUrl = (opt(env, 'FORFEIT_BASE_URL') ?? 'https://eticahub.com').replace(/\/+$/, '');
   if (!/^https:\/\//.test(baseUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(baseUrl)) {
     throw new Error(`FORFEIT_BASE_URL must be https (or local http), got: ${baseUrl}`);
@@ -114,6 +126,7 @@ export function loadForfeitConfig(env: NodeJS.ProcessEnv = process.env): Forfeit
     baseUrl,
     workerToken: opt(env, 'FORFEIT_WORKER_TOKEN') ?? opt(env, 'LABS_AUTOPILOT_TOKEN'),
     maxPerRun,
+    minKeeperBalanceWei,
     privateKey: pk as Hex | null,
     dryRun,
   };
