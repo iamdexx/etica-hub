@@ -40,9 +40,13 @@ contract WarpFlatLinearFee is Ownable {
     error ZeroHalfAmount();
     error NoFee();
 
-    constructor(address token_, uint256 flatFee_, uint256 maxLinearFee_, uint256 halfAmount_, address owner_)
-        Ownable(owner_)
-    {
+    constructor(
+        address token_,
+        uint256 flatFee_,
+        uint256 maxLinearFee_,
+        uint256 halfAmount_,
+        address owner_
+    ) Ownable(owner_) {
         if (token_ == address(0)) revert ZeroAddress();
         if (halfAmount_ == 0) revert ZeroHalfAmount();
         if (flatFee_ == 0 && maxLinearFee_ == 0) revert NoFee();
@@ -54,7 +58,11 @@ contract WarpFlatLinearFee is Ownable {
 
     /// @notice Quote the fee for a transfer. Destination/recipient are ignored:
     /// the contract is bound to a single router leg.
-    function quoteTransferRemote(uint32, bytes32, uint256 amount) external view returns (Quote[] memory quotes) {
+    function quoteTransferRemote(uint32, bytes32, uint256 amount)
+        external
+        view
+        returns (Quote[] memory quotes)
+    {
         quotes = new Quote[](1);
         quotes[0] = Quote(address(token), quoteFee(amount));
     }

@@ -72,7 +72,9 @@ contract WarpFlatLinearFeeTest is Test {
         usdc.mint(address(fee), 123 * USDC);
 
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(0xBAD))
+        );
         fee.claim(address(0xBAD));
 
         vm.prank(keeper);
