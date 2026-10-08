@@ -10,9 +10,10 @@
  * always worth exactly the ETX leg when priced through the pool's own
  * curve. Summing across pools gives total DEX TVL in ETX.
  *
- * USD is derived by routing ETX through an anchor pool (ETX/WEGAZ
- * preferred, ETX/ETI fallback) and multiplying by the matching NonKYC
- * USDT quote. If neither anchor has liquidity or NonKYC is unreachable,
+ * USD is derived from the USDC.e/ETX pool (USDC.e is bridged Circle USDC,
+ * so that pool quotes ETX in on-chain dollars); when it is missing or too
+ * shallow, ETX is routed through ETX/WEGAZ or ETX/ETI and multiplied by
+ * the matching NonKYC USDT quote. If no anchor has liquidity or NonKYC is unreachable,
  * `usd` is `null` so the UI can render "—" instead of showing stale or
  * fabricated numbers.
  *
@@ -21,7 +22,7 @@
  */
 
 import { formatUnits, getAddress, type Address } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis, USDC_WARP_ROUTE } from '@etica-hub/shared';
 import { fetchAllPairs, jsonResponse, priceClient } from '@/lib/priceApi';
 import { fetchAnchorEtxUsd } from '@/lib/buybot/scan';
 import { fetchUsdAnchors } from '@/lib/buybot/oracle';
@@ -62,6 +63,7 @@ export async function GET(): Promise<Response> {
     etx: d.etx,
     eti: ext.eti,
     wegaz: d.wegaz,
+    usdce: USDC_WARP_ROUTE.syntheticToken,
     anchors,
   });
 

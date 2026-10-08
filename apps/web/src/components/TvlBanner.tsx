@@ -6,7 +6,7 @@
  * Hits `/api/v1/tvl` every 15 seconds (matching the route's edge cache
  * window), rendering both the USD headline and the ETX-denominated figure
  * so users can see how much liquidity the DEX holds without leaving the
- * page. When USD is unavailable (NonKYC unreachable or no anchor pool has
+ * page. When USD is unavailable (no USDC.e/ETX depth, NonKYC unreachable, or no anchor pool has
  * liquidity) we fall back to showing the ETX figure alone — never a stale
  * or fabricated dollar number.
  *

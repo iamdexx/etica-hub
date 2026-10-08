@@ -37,6 +37,7 @@ import {
   loadAllPairs,
   planScanWindow,
   snapshotPool,
+  MIN_STABLE_ANCHOR_RESERVE,
 } from '@/lib/buybot/scan';
 import {
   claimBuyPost,
@@ -298,8 +299,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 /**
  * Resolve ETX/USD from the first pool snapshot that pairs ETX with ETI,
  * WEGAZ or USDC.e. We only anchor USD via pools we *actually saw a swap on* this run
- * because those are the snapshots we already paid for; if none exist, ETX
- * USD stays `null` and downstream messages fall back to showing "—".
+ * because those are the snapshots we already paid for; a USDC.e-anchored swap
+ * wins over exchange-anchored ones (on-chain dollars beat a USDT ticker), and
+ * if none exist ETX USD stays `null` so downstream messages show "—".
  */
 function deriveEtxUsd(args: {
   swaps: { pair: `0x${string}`; blockNumber: bigint }[];
@@ -311,6 +313,7 @@ function deriveEtxUsd(args: {
   usdce?: `0x${string}`;
 }): UsdPricing {
   const { swaps, poolsByPair, anchors, etx, eti, wegaz, usdce } = args;
+  let exchangeAnchored: UsdPricing | null = null;
   for (const swap of swaps) {
     const pool = poolsByPair.get(`${swap.pair}@${swap.blockNumber.toString()}`);
     if (!pool) continue;
@@ -336,23 +339,34 @@ function deriveEtxUsd(args: {
 
     let etxInOther: number | null = null;
     let anchorUsd: number | null = null;
+    let other: string | null = null;
+    let otherUnits = 0;
     if (t0 === etxLc && anchorUsdFor(t1) !== null) {
       etxInOther = r1 / r0; // "other" per ETX
       anchorUsd = anchorUsdFor(t1);
+      other = t1;
+      otherUnits = r1;
     } else if (t1 === etxLc && anchorUsdFor(t0) !== null) {
       etxInOther = r0 / r1;
       anchorUsd = anchorUsdFor(t0);
+      other = t0;
+      otherUnits = r0;
     }
 
     if (etxInOther !== null && anchorUsd !== null) {
-      return {
+      const pricing: UsdPricing = {
         etxUsd: etxInOther * anchorUsd,
         etiUsd: anchors.etiUsd,
         egazUsd: anchors.egazUsd,
       };
+      if (other === usdceLc) {
+        if (otherUnits >= MIN_STABLE_ANCHOR_RESERVE) return pricing;
+        continue;
+      }
+      exchangeAnchored ??= pricing;
     }
   }
-  return { etxUsd: null, etiUsd: anchors.etiUsd, egazUsd: anchors.egazUsd };
+  return exchangeAnchored ?? { etxUsd: null, etiUsd: anchors.etiUsd, egazUsd: anchors.egazUsd };
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;

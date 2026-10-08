@@ -19,7 +19,7 @@
  */
 
 import { getAddress, type Address } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis, USDC_WARP_ROUTE } from '@etica-hub/shared';
 import {
   API_REVALIDATE_SECONDS,
   BURN_ADDRESS,
@@ -104,6 +104,7 @@ export async function GET(): Promise<Response> {
     etx: d.etx,
     eti: ext.eti,
     wegaz: d.wegaz,
+    usdce: USDC_WARP_ROUTE.syntheticToken,
     anchors,
   });
 

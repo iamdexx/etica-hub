@@ -1,11 +1,12 @@
 /**
  * Server-side market snapshot shared by the indexable /tokens and /pools
- * pages. One RPC round for reserves + one NonKYC call for the USD anchor,
+ * pages. One RPC round for reserves (the USDC.e/ETX pool is the USD anchor,
+ * NonKYC tickers only as fallback),
  * then everything else is derived in memory.
  */
 
 import { getAddress, isAddress, type Address } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, USDC_WARP_ROUTE } from '@etica-hub/shared';
 
 import { fetchUsdAnchors } from '@/lib/buybot/oracle';
 import { fetchAnchorEtxUsd } from '@/lib/buybot/scan';
@@ -144,6 +145,7 @@ export async function loadMarketSnapshot(): Promise<MarketSnapshot> {
     etx: d.etx,
     eti: ext.eti,
     wegaz: d.wegaz,
+    usdce: USDC_WARP_ROUTE.syntheticToken,
     anchors,
   }).catch(() => null);
 

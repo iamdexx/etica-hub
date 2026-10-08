@@ -79,13 +79,24 @@ async function fetchTokenMeta(client: PublicClient, address: Address): Promise<T
 }
 
 /**
- * Resolve ETX/USD via an on-chain anchor pool (ETX/EGAZ preferred, ETX/ETI
- * fallback). Reads reserves at `latest` so it's independent of which swaps
- * happened this cron cycle — guarantees we have a fresh ETX/USD any time
- * either anchor pool has liquidity + a known USDT anchor off NonKYC.
+ * Minimum USDC.e reserve for the USDC.e/ETX pool to act as the USD anchor.
+ * Below this the pool is trivially movable by a single trade, so the
+ * exchange-quoted anchors take over.
+ */
+export const MIN_STABLE_ANCHOR_RESERVE = 10;
+
+/**
+ * Resolve ETX/USD via an on-chain anchor pool. The USDC.e/ETX pool is the
+ * primary anchor: USDC.e is bridged Circle USDC, so the pool quotes ETX in
+ * dollars that settle on-chain without any exchange in the loop. ETX/EGAZ
+ * and ETX/ETI priced through NonKYC USDT tickers are fallbacks for when the
+ * stable pool is missing or too shallow (`MIN_STABLE_ANCHOR_RESERVE`).
+ * Reads reserves at `latest` so it's independent of which swaps happened
+ * this cron cycle.
  *
- * Returns `null` when no anchor pool has been created yet, both pools are
- * drained, or both NonKYC anchors are unreachable.
+ * Returns `null` when no anchor pool has been created yet, all pools are
+ * drained, or the stable pool is unusable and both NonKYC anchors are
+ * unreachable.
  */
 export async function fetchAnchorEtxUsd(
   client: PublicClient,
@@ -94,20 +105,22 @@ export async function fetchAnchorEtxUsd(
     etx: Address;
     eti: Address;
     wegaz: Address;
-    /** Dollar-pegged pool partner (USDC.e); used last because that pool is the shallowest. */
+    /** Dollar-pegged pool partner (USDC.e); the primary anchor when its pool is deep enough. */
     usdce?: Address;
     anchors?: { etiUsd: number | null; egazUsd: number | null };
   },
   fetchAnchors?: () => Promise<{ etiUsd: number | null; egazUsd: number | null }>,
 ): Promise<number | null> {
-  const anchors = args.anchors ?? (fetchAnchors ? await fetchAnchors() : null);
-  if (!anchors) return null;
-  const candidates: { other: Address; otherUsd: number | null }[] = [
-    { other: args.wegaz, otherUsd: anchors.egazUsd },
-    { other: args.eti, otherUsd: anchors.etiUsd },
-  ];
+  const candidates: { other: Address; otherUsd: number | null; minOtherUnits: number }[] = [];
   if (args.usdce && args.usdce !== ZERO_ADDRESS) {
-    candidates.push({ other: args.usdce, otherUsd: 1 });
+    candidates.push({ other: args.usdce, otherUsd: 1, minOtherUnits: MIN_STABLE_ANCHOR_RESERVE });
+  }
+  const anchors = args.anchors ?? (fetchAnchors ? await fetchAnchors() : null);
+  if (anchors) {
+    candidates.push(
+      { other: args.wegaz, otherUsd: anchors.egazUsd, minOtherUnits: 0 },
+      { other: args.eti, otherUsd: anchors.etiUsd, minOtherUnits: 0 },
+    );
   }
   for (const c of candidates) {
     if (c.otherUsd === null || c.otherUsd <= 0) continue;
@@ -152,6 +165,7 @@ export async function fetchAnchorEtxUsd(
       if (etxReserve === 0n || otherReserve === 0n) continue;
       const etxUnits = Number(etxReserve) / 10 ** etxDec;
       const otherUnits = Number(otherReserve) / 10 ** otherDec;
+      if (otherUnits < c.minOtherUnits) continue;
       return (otherUnits / etxUnits) * c.otherUsd;
     } catch {
       // Next candidate.
