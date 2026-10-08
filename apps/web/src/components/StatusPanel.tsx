@@ -6,7 +6,7 @@ import {
   abis,
   eticaMainnet,
 } from '@etica-hub/shared';
-import { fetchEgazNativeSupply } from '@/lib/buybot/oracle';
+import { fetchEgazNativeSupply, fetchEgazNativeSupplyFromChain } from '@/lib/buybot/oracle';
 import { failoverTransport } from '@/lib/rpc';
 
 /**
@@ -102,7 +102,7 @@ type Snapshot = {
   etiFrozen: bigint;
   /** WEGAZ ERC-20 totalSupply — only counts wrapped EGAZ, kept for context. */
   wegazTotalSupply: bigint;
-  /** Native EGAZ supply pulled from BlockScout, or null if unreachable. */
+  /** Native EGAZ supply from BlockScout, else the chain's emission floor minus frozen balances. */
   egazNativeSupply: bigint | null;
   treasuryIsTrustedCreator: boolean;
   eti_etx: { pair: Address; reserveEti: bigint; reserveEtx: bigint } | null;
@@ -220,7 +220,13 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
         functionName: 'getPair',
         args: [d.wegaz, d.etx],
       }) as Promise<Address>,
-      fetchEgazNativeSupply({ eticaStatsExplorerUrl: ETICA_STATS_EXPLORER_URL }),
+      fetchEgazNativeSupply({ eticaStatsExplorerUrl: ETICA_STATS_EXPLORER_URL }).then(
+        (supply) =>
+          supply ??
+          client
+            .getBlockNumber()
+            .then((head) => fetchEgazNativeSupplyFromChain(client, head, e.frozenHolders)),
+      ),
     ]);
 
     async function loadPool(

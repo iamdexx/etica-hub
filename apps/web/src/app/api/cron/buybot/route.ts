@@ -16,7 +16,7 @@
 
 import { NextRequest } from 'next/server';
 import { createPublicClient, getAddress, type Address, type PublicClient } from 'viem';
-import { DEPLOYMENTS, TREASURY_ADDRESS, eticaMainnet } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, TREASURY_ADDRESS, eticaMainnet } from '@etica-hub/shared';
 
 import { isVercelCron } from '@/lib/cron-auth';
 import { failoverTransport } from '@/lib/rpc';
@@ -24,6 +24,7 @@ import { loadBuyBotConfig, type BuyBotConfig } from '@/lib/buybot/config';
 import {
   fetchCirculatingExcludes,
   fetchEgazNativeSupply,
+  fetchEgazNativeSupplyFromChain,
   fetchUsdAnchors,
   type CirculatingExclusionEntry,
 } from '@/lib/buybot/oracle';
@@ -116,14 +117,15 @@ export async function GET(req: NextRequest): Promise<Response> {
     // automatically without changing the call shape.
     const exclusionRegistry = buildExclusionRegistry(config);
 
-    const [latestBlock, lastScanned, anchors, wegazNativeSupply, excludedSupplyByToken] =
+    const [latestBlock, lastScanned, anchors, explorerEgazSupply, excludedSupplyByToken] =
       await Promise.all([
         client.getBlockNumber(),
         readLastScannedBlock(kv, config),
         fetchUsdAnchors(config),
         // Pulled once per run from BlockScout's `coinsupply` endpoint so MC
         // reflects the chain's full native EGAZ supply, not just the wrapped
-        // ERC-20 slice. A null result falls back to `WEGAZ.totalSupply()`.
+        // ERC-20 slice. Falls back to the chain's own emission floor below;
+        // `WEGAZ.totalSupply()` is never used for MC.
         fetchEgazNativeSupply(config),
         // One `balanceOf` per (token, holder) pair, summed per token. Used
         // by `computeBuyReport` to quote circulating-supply MC instead of
@@ -133,6 +135,17 @@ export async function GET(req: NextRequest): Promise<Response> {
       ]);
 
     const hideMcForTokens = buildHideMcSet(config);
+    const wegazNativeSupply =
+      explorerEgazSupply ??
+      (await fetchEgazNativeSupplyFromChain(
+        client,
+        latestBlock,
+        EXTERNAL_ADDRESSES[config.chainId as keyof typeof EXTERNAL_ADDRESSES]?.frozenHolders ?? [],
+      ));
+    const stableUsdByToken =
+      config.usdce !== ZERO_ADDRESS
+        ? new Map<Address, number>([[getAddress(config.usdce), 1]])
+        : undefined;
 
     // Resolve ETX/USD independently of which swaps happen this cycle by
     // reading reserves on the ETX/EGAZ (preferred) or ETX/ETI anchor pool
@@ -143,6 +156,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       etx: config.etx,
       eti: config.eti,
       wegaz: config.wegaz,
+      usdce: config.usdce,
       anchors,
     });
 
@@ -187,8 +201,9 @@ export async function GET(req: NextRequest): Promise<Response> {
             etx: config.etx,
             eti: config.eti,
             wegaz: config.wegaz,
+            usdce: config.usdce,
           });
-    const pricing: UsdPricing = derived;
+    const pricing: UsdPricing = { ...derived, stableUsdByToken };
 
     const telegram = telegramClient(config.telegramBotToken, config.telegramChatId);
 
@@ -281,8 +296,8 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 /**
- * Resolve ETX/USD from the first pool snapshot that pairs ETX with ETI or
- * WEGAZ. We only anchor USD via pools we *actually saw a swap on* this run
+ * Resolve ETX/USD from the first pool snapshot that pairs ETX with ETI,
+ * WEGAZ or USDC.e. We only anchor USD via pools we *actually saw a swap on* this run
  * because those are the snapshots we already paid for; if none exist, ETX
  * USD stays `null` and downstream messages fall back to showing "—".
  */
@@ -293,8 +308,9 @@ function deriveEtxUsd(args: {
   etx: `0x${string}`;
   eti: `0x${string}`;
   wegaz: `0x${string}`;
+  usdce?: `0x${string}`;
 }): UsdPricing {
-  const { swaps, poolsByPair, anchors, etx, eti, wegaz } = args;
+  const { swaps, poolsByPair, anchors, etx, eti, wegaz, usdce } = args;
   for (const swap of swaps) {
     const pool = poolsByPair.get(`${swap.pair}@${swap.blockNumber.toString()}`);
     if (!pool) continue;
@@ -303,6 +319,15 @@ function deriveEtxUsd(args: {
     const etxLc = etx.toLowerCase();
     const etiLc = eti.toLowerCase();
     const wegazLc = wegaz.toLowerCase();
+    const usdceLc = usdce && usdce !== ZERO_ADDRESS ? usdce.toLowerCase() : null;
+    const anchorUsdFor = (other: string): number | null =>
+      other === etiLc
+        ? anchors.etiUsd
+        : other === wegazLc
+          ? anchors.egazUsd
+          : other === usdceLc
+            ? 1
+            : null;
 
     // Figure out which side is ETX and which is the anchor asset.
     const r0 = Number(pool.reserve0After) / 10 ** pool.token0.decimals;
@@ -311,12 +336,12 @@ function deriveEtxUsd(args: {
 
     let etxInOther: number | null = null;
     let anchorUsd: number | null = null;
-    if (t0 === etxLc && (t1 === etiLc || t1 === wegazLc)) {
+    if (t0 === etxLc && anchorUsdFor(t1) !== null) {
       etxInOther = r1 / r0; // "other" per ETX
-      anchorUsd = t1 === etiLc ? anchors.etiUsd : anchors.egazUsd;
-    } else if (t1 === etxLc && (t0 === etiLc || t0 === wegazLc)) {
+      anchorUsd = anchorUsdFor(t1);
+    } else if (t1 === etxLc && anchorUsdFor(t0) !== null) {
       etxInOther = r0 / r1;
-      anchorUsd = t0 === etiLc ? anchors.etiUsd : anchors.egazUsd;
+      anchorUsd = anchorUsdFor(t0);
     }
 
     if (etxInOther !== null && anchorUsd !== null) {
@@ -389,14 +414,15 @@ function buildExclusionRegistry(config: BuyBotConfig): CirculatingExclusionEntry
  * Tokens whose MC line should be hidden in buy-bot posts because their
  * `price × totalSupply` simply reproduces the underlying asset's MC.
  *
- * Today only stETX qualifies: every stETX share is 1 ETX-at-NAV that
- * `ETX.totalSupply()` already accounts for. Showing it would
- * double-count on cross-token totals and confuse readers tallying
- * protocol-wide MC.
+ * stETX: every share is 1 ETX-at-NAV that `ETX.totalSupply()` already
+ * accounts for, so its MC would double-count on cross-token totals.
+ * USDC.e: a 1:1 bridged stable whose "MC" is just the USDC locked in the
+ * Ethereum router, not a market valuation.
  */
 function buildHideMcSet(config: BuyBotConfig): Set<Address> {
   const d = deploymentsFor(config);
   const out = new Set<Address>();
   if (d.stakedETX !== ZERO_ADDRESS) out.add(getAddress(d.stakedETX));
+  if (config.usdce !== ZERO_ADDRESS) out.add(getAddress(config.usdce));
   return out;
 }

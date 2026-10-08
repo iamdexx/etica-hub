@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fetchEgazNativeSupply } from '../src/lib/buybot/oracle';
+import { fetchEgazNativeSupply, fetchEgazNativeSupplyFromChain } from '../src/lib/buybot/oracle';
+import type { PublicClient } from 'viem';
 
 const config = { eticaStatsExplorerUrl: 'http://explorer.etica-stats.org' } as const;
 
@@ -65,5 +66,37 @@ describe('fetchEgazNativeSupply', () => {
     });
     await fetchEgazNativeSupply({ eticaStatsExplorerUrl: 'http://explorer.etica-stats.org/' }, f);
     expect(observedUrl).toBe('http://explorer.etica-stats.org/api?module=stats&action=coinsupply');
+  });
+});
+
+describe('fetchEgazNativeSupplyFromChain', () => {
+  const frozen = [
+    {
+      address: '0x1111111111111111111111111111111111111111' as const,
+      label: 'Xeggex',
+    },
+  ];
+
+  it('derives native supply from the 2 EGAZ/block emission floor minus frozen balances', async () => {
+    const client = {
+      getBalance: vi.fn(async () => 1_000n * 10n ** 18n),
+    } as unknown as PublicClient;
+    const out = await fetchEgazNativeSupplyFromChain(client, 10_000_000n, frozen);
+    expect(out).toBe((20_000_000n - 1_000n) * 10n ** 18n);
+    expect(client.getBalance).toHaveBeenCalledWith({ address: frozen[0].address });
+  });
+
+  it('returns null at genesis (nothing emitted yet)', async () => {
+    const client = { getBalance: vi.fn(async () => 0n) } as unknown as PublicClient;
+    expect(await fetchEgazNativeSupplyFromChain(client, 0n, [])).toBeNull();
+  });
+
+  it('ignores a failing balance read instead of throwing', async () => {
+    const client = {
+      getBalance: vi.fn(async () => {
+        throw new Error('rpc down');
+      }),
+    } as unknown as PublicClient;
+    expect(await fetchEgazNativeSupplyFromChain(client, 5n, frozen)).toBe(10n * 10n ** 18n);
   });
 });

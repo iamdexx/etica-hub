@@ -94,9 +94,19 @@ function emojiForSymbol(symbol: string): string {
     case 'EGAZ':
     case 'WEGAZ':
       return '⛽';
+    case 'USDC.E':
+      return '💵';
     default:
       return '🪙';
   }
+}
+
+/**
+ * The symbol readers see. WEGAZ is only the ERC-20 wrapper the pool trades
+ * through; the asset being bought/sold and capitalised is native EGAZ.
+ */
+export function displaySymbol(symbol: string): string {
+  return symbol.toUpperCase() === 'WEGAZ' ? 'EGAZ' : symbol;
 }
 
 export function formatBuy({
@@ -107,8 +117,8 @@ export function formatBuy({
   explorerBaseUrl,
 }: FormatInputs): FormattedBuy {
   const sym = {
-    bought: escapeHtml(decoded.bought.symbol),
-    spent: escapeHtml(decoded.spent.symbol),
+    bought: escapeHtml(displaySymbol(decoded.bought.symbol)),
+    spent: escapeHtml(displaySymbol(decoded.spent.symbol)),
   };
   const emoji = emojiForSymbol(decoded.bought.symbol);
   const priceLineUsd =

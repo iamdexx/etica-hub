@@ -125,6 +125,11 @@ export interface UsdPricing {
   etxUsd: number | null;
   etiUsd: number | null;
   egazUsd: number | null;
+  /**
+   * Fixed USD quotes for tokens that are themselves dollar-pegged (USDC.e
+   * bridged 1:1 from Circle USDC). Keys are checksummed addresses.
+   */
+  stableUsdByToken?: Map<Address, number>;
 }
 
 /** Resolve any `TokenMeta` to a USD price given an anchored {@link UsdPricing}. */
@@ -139,6 +144,8 @@ export function usdPriceOf(
   if (a === getAddress(etx)) return pricing.etxUsd ?? null;
   if (a === getAddress(eti)) return pricing.etiUsd ?? null;
   if (a === getAddress(wegaz)) return pricing.egazUsd ?? null;
+  const stable = pricing.stableUsdByToken?.get(a);
+  if (stable !== undefined && stable > 0) return stable;
   // Launchpad tokens don't have a direct USD anchor; price them via ETX.
   return null;
 }
@@ -147,9 +154,10 @@ export function usdPriceOf(
  * Optional overrides used when a token's on-chain `totalSupply()` doesn't
  * reflect the asset's true economic supply.
  *
- * `wegazNativeSupply` swaps in the chain's native EGAZ supply (read from
- * the BlockScout `coinsupply` endpoint) because the WEGAZ ERC-20 only
- * counts the wrapped slice (~10% of native supply at time of writing).
+ * `wegazNativeSupply` swaps in the chain's native EGAZ supply because the
+ * WEGAZ ERC-20 only counts the wrapped slice (~10% of native supply at time
+ * of writing). Without it the WEGAZ MC is not computed at all: the wrapped
+ * slice is not EGAZ's market cap and quoting it would mislead.
  *
  * `excludedSupplyByToken` removes non-circulating balances from MC math
  * to match the convention aggregators use: subtract the sum of treasury
@@ -208,19 +216,15 @@ export function computeBuyReport(
         ? amountBought * boughtUsd
         : null;
 
-  // For WEGAZ specifically, swap in the native EGAZ supply (when available)
-  // so MC reflects the chain's actual economy rather than just the wrapped
-  // ERC-20 slice. Falls back to the on-chain totalSupply if the override
-  // is missing or zero.
+  // For WEGAZ the MC is the native EGAZ economy, so it needs the native
+  // supply; the wrapped ERC-20 totalSupply is never a substitute.
   const wegazLc = getAddress(wegaz).toLowerCase();
-  const supplyFor = (token: TokenMeta): bigint => {
+  const supplyFor = (token: TokenMeta): bigint | null => {
     let supply: bigint;
-    if (
-      supplyOverrides.wegazNativeSupply &&
-      supplyOverrides.wegazNativeSupply > 0n &&
-      getAddress(token.address).toLowerCase() === wegazLc
-    ) {
-      supply = supplyOverrides.wegazNativeSupply;
+    if (getAddress(token.address).toLowerCase() === wegazLc) {
+      const native = supplyOverrides.wegazNativeSupply;
+      if (!native || native <= 0n) return null;
+      supply = native;
     } else {
       supply = token.totalSupply;
     }
@@ -238,14 +242,13 @@ export function computeBuyReport(
   const hideMc = supplyOverrides.hideMcForTokens;
   const isHidden = (token: TokenMeta) => hideMc?.has(getAddress(token.address)) ?? false;
 
-  const mcBoughtUsd =
-    boughtUsd !== null && !isHidden(decoded.bought)
-      ? boughtUsd * toUnits(supplyFor(decoded.bought), decoded.bought.decimals)
-      : null;
-  const mcSpentUsd =
-    spentUsd !== null && !isHidden(decoded.spent)
-      ? spentUsd * toUnits(supplyFor(decoded.spent), decoded.spent.decimals)
-      : null;
+  const mcFor = (token: TokenMeta, usd: number | null): number | null => {
+    if (usd === null || isHidden(token)) return null;
+    const supply = supplyFor(token);
+    return supply === null ? null : usd * toUnits(supply, token.decimals);
+  };
+  const mcBoughtUsd = mcFor(decoded.bought, boughtUsd);
+  const mcSpentUsd = mcFor(decoded.spent, spentUsd);
 
   return {
     amountBought,
