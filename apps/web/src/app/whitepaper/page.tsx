@@ -4,8 +4,22 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { resolveWhitepaperHref } from '@/lib/whitepaperLinks';
 
 const markdownComponents: Components = {
+  a: ({ node: _node, href, children }) => {
+    const resolved = resolveWhitepaperHref(href);
+    const external = resolved !== undefined && /^https?:/i.test(resolved);
+    return (
+      <a
+        href={resolved}
+        target={external ? '_blank' : undefined}
+        rel={external ? 'noopener noreferrer' : undefined}
+      >
+        {children}
+      </a>
+    );
+  },
   table: ({ node: _node, children }) => (
     <div className="not-prose -mx-4 my-4 overflow-x-auto px-4 md:mx-0 md:px-0">
       <table className="w-full min-w-[640px] border-collapse text-sm [&_td]:border [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_th]:border [&_th]:border-white/10 [&_th]:bg-white/5 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left">
@@ -30,7 +44,7 @@ const markdownComponents: Components = {
 export const metadata: Metadata = {
   title: 'Whitepaper — EticaHub',
   description:
-    'EticaHub v1 whitepaper: ETX token, hub-and-spoke DEX, launch parameters, governance, and independence from the Etica Protocol core team.',
+    'EticaHub whitepaper: ETX, the hub-and-spoke EticaSwap DEX, the USDC bridge (USDC.e), stETX staking, the Treasury Harvester, EticaLabs and research markets, governance, and independence from the Etica Protocol core team.',
 };
 
 function loadWhitepaper(): string {
@@ -39,9 +53,9 @@ function loadWhitepaper(): string {
 }
 
 const PAPER_STATS = [
-  ['Version', 'Bridge Stack v1.3'],
+  ['Version', '2.1 · Oct 2026'],
   ['Architecture', 'Hub-and-spoke'],
-  ['Exchange', 'EticaSwap'],
+  ['Bridge', 'USDC ⇄ USDC.e live'],
   ['Governance', 'Community-built'],
 ];
 
@@ -57,14 +71,14 @@ export default function WhitepaperPage() {
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-wider text-white/70">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/70" />
-              Product Specification Terminal · v1.3
+              Product Specification Terminal · v2.1
             </div>
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">
                 EticaHub Whitepaper
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                The full specification for ETX, EticaSwap v1, staking, farms, bridge mechanics, governance assumptions, launch parameters, and the project’s independence from the Etica Protocol core team.
+                The full specification for ETX, EticaSwap, the live USDC bridge, stETX staking, the Treasury Harvester, EticaLabs, research markets, governance, and the project’s independence from the Etica Protocol core team.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">

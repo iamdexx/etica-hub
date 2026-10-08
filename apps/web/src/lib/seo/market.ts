@@ -23,7 +23,7 @@ import {
 
 const MAINNET_CHAIN_ID = 61803;
 
-export const TOKEN_IDS = ['etx', 'eti', 'egaz', 'wegaz', 'stetx'] as const;
+export const TOKEN_IDS = ['etx', 'eti', 'egaz', 'wegaz', 'stetx', 'usdce'] as const;
 export type TokenId = (typeof TOKEN_IDS)[number];
 
 export function isTokenId(id: string): id is TokenId {
@@ -45,7 +45,7 @@ export const TOKEN_COPY: Record<TokenId, { tagline: string; about: string }> = {
   egaz: {
     tagline: 'Etica mainnet gas coin',
     about:
-      'EGAZ is the native coin of the Etica blockchain (chain id 61803), used to pay for gas. It can be wrapped 1:1 into WEGAZ to trade on EticaSwap or bridged via the EticaHub bridge.',
+      'EGAZ is the native coin of the Etica blockchain (chain id 61803), used to pay for gas. It can be wrapped 1:1 into WEGAZ to trade on EticaSwap, and the bridge keeper drops 2 EGAZ to first-time USDC.e recipients so they can transact.',
   },
   wegaz: {
     tagline: 'Wrapped Etica gas',
@@ -56,6 +56,11 @@ export const TOKEN_COPY: Record<TokenId, { tagline: string; about: string }> = {
     tagline: 'Staked ETX (ERC-4626)',
     about:
       'stETX is the yield-bearing ERC-4626 share token you receive when staking ETX on EticaHub. Its ETX redemption value rises as protocol revenue is harvested into the vault; it also trades against ETX in a low-slippage stableswap.',
+  },
+  usdce: {
+    tagline: 'Bridged USDC (Hyperlane)',
+    about:
+      'USDC.e is Circle USDC bridged from Ethereum to Etica over the EticaHub Hyperlane route. Every USDC.e is backed 1:1 by USDC locked in the collateral router on Ethereum and can be redeemed back at any time; on Etica it trades against ETX in a pool whose liquidity is permanently burned.',
   },
 };
 

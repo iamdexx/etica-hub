@@ -3,7 +3,7 @@ import { createConfig, type CreateConnectorFn } from 'wagmi';
 import { injected, walletConnect } from 'wagmi/connectors';
 import { mainnet } from 'wagmi/chains';
 import { eticaMainnet, eticaLocalFork } from '@etica-hub/shared/chains';
-import { ETHEREUM_PUBLIC_RPCS } from '@/lib/bridge/ethereum-rpcs';
+import { ETHEREUM_BROWSER_RPCS } from '@/lib/bridge/ethereum-rpcs';
 
 /**
  * Single source of truth for the wallet/RPC config.
@@ -73,7 +73,7 @@ export const wagmiConfig = createConfig({
       { rank: true },
     ),
     [mainnet.id]: fallback(
-      ETHEREUM_PUBLIC_RPCS.map((url) => http(url, { timeout: 8_000, retryCount: 1 })),
+      ETHEREUM_BROWSER_RPCS.map((url) => http(url, { timeout: 8_000, retryCount: 1 })),
       { rank: true },
     ),
     [eticaLocalFork.id]: http(),

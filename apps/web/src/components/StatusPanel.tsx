@@ -7,6 +7,7 @@ import {
   eticaMainnet,
 } from '@etica-hub/shared';
 import { fetchEgazNativeSupply } from '@/lib/buybot/oracle';
+import { failoverTransport } from '@/lib/rpc';
 
 /**
  * BlockScout-compatible explorer used to read native EGAZ total supply.
@@ -97,6 +98,8 @@ type Snapshot = {
   etxTreasuryBalance: bigint;
   etiTotalSupply: bigint;
   etiBurned: bigint;
+  /** ETI sitting in frozen holders (Xeggex) — can never move again, so excluded from circulating. */
+  etiFrozen: bigint;
   /** WEGAZ ERC-20 totalSupply — only counts wrapped EGAZ, kept for context. */
   wegazTotalSupply: bigint;
   /** Native EGAZ supply pulled from BlockScout, or null if unreachable. */
@@ -113,7 +116,7 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
   if (d.swapFactory === ZERO || d.etx === ZERO) {
     return { error: 'Mainnet addresses not wired into shared package.' };
   }
-  const client = createPublicClient({ chain: eticaMainnet, transport: http() });
+  const client = createPublicClient({ chain: eticaMainnet, transport: failoverTransport(eticaMainnet) });
 
   try {
     const [
@@ -126,6 +129,7 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
       etxTreasuryBalance,
       etiTotalSupply,
       etiBurned,
+      etiFrozenBalances,
       wegazTotalSupply,
       treasuryTrusted,
       etiEtxPair,
@@ -180,6 +184,19 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
         functionName: 'balanceOf',
         args: [BURN_ADDRESS],
       }) as Promise<bigint>,
+      Promise.all(
+        e.frozenHolders.map(
+          (h) =>
+            client
+              .readContract({
+                abi: abis.erc20Abi,
+                address: e.eti,
+                functionName: 'balanceOf',
+                args: [h.address],
+              })
+              .catch(() => 0n) as Promise<bigint>,
+        ),
+      ),
       client.readContract({
         abi: abis.erc20Abi,
         address: d.wegaz,
@@ -310,6 +327,7 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
       etxTreasuryBalance,
       etiTotalSupply,
       etiBurned,
+      etiFrozen: etiFrozenBalances.reduce((acc, b) => acc + b, 0n),
       wegazTotalSupply,
       egazNativeSupply,
       treasuryIsTrustedCreator: treasuryTrusted,
@@ -409,8 +427,8 @@ export async function StatusPanel() {
               k="circulating"
               v={`${Number(
                 formatUnits(
-                  snap.etiTotalSupply > snap.etiBurned
-                    ? snap.etiTotalSupply - snap.etiBurned
+                  snap.etiTotalSupply > snap.etiBurned + snap.etiFrozen
+                    ? snap.etiTotalSupply - snap.etiBurned - snap.etiFrozen
                     : 0n,
                   18,
                 ),
@@ -419,6 +437,10 @@ export async function StatusPanel() {
             <KV
               k="burned"
               v={`${Number(formatUnits(snap.etiBurned, 18)).toLocaleString()} ETI`}
+            />
+            <KV
+              k="frozen (Xeggex)"
+              v={`${Number(formatUnits(snap.etiFrozen, 18)).toLocaleString()} ETI`}
             />
           </Section>
 

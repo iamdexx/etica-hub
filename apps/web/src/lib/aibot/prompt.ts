@@ -122,13 +122,13 @@ Etica Protocol (Layer 1 — the chain):
 EticaHub (Layer 2 — community application layer, this site):
   - https://eticahub.com           — home; one-screen tour of every EticaHub surface.
   - https://eticahub.com/whitepaper — EticaHub design doc (ETX tokenomics, hub-and-spoke rules, harvester split, independence statement, deferred features).
-  - https://eticahub.com/swap      — EticaSwap V2 (swap EGAZ, ETI, ETX, stETX through ETX hub).
+  - https://eticahub.com/swap      — EticaSwap V2 (swap EGAZ, ETI, ETX, stETX, USDC.e through ETX hub).
   - https://eticahub.com/pool      — add/remove liquidity, view positions including farm-staked LP.
   - https://eticahub.com/stake     — stETX vault: deposit ETX, get stETX, ERC-4626 auto-compounding.
   - https://eticahub.com/farms     — LP farms: stETX/ETX, EGAZ/ETX, ETI/ETX with weighted ETX emissions.
   - https://eticahub.com/trade     — trading stack: limit, stop, DCA, bounded grid, Infinity Bot (UniswapX + Permit2).
   - https://eticahub.com/research  — research hub: read on-chain proposals, render IPFS content, tip authors in ETI.
-  - https://eticahub.com/bridge    — ETI ↔ Ethereum bridge (lock ETI, mint wETI on Ethereum). Contracts deployed; activation is gated on demand and audit posture.
+  - https://eticahub.com/bridge    — USDC ⇄ USDC.e bridge (Ethereum ↔ Etica over Hyperlane; 0.5% fee capped at 50, 5,000 USDC/day release cap, 2 EGAZ gas drop for new recipients). Live.
   - https://eticahub.com/status    — live protocol metrics: TVL, volume, harvest runs, lifetime revenue, liquidity flow, addresses.
   - https://eticahub.com/api       — public market-data API (TVL, OHLCV, pools, supply, revenue, etc.) for aggregators and integrators.
   - https://eticahub.com/explorer  — skinny on-chain explorer with Sourcify-backed contract verification.

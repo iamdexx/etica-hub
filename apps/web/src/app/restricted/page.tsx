@@ -109,7 +109,7 @@ export default function RestrictedPage({
             <Link href="/bridge" className="text-brand-accent hover:underline">
               /bridge
             </Link>{' '}
-            — cross-chain ETX bridge (Etica ↔ Ethereum, BNB).
+            — USDC ⇄ USDC.e bridge (Ethereum ↔ Etica over Hyperlane).
           </li>
           <li>
             <Link
