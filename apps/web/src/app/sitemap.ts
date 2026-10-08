@@ -1,6 +1,8 @@
 import type { MetadataRoute } from 'next';
 import { getAddress } from 'viem';
 
+import { DEPLOYMENTS } from '@etica-hub/shared';
+
 import { listArchive } from '@/lib/labs/archive';
 import { fetchAllPairs } from '@/lib/priceApi';
 import { diseasePath, listDiseases } from '@/lib/seo/labs';
@@ -10,7 +12,9 @@ import { absoluteUrl } from '@/lib/site';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const STATIC_ROUTES: Array<[path: string, priority: number, freq: MetadataRoute.Sitemap[number]['changeFrequency']]> = [
+const STATIC_ROUTES: Array<
+  [path: string, priority: number, freq: MetadataRoute.Sitemap[number]['changeFrequency']]
+> = [
   ['/', 1, 'daily'],
   ['/swap', 0.8, 'weekly'],
   ['/pool', 0.7, 'weekly'],
@@ -44,7 +48,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }));
 
   for (const id of TOKEN_IDS) {
-    entries.push({ url: absoluteUrl(`/tokens/${id}`), lastModified: now, changeFrequency: 'hourly', priority: 0.7 });
+    entries.push({
+      url: absoluteUrl(`/tokens/${id}`),
+      lastModified: now,
+      changeFrequency: 'hourly',
+      priority: 0.7,
+    });
   }
 
   try {
@@ -57,6 +66,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         priority: 0.7,
       });
     }
+    const stableSwap = DEPLOYMENTS[61803]?.eticaStableSwap;
+    if (stableSwap && stableSwap !== '0x0000000000000000000000000000000000000000') {
+      entries.push({
+        url: absoluteUrl(`/pools/${getAddress(stableSwap)}`),
+        lastModified: now,
+        changeFrequency: 'hourly',
+        priority: 0.7,
+      });
+    }
   } catch (err) {
     console.error('[sitemap] pair listing failed:', err instanceof Error ? err.message : err);
   }
@@ -64,7 +82,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const diseases = await listDiseases();
     for (const d of diseases) {
-      entries.push({ url: absoluteUrl(diseasePath(d.slug)), lastModified: now, changeFrequency: 'daily', priority: 0.7 });
+      entries.push({
+        url: absoluteUrl(diseasePath(d.slug)),
+        lastModified: now,
+        changeFrequency: 'daily',
+        priority: 0.7,
+      });
     }
   } catch (err) {
     console.error('[sitemap] disease listing failed:', err instanceof Error ? err.message : err);

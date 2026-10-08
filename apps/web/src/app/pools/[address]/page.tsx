@@ -16,6 +16,7 @@ import {
   fmtUsd,
   findPool,
   loadMarketSnapshot,
+  poolKindLabel,
   poolName,
   poolPath,
   tokenPath,
@@ -55,7 +56,11 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
   const p = findPool(snapshot, address);
   if (!p) notFound();
 
-  const volume = await loadPairVolume(p.address, VOLUME_WINDOW_24H_SECONDS).catch(() => null);
+  const isV2 = p.kind === 'v2';
+  const volume = isV2
+    ? await loadPairVolume(p.address, VOLUME_WINDOW_24H_SECONDS).catch(() => null)
+    : null;
+  const jsonUrl = absoluteUrl(isV2 ? `/api/v1/pairs/${p.address}` : '/api/v1/tvl');
   const name = poolName(p);
   const url = absoluteUrl(poolPath(p));
   const vol0 = volume ? Number(volume.summary.volume0) / 10 ** p.token0.decimals : null;
@@ -74,19 +79,27 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
     distribution: {
       '@type': 'DataDownload',
       encodingFormat: 'application/json',
-      contentUrl: absoluteUrl(`/api/v1/pairs/${p.address}`),
+      contentUrl: jsonUrl,
     },
     variableMeasured: [
       { '@type': 'PropertyValue', name: `${p.token0.symbol} reserve`, value: p.reserve0 },
       { '@type': 'PropertyValue', name: `${p.token1.symbol} reserve`, value: p.reserve1 },
-      ...(p.tvlUsd !== null ? [{ '@type': 'PropertyValue', name: 'TVL', value: p.tvlUsd, unitCode: 'USD' }] : []),
+      ...(p.tvlUsd !== null
+        ? [{ '@type': 'PropertyValue', name: 'TVL', value: p.tvlUsd, unitCode: 'USD' }]
+        : []),
     ],
   };
 
   return (
     <article className="mx-auto max-w-4xl space-y-6">
       <JsonLd data={jsonLd} />
-      <JsonLd data={breadcrumbJsonLd([['EticaHub', '/'], ['Pools', '/pools'], [name, poolPath(p)]])} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          ['EticaHub', '/'],
+          ['Pools', '/pools'],
+          [name, poolPath(p)],
+        ])}
+      />
 
       <nav className="text-xs text-white/45">
         <Link href="/pools" className="hover:text-white/80">
@@ -97,11 +110,13 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
       </nav>
 
       <header className="space-y-2">
-        <p className="text-[11px] uppercase tracking-wider text-white/45">EticaSwap V2 pool · Etica mainnet</p>
+        <p className="text-[11px] uppercase tracking-wider text-white/45">
+          EticaSwap {poolKindLabel(p)} pool · Etica mainnet
+        </p>
         <h1 className="text-2xl font-semibold text-white/95">{name}</h1>
         <p className="font-mono text-xs text-white/50">{p.address}</p>
         <p className="text-sm text-white/65">
-          Constant-product pool between{' '}
+          {isV2 ? 'Constant-product pool between' : 'Rate-aware stableswap between'}{' '}
           <Link href={tokenPath(p.token0)} className="text-emerald-200/80 hover:text-emerald-200">
             {p.token0.name}
           </Link>{' '}
@@ -109,14 +124,27 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
           <Link href={tokenPath(p.token1)} className="text-emerald-200/80 hover:text-emerald-200">
             {p.token1.name}
           </Link>
-          . Liquidity providers earn the swap fee on every trade routed through this pair.
+          .{' '}
+          {isV2
+            ? 'Liquidity providers earn the swap fee on every trade routed through this pair.'
+            : 'The curve tracks the live stETX redemption rate, so the quoted price is the vault NAV and both legs are valued in ETX-equivalent terms.'}
         </p>
       </header>
 
       <section className="grid gap-4 sm:grid-cols-3">
-        <Stat label="TVL" value={fmtUsd(p.tvlUsd)} sub={p.tvlEtx !== null ? `${fmtNum(p.tvlEtx)} ETX` : undefined} />
-        <Stat label={`1 ${p.token0.symbol} =`} value={`${fmtNum(p.price0In1, 6)} ${p.token1.symbol}`} />
-        <Stat label={`1 ${p.token1.symbol} =`} value={`${fmtNum(p.price1In0, 6)} ${p.token0.symbol}`} />
+        <Stat
+          label="TVL"
+          value={fmtUsd(p.tvlUsd)}
+          sub={p.tvlEtx !== null ? `${fmtNum(p.tvlEtx)} ETX` : undefined}
+        />
+        <Stat
+          label={`1 ${p.token0.symbol} =`}
+          value={`${fmtNum(p.price0In1, 6)} ${p.token1.symbol}`}
+        />
+        <Stat
+          label={`1 ${p.token1.symbol} =`}
+          value={`${fmtNum(p.price1In0, 6)} ${p.token0.symbol}`}
+        />
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2">
@@ -125,7 +153,12 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
             <Row k={p.token0.symbol} v={fmtNum(p.reserve0, 4)} />
             <Row k={p.token1.symbol} v={fmtNum(p.reserve1, 4)} />
             <Row k="LP token supply" v={fmtNum(p.lpSupply, 4)} />
-            <Row k="Last sync" v={new Date(p.lastSyncTs * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'} />
+            <Row
+              k={isV2 ? 'Last sync' : 'Snapshot'}
+              v={
+                new Date(p.lastSyncTs * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
+              }
+            />
           </dl>
         </Card>
         <Card label="24h volume">
@@ -134,10 +167,15 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
               <Row k={p.token0.symbol} v={fmtNum(vol0, 4)} />
               <Row k={p.token1.symbol} v={fmtNum(vol1, 4)} />
               <Row k="Swaps" v={String(volume.summary.swapCount)} />
-              <Row k="Blocks scanned" v={`${volume.fromBlock.toString()} – ${volume.toBlock.toString()}`} />
+              <Row
+                k="Blocks scanned"
+                v={`${volume.fromBlock.toString()} – ${volume.toBlock.toString()}`}
+              />
             </dl>
           ) : (
-            <p className="text-xs text-white/50">Volume scan unavailable.</p>
+            <p className="text-xs text-white/50">
+              {isV2 ? 'Volume scan unavailable.' : 'Not tracked for the stableswap yet.'}
+            </p>
           )}
         </Card>
       </section>
@@ -149,13 +187,13 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
         <Link href="/pool" className="text-emerald-200/80 hover:text-emerald-200">
           Add liquidity →
         </Link>
-        <Link href={`/explorer/address/${p.address}`} className="text-emerald-200/80 hover:text-emerald-200">
+        <Link
+          href={`/explorer/address/${p.address}`}
+          className="text-emerald-200/80 hover:text-emerald-200"
+        >
           Pool contract →
         </Link>
-        <a
-          href={absoluteUrl(`/api/v1/pairs/${p.address}`)}
-          className="ml-auto text-white/40 hover:text-white/70"
-        >
+        <a href={jsonUrl} className="ml-auto text-white/40 hover:text-white/70">
           JSON
         </a>
       </footer>

@@ -8,7 +8,15 @@ import Link from 'next/link';
 
 import { JsonLd } from '@/components/JsonLd';
 import { breadcrumbJsonLd } from '@/lib/seo/jsonld';
-import { fmtNum, fmtUsd, loadMarketSnapshot, poolName, poolPath, tokenPath } from '@/lib/seo/market';
+import {
+  fmtNum,
+  fmtUsd,
+  loadMarketSnapshot,
+  poolKindLabel,
+  poolName,
+  poolPath,
+  tokenPath,
+} from '@/lib/seo/market';
 import { absoluteUrl } from '@/lib/site';
 
 export const runtime = 'nodejs';
@@ -22,7 +30,12 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: absoluteUrl('/pools') },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: absoluteUrl('/pools'), type: 'website' },
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: absoluteUrl('/pools'),
+    type: 'website',
+  },
 };
 
 export default async function PoolsPage(): Promise<JSX.Element> {
@@ -44,7 +57,12 @@ export default async function PoolsPage(): Promise<JSX.Element> {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <JsonLd data={itemList} />
-      <JsonLd data={breadcrumbJsonLd([['EticaHub', '/'], ['Pools', '/pools']])} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          ['EticaHub', '/'],
+          ['Pools', '/pools'],
+        ])}
+      />
 
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold text-white/95">EticaSwap liquidity pools</h1>
@@ -69,10 +87,15 @@ export default async function PoolsPage(): Promise<JSX.Element> {
             {snapshot.pools.map((p) => (
               <tr key={p.address} className="border-t border-white/5">
                 <td className="px-4 py-3">
-                  <Link href={poolPath(p)} className="font-medium text-white hover:text-emerald-200">
+                  <Link
+                    href={poolPath(p)}
+                    className="font-medium text-white hover:text-emerald-200"
+                  >
                     {poolName(p)}
                   </Link>
-                  <div className="font-mono text-[11px] text-white/40">{p.address}</div>
+                  <div className="font-mono text-[11px] text-white/40">
+                    {p.address} · {poolKindLabel(p)}
+                  </div>
                 </td>
                 <td className="px-4 py-3 font-mono text-xs">
                   {fmtNum(p.reserve0)}{' '}
@@ -96,9 +119,17 @@ export default async function PoolsPage(): Promise<JSX.Element> {
       </div>
 
       <p className="text-xs text-white/45">
-        <Link href="/pool" className="text-emerald-200/80 hover:text-emerald-200">Add liquidity</Link> ·{' '}
-        <Link href="/farms" className="text-emerald-200/80 hover:text-emerald-200">Farm LP tokens</Link> ·{' '}
-        <Link href="/tokens" className="text-emerald-200/80 hover:text-emerald-200">All tokens</Link>
+        <Link href="/pool" className="text-emerald-200/80 hover:text-emerald-200">
+          Add liquidity
+        </Link>{' '}
+        ·{' '}
+        <Link href="/farms" className="text-emerald-200/80 hover:text-emerald-200">
+          Farm LP tokens
+        </Link>{' '}
+        ·{' '}
+        <Link href="/tokens" className="text-emerald-200/80 hover:text-emerald-200">
+          All tokens
+        </Link>
       </p>
     </div>
   );
