@@ -5,8 +5,8 @@
  * then everything else is derived in memory.
  */
 
-import { getAddress, isAddress, type Address } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, USDC_WARP_ROUTE } from '@etica-hub/shared';
+import { getAddress, isAddress, type Address, type PublicClient } from 'viem';
+import { abis, DEPLOYMENTS, EXTERNAL_ADDRESSES, USDC_WARP_ROUTE } from '@etica-hub/shared';
 
 import { fetchUsdAnchors } from '@/lib/buybot/oracle';
 import { fetchAnchorEtxUsd } from '@/lib/buybot/scan';
@@ -23,6 +23,8 @@ import {
 } from '@/lib/priceApi';
 
 const MAINNET_CHAIN_ID = 61803;
+const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000';
+const RATE_PRECISION = 10n ** 18n;
 
 export const TOKEN_IDS = ['etx', 'eti', 'egaz', 'wegaz', 'stetx', 'usdce'] as const;
 export type TokenId = (typeof TOKEN_IDS)[number];
@@ -73,8 +75,12 @@ export interface TokenSnapshot {
   pools: PoolSnapshot[];
 }
 
+export type PoolKind = 'v2' | 'stableswap';
+
 export interface PoolSnapshot {
   address: Address;
+  /** V2 constant-product pair, or the standalone stETX/ETX rate-aware stableswap. */
+  kind: PoolKind;
   token0: ApiToken;
   token1: ApiToken;
   reserve0: number;
@@ -105,7 +111,11 @@ export function isSupportedPair(p: ApiPairRaw): boolean {
   return tokenByAddress(p.token0) !== null && tokenByAddress(p.token1) !== null;
 }
 
-function poolSnapshot(p: ApiPairRaw, pairs: ApiPairRaw[], etxUsd: number | null): PoolSnapshot | null {
+function poolSnapshot(
+  p: ApiPairRaw,
+  pairs: ApiPairRaw[],
+  etxUsd: number | null,
+): PoolSnapshot | null {
   const t0 = tokenByAddress(p.token0);
   const t1 = tokenByAddress(p.token1);
   const etx = tokenById('etx');
@@ -117,6 +127,7 @@ function poolSnapshot(p: ApiPairRaw, pairs: ApiPairRaw[], etxUsd: number | null)
   const tvlEtx = p0 !== null && p1 !== null ? r0 * p0 + r1 * p1 : null;
   return {
     address: getAddress(p.address),
+    kind: 'v2',
     token0: t0,
     token1: t1,
     reserve0: r0,
@@ -130,6 +141,86 @@ function poolSnapshot(p: ApiPairRaw, pairs: ApiPairRaw[], etxUsd: number | null)
   };
 }
 
+export interface StableSwapState {
+  address: Address;
+  reserveEtx: bigint;
+  reserveStEtx: bigint;
+  /** ETX per stETX, 1e18-scaled (`getRate()` = stETX.convertToAssets(1e18)). */
+  rate: bigint;
+  lpSupply: bigint;
+  asOfTs: number;
+}
+
+/**
+ * The stETX/ETX stableswap is not a factory pair, so it never shows up in
+ * `fetchAllPairs`. Its two legs are only comparable after applying the live
+ * stETX NAV: TVL = reserveEtx + reserveStEtx · rate, and the quoted price is
+ * the NAV itself (the curve trades within a few bps of it).
+ */
+export function stableSwapSnapshot(
+  state: StableSwapState,
+  etxUsd: number | null,
+): PoolSnapshot | null {
+  const stetx = tokenById('stetx');
+  const etx = tokenById('etx');
+  if (!stetx || !etx || state.rate === 0n) return null;
+  const rate = toUnits(state.rate, 18);
+  const reserveStEtx = toUnits(state.reserveStEtx, 18);
+  const reserveEtx = toUnits(state.reserveEtx, 18);
+  const tvlEtx = reserveEtx + toUnits((state.reserveStEtx * state.rate) / RATE_PRECISION, 18);
+  if (tvlEtx <= 0) return null;
+  return {
+    address: getAddress(state.address),
+    kind: 'stableswap',
+    token0: stetx,
+    token1: etx,
+    reserve0: reserveStEtx,
+    reserve1: reserveEtx,
+    price0In1: rate,
+    price1In0: 1 / rate,
+    tvlEtx,
+    tvlUsd: etxUsd !== null ? tvlEtx * etxUsd : null,
+    lpSupply: toUnits(state.lpSupply, 18),
+    lastSyncTs: state.asOfTs,
+  };
+}
+
+async function loadStableSwapPool(
+  client: PublicClient,
+  etxUsd: number | null,
+): Promise<PoolSnapshot | null> {
+  const d = DEPLOYMENTS[MAINNET_CHAIN_ID];
+  if (!d || d.eticaStableSwap === ZERO_ADDRESS) return null;
+  const read = <T>(functionName: 'reserveEtx' | 'reserveStEtx' | 'getRate' | 'totalSupply') =>
+    client.readContract({
+      abi: abis.eticaStableSwapAbi,
+      address: d.eticaStableSwap,
+      functionName,
+    }) as Promise<T>;
+  try {
+    const [reserveEtx, reserveStEtx, rate, lpSupply] = await Promise.all([
+      read<bigint>('reserveEtx'),
+      read<bigint>('reserveStEtx'),
+      read<bigint>('getRate'),
+      read<bigint>('totalSupply'),
+    ]);
+    return stableSwapSnapshot(
+      {
+        address: d.eticaStableSwap,
+        reserveEtx,
+        reserveStEtx,
+        rate,
+        lpSupply,
+        asOfTs: Math.floor(Date.now() / 1000),
+      },
+      etxUsd,
+    );
+  } catch {
+    // An RPC hiccup on the stableswap reads should leave the V2 pools listed rather than fail the page.
+    return null;
+  }
+}
+
 export async function loadMarketSnapshot(): Promise<MarketSnapshot> {
   const d = DEPLOYMENTS[MAINNET_CHAIN_ID];
   const ext = EXTERNAL_ADDRESSES[MAINNET_CHAIN_ID];
@@ -137,19 +228,23 @@ export async function loadMarketSnapshot(): Promise<MarketSnapshot> {
 
   const client = priceClient();
   const pairs = await fetchAllPairs(client);
-  const etxUsd = await fetchAnchorEtxUsd(client, {
-    factory: d.swapFactory,
-    etx: d.etx,
-    eti: ext.eti,
-    wegaz: d.wegaz,
-    usdce: USDC_WARP_ROUTE.syntheticToken,
-  },
-  () => fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
+  const etxUsd = await fetchAnchorEtxUsd(
+    client,
+    {
+      factory: d.swapFactory,
+      etx: d.etx,
+      eti: ext.eti,
+      wegaz: d.wegaz,
+      usdce: USDC_WARP_ROUTE.syntheticToken,
+    },
+    () => fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
   ).catch(() => null);
 
   const pools = pairs
     .map((p) => poolSnapshot(p, pairs, etxUsd))
     .filter((p): p is PoolSnapshot => p !== null);
+  const stable = await loadStableSwapPool(client, etxUsd);
+  if (stable) pools.push(stable);
 
   const etx = tokenById('etx');
   const eti = tokenById('eti');
@@ -185,6 +280,10 @@ export function findPool(snapshot: MarketSnapshot, address: string): PoolSnapsho
 
 export function poolName(p: PoolSnapshot): string {
   return `${p.token0.symbol}/${p.token1.symbol}`;
+}
+
+export function poolKindLabel(p: PoolSnapshot): string {
+  return p.kind === 'stableswap' ? 'stableswap' : 'V2';
 }
 
 export function poolPath(p: PoolSnapshot): string {
