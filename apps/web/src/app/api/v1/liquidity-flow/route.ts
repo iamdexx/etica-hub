@@ -19,7 +19,7 @@
  */
 
 import { getAddress, type Address } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis, USDC_WARP_ROUTE } from '@etica-hub/shared';
 import {
   API_REVALIDATE_SECONDS,
   BURN_ADDRESS,
@@ -93,9 +93,8 @@ export async function GET(): Promise<Response> {
   const client = priceClient();
   const etxLc = d.etx.toLowerCase();
 
-  const [pairs, anchors, head] = await Promise.all([
+  const [pairs, head] = await Promise.all([
     fetchAllPairs(client),
-    fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
     client.getBlock({ blockTag: 'latest' }),
   ]);
 
@@ -104,8 +103,10 @@ export async function GET(): Promise<Response> {
     etx: d.etx,
     eti: ext.eti,
     wegaz: d.wegaz,
-    anchors,
-  });
+    usdce: USDC_WARP_ROUTE.syntheticToken,
+  },
+  () => fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
+  );
 
   const etxPairs = pairs.filter(
     (p) =>

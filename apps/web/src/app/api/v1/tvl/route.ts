@@ -10,9 +10,10 @@
  * always worth exactly the ETX leg when priced through the pool's own
  * curve. Summing across pools gives total DEX TVL in ETX.
  *
- * USD is derived by routing ETX through an anchor pool (ETX/WEGAZ
- * preferred, ETX/ETI fallback) and multiplying by the matching NonKYC
- * USDT quote. If neither anchor has liquidity or NonKYC is unreachable,
+ * USD is derived from the USDC.e/ETX pool (USDC.e is bridged Circle USDC,
+ * so that pool quotes ETX in on-chain dollars); when it is missing or too
+ * shallow, ETX is routed through ETX/WEGAZ or ETX/ETI and multiplied by
+ * the matching NonKYC USDT quote. If no anchor has liquidity or NonKYC is unreachable,
  * `usd` is `null` so the UI can render "—" instead of showing stale or
  * fabricated numbers.
  *
@@ -21,7 +22,7 @@
  */
 
 import { formatUnits, getAddress, type Address } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis, USDC_WARP_ROUTE } from '@etica-hub/shared';
 import { fetchAllPairs, jsonResponse, priceClient } from '@/lib/priceApi';
 import { fetchAnchorEtxUsd } from '@/lib/buybot/scan';
 import { fetchUsdAnchors } from '@/lib/buybot/oracle';
@@ -51,19 +52,20 @@ export async function GET(): Promise<Response> {
 
   const client = priceClient();
 
-  // Reserve snapshot for every ETX-hub pool + USDT anchors in parallel.
-  const [pairs, anchors] = await Promise.all([
-    fetchAllPairs(client),
-    fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
-  ]);
+  // Reserve snapshot for every ETX-hub pool; NonKYC is only consulted if the USDC.e pool can't price ETX.
+  const pairs = await fetchAllPairs(client);
 
-  const etxUsd = await fetchAnchorEtxUsd(client, {
-    factory: d.swapFactory,
-    etx: d.etx,
-    eti: ext.eti,
-    wegaz: d.wegaz,
-    anchors,
-  });
+  const etxUsd = await fetchAnchorEtxUsd(
+    client,
+    {
+      factory: d.swapFactory,
+      etx: d.etx,
+      eti: ext.eti,
+      wegaz: d.wegaz,
+      usdce: USDC_WARP_ROUTE.syntheticToken,
+    },
+    () => fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
+  );
 
   const etxLc = d.etx.toLowerCase();
   let tvlEtx = 0;

@@ -79,85 +79,166 @@ async function fetchTokenMeta(client: PublicClient, address: Address): Promise<T
 }
 
 /**
- * Resolve ETX/USD via an on-chain anchor pool (ETX/EGAZ preferred, ETX/ETI
- * fallback). Reads reserves at `latest` so it's independent of which swaps
- * happened this cron cycle — guarantees we have a fresh ETX/USD any time
- * either anchor pool has liquidity + a known USDT anchor off NonKYC.
- *
- * Returns `null` when no anchor pool has been created yet, both pools are
- * drained, or both NonKYC anchors are unreachable.
+ * Minimum USDC.e reserve for the USDC.e/ETX pool to act as the USD anchor.
+ * Below this the pool is trivially movable by a single trade, so the
+ * exchange-quoted anchors take over.
  */
-export async function fetchAnchorEtxUsd(
+export const MIN_STABLE_ANCHOR_RESERVE = 10;
+
+/** Upper bound on waiting for the NonKYC tickers; a slow exchange must not stall on-chain pricing. */
+export const ANCHOR_FETCH_TIMEOUT_MS = 8_000;
+
+export type UsdAnchorSource = 'usdce' | 'nonkyc';
+
+export interface ResolvedUsdPricing {
+  etxUsd: number | null;
+  etiUsd: number | null;
+  egazUsd: number | null;
+  /** Which anchor priced ETX; `null` when nothing could. */
+  source: UsdAnchorSource | null;
+}
+
+type UsdAnchors = { etiUsd: number | null; egazUsd: number | null };
+
+export interface UsdAnchorArgs {
+  factory: Address;
+  etx: Address;
+  eti: Address;
+  wegaz: Address;
+  /** Dollar-pegged pool partner (USDC.e); the primary anchor when its pool is deep enough. */
+  usdce?: Address;
+  /** Pre-fetched NonKYC tickers; when omitted `fetchAnchors` is only called if the stable pool can't price ETX. */
+  anchors?: UsdAnchors | null;
+}
+
+/** `other` units per 1 ETX in the ETX/`other` pool, plus the pool's `other` depth. `null` when the pool is missing or drained. */
+async function readEtxPoolQuote(
   client: PublicClient,
-  args: {
-    factory: Address;
-    etx: Address;
-    eti: Address;
-    wegaz: Address;
-    /** Dollar-pegged pool partner (USDC.e); used last because that pool is the shallowest. */
-    usdce?: Address;
-    anchors?: { etiUsd: number | null; egazUsd: number | null };
-  },
-  fetchAnchors?: () => Promise<{ etiUsd: number | null; egazUsd: number | null }>,
-): Promise<number | null> {
-  const anchors = args.anchors ?? (fetchAnchors ? await fetchAnchors() : null);
-  if (!anchors) return null;
+  args: { factory: Address; etx: Address; other: Address },
+): Promise<{ otherPerEtx: number; otherUnits: number } | null> {
+  try {
+    const pair = (await client.readContract({
+      abi: abis.factoryAbi,
+      address: args.factory,
+      functionName: 'getPair',
+      args: [args.etx, args.other],
+    })) as Address;
+    if (pair === ZERO_ADDRESS) return null;
+    const [token0, reserves, etxDec, otherDec] = await Promise.all([
+      client.readContract({
+        abi: abis.pairAbi,
+        address: pair,
+        functionName: 'token0',
+      }) as Promise<Address>,
+      client.readContract({
+        abi: abis.pairAbi,
+        address: pair,
+        functionName: 'getReserves',
+      }) as Promise<readonly [bigint, bigint, number]>,
+      client.readContract({
+        abi: erc20Abi,
+        address: args.etx,
+        functionName: 'decimals',
+      }) as Promise<number>,
+      client.readContract({
+        abi: erc20Abi,
+        address: args.other,
+        functionName: 'decimals',
+      }) as Promise<number>,
+    ]);
+    const etxIsToken0 = token0.toLowerCase() === args.etx.toLowerCase();
+    const etxReserve = etxIsToken0 ? reserves[0] : reserves[1];
+    const otherReserve = etxIsToken0 ? reserves[1] : reserves[0];
+    if (etxReserve === 0n || otherReserve === 0n) return null;
+    const etxUnits = Number(etxReserve) / 10 ** etxDec;
+    const otherUnits = Number(otherReserve) / 10 ** otherDec;
+    return { otherPerEtx: otherUnits / etxUnits, otherUnits };
+  } catch {
+    return null;
+  }
+}
+
+async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`anchor fetch timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Resolve USD pricing for ETX, ETI and EGAZ from on-chain anchor pools.
+ *
+ * The USDC.e/ETX pool is the primary anchor: USDC.e is bridged Circle USDC,
+ * so the pool quotes ETX in dollars that settle on-chain without any exchange
+ * in the loop. When it prices ETX, ETI and EGAZ are derived through their own
+ * ETX pools so every USD figure in a run comes from one consistent source.
+ * Only when the stable pool is missing or too shallow
+ * (`MIN_STABLE_ANCHOR_RESERVE`) are the NonKYC USDT tickers fetched and ETX
+ * routed through ETX/WEGAZ or ETX/ETI — so a NonKYC outage can never block
+ * pricing while the stable pool is healthy.
+ *
+ * Reads reserves at `latest` so it's independent of which swaps happened
+ * this cron cycle.
+ */
+export async function resolveUsdPricing(
+  client: PublicClient,
+  args: UsdAnchorArgs,
+  fetchAnchors?: () => Promise<UsdAnchors>,
+): Promise<ResolvedUsdPricing> {
+  const poolArgs = { factory: args.factory, etx: args.etx };
+  if (args.usdce && args.usdce !== ZERO_ADDRESS) {
+    const stable = await readEtxPoolQuote(client, { ...poolArgs, other: args.usdce });
+    if (stable && stable.otherUnits >= MIN_STABLE_ANCHOR_RESERVE) {
+      const etxUsd = stable.otherPerEtx;
+      const [wegazQ, etiQ] = await Promise.all([
+        readEtxPoolQuote(client, { ...poolArgs, other: args.wegaz }),
+        readEtxPoolQuote(client, { ...poolArgs, other: args.eti }),
+      ]);
+      return {
+        etxUsd,
+        egazUsd: wegazQ ? etxUsd / wegazQ.otherPerEtx : null,
+        etiUsd: etiQ ? etxUsd / etiQ.otherPerEtx : null,
+        source: 'usdce',
+      };
+    }
+  }
+
+  let anchors: UsdAnchors | null = args.anchors ?? null;
+  if (!anchors && fetchAnchors) {
+    anchors = await withTimeout(fetchAnchors(), ANCHOR_FETCH_TIMEOUT_MS).catch(() => null);
+  }
+  if (!anchors) return { etxUsd: null, etiUsd: null, egazUsd: null, source: null };
+
   const candidates: { other: Address; otherUsd: number | null }[] = [
     { other: args.wegaz, otherUsd: anchors.egazUsd },
     { other: args.eti, otherUsd: anchors.etiUsd },
   ];
-  if (args.usdce && args.usdce !== ZERO_ADDRESS) {
-    candidates.push({ other: args.usdce, otherUsd: 1 });
-  }
   for (const c of candidates) {
     if (c.otherUsd === null || c.otherUsd <= 0) continue;
-    try {
-      const pair = (await client.readContract({
-        abi: abis.factoryAbi,
-        address: args.factory,
-        functionName: 'getPair',
-        args: [args.etx, c.other],
-      })) as Address;
-      if (pair === ZERO_ADDRESS) continue;
-      const [token0, reserves] = await Promise.all([
-        client.readContract({
-          abi: abis.pairAbi,
-          address: pair,
-          functionName: 'token0',
-        }) as Promise<Address>,
-        client.readContract({
-          abi: abis.pairAbi,
-          address: pair,
-          functionName: 'getReserves',
-        }) as Promise<readonly [bigint, bigint, number]>,
-      ]);
-      // Both tokens here are 18-decimals in the EticaHub hub-and-spoke model,
-      // but resolve decimals for safety in case launchpad tokens ever end up
-      // as anchors.
-      const [etxDec, otherDec] = await Promise.all([
-        client.readContract({
-          abi: erc20Abi,
-          address: args.etx,
-          functionName: 'decimals',
-        }) as Promise<number>,
-        client.readContract({
-          abi: erc20Abi,
-          address: c.other,
-          functionName: 'decimals',
-        }) as Promise<number>,
-      ]);
-      const etxIsToken0 = token0.toLowerCase() === args.etx.toLowerCase();
-      const etxReserve = etxIsToken0 ? reserves[0] : reserves[1];
-      const otherReserve = etxIsToken0 ? reserves[1] : reserves[0];
-      if (etxReserve === 0n || otherReserve === 0n) continue;
-      const etxUnits = Number(etxReserve) / 10 ** etxDec;
-      const otherUnits = Number(otherReserve) / 10 ** otherDec;
-      return (otherUnits / etxUnits) * c.otherUsd;
-    } catch {
-      // Next candidate.
-    }
+    const q = await readEtxPoolQuote(client, { ...poolArgs, other: c.other });
+    if (!q) continue;
+    return {
+      etxUsd: q.otherPerEtx * c.otherUsd,
+      etiUsd: anchors.etiUsd,
+      egazUsd: anchors.egazUsd,
+      source: 'nonkyc',
+    };
   }
-  return null;
+  return { etxUsd: null, etiUsd: anchors.etiUsd, egazUsd: anchors.egazUsd, source: null };
+}
+
+/** ETX/USD only; see `resolveUsdPricing` for anchor order and fallbacks. */
+export async function fetchAnchorEtxUsd(
+  client: PublicClient,
+  args: UsdAnchorArgs,
+  fetchAnchors?: () => Promise<UsdAnchors>,
+): Promise<number | null> {
+  return (await resolveUsdPricing(client, args, fetchAnchors)).etxUsd;
 }
 
 export async function loadAllPairs(client: PublicClient, factory: Address): Promise<Address[]> {

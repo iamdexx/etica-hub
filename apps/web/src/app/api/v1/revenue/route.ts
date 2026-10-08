@@ -32,7 +32,7 @@
  */
 
 import { formatUnits, getAddress, type Address } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis, USDC_WARP_ROUTE } from '@etica-hub/shared';
 import {
   API_REVALIDATE_SECONDS,
   fetchAllPairs,
@@ -96,9 +96,8 @@ export async function GET(): Promise<Response> {
 
   // Batch the initial handshake: pairs, USD anchor, head block, factory
   // fee parameters. All independent, so a single parallel round-trip.
-  const [pairs, anchors, head, feeTo, pairCreationFee] = await Promise.all([
+  const [pairs, head, feeTo, pairCreationFee] = await Promise.all([
     fetchAllPairs(client),
-    fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
     client.getBlock({ blockTag: 'latest' }),
     client.readContract({
       abi: abis.factoryAbi,
@@ -118,8 +117,10 @@ export async function GET(): Promise<Response> {
       etx: d.etx,
       eti: ext.eti,
       wegaz: d.wegaz,
-      anchors,
-    }),
+      usdce: USDC_WARP_ROUTE.syntheticToken,
+    },
+    () => fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
+    ),
     loadLifetimeHarvesterStats(harvester, head.number, client),
   ]);
 

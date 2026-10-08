@@ -1,11 +1,12 @@
 /**
  * Server-side market snapshot shared by the indexable /tokens and /pools
- * pages. One RPC round for reserves + one NonKYC call for the USD anchor,
+ * pages. One RPC round for reserves (the USDC.e/ETX pool is the USD anchor,
+ * NonKYC tickers only as fallback),
  * then everything else is derived in memory.
  */
 
 import { getAddress, isAddress, type Address } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, USDC_WARP_ROUTE } from '@etica-hub/shared';
 
 import { fetchUsdAnchors } from '@/lib/buybot/oracle';
 import { fetchAnchorEtxUsd } from '@/lib/buybot/scan';
@@ -40,7 +41,7 @@ export const TOKEN_COPY: Record<TokenId, { tagline: string; about: string }> = {
   eti: {
     tagline: 'Etica protocol token',
     about:
-      'ETI is the native reward token of the Etica protocol — an open, decentralised medical-research network where miners are paid for peer-reviewed proposals. On EticaHub it trades against ETX and anchors USD pricing for the ecosystem.',
+      'ETI is the native reward token of the Etica protocol — an open, decentralised medical-research network where miners are paid for peer-reviewed proposals. On EticaHub it trades against ETX and serves as a fallback USD anchor for the ecosystem.',
   },
   egaz: {
     tagline: 'Etica mainnet gas coin',
@@ -135,17 +136,16 @@ export async function loadMarketSnapshot(): Promise<MarketSnapshot> {
   if (!d || !ext) throw new Error('mainnet deployments unavailable');
 
   const client = priceClient();
-  const [pairs, anchors] = await Promise.all([
-    fetchAllPairs(client),
-    fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }).catch(() => ({ etiUsd: null, egazUsd: null })),
-  ]);
+  const pairs = await fetchAllPairs(client);
   const etxUsd = await fetchAnchorEtxUsd(client, {
     factory: d.swapFactory,
     etx: d.etx,
     eti: ext.eti,
     wegaz: d.wegaz,
-    anchors,
-  }).catch(() => null);
+    usdce: USDC_WARP_ROUTE.syntheticToken,
+  },
+  () => fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
+  ).catch(() => null);
 
   const pools = pairs
     .map((p) => poolSnapshot(p, pairs, etxUsd))
