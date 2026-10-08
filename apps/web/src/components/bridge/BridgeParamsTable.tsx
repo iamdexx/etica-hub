@@ -1,7 +1,7 @@
 /**
  * Deployed USDC.e route parameters (Bridge deploy run 37690097436). Values
  * mirror infra/hyperlane/registry/deployments/warp_routes/USDC/etica-config.yaml
- * and docs/HYPERLANE_USDC_RUNBOOK.md; BridgeStatusBoard reads live state.
+ * and docs/HYPERLANE_USDC_RUNBOOK.md; UsdcRouteStatusBoard reads live state.
  */
 const ROWS: { label: string; value: string; note?: string }[] = [
   { label: 'Architecture', value: 'Hyperlane warp route', note: 'HypERC20Collateral on Ethereum, HypERC20 (USDC.e) on Etica.' },

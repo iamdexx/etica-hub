@@ -27,7 +27,14 @@ import {
   type Address,
   type PublicClient,
 } from 'viem';
-import { abis, DEPLOYMENTS, EXTERNAL_ADDRESSES, eticaMainnet } from '@etica-hub/shared';
+import {
+  abis,
+  DEPLOYMENTS,
+  EXTERNAL_ADDRESSES,
+  eticaMainnet,
+  USDC_WARP_ROUTE,
+  isUsdcWarpRouteLive,
+} from '@etica-hub/shared';
 import { fetchIndexedPairSyncs } from './explorerIndex';
 import { failoverTransport } from './rpc';
 
@@ -151,6 +158,20 @@ export function apiTokens(): ApiToken[] {
       name: 'Staked ETX',
       decimals: 18,
       address: d.stakedETX,
+      wrappedAddress: null,
+      isNative: false,
+    });
+  }
+  // USDC.e is the Hyperlane-minted USDC (6 decimals, like Circle's USDC).
+  // Only listed once the warp route is live so pair-symbol resolution never
+  // sees a zero address.
+  if (isUsdcWarpRouteLive()) {
+    tokens.push({
+      id: 'usdce',
+      symbol: USDC_WARP_ROUTE.symbol,
+      name: 'Bridged USDC',
+      decimals: USDC_WARP_ROUTE.decimals,
+      address: USDC_WARP_ROUTE.syntheticToken,
       wrappedAddress: null,
       isNative: false,
     });
@@ -432,10 +453,8 @@ export async function fetchPairByAddress(
  * Spot price of `base` denominated in `quote`, derived from `pair`'s reserves.
  * Returns `null` when the pair doesn't contain both tokens or a reserve is 0.
  *
- * Both tokens on Etica's live deployments are 18-decimals, so the math is
- * just `reserveQuote / reserveBase` once we know the pair orientation. We
- * still carry decimals through the API so the formula remains correct if we
- * ever list a non-18-decimal token.
+ * Reserves are scaled by each token's own decimals before dividing, so the
+ * 6-decimal USDC.e pairs price correctly against 18-decimal ETX.
  */
 export function spotPriceFromReserves(
   pair: ApiPairRaw,

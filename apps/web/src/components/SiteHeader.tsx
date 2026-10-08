@@ -161,6 +161,7 @@ export function SiteHeader() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={() => setDrawerOpen(false)}
                     className={cn(
                       'flex items-center rounded-xl border px-4 py-3 text-sm font-medium transition-colors',
                       active

@@ -50,7 +50,7 @@ function mkPair(
 describe('apiTokens', () => {
   it('returns the canonical Etica-mainnet token set', () => {
     const ids = apiTokens().map((t) => t.id).sort();
-    expect(ids).toEqual(['egaz', 'eti', 'etx', 'stetx', 'wegaz']);
+    expect(ids).toEqual(['egaz', 'eti', 'etx', 'stetx', 'usdce', 'wegaz']);
   });
 
   it('surfaces stETX at the deployed vault address', () => {
@@ -70,8 +70,18 @@ describe('apiTokens', () => {
     expect(wegaz.address && getAddress(wegaz.address)).toBe(getAddress(WEGAZ));
   });
 
-  it('all tokens use 18 decimals on Etica mainnet', () => {
-    for (const t of apiTokens()) expect(t.decimals).toBe(18);
+  it('every token is 18 decimals except the 6-decimal USDC.e', () => {
+    for (const t of apiTokens()) expect(t.decimals).toBe(t.id === 'usdce' ? 6 : 18);
+  });
+
+  it('lists USDC.e at the live warp-route token with 6 decimals', () => {
+    const usdce = tok('usdce');
+    expect(usdce.symbol).toBe('USDC.e');
+    expect(usdce.decimals).toBe(6);
+    expect(usdce.isNative).toBe(false);
+    expect(usdce.address && getAddress(usdce.address)).toBe(
+      getAddress('0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335'),
+    );
   });
 });
 

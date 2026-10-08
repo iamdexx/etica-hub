@@ -60,8 +60,8 @@ const MODULES = [
   {
     href: '/bridge',
     title: 'EticaBridge',
-    subtitle: 'Cross-chain ETI routing',
-    body: 'Lock ETI on Etica and bridge into the wider EVM ecosystem through Hyperlane rails.',
+    subtitle: 'USDC ⇄ USDC.e over Hyperlane',
+    body: 'Bridge Circle USDC from Ethereum to Etica as 1:1-backed USDC.e and back over Hyperlane rails.',
     cta: 'Open bridge',
     accent: 'from-fuchsia-500/30 to-fuchsia-700/10',
   },

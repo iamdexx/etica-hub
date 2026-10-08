@@ -559,7 +559,7 @@ function TokenInput(props: {
         <input
           value={props.amount}
           disabled={!props.editable}
-          onChange={(e) => props.onAmount?.(sanitizeNumber(e.target.value))}
+          onChange={(e) => props.onAmount?.(sanitizeNumber(e.target.value, props.decimals))}
           inputMode="decimal"
           placeholder="0.0"
           className="w-full bg-transparent text-2xl outline-none placeholder:text-white/30 disabled:cursor-default"
@@ -784,11 +784,14 @@ function truncate(s: string, maxFraction: number): string {
   return short ? `${intPart}.${short}` : intPart;
 }
 
-function sanitizeNumber(raw: string): string {
-  // allow digits and one dot
+function sanitizeNumber(raw: string, decimals: number): string {
+  // allow digits and one dot; drop fractional digits the token cannot represent
+  // (parseUnits would otherwise round them and spend more than shown)
   const cleaned = raw.replace(/[^0-9.]/g, '');
   const [a, ...rest] = cleaned.split('.');
-  return rest.length > 0 ? `${a}.${rest.join('')}` : a;
+  if (rest.length === 0) return a;
+  const frac = rest.join('').slice(0, decimals);
+  return decimals === 0 ? a : `${a}.${frac}`;
 }
 
 function describeWriteError(err: unknown, fallback: string): string | undefined {

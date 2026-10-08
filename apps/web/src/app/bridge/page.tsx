@@ -1,12 +1,9 @@
 import Link from 'next/link';
-import { Suspense } from 'react';
-import { BridgeWatcherBoard } from '@/components/bridge/BridgeWatcherBoard';
-import { BridgeStatusBoard } from '@/components/bridge/BridgeStatusBoard';
-import { BridgeFlowsCard } from '@/components/bridge/BridgeFlowsCard';
 import { BridgeParamsTable } from '@/components/bridge/BridgeParamsTable';
-import { BridgeAddressBook } from '@/components/bridge/BridgeAddressBook';
 import { UsdcBridgeCard } from '@/components/bridge/UsdcBridgeCard';
-import { SourceBadge, TelemetrySection, UnavailableMetric } from '@/components/telemetry/TelemetryCards';
+import { UsdcRouteAddressBook } from '@/components/bridge/UsdcRouteAddressBook';
+import { UsdcRouteStatusBoard } from '@/components/bridge/UsdcRouteStatusBoard';
+import { SourceBadge, TelemetrySection } from '@/components/telemetry/TelemetryCards';
 
 export const metadata = { title: 'Bridge · EticaHub' };
 export const dynamic = 'force-dynamic';
@@ -29,9 +26,9 @@ const BRIDGE_STATS = [
     detail: 'Rate-limited USDC release on Ethereum',
   },
   {
-    label: 'Bridge volume',
-    value: <UnavailableMetric reason="requires relay indexer" />,
-    detail: 'Cross-chain analytics pending',
+    label: 'Settlement',
+    value: '~2–5 min',
+    detail: 'Ethereum finality + relayer delivery; first mainnet transfer landed in ~3 min',
   },
 ];
 
@@ -62,7 +59,7 @@ export default function BridgePage() {
             title="Bridge telemetry"
             badge={<SourceBadge tone="fuchsia">bridge config + status</SourceBadge>}
             metrics={BRIDGE_STATS}
-            description="Bridge mechanics and dispute parameters are available now. Live relay throughput, transfer counts, and historical bridge analytics require dedicated relay indexing before accurate telemetry can be shown."
+            description="Parameters come from the deployed route config; locked USDC, USDC.e supply, pending fees and the seeded pool below are read live from both chains."
           />
         </div>
       </section>
@@ -92,23 +89,13 @@ export default function BridgePage() {
         <div className="space-y-6">
           <UsdcBridgeCard />
           <div className="rounded-2xl border border-fuchsia-400/20 bg-white/[0.03] p-3 shadow-xl shadow-fuchsia-950/20">
-            <BridgeStatusBoard />
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
-            <Suspense
-              fallback={<div className="p-2 text-xs text-white/40">Checking watcher bots…</div>}
-            >
-              <BridgeWatcherBoard />
-            </Suspense>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
-            <BridgeFlowsCard />
+            <UsdcRouteStatusBoard />
           </div>
           <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
             <BridgeParamsTable />
           </div>
           <div className="rounded-2xl border border-white/10 bg-[#07120f] p-3">
-            <BridgeAddressBook />
+            <UsdcRouteAddressBook />
           </div>
         </div>
       </section>
