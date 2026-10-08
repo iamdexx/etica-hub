@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { getAddress, type Address, type PublicClient } from 'viem';
-import { fetchAnchorEtxUsd, MIN_STABLE_ANCHOR_RESERVE } from '../src/lib/buybot/scan';
+import {
+  fetchAnchorEtxUsd,
+  resolveUsdPricing,
+  MIN_STABLE_ANCHOR_RESERVE,
+} from '../src/lib/buybot/scan';
 
 const ETX = getAddress('0xa5A1Bc6307b0b87989B8456D4b35F88a68650044') as Address;
 const WEGAZ = getAddress('0x1000000000000000000000000000000000000001') as Address;
@@ -83,15 +87,38 @@ describe('fetchAnchorEtxUsd', () => {
     expect(etxUsd).toBeCloseTo((2_750_000 / 9_000_000) * anchors.egazUsd, 12);
   });
 
-  it('still prices ETX when NonKYC is unreachable but the USDC.e pool is deep', async () => {
+  it('never waits on NonKYC when the USDC.e pool is deep, and derives EGAZ/ETI from their ETX pools', async () => {
     const client = fakeClient({ wegaz: wegazPool, usdce: usdcePool(150) });
-    const etxUsd = await fetchAnchorEtxUsd(client, base, async () => {
+    let nonkycCalls = 0;
+    const pricing = await resolveUsdPricing(client, base, async () => {
+      nonkycCalls += 1;
       throw new Error('nonkyc down');
-    }).catch(() => 'threw');
-    expect(etxUsd).toBe('threw');
+    });
+    expect(nonkycCalls).toBe(0);
+    expect(pricing.source).toBe('usdce');
+    const etxUsd = 150 / 56_000;
+    expect(pricing.etxUsd).toBeCloseTo(etxUsd, 9);
+    expect(pricing.egazUsd).toBeCloseTo(etxUsd / (2_750_000 / 9_000_000), 9);
+    expect(pricing.etiUsd).toBeNull();
+  });
 
-    const viaNull = await fetchAnchorEtxUsd(client, { ...base, anchors: undefined });
-    expect(viaNull).toBeCloseTo(150 / 56_000, 9);
+  it('survives a NonKYC failure when it has to fall back (no stable pool)', async () => {
+    const client = fakeClient({ wegaz: wegazPool });
+    let nonkycCalls = 0;
+    const pricing = await resolveUsdPricing(client, base, async () => {
+      nonkycCalls += 1;
+      throw new Error('nonkyc down');
+    });
+    expect(nonkycCalls).toBe(1);
+    expect(pricing).toEqual({ etxUsd: null, etiUsd: null, egazUsd: null, source: null });
+  });
+
+  it('reports NonKYC as the source when the stable pool is shallow', async () => {
+    const client = fakeClient({ wegaz: wegazPool, usdce: usdcePool(1) });
+    const pricing = await resolveUsdPricing(client, base, async () => anchors);
+    expect(pricing.source).toBe('nonkyc');
+    expect(pricing.egazUsd).toBe(anchors.egazUsd);
+    expect(pricing.etiUsd).toBe(anchors.etiUsd);
   });
 
   it('returns null with no anchors and no stable pool', async () => {

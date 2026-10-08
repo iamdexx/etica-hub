@@ -93,9 +93,8 @@ export async function GET(): Promise<Response> {
   const client = priceClient();
   const etxLc = d.etx.toLowerCase();
 
-  const [pairs, anchors, head] = await Promise.all([
+  const [pairs, head] = await Promise.all([
     fetchAllPairs(client),
-    fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
     client.getBlock({ blockTag: 'latest' }),
   ]);
 
@@ -105,8 +104,9 @@ export async function GET(): Promise<Response> {
     eti: ext.eti,
     wegaz: d.wegaz,
     usdce: USDC_WARP_ROUTE.syntheticToken,
-    anchors,
-  });
+  },
+  () => fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
+  );
 
   const etxPairs = pairs.filter(
     (p) =>

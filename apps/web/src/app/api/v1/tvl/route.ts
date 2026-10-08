@@ -52,20 +52,20 @@ export async function GET(): Promise<Response> {
 
   const client = priceClient();
 
-  // Reserve snapshot for every ETX-hub pool + USDT anchors in parallel.
-  const [pairs, anchors] = await Promise.all([
-    fetchAllPairs(client),
-    fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
-  ]);
+  // Reserve snapshot for every ETX-hub pool; NonKYC is only consulted if the USDC.e pool can't price ETX.
+  const pairs = await fetchAllPairs(client);
 
-  const etxUsd = await fetchAnchorEtxUsd(client, {
-    factory: d.swapFactory,
-    etx: d.etx,
-    eti: ext.eti,
-    wegaz: d.wegaz,
-    usdce: USDC_WARP_ROUTE.syntheticToken,
-    anchors,
-  });
+  const etxUsd = await fetchAnchorEtxUsd(
+    client,
+    {
+      factory: d.swapFactory,
+      etx: d.etx,
+      eti: ext.eti,
+      wegaz: d.wegaz,
+      usdce: USDC_WARP_ROUTE.syntheticToken,
+    },
+    () => fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
+  );
 
   const etxLc = d.etx.toLowerCase();
   let tvlEtx = 0;

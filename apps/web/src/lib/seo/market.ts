@@ -41,7 +41,7 @@ export const TOKEN_COPY: Record<TokenId, { tagline: string; about: string }> = {
   eti: {
     tagline: 'Etica protocol token',
     about:
-      'ETI is the native reward token of the Etica protocol — an open, decentralised medical-research network where miners are paid for peer-reviewed proposals. On EticaHub it trades against ETX and anchors USD pricing for the ecosystem.',
+      'ETI is the native reward token of the Etica protocol — an open, decentralised medical-research network where miners are paid for peer-reviewed proposals. On EticaHub it trades against ETX and serves as a fallback USD anchor for the ecosystem.',
   },
   egaz: {
     tagline: 'Etica mainnet gas coin',
@@ -136,18 +136,16 @@ export async function loadMarketSnapshot(): Promise<MarketSnapshot> {
   if (!d || !ext) throw new Error('mainnet deployments unavailable');
 
   const client = priceClient();
-  const [pairs, anchors] = await Promise.all([
-    fetchAllPairs(client),
-    fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }).catch(() => ({ etiUsd: null, egazUsd: null })),
-  ]);
+  const pairs = await fetchAllPairs(client);
   const etxUsd = await fetchAnchorEtxUsd(client, {
     factory: d.swapFactory,
     etx: d.etx,
     eti: ext.eti,
     wegaz: d.wegaz,
     usdce: USDC_WARP_ROUTE.syntheticToken,
-    anchors,
-  }).catch(() => null);
+  },
+  () => fetchUsdAnchors({ nonkycApiUrl: 'https://api.nonkyc.io' }),
+  ).catch(() => null);
 
   const pools = pairs
     .map((p) => poolSnapshot(p, pairs, etxUsd))

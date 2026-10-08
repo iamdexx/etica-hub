@@ -32,10 +32,10 @@ import { computeBuyReport, decodeSwapAsBuy, type UsdPricing } from '@/lib/buybot
 import { formatBuy } from '@/lib/buybot/format';
 import { telegramClient } from '@/lib/buybot/telegram';
 import {
-  fetchAnchorEtxUsd,
   fetchSwapsInRange,
   loadAllPairs,
   planScanWindow,
+  resolveUsdPricing,
   snapshotPool,
   MIN_STABLE_ANCHOR_RESERVE,
 } from '@/lib/buybot/scan';
@@ -118,11 +118,10 @@ export async function GET(req: NextRequest): Promise<Response> {
     // automatically without changing the call shape.
     const exclusionRegistry = buildExclusionRegistry(config);
 
-    const [latestBlock, lastScanned, anchors, explorerEgazSupply, excludedSupplyByToken] =
-      await Promise.all([
+    const [latestBlock, lastScanned, explorerEgazSupply, excludedSupplyByToken] = await Promise.all(
+      [
         client.getBlockNumber(),
         readLastScannedBlock(kv, config),
-        fetchUsdAnchors(config),
         // Pulled once per run from BlockScout's `coinsupply` endpoint so MC
         // reflects the chain's full native EGAZ supply, not just the wrapped
         // ERC-20 slice. Falls back to the chain's own emission floor below;
@@ -133,7 +132,8 @@ export async function GET(req: NextRequest): Promise<Response> {
         // fully-diluted MC; aligns the buybot with CoinGecko/CMC/DEX
         // Screener convention.
         fetchCirculatingExcludes(client, exclusionRegistry),
-      ]);
+      ],
+    );
 
     const hideMcForTokens = buildHideMcSet(config);
     const wegazNativeSupply =
@@ -148,18 +148,23 @@ export async function GET(req: NextRequest): Promise<Response> {
         ? new Map<Address, number>([[getAddress(config.usdce), 1]])
         : undefined;
 
-    // Resolve ETX/USD independently of which swaps happen this cycle by
-    // reading reserves on the ETX/EGAZ (preferred) or ETX/ETI anchor pool
-    // directly. Without this, a run that only sees stETX/ETX or launchpad
-    // swaps would have etxUsd=null and render MC as "—".
-    const anchorEtxUsd = await fetchAnchorEtxUsd(client, {
-      factory: config.factory,
-      etx: config.etx,
-      eti: config.eti,
-      wegaz: config.wegaz,
-      usdce: config.usdce,
-      anchors,
-    });
+    // Resolve USD pricing independently of which swaps happen this cycle by
+    // reading the anchor pools directly (USDC.e/ETX first, NonKYC-priced
+    // ETX/EGAZ or ETX/ETI as fallback). Without this, a run that only sees
+    // stETX/ETX or launchpad swaps would have etxUsd=null and render MC as "—".
+    const resolved = await resolveUsdPricing(
+      client,
+      {
+        factory: config.factory,
+        etx: config.etx,
+        eti: config.eti,
+        wegaz: config.wegaz,
+        usdce: config.usdce,
+      },
+      () => fetchUsdAnchors(config),
+    );
+    const anchorEtxUsd = resolved.etxUsd;
+    const anchors = { etiUsd: resolved.etiUsd, egazUsd: resolved.egazUsd };
 
     const window = planScanWindow(latestBlock, lastScanned, config);
     const pairs = await loadAllPairs(client, config.factory);
