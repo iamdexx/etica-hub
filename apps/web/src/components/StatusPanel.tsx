@@ -7,6 +7,7 @@ import {
   eticaMainnet,
 } from '@etica-hub/shared';
 import { fetchEgazNativeSupply } from '@/lib/buybot/oracle';
+import { failoverTransport } from '@/lib/rpc';
 
 /**
  * BlockScout-compatible explorer used to read native EGAZ total supply.
@@ -115,7 +116,7 @@ async function loadSnapshot(): Promise<Snapshot | { error: string }> {
   if (d.swapFactory === ZERO || d.etx === ZERO) {
     return { error: 'Mainnet addresses not wired into shared package.' };
   }
-  const client = createPublicClient({ chain: eticaMainnet, transport: http() });
+  const client = createPublicClient({ chain: eticaMainnet, transport: failoverTransport(eticaMainnet) });
 
   try {
     const [

@@ -11,6 +11,7 @@ import {
   isUsdcWarpRouteLive,
 } from '@etica-hub/shared';
 import { ETHEREUM_BROWSER_RPCS } from '@/lib/bridge/ethereum-rpcs';
+import { failoverTransport } from '@/lib/rpc';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 /** Where the seed LP was minted; nothing at this address can ever be withdrawn. */
@@ -67,7 +68,7 @@ async function readEthereum(): Promise<EthereumSide> {
 
 async function readEtica(): Promise<EticaSide> {
   const d = DEPLOYMENTS[eticaMainnet.id];
-  const client = createPublicClient({ chain: eticaMainnet, transport: http() });
+  const client = createPublicClient({ chain: eticaMainnet, transport: failoverTransport(eticaMainnet) });
   const usdce = USDC_WARP_ROUTE.syntheticToken;
   const [supply, pendingFees, pair] = await Promise.all([
     client.readContract({ abi: abis.erc20Abi, address: usdce, functionName: 'totalSupply' }) as Promise<bigint>,
