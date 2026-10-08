@@ -76,9 +76,9 @@ export function TelemetrySection({
 }) {
   return (
     <div className={cn('rounded-2xl border border-white/10 bg-black/25 p-4', className)}>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="text-[11px] uppercase tracking-[0.18em] text-white/40">{title}</div>
-        {badge ? <div>{badge}</div> : null}
+        {badge ? <div className="shrink-0">{badge}</div> : null}
       </div>
 
       <MetricGrid metrics={metrics} className="mt-3" />
@@ -100,7 +100,7 @@ export function SourceBadge({
   return (
     <span
       className={cn(
-        'rounded-full border px-2.5 py-1 text-[11px] tracking-wide text-white/75',
+        'inline-block whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] tracking-wide text-white/75',
         toneClasses[tone],
       )}
     >

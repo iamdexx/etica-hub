@@ -11,7 +11,7 @@
 
 import type { Address } from 'viem';
 import { getAddress, isAddress } from 'viem';
-import { DEPLOYMENTS, EXTERNAL_ADDRESSES } from '@etica-hub/shared';
+import { DEPLOYMENTS, EXTERNAL_ADDRESSES, USDC_WARP_ROUTE } from '@etica-hub/shared';
 
 const MAINNET_CHAIN_ID = 61803 as const;
 
@@ -23,6 +23,8 @@ export interface BuyBotConfig {
   etx: Address;
   eti: Address;
   wegaz: Address;
+  /** Bridged USDC.e (Hyperlane synthetic); zero address when the route isn't live on this chain. */
+  usdce: Address;
   telegramBotToken: string;
   telegramChatId: string;
   /** Base URL the user-facing site is deployed at, used for explorer links. */
@@ -56,6 +58,8 @@ export interface BuyBotConfig {
    */
   kvNamespace: string;
 }
+
+const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000';
 
 function optionalAddr(env: NodeJS.ProcessEnv, name: string, fallback: Address): Address {
   const v = env[name];
@@ -98,6 +102,11 @@ export function loadBuyBotConfig(env: NodeJS.ProcessEnv = process.env): BuyBotCo
     etx: optionalAddr(env, 'BUYBOT_ETX', deployments.etx),
     eti: optionalAddr(env, 'BUYBOT_ETI', externals.eti),
     wegaz: optionalAddr(env, 'BUYBOT_WEGAZ', deployments.wegaz),
+    usdce: optionalAddr(
+      env,
+      'BUYBOT_USDCE',
+      chainId === MAINNET_CHAIN_ID ? USDC_WARP_ROUTE.syntheticToken : ZERO_ADDRESS,
+    ),
     telegramBotToken: token,
     telegramChatId: chat,
     explorerBaseUrl: env.BUYBOT_EXPLORER_BASE_URL ?? 'https://eticahub.com',

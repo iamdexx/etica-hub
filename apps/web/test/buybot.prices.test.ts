@@ -205,9 +205,9 @@ describe('computeBuyReport', () => {
     const pricing: UsdPricing = { etxUsd: 1, etiUsd: null, egazUsd: 0.001 };
     const nativeSupply = 20_155_344n * 10n ** 18n;
 
+    // Without the native supply there is no honest EGAZ MC to show.
     const without = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing);
-    // 1.93M * $0.001 = $1,930
-    expect(without.mcBoughtUsd).toBeCloseTo(1_930, 4);
+    expect(without.mcBoughtUsd).toBeNull();
 
     const withOverride = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing, {
       wegazNativeSupply: nativeSupply,
@@ -236,7 +236,7 @@ describe('computeBuyReport', () => {
     expect(ethSpentReport.mcBoughtUsd).toBeCloseTo(100_000_000, 0);
   });
 
-  it('falls back to the on-chain totalSupply when the WEGAZ override is null/zero', () => {
+  it('hides the WEGAZ MC instead of quoting the wrapped totalSupply when no native supply is known', () => {
     const wegazWrapped: TokenMeta = {
       address: WEGAZ,
       symbol: 'WEGAZ',
@@ -260,12 +260,60 @@ describe('computeBuyReport', () => {
     })!;
     const pricing: UsdPricing = { etxUsd: 1, etiUsd: null, egazUsd: 0.001 };
 
-    for (const override of [null, 0n, undefined]) {
-      const r = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing, {
-        wegazNativeSupply: override,
-      });
-      expect(r.mcBoughtUsd).toBeCloseTo(1_930, 4);
+    for (const override of [undefined, { wegazNativeSupply: null }, { wegazNativeSupply: 0n }]) {
+      const r = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing, override);
+      expect(r.mcBoughtUsd).toBeNull();
+      // Price and notional still resolve from the EGAZ anchor.
+      expect(r.pricePerBoughtInUsd).toBeCloseTo(0.001, 8);
+      expect(r.notionalUsd).toBeCloseTo(1, 8);
+      // The ETX side is unaffected.
+      expect(r.mcSpentUsd).toBeCloseTo(100_000_000, 0);
     }
+  });
+
+  it('prices USDC.e at the fixed stable quote and derives the ETX price from it', () => {
+    const USDCE = getAddress('0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335') as Address;
+    const usdce: TokenMeta = {
+      address: USDCE,
+      symbol: 'USDC.e',
+      decimals: 6,
+      totalSupply: 20_271_803n, // 20.271803 USDC.e
+    };
+    // Pool before the swap: 20.27 USDC.e / 5,000 ETX → $0.004054 per ETX.
+    // Snapshot reserves are post-swap (+2 USDC.e in, -450 ETX out).
+    const p: PoolSnapshot = {
+      pair: getAddress('0x100DEC19D4788f4Cfd00a07611457A9a6D938305') as Address,
+      token0: usdce,
+      token1: tokenETX,
+      reserve0After: 22_271_803n,
+      reserve1After: 4_550n * 10n ** 18n,
+    };
+    // 2 USDC.e in, ETX out → ETX buy.
+    const decoded = decodeSwapAsBuy(p, {
+      sender: ETX,
+      to: ETX,
+      amount0In: 2_000_000n,
+      amount0Out: 0n,
+      amount1In: 0n,
+      amount1Out: 450n * 10n ** 18n,
+    })!;
+    const pricing: UsdPricing = {
+      etxUsd: null,
+      etiUsd: null,
+      egazUsd: null,
+      stableUsdByToken: new Map([[USDCE, 1]]),
+    };
+    const r = computeBuyReport(decoded, ETX, ETI, WEGAZ, pricing, {
+      hideMcForTokens: new Set([USDCE]),
+    });
+    expect(r.amountSpent).toBeCloseTo(2, 8);
+    expect(r.amountBought).toBeCloseTo(450, 8);
+    expect(r.notionalUsd).toBeCloseTo(2, 8);
+    // ETX USD comes from the pool's USDC.e quote (20.271803 / 5000).
+    expect(r.pricePerBoughtInUsd).toBeCloseTo(20.271803 / 5000, 10);
+    expect(r.mcBoughtUsd).toBeCloseTo((20.271803 / 5000) * 100_000_000, 0);
+    // A bridged stable has no market cap of its own.
+    expect(r.mcSpentUsd).toBeNull();
   });
 
   it('subtracts excluded balances from totalSupply before MC math', () => {

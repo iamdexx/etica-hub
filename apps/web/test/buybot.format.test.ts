@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { getAddress, type Address } from 'viem';
-import { formatBuy, formatAmount, formatUsd, formatPriceUnit } from '../src/lib/buybot/format';
+import {
+  displaySymbol,
+  formatBuy,
+  formatAmount,
+  formatUsd,
+  formatPriceUnit,
+} from '../src/lib/buybot/format';
 import type { DecodedBuy } from '../src/lib/buybot/prices';
 
 const ETX = getAddress('0xa5A1Bc6307b0b87989B8456D4b35F88a68650044') as Address;
@@ -128,5 +134,58 @@ describe('formatBuy', () => {
     });
     expect(out.text).toContain('1 ETX = 2 ETI');
     expect(out.text).not.toContain('(—)');
+  });
+
+  it('labels WEGAZ as EGAZ everywhere (headline, price, MC) since the wrapper is not the asset', () => {
+    const d = decoded();
+    d.bought = {
+      address: getAddress('0x232fb2B87CAce92B2438054A7eB79B4081E3E11a') as Address,
+      symbol: 'WEGAZ',
+      decimals: 18,
+      totalSupply: 1_930_000n * 10n ** 18n,
+    };
+    const out = formatBuy({
+      decoded: d,
+      report: {
+        amountBought: 2500,
+        amountSpent: 100,
+        pricePerBoughtInSpent: 0.04,
+        pricePerBoughtInUsd: 0.001,
+        notionalUsd: 2.5,
+        mcBoughtUsd: 20_155,
+        mcSpentUsd: 2_100_000,
+      },
+      txHash: '0xabc123',
+      blockNumber: 12345n,
+      explorerBaseUrl: 'https://eticahub.com',
+    });
+    expect(out.text).not.toContain('WEGAZ');
+    expect(out.text).toContain('EGAZ Buy');
+    expect(out.text).toContain('MC EGAZ');
+    expect(out.text).toContain('1 EGAZ =');
+    expect(displaySymbol('wegaz')).toBe('EGAZ');
+    expect(displaySymbol('ETX')).toBe('ETX');
+  });
+
+  it('spent-side WEGAZ is also labelled EGAZ', () => {
+    const d = decoded();
+    d.spent = { ...d.spent, symbol: 'WEGAZ' };
+    const out = formatBuy({
+      decoded: d,
+      report: {
+        amountBought: 2500,
+        amountSpent: 100,
+        pricePerBoughtInSpent: 0.04,
+        pricePerBoughtInUsd: 0.01,
+        notionalUsd: 25,
+        mcBoughtUsd: 1_000_000,
+        mcSpentUsd: 20_155,
+      },
+      txHash: '0xabc123',
+      blockNumber: 12345n,
+      explorerBaseUrl: 'https://eticahub.com',
+    });
+    expect(out.text).not.toContain('WEGAZ');
+    expect(out.text).toContain('MC EGAZ');
   });
 });

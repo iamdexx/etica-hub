@@ -94,6 +94,8 @@ export async function fetchAnchorEtxUsd(
     etx: Address;
     eti: Address;
     wegaz: Address;
+    /** Dollar-pegged pool partner (USDC.e); used last because that pool is the shallowest. */
+    usdce?: Address;
     anchors?: { etiUsd: number | null; egazUsd: number | null };
   },
   fetchAnchors?: () => Promise<{ etiUsd: number | null; egazUsd: number | null }>,
@@ -104,6 +106,9 @@ export async function fetchAnchorEtxUsd(
     { other: args.wegaz, otherUsd: anchors.egazUsd },
     { other: args.eti, otherUsd: anchors.etiUsd },
   ];
+  if (args.usdce && args.usdce !== ZERO_ADDRESS) {
+    candidates.push({ other: args.usdce, otherUsd: 1 });
+  }
   for (const c of candidates) {
     if (c.otherUsd === null || c.otherUsd <= 0) continue;
     try {

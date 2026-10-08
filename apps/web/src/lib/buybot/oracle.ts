@@ -15,7 +15,9 @@
 
 import { erc20Abi, getAddress, type Address, type PublicClient } from 'viem';
 
+import type { FrozenHolder } from '@etica-hub/shared';
 import type { BuyBotConfig } from './config';
+import { readNativeSupply } from '@/lib/supply';
 
 /**
  * Structural subset of {@link BuyBotConfig} that {@link fetchUsdAnchors}
@@ -186,6 +188,25 @@ export async function fetchCirculatingExcludes(
     out.set(key, (out.get(key) ?? 0n) + r.balance);
   }
   return out;
+}
+
+/**
+ * Native EGAZ supply derived from the chain itself: the ETIP-1017 block
+ * emission floor at `head` minus protocol-frozen balances. Used when the
+ * BlockScout explorer is unreachable so MC never silently degrades to the
+ * wrapped WEGAZ slice.
+ */
+export async function fetchEgazNativeSupplyFromChain(
+  client: PublicClient,
+  head: bigint,
+  frozenHolders: FrozenHolder[],
+): Promise<bigint | null> {
+  try {
+    const { circulating } = await readNativeSupply(client, head, frozenHolders);
+    return circulating > 0n ? circulating : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchEgazNativeSupply(
