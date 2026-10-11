@@ -21,6 +21,7 @@ import {
   abis,
   isSupportedChainId,
 } from '@etica-hub/shared';
+import { useLpFeesEarned } from '@/hooks/useLpFeesEarned';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -368,6 +369,50 @@ export function PoolPositionsList({
   );
 }
 
+function FeesEarnedLine({
+  pos,
+  state,
+}: {
+  pos: PairMeta;
+  state: ReturnType<typeof useLpFeesEarned>;
+}) {
+  if (state.loading) {
+    return <div className="text-[11px] text-white/35">Fees earned: reading history…</div>;
+  }
+  if (state.error) {
+    return <div className="text-[11px] text-white/35">Fees earned: history unavailable</div>;
+  }
+  const fees = state.fees;
+  if (!fees) {
+    return (
+      <div className="text-[11px] text-white/35">
+        Fees earned: n/a (LP not added from this wallet)
+      </div>
+    );
+  }
+  if (!fees.consistent) {
+    return (
+      <div className="text-[11px] text-white/35">
+        Fees earned: n/a (LP moved out of this wallet)
+      </div>
+    );
+  }
+  return (
+    <div
+      className="text-[11px] text-emerald-300/90"
+      title="Swap fees your LP has earned since your first deposit, measured as growth of your pool share (price moves and impermanent loss excluded), shown at the current pool ratio. Updates live with every swap."
+    >
+      Fees earned: +{formatTruncated(fees.fee0, pos.decimals0, 6)} {pos.symbol0} +{' '}
+      {formatTruncated(fees.fee1, pos.decimals1, 6)} {pos.symbol1}
+      <span className="text-white/40">
+        {' '}
+        · +{fees.pctOfDeposits.toFixed(2)}% on deposits
+        {fees.untrackedLpTransfers ? ' (excl. transferred LP)' : ''}
+      </span>
+    </div>
+  );
+}
+
 function PositionRow({
   ctx,
   pos,
@@ -411,6 +456,15 @@ function PositionRow({
   // total. The remove-liquidity slider below operates on wallet LP only,
   // since farmed LP must be unstaked from /farms first.
   const totalLp = pos.lpBalance + pos.farmLpBalance;
+  const feesEarned = useLpFeesEarned({
+    pair: pos.pair,
+    user: address,
+    farm: ctx.etxFarms,
+    reserve0: pos.reserve0,
+    reserve1: pos.reserve1,
+    totalSupply: pos.totalSupply,
+    lpBalance: totalLp,
+  });
 
   const shareBps = useMemo(() => {
     if (pos.totalSupply === 0n) return 0n;
@@ -532,6 +586,7 @@ function PositionRow({
             {formatTruncated(userAmount0, pos.decimals0, 6)} {pos.symbol0} +{' '}
             {formatTruncated(userAmount1, pos.decimals1, 6)} {pos.symbol1}
           </div>
+          <FeesEarnedLine pos={pos} state={feesEarned} />
         </div>
         <div className="text-right">
           <div className="text-xs text-white/60">
