@@ -142,7 +142,10 @@ export function PoolPositionsList({
             },
           ])
         : [],
-    query: { enabled: Boolean(ctx && address) && pairAddrs.length > 0 },
+    query: {
+      enabled: Boolean(ctx && address) && pairAddrs.length > 0,
+      refetchInterval: 15_000,
+    },
   });
 
   // Collect (token0, token1) so we can do a second batch read for symbol/decimals.
@@ -390,10 +393,10 @@ function FeesEarnedLine({
       </div>
     );
   }
-  if (!fees.consistent) {
+  if (!fees.consistent || fees.untrackedLpTransfers) {
     return (
       <div className="text-[11px] text-white/35">
-        Fees earned: n/a (LP moved out of this wallet)
+        Fees earned: n/a (LP transferred between wallets)
       </div>
     );
   }
@@ -407,7 +410,6 @@ function FeesEarnedLine({
       <span className="text-white/40">
         {' '}
         · +{fees.pctOfDeposits.toFixed(2)}% on deposits
-        {fees.untrackedLpTransfers ? ' (excl. transferred LP)' : ''}
       </span>
     </div>
   );
