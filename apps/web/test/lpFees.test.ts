@@ -143,4 +143,34 @@ describe('computeLpFeesEarned', () => {
     expect(Number(fees!.fee0) / 1e6).toBeCloseTo(0.2, 4);
     expect(Number(fees!.fee1) / 1e18).toBeCloseTo(50, 4);
   });
+
+  it('backs out tokens donated straight to the pool (sync without a swap)', () => {
+    // Wallet holds half the LP. Someone sends 2/2 tokens to the pair and
+    // calls sync(): 100/100 -> 102/102 with no fee paid, then swaps earn 1%.
+    const fees = computeLpFeesEarned({
+      reserve0: (10302n * E18) / 100n,
+      reserve1: (10302n * E18) / 100n,
+      totalSupply: 100n * E18,
+      lpBalance: 50n * E18,
+      adds: [
+        { lp: 50n * E18, totalSupply: 100n * E18, reserve0: 100n * E18, reserve1: 100n * E18 },
+      ],
+      removes: [],
+      donations: [
+        {
+          reserve0Before: 100n * E18,
+          reserve1Before: 100n * E18,
+          reserve0After: 102n * E18,
+          reserve1After: 102n * E18,
+          userLp: 50n * E18,
+          totalSupply: 100n * E18,
+        },
+      ],
+      untrackedLpTransfers: false,
+    });
+    // 1% earned on the post-donation share (51 L) = 0.51 L on 50 L deposited.
+    // Without the donation adjustment this would read +3.02%.
+    expect(fees!.pctOfDeposits).toBeCloseTo(1.02, 6);
+    expect(fees!.consistent).toBe(true);
+  });
 });
