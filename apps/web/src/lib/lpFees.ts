@@ -30,6 +30,21 @@ export interface LpRemove {
   amount1: bigint;
 }
 
+/**
+ * A `sync()` that followed tokens sent straight to the pair (no Swap/Mint/Burn
+ * in the same tx). It grows every LP holder's share without any trade having
+ * paid a fee, so the wallet's pro-rata slice is backed out of the fee figure.
+ */
+export interface LpDonation {
+  reserve0Before: bigint;
+  reserve1Before: bigint;
+  reserve0After: bigint;
+  reserve1After: bigint;
+  /** Wallet LP (incl. farm-staked) and LP total supply at that moment. */
+  userLp: bigint;
+  totalSupply: bigint;
+}
+
 export interface LpFeesInput {
   reserve0: bigint;
   reserve1: bigint;
@@ -38,6 +53,7 @@ export interface LpFeesInput {
   lpBalance: bigint;
   adds: LpAdd[];
   removes: LpRemove[];
+  donations?: LpDonation[];
   /**
    * LP tokens moved in/out of the wallet other than via mint, burn or farm
    * staking — their basis is unknown, so the figure is only a lower bound
@@ -88,7 +104,14 @@ export function computeLpFeesEarned(input: LpFeesInput): LpFeesEarned | null {
     input.reserve0,
     input.reserve1,
   );
-  const feesL = now + removed - added;
+  const donated = (input.donations ?? []).reduce((s, d) => {
+    if (d.totalSupply === 0n) return s;
+    const deltaL =
+      invariantUnits(d.reserve0After, d.reserve1After) -
+      invariantUnits(d.reserve0Before, d.reserve1Before);
+    return s + (Number(d.userLp) / Number(d.totalSupply)) * Math.max(deltaL, 0);
+  }, 0);
+  const feesL = now + removed - added - donated;
   // Float noise on a brand-new deposit can land a hair below zero.
   const consistent = feesL >= -added * 1e-9;
   const sqrtK = invariantUnits(input.reserve0, input.reserve1);

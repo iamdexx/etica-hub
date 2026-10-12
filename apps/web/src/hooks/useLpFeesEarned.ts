@@ -4,16 +4,33 @@ import { useEffect, useState } from 'react';
 import { parseAbiItem, parseEventLogs, type Address, type Hex, type Log } from 'viem';
 import { usePublicClient } from 'wagmi';
 import { abis } from '@etica-hub/shared';
-import { computeLpFeesEarned, type LpAdd, type LpFeesEarned, type LpRemove } from '@/lib/lpFees';
+import {
+  computeLpFeesEarned,
+  type LpAdd,
+  type LpDonation,
+  type LpFeesEarned,
+  type LpRemove,
+} from '@/lib/lpFees';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const TRANSFER_EVENT = parseAbiItem(
   'event Transfer(address indexed from, address indexed to, uint256 value)',
 );
+const SYNC_EVENT = parseAbiItem('event Sync(uint112 reserve0, uint112 reserve1)');
+const SWAP_EVENT = parseAbiItem(
+  'event Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to)',
+);
+const MINT_EVENT = parseAbiItem(
+  'event Mint(address indexed sender, uint256 amount0, uint256 amount1)',
+);
+const BURN_EVENT = parseAbiItem(
+  'event Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to)',
+);
 
 interface LpHistory {
   adds: LpAdd[];
   removes: LpRemove[];
+  donations: LpDonation[];
   untrackedLpTransfers: boolean;
 }
 
@@ -31,15 +48,24 @@ interface TransferLog {
   args: { from?: Address; to?: Address; value?: bigint };
 }
 
-/** LP total supply after the given log, replayed from the pair's own mint/burn transfers. */
-function supplyAfter(supplyEvents: TransferLog[], blockNumber: bigint, logIndex: number): bigint {
-  let supply = 0n;
-  for (const e of supplyEvents) {
-    if (e.blockNumber < blockNumber || (e.blockNumber === blockNumber && e.logIndex <= logIndex)) {
-      supply += e.args.from === ZERO ? (e.args.value ?? 0n) : -(e.args.value ?? 0n);
-    }
-  }
-  return supply;
+interface LogPosition {
+  blockNumber: bigint;
+  logIndex: number;
+}
+
+function isAtOrBefore(e: LogPosition, at: LogPosition): boolean {
+  return (
+    e.blockNumber < at.blockNumber ||
+    (e.blockNumber === at.blockNumber && e.logIndex <= at.logIndex)
+  );
+}
+
+/** Σ plus − Σ minus over the transfers at or before `at` (LP supply or a wallet's LP). */
+function balanceAfter(plus: TransferLog[], minus: TransferLog[], at: LogPosition): bigint {
+  let bal = 0n;
+  for (const e of plus) if (isAtOrBefore(e, at)) bal += e.args.value ?? 0n;
+  for (const e of minus) if (isAtOrBefore(e, at)) bal -= e.args.value ?? 0n;
+  return bal;
 }
 
 /**
@@ -79,13 +105,23 @@ export function useLpFeesEarned(params: {
       });
 
     (async () => {
-      const [incoming, outgoing, allMints, allBurns] = await Promise.all([
-        transfers({ to: user }),
-        transfers({ from: user }),
-        transfers({ from: ZERO }),
-        transfers({ to: ZERO }),
-      ]);
-      const supplyEvents = [...allMints, ...allBurns];
+      const pairEvents = <
+        T extends typeof SYNC_EVENT | typeof SWAP_EVENT | typeof MINT_EVENT | typeof BURN_EVENT,
+      >(
+        event: T,
+      ) => publicClient.getLogs({ address: pair, event, fromBlock: 0n, toBlock: 'latest' });
+      const [incoming, outgoing, allMints, allBurns, syncs, swaps, mints, burns] =
+        await Promise.all([
+          transfers({ to: user }),
+          transfers({ from: user }),
+          transfers({ from: ZERO }),
+          transfers({ to: ZERO }),
+          pairEvents(SYNC_EVENT),
+          pairEvents(SWAP_EVENT),
+          pairEvents(MINT_EVENT),
+          pairEvents(BURN_EVENT),
+        ]);
+      const supplyAt = (at: LogPosition) => balanceAfter(allMints, allBurns, at);
 
       const farmLc = farm.toLowerCase();
       const pairLc = pair.toLowerCase();
@@ -128,7 +164,7 @@ export function useLpFeesEarned(params: {
         );
         adds.push({
           lp: log.args.value ?? 0n,
-          totalSupply: supplyAfter(supplyEvents, log.blockNumber, lastIndex),
+          totalSupply: supplyAt({ blockNumber: log.blockNumber, logIndex: lastIndex }),
           reserve0: sync.args.reserve0,
           reserve1: sync.args.reserve1,
         });
@@ -143,7 +179,35 @@ export function useLpFeesEarned(params: {
           }).map((l) => ({ amount0: l.args.amount0, amount1: l.args.amount1 }));
         },
       );
-      if (!cancelled) setHistory({ adds, removes, untrackedLpTransfers: untracked });
+      // A Sync with no Swap/Mint/Burn in its tx is a bare sync() after a
+      // direct token transfer to the pair: growth for every holder, no fee.
+      const tradeTxs = new Set([...swaps, ...mints, ...burns].map((l) => l.transactionHash));
+      const userPlus = incoming.filter((l) => (l.args.from ?? ZERO).toLowerCase() !== farmLc);
+      const userMinus = outgoing.filter((l) => (l.args.to ?? ZERO).toLowerCase() !== farmLc);
+      const orderedSyncs = [...syncs].sort((a, b) =>
+        a.blockNumber === b.blockNumber
+          ? a.logIndex - b.logIndex
+          : a.blockNumber < b.blockNumber
+            ? -1
+            : 1,
+      );
+      const donations: LpDonation[] = [];
+      orderedSyncs.forEach((sync, i) => {
+        if (i === 0 || tradeTxs.has(sync.transactionHash)) return;
+        const prev = orderedSyncs[i - 1];
+        const at = { blockNumber: sync.blockNumber, logIndex: sync.logIndex };
+        const userLp = balanceAfter(userPlus, userMinus, at);
+        if (userLp <= 0n) return;
+        donations.push({
+          reserve0Before: prev.args.reserve0 ?? 0n,
+          reserve1Before: prev.args.reserve1 ?? 0n,
+          reserve0After: sync.args.reserve0 ?? 0n,
+          reserve1After: sync.args.reserve1 ?? 0n,
+          userLp,
+          totalSupply: supplyAt(at),
+        });
+      });
+      if (!cancelled) setHistory({ adds, removes, donations, untrackedLpTransfers: untracked });
     })().catch((err: unknown) => {
       if (!cancelled) setError(err instanceof Error ? err.message : 'LP history unavailable');
     });
