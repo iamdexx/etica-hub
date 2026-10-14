@@ -120,6 +120,18 @@ export function checkFactory(snap: FactorySnapshot, expected: ExpectedSettings):
   return out;
 }
 
+/** The pause key only works while it is the on-chain guardian (keeper rotation, setGuardian). */
+export function checkGuardianKey(snap: FactorySnapshot, keyAddress: Address | undefined): Finding[] {
+  if (!keyAddress || eq(keyAddress, snap.guardian)) return [];
+  return [
+    {
+      severity: 'warning',
+      code: 'GUARDIAN_KEY',
+      message: `watcher key ${keyAddress} is not the on-chain guardian ${snap.guardian}; auto-pause and /pause will fail until setGuardian`,
+    },
+  ];
+}
+
 export function checkWindow(
   w: WindowSnapshot,
   prev: WindowState | undefined,

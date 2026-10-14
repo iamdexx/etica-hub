@@ -26,6 +26,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { directFactoryAbi, erc20Abi, hubPairAbi, metaPairAbi } from './abi.js';
 import {
   checkFactory,
+  checkGuardianKey,
   checkGaming,
   checkWindow,
   nextState,
@@ -261,6 +262,9 @@ export async function main(cfg: WatcherConfig = loadConfig()): Promise<number> {
 
   const factorySnap = await snapshotFactory(client, cfg.factory, expected);
   const findings = checkFactory(factorySnap, expected);
+  findings.push(
+    ...checkGuardianKey(factorySnap, cfg.guardianPrivateKey && privateKeyToAccount(cfg.guardianPrivateKey).address),
+  );
 
   const n = Number(
     await client.readContract({ address: cfg.factory, abi: directFactoryAbi, functionName: 'allPairsLength' }),
