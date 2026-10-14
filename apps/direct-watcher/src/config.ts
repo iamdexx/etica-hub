@@ -36,6 +36,14 @@ export interface WatcherConfig {
   expectedPath: string;
   telegramBotToken?: string;
   telegramChatId?: string;
+  /** Telegram user ids allowed to run /status and /pause. */
+  telegramAdminIds: number[];
+  /** Bot username (without @) so `/status@bot` in a group is recognised. */
+  telegramBotName?: string;
+  /** A swap whose execution price is this far off the pre-trade reserve price is flagged. */
+  priceImpactBps: number;
+  /** A sender trading both directions within this many blocks is flagged. */
+  roundTripBlocks: number;
 }
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
@@ -80,6 +88,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WatcherConfig 
     expectedPath: env.DIRECT_EXPECTED_PATH?.trim() || 'expected.json',
     telegramBotToken: env.DIRECT_TELEGRAM_BOT_TOKEN?.trim() || env.BRIDGE_TELEGRAM_BOT_TOKEN?.trim(),
     telegramChatId: env.DIRECT_TELEGRAM_CHAT_ID?.trim() || env.BRIDGE_TELEGRAM_CHAT_ID?.trim(),
+    telegramAdminIds: (env.DIRECT_TELEGRAM_ADMIN_IDS ?? '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean)
+      .map((v) => {
+        const n = Number(v);
+        if (!Number.isInteger(n)) throw new Error(`DIRECT_TELEGRAM_ADMIN_IDS has a non-integer id: ${v}`);
+        return n;
+      }),
+    telegramBotName: env.DIRECT_TELEGRAM_BOT_NAME?.trim().replace(/^@/, '') || undefined,
+    priceImpactBps: readNumber(env, 'DIRECT_PRICE_IMPACT_BPS', 300),
+    roundTripBlocks: readNumber(env, 'DIRECT_ROUND_TRIP_BLOCKS', 3),
   };
 }
 

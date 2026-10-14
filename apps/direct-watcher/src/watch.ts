@@ -26,14 +26,17 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { directFactoryAbi, erc20Abi, hubPairAbi, metaPairAbi } from './abi.js';
 import {
   checkFactory,
+  checkGaming,
   checkWindow,
   nextState,
   worst,
   type FactorySnapshot,
   type Finding,
+  type SwapRecord,
   type WatcherState,
   type WindowSnapshot,
 } from './checks.js';
+import { fetchUpdates, HELP_TEXT, parseCommands, type Command } from './commands.js';
 import { isZeroAddress, loadConfig, type ExpectedSettings, type WatcherConfig } from './config.js';
 import { sendTelegramAlert } from './telegram.js';
 
@@ -120,12 +123,29 @@ async function snapshotWindow(
     client.readContract({ address: etx, abi: erc20Abi, functionName: 'balanceOf', args: [pair] }),
     client.getLogs({ address: pair, fromBlock, toBlock }),
   ]);
-  const swaps = parseEventLogs({ abi: metaPairAbi, eventName: 'Swap', logs }).map((l) => ({
-    amount0In: BigInt(l.args.amount0In),
-    amount1In: BigInt(l.args.amount1In),
-    sender: l.args.sender,
-    txHash: l.transactionHash,
-  }));
+  // walk Swap and Sync in log order: the Sync preceding a Swap is its pre-trade reserve
+  const parsed = parseEventLogs({ abi: metaPairAbi, logs }).sort((a, b) =>
+    a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1,
+  );
+  const swaps: SwapRecord[] = [];
+  let pre: { r0: bigint; r1: bigint } | undefined;
+  for (const l of parsed) {
+    if (l.eventName === 'Sync') {
+      pre = { r0: BigInt(l.args.reserve0), r1: BigInt(l.args.reserve1) };
+    } else if (l.eventName === 'Swap') {
+      swaps.push({
+        amount0In: BigInt(l.args.amount0In),
+        amount1In: BigInt(l.args.amount1In),
+        amount0Out: BigInt(l.args.amount0Out),
+        amount1Out: BigInt(l.args.amount1Out),
+        sender: l.args.sender,
+        to: l.args.to,
+        txHash: l.transactionHash,
+        blockNumber: l.blockNumber,
+        ...(pre ? { pre } : {}),
+      });
+    }
+  }
   // hub cross price r1/r0 = (h1.token/h1.etx) / (h0.token/h0.etx)
   return {
     pair,
@@ -157,6 +177,59 @@ async function pauseVenue(cfg: WatcherConfig, chain: ReturnType<typeof defineCha
     functionName: 'pauseSwaps',
   });
   return `paused swaps via guardian ${account.address}: ${hash}`;
+}
+
+function statusText(f: FactorySnapshot, windows: WindowSnapshot[], findings: Finding[], head: bigint): string {
+  const lines = [`<b>EticaSwap Direct status</b> (block ${head})`];
+  lines.push(
+    f.swapsPaused
+      ? f.pauseExpiresAt
+        ? `⏸ paused by guardian, reopens ${new Date(f.pauseExpiresAt * 1000).toISOString()}`
+        : '⏸ paused by the multisig (no expiry)'
+      : '▶️ swaps open',
+  );
+  lines.push(`guardian ${f.guardian}, setter ${f.feeToSetter}, feeTo ${f.feeTo}`);
+  lines.push(`gate ${f.minStEtx / 10n ** 18n} stETX, ladder ${f.tiers.map((t) => `${t.minStEtx / 10n ** 18n}:${t.feeBps}bps`).join(' ') || '(none)'}`);
+  for (const w of windows) {
+    lines.push(
+      `• ${w.pair}${w.retired ? ' (retired)' : ''} hub LP ${w.lp0}/${w.lp1}, reserves ${w.r0}/${w.r1}, ${w.swaps.length} swap(s) this scan`,
+    );
+  }
+  lines.push(findings.length ? `${findings.length} finding(s): ${findings.map((x) => x.code).join(', ')}` : 'no findings');
+  return lines.join('\n');
+}
+
+async function answerCommands(
+  cfg: WatcherConfig,
+  chain: ReturnType<typeof defineChain>,
+  lastUpdateId: number | undefined,
+  factorySnap: FactorySnapshot,
+  windows: WindowSnapshot[],
+  findings: Finding[],
+  head: bigint,
+): Promise<number | undefined> {
+  if (!cfg.telegramBotToken || cfg.telegramAdminIds.length === 0) return lastUpdateId;
+  const updates = await fetchUpdates(cfg.telegramBotToken, lastUpdateId);
+  if (updates.length === 0) return lastUpdateId;
+  const newest = Math.max(...updates.map((u) => u.update_id));
+  const commands: Command[] = parseCommands(updates, cfg.telegramAdminIds, cfg.telegramBotName);
+  for (const c of commands) {
+    let reply: string;
+    if (c.name === 'help') reply = HELP_TEXT;
+    else if (c.name === 'status') reply = statusText(factorySnap, windows, findings, head);
+    else if (factorySnap.swapsPaused) reply = 'already paused';
+    else {
+      try {
+        reply = `${c.fromName} asked for a pause: ${await pauseVenue(cfg, chain)}`;
+        factorySnap.swapsPaused = true;
+      } catch (err) {
+        reply = `pauseSwaps failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    console.info(`[direct-watcher] /${c.name} from ${c.fromName}`);
+    await sendTelegramAlert(reply, { botToken: cfg.telegramBotToken, chatId: String(c.chatId), silent: true });
+  }
+  return newest;
 }
 
 function format(findings: Finding[], action?: string): string {
@@ -210,6 +283,7 @@ export async function main(cfg: WatcherConfig = loadConfig()): Promise<number> {
     const w = await snapshotWindow(client, cfg.factory, pair, fromBlock, head);
     windows.push(w);
     findings.push(...checkWindow(w, prev?.windows[pair.toLowerCase()], cfg.reserveDriftBps, cfg.largeSwapBps));
+    findings.push(...checkGaming(w, cfg.priceImpactBps, cfg.roundTripBlocks));
   }
 
   let action: string | undefined;
@@ -222,6 +296,7 @@ export async function main(cfg: WatcherConfig = loadConfig()): Promise<number> {
   }
 
   const state = nextState(windows, prev, head);
+  state.lastUpdateId = await answerCommands(cfg, chain, prev?.lastUpdateId, factorySnap, windows, findings, head);
   mkdirSync(dirname(cfg.statePath), { recursive: true });
   writeFileSync(cfg.statePath, JSON.stringify(state, null, 2) + '\n');
 
