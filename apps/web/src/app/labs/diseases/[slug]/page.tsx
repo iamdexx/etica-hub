@@ -109,11 +109,11 @@ export default async function DiseasePage({ params }: Params): Promise<JSX.Eleme
       </section>
 
       {targets.length > 0 && (
-        <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+        <section className="surface-2 p-4">
           <h2 className="mb-2 text-[11px] uppercase tracking-wider text-white/45">Research goals</h2>
           <ul className="flex flex-wrap gap-2 text-xs">
             {targets.map((t) => (
-              <li key={t} className="rounded-full border border-white/10 px-2.5 py-1 text-white/70">
+              <li key={t} className="rounded-full border border-white/[0.07] px-2.5 py-1 text-white/70">
                 {t}
               </li>
             ))}
@@ -125,7 +125,7 @@ export default async function DiseasePage({ params }: Params): Promise<JSX.Eleme
         <h2 className="text-sm font-medium text-white/80">
           Top discoveries{total > TOP_N ? ` (best ${TOP_N} of ${total})` : ''}
         </h2>
-        <ol className="divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.03]">
+        <ol className="divide-y divide-white/5 rounded-xl border border-white/[0.07] bg-white/[0.03]">
           {results.map((r) => (
             <li key={r.id} className="p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -150,7 +150,7 @@ export default async function DiseasePage({ params }: Params): Promise<JSX.Eleme
         </ol>
       </section>
 
-      <footer className="flex flex-wrap gap-3 border-t border-white/10 pt-4 text-xs">
+      <footer className="flex flex-wrap gap-3 border-t border-white/[0.07] pt-4 text-xs">
         <Link
           href={`/labs/archive?disease=${encodeURIComponent(d.name)}`}
           className="text-emerald-200/80 hover:text-emerald-200"
@@ -167,7 +167,7 @@ export default async function DiseasePage({ params }: Params): Promise<JSX.Eleme
 
 function Stat({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <div className="surface-2 p-4">
       <div className="text-[11px] uppercase tracking-wider text-white/45">{label}</div>
       <div className="mt-1 font-mono text-lg text-white/90">{value}</div>
     </div>

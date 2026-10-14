@@ -96,7 +96,7 @@ export function BridgeOwnerSetupCard() {
   }
 
   return (
-    <section className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-5">
+    <section className="space-y-3 rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
       <h2 className="text-lg font-semibold">Owner: Etica fee recipient</h2>
       <p className="text-sm text-white/70">
         The USDC.e router <span className="font-mono">{router}</span> must forward fees to{' '}

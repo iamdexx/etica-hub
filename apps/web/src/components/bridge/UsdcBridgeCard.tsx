@@ -336,7 +336,7 @@ export function UsdcBridgeCard() {
                 : `Bridge to ${leg.destinationName}`;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+    <div className="surface p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-widest text-white/40">Transfer</div>
@@ -349,7 +349,7 @@ export function UsdcBridgeCard() {
           type="button"
           onClick={flip}
           disabled={busy}
-          className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80 hover:bg-white/10 disabled:opacity-50"
+          className="rounded-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-xs text-white/80 hover:bg-white/10 disabled:opacity-50"
         >
           ⇅ Flip direction
         </button>
@@ -357,7 +357,7 @@ export function UsdcBridgeCard() {
 
       <label className="mt-4 block text-xs text-white/50">
         Amount ({leg.tokenSymbol})
-        <div className="mt-1 flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2">
+        <div className="mt-1 flex items-center gap-2 rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2">
           <input
             inputMode="decimal"
             placeholder="0.00"
@@ -389,7 +389,7 @@ export function UsdcBridgeCard() {
           onChange={(e) => setRecipientInput(e.target.value.trim())}
           disabled={busy}
           spellCheck={false}
-          className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white outline-none placeholder:text-white/25"
+          className="mt-1 w-full rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white outline-none placeholder:text-white/25"
         />
         <div className="mt-1 text-[11px] text-white/40">Defaults to the connected wallet.</div>
       </label>

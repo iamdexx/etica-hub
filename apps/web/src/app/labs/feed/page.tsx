@@ -50,7 +50,7 @@ function statusClasses(status: LabsJobStatus): string {
     case 'error':
       return 'border-rose-400/30 bg-rose-400/10 text-rose-200';
     default:
-      return 'border-white/15 bg-white/5 text-white/70';
+      return 'border-white/15 bg-white/[0.035] text-white/70';
   }
 }
 
@@ -165,7 +165,7 @@ export default function LabsFeedPage(): JSX.Element {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-white/60">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.04] px-2.5 py-1">
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
             <span>refreshes every {REFRESH_MS / 1000}s</span>
           </span>
@@ -200,7 +200,7 @@ export default function LabsFeedPage(): JSX.Element {
             className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
               topicFilter === null
                 ? 'border-white/30 bg-white/15 text-white'
-                : 'border-white/10 bg-white/[0.04] text-white/65 hover:border-white/25 hover:text-white'
+                : 'border-white/[0.07] bg-white/[0.04] text-white/65 hover:border-white/25 hover:text-white'
             }`}
           >
             All topics ({entries.length})
@@ -219,7 +219,7 @@ export default function LabsFeedPage(): JSX.Element {
                 className={`max-w-[20rem] truncate rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                   active
                     ? 'border-violet-400/60 bg-violet-400/15 text-violet-100'
-                    : 'border-white/10 bg-white/[0.04] text-white/70 hover:border-violet-400/40 hover:text-white'
+                    : 'border-white/[0.07] bg-white/[0.04] text-white/70 hover:border-violet-400/40 hover:text-white'
                 }`}
                 title={title}
               >
@@ -257,7 +257,7 @@ export default function LabsFeedPage(): JSX.Element {
             <Link
               key={entry.id}
               href={`/labs/feed/${entry.id}`}
-              className="group flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+              className="group flex flex-col gap-3 surface-2 p-4 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
             >
               <div className="flex items-center justify-between gap-3">
                 <span

@@ -184,7 +184,7 @@ function CardShell(props: {
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <section className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium text-white/70">{props.title}</h2>
         <span className="text-[10px] uppercase tracking-wider text-white/40">
@@ -222,8 +222,8 @@ export function StatusRevenueCard() {
       <CardShell title="Protocol revenue (since launch)" loading>
         <div className="space-y-2">
           <div className="h-4 w-40 animate-pulse rounded bg-white/10" />
-          <div className="h-4 w-28 animate-pulse rounded bg-white/5" />
-          <div className="h-4 w-32 animate-pulse rounded bg-white/5" />
+          <div className="h-4 w-28 animate-pulse rounded bg-white/[0.035]" />
+          <div className="h-4 w-32 animate-pulse rounded bg-white/[0.035]" />
         </div>
       </CardShell>
     );
@@ -346,8 +346,8 @@ export function StatusLiquidityFlowCard() {
       <CardShell title="Liquidity flow (since launch)" loading>
         <div className="space-y-2">
           <div className="h-4 w-40 animate-pulse rounded bg-white/10" />
-          <div className="h-4 w-28 animate-pulse rounded bg-white/5" />
-          <div className="h-4 w-32 animate-pulse rounded bg-white/5" />
+          <div className="h-4 w-28 animate-pulse rounded bg-white/[0.035]" />
+          <div className="h-4 w-32 animate-pulse rounded bg-white/[0.035]" />
         </div>
       </CardShell>
     );

@@ -1,76 +1,132 @@
+import Image from 'next/image';
 import Link from 'next/link';
+import { GITHUB_URL, NAV_GROUPS, TELEGRAM_URL } from '@/lib/nav';
 
-const SEO_HUBS: Array<[label: string, href: string]> = [
-  ['Tokens', '/tokens'],
-  ['Pools', '/pools'],
-  ['Research by disease', '/labs/diseases'],
-  ['Archive', '/labs/archive'],
-  ['Research feed', '/labs/feed.xml'],
-  ['API', '/api'],
-  ['Status', '/status'],
-];
-
-interface AggregatorLink {
+interface ExternalLink {
   label: string;
   href: string;
 }
 
-function aggregatorLinks(): AggregatorLink[] {
-  const out: AggregatorLink[] = [];
+function aggregatorLinks(): ExternalLink[] {
+  const out: ExternalLink[] = [];
   const cg = process.env.NEXT_PUBLIC_COINGECKO_COIN_ID;
   if (cg) out.push({ label: 'CoinGecko', href: `https://www.coingecko.com/en/coins/${cg}` });
-
   const cmc = process.env.NEXT_PUBLIC_CMC_SLUG;
-  if (cmc) out.push({ label: 'CoinMarketCap', href: `https://coinmarketcap.com/currencies/${cmc}/` });
-
+  if (cmc)
+    out.push({ label: 'CoinMarketCap', href: `https://coinmarketcap.com/currencies/${cmc}/` });
   const ds = process.env.NEXT_PUBLIC_DEXSCREENER_PAIR;
   if (ds) out.push({ label: 'DEX Screener', href: `https://dexscreener.com/etica/${ds}` });
-
   const gt = process.env.NEXT_PUBLIC_GECKOTERMINAL_POOL;
-  if (gt) out.push({ label: 'GeckoTerminal', href: `https://www.geckoterminal.com/etica/pools/${gt}` });
-
+  if (gt)
+    out.push({ label: 'GeckoTerminal', href: `https://www.geckoterminal.com/etica/pools/${gt}` });
+  out.push({ label: 'DefiLlama', href: 'https://defillama.com/protocol/eticahub' });
   return out;
 }
 
+const MORE: ExternalLink[] = [
+  { label: 'Research by disease', href: '/labs/diseases' },
+  { label: 'Research feed', href: '/labs/feed.xml' },
+  { label: 'Pair analytics', href: '/explorer/pairs' },
+  { label: 'Contracts', href: '/explorer/contracts' },
+];
+
 export function SiteFooter() {
-  const links = aggregatorLinks();
+  const external = aggregatorLinks();
   const year = new Date().getFullYear();
 
   return (
-    <footer className="mx-auto mt-10 w-full max-w-7xl border-t border-white/5 px-3 py-6 text-xs text-white/45 sm:px-4 md:px-5 lg:px-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-1">
-          <p className="text-white/55">
-            © {year} EticaHub · non-custodial DeFi on Etica Protocol (chain 61803)
+    <footer className="mx-auto mt-20 w-full max-w-7xl px-4 pb-10 sm:px-5 md:px-6 lg:px-8">
+      <div className="hairline mb-10" />
+      <div className="grid gap-10 lg:grid-cols-[1.3fr_repeat(4,1fr)]">
+        <div className="max-w-sm space-y-4">
+          <Link href="/" className="inline-flex items-center gap-2.5">
+            <Image
+              src="/brand/eticahub-mark-64.png"
+              alt=""
+              width={28}
+              height={28}
+              className="h-7 w-7"
+            />
+            <span className="text-base font-semibold tracking-tight text-white">EticaHub</span>
+          </Link>
+          <p className="text-sm leading-6 text-white/50">
+            Non-custodial DEX, liquid staking, Hyperlane bridge and an autonomous AI protein lab,
+            built on the Etica execution layer. Chain 61803.
           </p>
-          <p className="max-w-2xl leading-5 text-white/35">
-            DEX, staking, governance research, farming, bridging, and liquidity infrastructure built directly on the Etica execution layer.
-          </p>
-          <nav className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-white/45">
-            {SEO_HUBS.map(([label, href]) => (
-              <Link key={href} href={href} className="hover:text-white/80">
-                {label}
-              </Link>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={TELEGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="chip hover:border-white/25 hover:text-white"
+            >
+              Telegram
+            </a>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="chip hover:border-white/25 hover:text-white"
+            >
+              GitHub
+            </a>
+            {external.map((l) => (
+              <a
+                key={l.href}
+                href={l.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="chip hover:border-white/25 hover:text-white"
+              >
+                {l.label}
+              </a>
             ))}
-          </nav>
+          </div>
         </div>
 
-        {links.length > 0 && (
-          <ul className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            {links.map((l) => (
-              <li key={l.href}>
-                <a
-                  href={l.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-white/55 transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
-                >
-                  {l.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
+        {NAV_GROUPS.map((g) => (
+          <div key={g.label}>
+            <div className="eyebrow">{g.label}</div>
+            <ul className="mt-3 space-y-2 text-sm">
+              {g.links.map((l) => (
+                <li key={l.href}>
+                  <Link href={l.href} className="text-white/60 transition-colors hover:text-white">
+                    {l.label}
+                  </Link>
+                </li>
+              ))}
+              {g.label === 'Explore'
+                ? MORE.slice(2).map((l) => (
+                    <li key={l.href}>
+                      <Link
+                        href={l.href}
+                        className="text-white/60 transition-colors hover:text-white"
+                      >
+                        {l.label}
+                      </Link>
+                    </li>
+                  ))
+                : null}
+              {g.label === 'Research'
+                ? MORE.slice(0, 2).map((l) => (
+                    <li key={l.href}>
+                      <Link
+                        href={l.href}
+                        className="text-white/60 transition-colors hover:text-white"
+                      >
+                        {l.label}
+                      </Link>
+                    </li>
+                  ))
+                : null}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-10 flex flex-col gap-2 border-t border-white/[0.06] pt-5 text-xs text-white/40 sm:flex-row sm:items-center sm:justify-between">
+        <p>© {year} EticaHub · community-built, independent of the Etica Protocol core team</p>
+        <p className="num">RPC eticamainnet.eticaprotocol.org · chain 61803</p>
       </div>
     </footer>
   );

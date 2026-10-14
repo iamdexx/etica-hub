@@ -71,7 +71,7 @@ export default async function ProposalDetailPage({
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
           {proposal.description && (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="surface p-5">
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-white/60">
                 Summary
               </h2>
@@ -81,7 +81,7 @@ export default async function ProposalDetailPage({
             </div>
           )}
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+          <div className="surface p-5">
             <h2 className="mb-2 flex items-center justify-between text-sm font-semibold uppercase tracking-wide text-white/60">
               <span>Full content (IPFS)</span>
               {proposal.ipfs.kind === 'ipfs' && (
@@ -102,7 +102,7 @@ export default async function ProposalDetailPage({
                 <p className="text-xs text-white/40">
                   Non-CID payload (likely legacy / inline data):
                 </p>
-                <pre className="mt-2 overflow-x-auto rounded-lg bg-black/30 p-3 text-xs text-white/80">
+                <pre className="mt-2 overflow-x-auto rounded-lg bg-black/20 p-3 text-xs text-white/80">
                   {proposal.ipfs.value}
                 </pre>
               </>
@@ -120,14 +120,14 @@ export default async function ProposalDetailPage({
                 . Try another gateway.
               </p>
             ) : (
-              <pre className="max-h-[600px] overflow-auto rounded-lg bg-black/30 p-3 text-xs text-white/90 whitespace-pre-wrap">
+              <pre className="max-h-[600px] overflow-auto rounded-lg bg-black/20 p-3 text-xs text-white/90 whitespace-pre-wrap">
                 {ipfsText}
               </pre>
             )}
           </div>
 
           {proposal.freefield && (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+            <div className="surface p-5">
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-white/60">
                 Freefield
               </h2>
@@ -139,7 +139,7 @@ export default async function ProposalDetailPage({
         </div>
 
         <aside className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm">
+          <div className="surface p-5 text-sm">
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-white/60">
               Voting
             </h3>

@@ -28,7 +28,7 @@ export function TradeTabs({ baseSymbol }: TradeTabsProps) {
   const [tab, setTab] = useState<Tab>('market');
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+      <div className="flex gap-1 rounded-full border border-white/[0.07] bg-white/[0.035] p-1">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -37,7 +37,7 @@ export function TradeTabs({ baseSymbol }: TradeTabsProps) {
             className={`flex-1 rounded-full px-3 py-1.5 text-sm transition-colors ${
               tab === t.key
                 ? 'bg-brand-accent text-brand-ink'
-                : 'text-white/70 hover:bg-white/5 hover:text-white'
+                : 'text-white/70 hover:bg-white/[0.035] hover:text-white'
             }`}
           >
             {t.label}

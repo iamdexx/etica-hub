@@ -65,7 +65,7 @@ export default async function GasTrackerPage() {
         />
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <section className="surface p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Base fee, last {stats.blocks.length} blocks</h2>
           <span className="text-xs text-white/40">
@@ -79,11 +79,11 @@ export default async function GasTrackerPage() {
         </p>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <section className="surface p-5">
         <h2 className="mb-3 text-lg font-semibold">Recent blocks</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wider text-white/40">
+            <thead className="text-[11px] uppercase tracking-eyebrow text-white/45">
               <tr>
                 <th className="py-2 pr-3">Block</th>
                 <th className="py-2 pr-3">Age</th>
@@ -143,7 +143,7 @@ function StatCard({
   hint?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+    <div className="surface p-4">
       <p className="text-xs uppercase tracking-wider text-white/50">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{value}</p>
       {hint ? <p className="mt-1 text-xs text-white/40">{hint}</p> : null}

@@ -37,7 +37,7 @@ const prefill = {
 function HiddenLanding() {
   return (
     <main className="min-h-screen bg-[#070b16] px-6 py-20 text-white">
-      <section className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-white/[0.06] p-10 text-center shadow-2xl">
+      <section className="mx-auto max-w-3xl rounded-3xl border border-white/[0.07] bg-white/[0.06] p-10 text-center shadow-2xl">
         <p className="text-sm uppercase tracking-[0.45em] text-emerald-300/80">EticaHub</p>
         <h1 className="mt-4 text-5xl font-black tracking-tight md:text-7xl">Maintenance</h1>
         <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-white/65">
@@ -182,8 +182,8 @@ export default function TreasuryDeployerPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100 md:px-8">
-      <section className="mx-auto max-w-5xl rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl md:p-8">
-        <div className="flex flex-col gap-3 border-b border-white/10 pb-6 md:flex-row md:items-end md:justify-between">
+      <section className="mx-auto max-w-5xl rounded-3xl border border-white/[0.07] bg-slate-900/80 p-6 shadow-2xl md:p-8">
+        <div className="flex flex-col gap-3 border-b border-white/[0.07] pb-6 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-emerald-300">Hidden admin deployer</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight md:text-5xl">
@@ -292,7 +292,7 @@ function Field({
         value={value}
         readOnly={readOnly}
         onChange={(event) => onChange?.(event.target.value)}
-        className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-emerald-300 disabled:opacity-60"
+        className="mt-2 w-full rounded-xl border border-white/[0.07] bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-emerald-300 disabled:opacity-60"
       />
     </label>
   );

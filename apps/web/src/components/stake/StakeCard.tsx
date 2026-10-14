@@ -205,8 +205,8 @@ export function StakeCard({ stakedETX, etx }: StakeCardProps) {
   }
 
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="mb-4 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm">
+    <section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5">
+      <div className="mb-4 flex items-center gap-2 rounded-full border border-white/[0.07] bg-white/[0.035] p-1 text-sm">
         <TabButton active={tab === 'stake'} onClick={() => setTab('stake')}>
           Stake
         </TabButton>
@@ -226,7 +226,7 @@ export function StakeCard({ stakedETX, etx }: StakeCardProps) {
           onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
           placeholder="0.0"
           spellCheck={false}
-          className="flex-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm focus:border-brand-accent focus:outline-none"
+          className="flex-1 rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm focus:border-brand-accent focus:outline-none"
         />
         <button
           type="button"
@@ -236,7 +236,7 @@ export function StakeCard({ stakedETX, etx }: StakeCardProps) {
             )
           }
           disabled={!isConnected}
-          className="rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-white/70 transition hover:bg-white/10 disabled:opacity-40"
+          className="rounded-lg border border-white/[0.07] bg-white/[0.035] px-3 text-xs text-white/70 transition hover:bg-white/10 disabled:opacity-40"
         >
           Max
         </button>
@@ -251,7 +251,7 @@ export function StakeCard({ stakedETX, etx }: StakeCardProps) {
         )}
       </div>
 
-      <div className="mt-4 rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-white/60">
+      <div className="mt-4 rounded-lg border border-white/[0.07] bg-black/20 p-3 text-xs text-white/60">
         <PreviewLine
           tab={tab}
           parsedAmount={parsedAmount}
@@ -299,7 +299,7 @@ export function StakeCard({ stakedETX, etx }: StakeCardProps) {
           </div>
         )}
         {lastHash && receiptQuery.isLoading && (
-          <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
+          <div className="rounded-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-xs text-white/60">
             Waiting for confirmation · <span className="font-mono">{lastHash.slice(0, 10)}…</span>
           </div>
         )}

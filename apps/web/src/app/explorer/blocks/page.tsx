@@ -35,7 +35,7 @@ export default async function BlocksPage() {
         <span>Blocks</span>
       </nav>
 
-      <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 md:flex-row md:items-end md:justify-between">
+      <section className="flex flex-col gap-4 surface p-6 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="text-xs uppercase tracking-wider text-brand-accent/80">Live public-RPC window</div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">Blocks</h1>
@@ -43,14 +43,14 @@ export default async function BlocksPage() {
             Latest Etica mainnet blocks. This scanner view intentionally uses a bounded live window so it does not require a private RPC or historical archive indexer.
           </p>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm">
+        <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4 text-sm">
           <div className="text-[10px] uppercase tracking-wider text-white/40">Head</div>
           <div className="mt-1 font-mono text-brand-accent">#{head.toString()}</div>
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
-        <div className="grid grid-cols-[1fr_1fr_0.7fr] gap-3 border-b border-white/10 px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[0.8fr_1fr_1.2fr_0.7fr_0.8fr]">
+      <section className="overflow-hidden surface">
+        <div className="grid grid-cols-[1fr_1fr_0.7fr] gap-3 border-b border-white/[0.07] px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[0.8fr_1fr_1.2fr_0.7fr_0.8fr]">
           <div>Block</div>
           <div>Age</div>
           <div className="hidden md:block">Miner</div>

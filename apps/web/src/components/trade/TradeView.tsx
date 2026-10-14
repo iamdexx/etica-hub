@@ -43,7 +43,7 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
                   className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
                     s === baseSymbol
                       ? 'border-brand-accent bg-brand-accent text-brand-ink'
-                      : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                      : 'border-white/[0.07] bg-white/[0.035] text-white/70 hover:bg-white/10 hover:text-white'
                   }`}
                 >
                   {s}/ETX
@@ -52,7 +52,7 @@ export function TradeView({ baseSymbol, pairId, apiBaseUrl }: TradeViewProps) {
             </div>
             <Link
               href="/trade/orders"
-              className="ml-auto rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+              className="ml-auto rounded-full border border-white/[0.07] bg-white/[0.035] px-2.5 py-0.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
             >
               My orders →
             </Link>

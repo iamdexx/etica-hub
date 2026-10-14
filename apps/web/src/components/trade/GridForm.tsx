@@ -385,7 +385,7 @@ export function GridForm({ baseSymbol }: GridFormProps) {
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="surface p-4">
         <div className="mb-3 grid grid-cols-2 gap-3">
           <label className="block">
             <span className="mb-1 block text-xs uppercase tracking-wider text-white/60">
@@ -397,7 +397,7 @@ export function GridForm({ baseSymbol }: GridFormProps) {
               value={lowStr}
               onChange={(e) => setLowStr(e.target.value)}
               placeholder="0.00"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             />
           </label>
           <label className="block">
@@ -410,7 +410,7 @@ export function GridForm({ baseSymbol }: GridFormProps) {
               value={highStr}
               onChange={(e) => setHighStr(e.target.value)}
               placeholder="0.00"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             />
           </label>
         </div>
@@ -425,7 +425,7 @@ export function GridForm({ baseSymbol }: GridFormProps) {
             value={refPriceStr}
             onChange={(e) => setRefPriceStr(e.target.value)}
             placeholder="current market"
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+            className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
           />
           <span className="mt-1 block text-[11px] text-white/50">
             Levels below this price become buys, levels above become sells.
@@ -443,7 +443,7 @@ export function GridForm({ baseSymbol }: GridFormProps) {
               max={50}
               value={levelsStr}
               onChange={(e) => setLevelsStr(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             />
           </label>
           <label className="block">
@@ -456,13 +456,13 @@ export function GridForm({ baseSymbol }: GridFormProps) {
               value={basePerLevelStr}
               onChange={(e) => setBasePerLevelStr(e.target.value)}
               placeholder="0.00"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             />
           </label>
         </div>
 
         {plan ? (
-          <p className="mb-3 rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-white/70">
+          <p className="mb-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 text-xs text-white/70">
             {buyLevels.length} buy level{buyLevels.length === 1 ? '' : 's'} · {sellLevels.length} sell level
             {sellLevels.length === 1 ? '' : 's'} — commits up to{' '}
             {formatAmount(totalEtxInput)} ETX + {formatAmount(totalBaseInput)} {baseSymbol} across{' '}

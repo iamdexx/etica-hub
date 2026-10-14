@@ -190,13 +190,13 @@ export default function ModerationDashboardPage(): JSX.Element {
         <div className="flex flex-wrap gap-2 text-xs text-white/65">
           <Link
             href="/labs/feed"
-            className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 transition-colors hover:border-white/25 hover:text-white"
+            className="rounded-full border border-white/[0.07] bg-white/[0.04] px-3 py-1.5 transition-colors hover:border-white/25 hover:text-white"
           >
             ← Back to feed
           </Link>
           <Link
             href="/labs/admin/moderation"
-            className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 transition-colors hover:border-white/25 hover:text-white"
+            className="rounded-full border border-white/[0.07] bg-white/[0.04] px-3 py-1.5 transition-colors hover:border-white/25 hover:text-white"
           >
             Operator view
           </Link>
@@ -214,7 +214,7 @@ export default function ModerationDashboardPage(): JSX.Element {
                 'rounded-full border px-3 py-1.5 text-xs transition-colors ' +
                 (filter === f.key
                   ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100'
-                  : 'border-white/10 bg-white/[0.04] text-white/70 hover:border-white/25 hover:text-white')
+                  : 'border-white/[0.07] bg-white/[0.04] text-white/70 hover:border-white/25 hover:text-white')
               }
             >
               {f.label}
@@ -256,12 +256,12 @@ export default function ModerationDashboardPage(): JSX.Element {
             return (
               <li
                 key={key}
-                className="rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/20"
+                className="surface-2 p-4 transition-colors hover:border-white/20"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/55">
+                      <span className="rounded-full border border-white/[0.07] bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/55">
                         {entry.kind}
                       </span>
                       <ModerationBadge status={entry.status} />
@@ -301,7 +301,7 @@ export default function ModerationDashboardPage(): JSX.Element {
                           [key]: e.target.value as FlagReason,
                         }))
                       }
-                      className="w-full rounded-md border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-white outline-none focus:border-white/30"
+                      className="w-full rounded-md border border-white/[0.07] bg-black/20 px-2 py-1.5 text-xs text-white outline-none focus:border-white/30"
                     >
                       {FLAG_REASONS.map((r) => (
                         <option key={r} value={r}>

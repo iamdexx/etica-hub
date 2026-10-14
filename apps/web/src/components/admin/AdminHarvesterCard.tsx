@@ -316,7 +316,7 @@ export function AdminHarvesterCard() {
   return (
     <div className="space-y-6">
       {/* Wallet */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Wallet</h2>
         {!isConnected && (
           <button
@@ -362,7 +362,7 @@ export function AdminHarvesterCard() {
       </section>
 
       {/* Current state */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 text-sm">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 text-sm">
         <h2 className="mb-3 text-lg font-semibold">Current harvester state</h2>
         {harvester === ZERO_ADDRESS ? (
           <p className="text-amber-300">
@@ -410,7 +410,7 @@ export function AdminHarvesterCard() {
       </section>
 
       {/* setStakedEtx */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-2 text-lg font-semibold">1. setStakedEtx</h2>
         <p className="mb-3 text-sm text-white/60">
           Wires the <span className="font-mono">stETX</span> vault as the 10% staking slice target.
@@ -438,7 +438,7 @@ export function AdminHarvesterCard() {
       </section>
 
       {/* setFarms */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-2 text-lg font-semibold">2. setFarms</h2>
         <p className="mb-3 text-sm text-white/60">
           Wires <span className="font-mono">ETXFarms</span> as the 10% farms slice target. The
@@ -467,7 +467,7 @@ export function AdminHarvesterCard() {
       </section>
 
       {/* LP approvals */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-2 text-lg font-semibold">3. Approve harvester to pull LP</h2>
         <p className="mb-3 text-sm text-white/60">
           Each harvest burns a small slice of treasury LP. These approvals let the harvester call{' '}
@@ -480,7 +480,7 @@ export function AdminHarvesterCard() {
           {pairs.map((row, i) => {
             const already = row.allowance !== null && row.allowance > 0n;
             return (
-              <div key={row.label} className="rounded-lg border border-white/10 bg-black/20 p-4">
+              <div key={row.label} className="rounded-lg border border-white/[0.07] bg-black/20 p-4">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
                   <div>
                     <span className="font-medium">{row.label}</span>{' '}

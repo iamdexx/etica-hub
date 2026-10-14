@@ -22,8 +22,7 @@ function useIsMobileWithoutInjected(): boolean {
     if (typeof window === 'undefined') return;
     const ua = navigator.userAgent || '';
     const isMobile = /Android|iPhone|iPad|iPod|Mobile|GrapheneOS|Vanadium/i.test(ua);
-    const hasInjected =
-      typeof (window as Window & { ethereum?: unknown }).ethereum !== 'undefined';
+    const hasInjected = typeof (window as Window & { ethereum?: unknown }).ethereum !== 'undefined';
     setState(isMobile && !hasInjected);
   }, []);
   return state;
@@ -80,7 +79,7 @@ export function ConnectButton() {
         <button
           onClick={() => setMenuOpen((v) => !v)}
           disabled={isPending}
-          className="rounded-full bg-brand-accent px-4 py-1.5 text-sm font-medium text-brand-ink hover:opacity-90 disabled:opacity-50"
+          className="btn-primary h-9 px-4 py-0 text-[13px]"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
         >
@@ -89,7 +88,7 @@ export function ConnectButton() {
         {menuOpen && (
           <div
             role="menu"
-            className="absolute right-0 mt-2 w-72 rounded-xl border border-white/10 bg-brand-ink/95 p-2 shadow-lg backdrop-blur"
+            className="surface animate-menu-in absolute right-0 z-50 mt-2 w-72 p-1.5"
           >
             {connectors.map((connector) => (
               <button
@@ -98,7 +97,7 @@ export function ConnectButton() {
                   connect({ connector });
                   setMenuOpen(false);
                 }}
-                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-white/90 hover:bg-white/5"
+                className="block w-full rounded-xl px-3 py-2.5 text-left text-sm text-white/90 transition-colors hover:bg-white/[0.06]"
                 role="menuitem"
               >
                 {labelFor(connector)}
@@ -107,15 +106,15 @@ export function ConnectButton() {
             {showDeepLink && (
               <a
                 href={buildMetaMaskDeepLink()}
-                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-white/90 hover:bg-white/5"
+                className="block w-full rounded-xl px-3 py-2.5 text-left text-sm text-white/90 transition-colors hover:bg-white/[0.06]"
                 role="menuitem"
               >
                 Open in MetaMask app
               </a>
             )}
             <p className="mt-1 px-3 pb-1 pt-2 text-[11px] leading-snug text-white/40">
-              On Brave mobile, Vanadium, or any browser without a wallet
-              extension, use WalletConnect or &ldquo;Open in MetaMask&rdquo;.
+              On Brave mobile, Vanadium, or any browser without a wallet extension, use
+              WalletConnect or &ldquo;Open in MetaMask&rdquo;.
             </p>
           </div>
         )}
@@ -123,8 +122,7 @@ export function ConnectButton() {
     );
   }
 
-  const onSupportedChain =
-    chainId === eticaMainnet.id || (IS_DEV && chainId === eticaLocalFork.id);
+  const onSupportedChain = chainId === eticaMainnet.id || (IS_DEV && chainId === eticaLocalFork.id);
   const switchTarget = IS_DEV ? eticaLocalFork : eticaMainnet;
 
   return (
@@ -133,14 +131,14 @@ export function ConnectButton() {
         <button
           onClick={() => switchChain({ chainId: switchTarget.id })}
           disabled={isSwitching}
-          className="rounded-full border border-yellow-500/40 bg-yellow-500/10 px-3 py-1.5 text-xs font-medium text-yellow-300 hover:bg-yellow-500/20 disabled:opacity-50"
+          className="btn h-9 border border-amber-400/40 bg-amber-400/10 px-3 py-0 text-xs text-amber-200 hover:bg-amber-400/20"
         >
           {isSwitching ? 'Switching…' : `Switch to ${switchTarget.name}`}
         </button>
       )}
       <button
         onClick={() => disconnect()}
-        className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-mono hover:bg-white/10"
+        className="btn-ghost num h-9 px-3 py-0 text-[13px]"
         title={address}
       >
         {shortAddress(address ?? '')}

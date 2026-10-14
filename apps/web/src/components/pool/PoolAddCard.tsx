@@ -446,17 +446,17 @@ export function PoolAddCard({
 
   if (!ctx) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
+      <div className="rounded-2xl border border-white/[0.07] bg-white/[0.035] p-6 text-sm text-white/70">
         Switch your wallet to Etica Mainnet (chain 61803) to manage liquidity.
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 space-y-4">
+    <div className="surface p-5 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-white/80">Add liquidity</h2>
-        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/50">
+        <span className="rounded-full border border-white/[0.07] bg-white/[0.035] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/50">
           ETX hub-and-spoke
         </span>
       </div>
@@ -482,7 +482,7 @@ export function PoolAddCard({
           <select
             value={bSymbol}
             onChange={(e) => setBSymbol(e.target.value as BSymbol)}
-            className="rounded-md border border-white/10 bg-black/40 px-2 py-1 text-xs outline-none focus:border-emerald-500"
+            className="rounded-md border border-white/[0.07] bg-black/40 px-2 py-1 text-xs outline-none focus:border-emerald-500"
           >
             <option value="ETI">ETI</option>
             <option value="EGAZ">EGAZ</option>
@@ -494,7 +494,7 @@ export function PoolAddCard({
             type="text"
             value={customB}
             onChange={(e) => setCustomB(e.target.value.trim())}
-            className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
+            className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
             placeholder="0x… (ERC20 contract address)"
           />
         )}
@@ -516,7 +516,7 @@ export function PoolAddCard({
         />
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-white/70 space-y-1">
+      <div className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-xs text-white/70 space-y-1">
         <InfoRow
           label="Pool"
           value={
@@ -592,7 +592,7 @@ function TokenAmountInput(props: {
   locked?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+    <div className="rounded-xl border border-white/[0.07] bg-black/20 p-3">
       <div className="flex items-center justify-between text-xs text-white/50">
         {props.label ? <span>{props.label}</span> : <span />}
         <span>
@@ -619,7 +619,7 @@ function TokenAmountInput(props: {
         />
         <span
           className={
-            'rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm font-medium' +
+            'rounded-full border border-white/[0.07] bg-white/[0.035] px-3 py-1 text-sm font-medium' +
             (props.locked ? ' text-white/80' : ' text-white')
           }
         >

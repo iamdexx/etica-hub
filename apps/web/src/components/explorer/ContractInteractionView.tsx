@@ -66,10 +66,10 @@ export function ContractInteractionView({
   const { reads, writes } = useMemo(() => classifyAbi(abi), [abi]);
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+    <section className="surface p-5">
       <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">Contract</h2>
-        <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5 text-xs">
+        <div className="flex rounded-lg border border-white/[0.07] bg-black/20 p-0.5 text-xs">
           <button
             onClick={() => setTab('read')}
             className={`rounded-md px-3 py-1 ${
@@ -184,7 +184,7 @@ function ReadCard({
   }
 
   return (
-    <details className="rounded-lg border border-white/5 bg-black/30">
+    <details className="rounded-lg border border-white/5 bg-black/20">
       <summary className="cursor-pointer px-3 py-2 font-mono text-[11px] text-white/80 hover:text-white">
         {fn.name}
         {signatureHint(fn)}
@@ -302,7 +302,7 @@ function WriteCard({
     : 'rounded-full bg-white/10 px-2 py-0.5 text-[9px] uppercase tracking-wider text-white/60';
 
   return (
-    <details className="rounded-lg border border-white/5 bg-black/30">
+    <details className="rounded-lg border border-white/5 bg-black/20">
       <summary className="cursor-pointer px-3 py-2 font-mono text-[11px] text-white/80 hover:text-white">
         <span className="mr-2 inline-flex">
           <span className={badgeClass}>
@@ -323,7 +323,7 @@ function WriteCard({
               value={valueEgaz}
               onChange={(e) => setValueEgaz(e.target.value)}
               placeholder="0.0"
-              className="w-full rounded-md border border-white/10 bg-black/40 px-2 py-1 font-mono text-xs text-white placeholder:text-white/30 focus:border-emerald-400/40 focus:outline-none"
+              className="w-full rounded-md border border-white/[0.07] bg-black/40 px-2 py-1 font-mono text-xs text-white placeholder:text-white/30 focus:border-emerald-400/40 focus:outline-none"
             />
           </div>
         ) : null}
@@ -397,7 +397,7 @@ function Inputs({
               onChange(next);
             }}
             placeholder={placeholderFor(inp.type)}
-            className="w-full rounded-md border border-white/10 bg-black/40 px-2 py-1 font-mono text-xs text-white placeholder:text-white/30 focus:border-emerald-400/40 focus:outline-none"
+            className="w-full rounded-md border border-white/[0.07] bg-black/40 px-2 py-1 font-mono text-xs text-white placeholder:text-white/30 focus:border-emerald-400/40 focus:outline-none"
           />
         </div>
       ))}

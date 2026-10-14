@@ -463,7 +463,7 @@ export function DeployStableSwapCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-white/70">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 text-sm text-white/70">
         <h2 className="mb-2 text-lg font-semibold text-white">What this deploys</h2>
         <p>
           A rate-aware Curve-style stableswap pool for stETX/ETX, a 10-year lock contract for the
@@ -478,7 +478,7 @@ export function DeployStableSwapCard() {
         </p>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Wallet</h2>
         {!isConnected ? (
           <button
@@ -496,7 +496,7 @@ export function DeployStableSwapCard() {
               <span className="font-mono break-all">{address}</span>
               <button
                 type="button"
-                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/5"
+                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/[0.035]"
                 onClick={() => disconnect()}
               >
                 Disconnect
@@ -520,7 +520,7 @@ export function DeployStableSwapCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Constructor inputs</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field
@@ -811,7 +811,7 @@ function Field({
       {label}
       <input
         type="text"
-        className={`mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-xs text-white placeholder:text-white/30 ${mono ? 'font-mono' : ''}`}
+        className={`mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 text-xs text-white placeholder:text-white/30 ${mono ? 'font-mono' : ''}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -839,7 +839,7 @@ function Step({
   onClick: () => void;
 }) {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+    <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
       <h2 className="mb-1 text-sm font-semibold text-white/90">
         Step {n} · {title}
       </h2>

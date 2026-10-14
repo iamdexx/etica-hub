@@ -121,7 +121,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
         </p>
       </section>
 
-      <section className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm md:grid-cols-2">
+      <section className="grid gap-3 surface p-5 text-sm md:grid-cols-2">
         <Field label="Total supply">
           {formatTokenAmount(metadata.totalSupply, metadata.decimals)} {metadata.symbol}
         </Field>
@@ -141,7 +141,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
 
       {verified ? <VerifiedContractView manifest={verified} /> : null}
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <section className="surface p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Recent transfers</h2>
           <span className="text-xs text-white/40">newest first</span>

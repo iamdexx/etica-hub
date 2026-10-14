@@ -108,7 +108,7 @@ export function MintableSection(): JSX.Element | null {
         {entries.map((e) => (
           <div
             key={e.archiveId}
-            className="flex flex-col rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/20"
+            className="flex flex-col surface-2 p-4 transition-colors hover:border-white/20"
           >
             <div className="flex items-start justify-between gap-2">
               <span
@@ -125,7 +125,7 @@ export function MintableSection(): JSX.Element | null {
               {e.title}
             </h3>
             {e.disease && (
-              <span className="mt-1 inline-block w-fit rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/55">
+              <span className="mt-1 inline-block w-fit rounded border border-white/[0.07] bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/55">
                 {e.disease}
               </span>
             )}

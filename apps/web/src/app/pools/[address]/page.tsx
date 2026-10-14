@@ -180,7 +180,7 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
         </Card>
       </section>
 
-      <footer className="flex flex-wrap gap-3 border-t border-white/10 pt-4 text-xs">
+      <footer className="flex flex-wrap gap-3 border-t border-white/[0.07] pt-4 text-xs">
         <Link href="/swap" className="text-emerald-200/80 hover:text-emerald-200">
           Swap {p.token0.symbol} ↔ {p.token1.symbol} →
         </Link>
@@ -203,7 +203,7 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }): JSX.Element {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <div className="surface-2 p-4">
       <div className="text-[11px] uppercase tracking-wider text-white/45">{label}</div>
       <div className="mt-1 font-mono text-lg text-white/90">{value}</div>
       {sub && <div className="text-xs text-white/45">{sub}</div>}
@@ -213,7 +213,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 
 function Card({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <section className="surface-2 p-4">
       <h2 className="mb-2 text-[11px] uppercase tracking-wider text-white/45">{label}</h2>
       <div className="text-sm text-white/80">{children}</div>
     </section>

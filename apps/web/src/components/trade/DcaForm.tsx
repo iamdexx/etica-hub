@@ -341,8 +341,8 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <div className="mb-3 flex gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+      <div className="surface p-4">
+        <div className="mb-3 flex gap-1 rounded-full border border-white/[0.07] bg-white/[0.035] p-1">
           {(['buy', 'sell'] as const).map((s) => (
             <button
               key={s}
@@ -353,7 +353,7 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
                   ? s === 'buy'
                     ? 'bg-emerald-400/20 text-emerald-200'
                     : 'bg-rose-400/20 text-rose-200'
-                  : 'text-white/70 hover:bg-white/5 hover:text-white'
+                  : 'text-white/70 hover:bg-white/[0.035] hover:text-white'
               }`}
             >
               {s}
@@ -371,7 +371,7 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
             value={totalAmountStr}
             onChange={(e) => setTotalAmountStr(e.target.value)}
             placeholder="0.00"
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+            className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
           />
         </label>
 
@@ -385,7 +385,7 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
             value={priceStr}
             onChange={(e) => setPriceStr(e.target.value)}
             placeholder="0.00"
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+            className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
           />
         </label>
 
@@ -400,7 +400,7 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
               max={50}
               value={legsStr}
               onChange={(e) => setLegsStr(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             />
           </label>
           <label className="block">
@@ -410,7 +410,7 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
             <select
               value={intervalSec}
               onChange={(e) => setIntervalSec(Number(e.target.value))}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             >
               {INTERVAL_PRESETS.map((p) => (
                 <option key={p.seconds} value={p.seconds}>
@@ -422,7 +422,7 @@ export function DcaForm({ baseSymbol }: DcaFormProps) {
         </div>
 
         {scheduleCopy ? (
-          <p className="mb-3 rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-white/70">
+          <p className="mb-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 text-xs text-white/70">
             {scheduleCopy}
           </p>
         ) : null}

@@ -82,14 +82,14 @@ export function MarketVolumeStrip(props: { className?: string }) {
 
   if (state.status === 'loading' || state.status === 'idle') {
     return (
-      <div className={`rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/40 ${props.className ?? ''}`}>
+      <div className={`surface p-4 text-xs text-white/40 ${props.className ?? ''}`}>
         Loading 24h market volume…
       </div>
     );
   }
   if (state.status === 'error') {
     return (
-      <div className={`rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-red-300/80 ${props.className ?? ''}`}>
+      <div className={`surface p-4 text-xs text-red-300/80 ${props.className ?? ''}`}>
         Couldn&apos;t load 24h volume: {state.error}
       </div>
     );
@@ -99,14 +99,14 @@ export function MarketVolumeStrip(props: { className?: string }) {
   const withVolume = state.pools.filter((p: PoolEntry) => p.volume_24h !== null);
   if (withVolume.length === 0) {
     return (
-      <div className={`rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/40 ${props.className ?? ''}`}>
+      <div className={`surface p-4 text-xs text-white/40 ${props.className ?? ''}`}>
         No pool volume reported in the last 24h.
       </div>
     );
   }
 
   return (
-    <div className={`rounded-2xl border border-white/10 bg-white/5 p-4 ${props.className ?? ''}`}>
+    <div className={`surface p-4 ${props.className ?? ''}`}>
       <div className="mb-3 flex items-baseline justify-between">
         <h3 className="text-sm font-medium text-white/80">24h market volume</h3>
         <span className="text-xs text-white/40">per-token gross turnover</span>

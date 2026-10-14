@@ -18,7 +18,7 @@ const ROWS: { label: string; value: string; note?: string }[] = [
 
 export function BridgeParamsTable() {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+    <div className="surface p-5">
       <div className="text-xs uppercase tracking-widest text-white/40">Locked parameters</div>
       <div className="mt-3 divide-y divide-white/5 rounded-lg border border-white/5 bg-white/[0.02]">
         {ROWS.map((row) => (

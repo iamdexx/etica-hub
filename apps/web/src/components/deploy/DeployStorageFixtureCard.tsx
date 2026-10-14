@@ -99,7 +99,7 @@ export function DeployStorageFixtureCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">What this deploys</h2>
         <p className="text-sm text-white/70">
           A trivial <span className="font-mono">Storage</span> contract — two functions (
@@ -118,7 +118,7 @@ export function DeployStorageFixtureCard() {
         </p>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Prerequisites</h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-white/70">
           <li>MetaMask installed and unlocked.</li>
@@ -131,7 +131,7 @@ export function DeployStorageFixtureCard() {
         </ol>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Wallet</h2>
         {!isConnected ? (
           <button
@@ -149,7 +149,7 @@ export function DeployStorageFixtureCard() {
               <span className="font-mono break-all">{address}</span>
               <button
                 type="button"
-                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/5"
+                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/[0.035]"
                 onClick={() => disconnect()}
               >
                 Disconnect
@@ -173,7 +173,7 @@ export function DeployStorageFixtureCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Deploy Storage fixture</h2>
         <button
           type="button"

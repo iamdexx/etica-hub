@@ -200,7 +200,7 @@ export function DeploySwapCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Prerequisites</h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-white/70">
           <li>MetaMask installed and unlocked.</li>
@@ -217,7 +217,7 @@ export function DeploySwapCard() {
         </ol>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Wallet</h2>
         {!isConnected && (
           <button
@@ -256,14 +256,14 @@ export function DeploySwapCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Treasury / feeToSetter</h2>
         <input
           type="text"
           value={treasuryInput}
           onChange={(e) => setTreasuryInput(e.target.value)}
           spellCheck={false}
-          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+          className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
           placeholder="0x…"
         />
         {!treasury && (
@@ -273,7 +273,7 @@ export function DeploySwapCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">ETX token address</h2>
         <p className="mb-3 text-xs text-white/60">
           Paste the address of the deployed ETX ERC-20. The factory will lock this as the hub
@@ -285,7 +285,7 @@ export function DeploySwapCard() {
           value={etxInput}
           onChange={(e) => setEtxInput(e.target.value)}
           spellCheck={false}
-          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+          className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
           placeholder="0x…"
         />
         {etxInput.trim().length > 0 && !etx && (
@@ -308,7 +308,7 @@ export function DeploySwapCard() {
           const blocked = !argSpec.ready;
           const busy = state.status === 'signing' || state.status === 'pending';
           return (
-            <div key={step.key} className="rounded-xl border border-white/10 bg-white/5 p-5">
+            <div key={step.key} className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="font-semibold">{step.label}</h3>

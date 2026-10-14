@@ -181,7 +181,7 @@ export default function LabsArchivePage(): JSX.Element {
           </Link>
           <Link
             href="/labs"
-            className="rounded-full border border-white/10 bg-transparent px-4 py-2 text-sm font-medium text-white/65 transition-colors hover:border-white/20 hover:text-white"
+            className="rounded-full border border-white/[0.07] bg-transparent px-4 py-2 text-sm font-medium text-white/65 transition-colors hover:border-white/20 hover:text-white"
           >
             Back to Labs
           </Link>
@@ -189,7 +189,7 @@ export default function LabsArchivePage(): JSX.Element {
       </header>
 
       {/* ── Filter bar ── */}
-      <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+      <div className="mb-6 surface p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block">
             <span className="mb-1 block text-[11px] uppercase tracking-wider text-white/45">
@@ -199,7 +199,7 @@ export default function LabsArchivePage(): JSX.Element {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="peptide, kinase, inhibitor…"
-              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-emerald-400/50 focus:outline-none"
+              className="w-full rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-emerald-400/50 focus:outline-none"
             />
           </label>
           <label className="block">
@@ -210,7 +210,7 @@ export default function LabsArchivePage(): JSX.Element {
               value={target}
               onChange={(e) => setTarget(e.target.value)}
               placeholder="PD-L1, TNF-α, EGFR…"
-              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-emerald-400/50 focus:outline-none"
+              className="w-full rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-emerald-400/50 focus:outline-none"
             />
           </label>
           <label className="block">
@@ -220,7 +220,7 @@ export default function LabsArchivePage(): JSX.Element {
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as 'auto' | 'date' | 'relevance' | 'score')}
-              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-emerald-400/50 focus:outline-none"
+              className="w-full rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 text-sm text-white focus:border-emerald-400/50 focus:outline-none"
             >
               <option value="auto">Best match</option>
               <option value="date">Newest</option>
@@ -233,7 +233,7 @@ export default function LabsArchivePage(): JSX.Element {
               type="checkbox"
               checked={mintedOnly}
               onChange={(e) => setMintedOnly(e.target.checked)}
-              className="h-4 w-4 rounded border-white/20 bg-black/30 accent-emerald-400"
+              className="h-4 w-4 rounded border-white/20 bg-black/20 accent-emerald-400"
             />
             <span className="text-sm text-white/70">Minted only</span>
           </label>
@@ -256,7 +256,7 @@ export default function LabsArchivePage(): JSX.Element {
                     className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                       active
                         ? 'border-sky-400/60 bg-sky-400/15 text-sky-100'
-                        : 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/25 hover:text-white/90'
+                        : 'border-white/[0.07] bg-white/[0.03] text-white/60 hover:border-white/25 hover:text-white/90'
                     }`}
                   >
                     {sourceLabel(s.name)} <span className="text-white/40">{s.count}</span>
@@ -284,7 +284,7 @@ export default function LabsArchivePage(): JSX.Element {
                     className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                       active
                         ? 'border-emerald-400/60 bg-emerald-400/15 text-emerald-100'
-                        : 'border-white/10 bg-white/[0.03] text-white/60 hover:border-white/25 hover:text-white/90'
+                        : 'border-white/[0.07] bg-white/[0.03] text-white/60 hover:border-white/25 hover:text-white/90'
                     }`}
                   >
                     {d.name} <span className="text-white/40">{d.count}</span>
@@ -335,7 +335,7 @@ export default function LabsArchivePage(): JSX.Element {
           return (
             <div
               key={e.id}
-              className="flex flex-col rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/20"
+              className="flex flex-col surface-2 p-4 transition-colors hover:border-white/20"
             >
               <div className="flex items-start justify-between gap-2">
                 <span className={`rounded-full border px-2 py-0.5 text-[11px] ${scoreTone(e.bestCandidate.score)}`}>
@@ -359,7 +359,7 @@ export default function LabsArchivePage(): JSX.Element {
               </Link>
 
               {e.disease && (
-                <span className="mt-1 inline-block w-fit rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/55">
+                <span className="mt-1 inline-block w-fit rounded border border-white/[0.07] bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/55">
                   {e.disease}
                 </span>
               )}
@@ -379,7 +379,7 @@ export default function LabsArchivePage(): JSX.Element {
                   {srcs.map((s) => (
                     <span
                       key={s}
-                      className="rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-white/50"
+                      className="rounded border border-white/[0.07] bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-white/50"
                     >
                       {sourceLabel(s)}
                     </span>

@@ -26,7 +26,7 @@ export function StakeView() {
   if (!deployed) {
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 text-sm text-white/70">
+        <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5 text-sm text-white/70">
           <div className="mb-1 text-base font-semibold text-white">stETX not deployed yet</div>
           <p>
             The stETX vault has not been deployed on this chain. Operators can deploy it at{' '}
@@ -58,7 +58,7 @@ export function StakeView() {
 
 function StakeHowItWorks() {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-white/50">
+    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 text-xs text-white/50">
       <div className="font-medium text-white/70">How stETX works</div>
       <ul className="mt-1 list-disc space-y-1 pl-5">
         <li>

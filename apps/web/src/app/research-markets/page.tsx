@@ -15,34 +15,37 @@ export const metadata: Metadata = {
 
 export default function ResearchMarketsPage() {
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold text-zinc-50 sm:text-3xl">Research Markets</h1>
-        <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+    <div className="space-y-8">
+      <header className="space-y-5" data-stagger>
+        <div className="eyebrow">Research-token launchpad</div>
+        <h1 className="display text-4xl sm:text-5xl md:text-6xl">Research Markets</h1>
+        <p className="lede max-w-3xl">
           Permissionless launchpad for scientific research tokens. Every market shares the same{' '}
-          <span className="text-zinc-200">5,000,000 ETX</span> liquidity pool — tokens are minted
-          when bought and burned when sold against the shared reserve. At{' '}
-          <span className="text-zinc-200">100,000 ETX in reserve</span>, a token graduates and
-          is listed on <code className="rounded bg-zinc-800 px-1">/swap</code> and{' '}
-          <code className="rounded bg-zinc-800 px-1">/trade</code>. After 30 days without trades a
-          market sunsets and its reserve recycles into the shared pool.
+          <span className="text-white">5,000,000 ETX</span> liquidity pool — tokens are minted when
+          bought and burned when sold against the shared reserve. At{' '}
+          <span className="text-white">100,000 ETX in reserve</span>, a token graduates and is
+          listed on <code className="rounded bg-white/10 px-1 font-mono text-[0.9em]">/swap</code>{' '}
+          and <code className="rounded bg-white/10 px-1 font-mono text-[0.9em]">/trade</code>. After
+          30 days without trades a market sunsets and its reserve recycles into the shared pool.
         </p>
       </header>
 
       <MarketsTabs />
 
-      <footer className="mt-12 rounded-xl border border-zinc-800 bg-zinc-900/30 p-5 text-xs text-zinc-500">
-        <p className="font-medium text-zinc-300">How it works</p>
+      <footer className="surface p-5 text-xs text-white/50">
+        <p className="font-medium text-white/85">How it works</p>
         <ul className="mt-2 list-inside list-disc space-y-1">
           <li>
-            1% fee per trade splits <strong>80/10/0/10</strong>: pool (permanently locked POL) /
-            ETI LP burn / treasury / researcher. The 80% pool slice is never withdrawable —
-            every trade pulls each market&apos;s floor up forever.
+            1% fee per trade splits <strong>80/10/0/10</strong>: pool (permanently locked POL) / ETI
+            LP burn / treasury / researcher. The 80% pool slice is never withdrawable — every trade
+            pulls each market&apos;s floor up forever.
           </li>
-          <li>Every minted token is plain ERC-20 with on-chain metadata + auto-Sourcify verification.</li>
+          <li>
+            Every minted token is plain ERC-20 with on-chain metadata + auto-Sourcify verification.
+          </li>
           <li>No external LP positions, ever — the bonding curve is the only venue.</li>
         </ul>
       </footer>
-    </main>
+    </div>
   );
 }

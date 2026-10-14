@@ -50,9 +50,9 @@ export async function UptimeHistory() {
   const latest = samples.at(-1);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#07120f] p-5">
+    <div className="surface p-5">
       <div className="flex items-center justify-between">
-        <div className="text-xs uppercase tracking-wider text-white/40">Uptime history</div>
+        <div className="text-[11px] uppercase tracking-eyebrow text-white/45">Uptime history</div>
         {latest ? (
           <span
             className={`rounded-full px-2 py-0.5 text-[11px] ${

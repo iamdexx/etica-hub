@@ -8,7 +8,14 @@ import Link from 'next/link';
 
 import { JsonLd } from '@/components/JsonLd';
 import { breadcrumbJsonLd } from '@/lib/seo/jsonld';
-import { TOKEN_COPY, fmtNum, fmtUsd, isTokenId, loadMarketSnapshot, tokenPath } from '@/lib/seo/market';
+import {
+  TOKEN_COPY,
+  fmtNum,
+  fmtUsd,
+  isTokenId,
+  loadMarketSnapshot,
+  tokenPath,
+} from '@/lib/seo/market';
 import { absoluteUrl } from '@/lib/site';
 
 export const runtime = 'nodejs';
@@ -22,7 +29,12 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: absoluteUrl('/tokens') },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: absoluteUrl('/tokens'), type: 'website' },
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: absoluteUrl('/tokens'),
+    type: 'website',
+  },
 };
 
 export default async function TokensPage(): Promise<JSX.Element> {
@@ -43,18 +55,24 @@ export default async function TokensPage(): Promise<JSX.Element> {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <JsonLd data={itemList} />
-      <JsonLd data={breadcrumbJsonLd([['EticaHub', '/'], ['Tokens', '/tokens']])} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          ['EticaHub', '/'],
+          ['Tokens', '/tokens'],
+        ])}
+      />
 
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold text-white/95">Tokens on Etica</h1>
-        <p className="text-sm text-white/60">{DESCRIPTION}</p>
+      <header className="space-y-4" data-stagger>
+        <div className="eyebrow">Token registry</div>
+        <h1 className="display text-3xl sm:text-4xl md:text-5xl">Tokens on Etica</h1>
+        <p className="lede max-w-2xl">{DESCRIPTION}</p>
         <p className="text-xs text-white/40">
-          Prices read from EticaSwap reserves at {snapshot.asOf.replace('T', ' ').slice(0, 19)} UTC · USD via ETI/USDT and
-          EGAZ/USDT anchors.
+          Prices read from EticaSwap reserves at {snapshot.asOf.replace('T', ' ').slice(0, 19)} UTC
+          · USD via ETI/USDT and EGAZ/USDT anchors.
         </p>
       </header>
 
-      <div className="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03]">
+      <div className="overflow-x-auto rounded-xl border border-white/[0.07] bg-white/[0.03]">
         <table className="w-full text-left text-sm">
           <thead className="text-[11px] uppercase tracking-wider text-white/45">
             <tr>
@@ -69,7 +87,10 @@ export default async function TokensPage(): Promise<JSX.Element> {
             {snapshot.tokens.map((t) => (
               <tr key={t.token.id} className="border-t border-white/5">
                 <td className="px-4 py-3">
-                  <Link href={tokenPath(t.token)} className="font-medium text-white hover:text-emerald-200">
+                  <Link
+                    href={tokenPath(t.token)}
+                    className="font-medium text-white hover:text-emerald-200"
+                  >
                     {t.token.symbol}
                   </Link>
                   <div className="text-xs text-white/45">
@@ -89,9 +110,18 @@ export default async function TokensPage(): Promise<JSX.Element> {
       </div>
 
       <p className="text-xs text-white/45">
-        See also <Link href="/pools" className="text-emerald-200/80 hover:text-emerald-200">all liquidity pools</Link> ·{' '}
-        <Link href="/swap" className="text-emerald-200/80 hover:text-emerald-200">swap</Link> ·{' '}
-        <Link href="/stake" className="text-emerald-200/80 hover:text-emerald-200">stake ETX</Link>
+        See also{' '}
+        <Link href="/pools" className="text-emerald-200/80 hover:text-emerald-200">
+          all liquidity pools
+        </Link>{' '}
+        ·{' '}
+        <Link href="/swap" className="text-emerald-200/80 hover:text-emerald-200">
+          swap
+        </Link>{' '}
+        ·{' '}
+        <Link href="/stake" className="text-emerald-200/80 hover:text-emerald-200">
+          stake ETX
+        </Link>
       </p>
     </div>
   );

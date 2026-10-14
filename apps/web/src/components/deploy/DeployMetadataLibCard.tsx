@@ -80,7 +80,7 @@ export function DeployMetadataLibCard() {
     state.status === 'signing' || state.status === 'pending';
 
   return (
-    <div className="space-y-6 rounded-xl border border-white/10 bg-white/5 p-6">
+    <div className="space-y-6 rounded-xl border border-white/[0.07] bg-white/[0.035] p-6">
       {/* Wallet Connection */}
       {!isConnected ? (
         <div className="space-y-3">
@@ -131,7 +131,7 @@ export function DeployMetadataLibCard() {
 
       {/* Existing library info */}
       {onMainnet && existingLib && existingLib !== '0x0000000000000000000000000000000000000000' && (
-        <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+        <div className="rounded-lg border border-white/[0.07] bg-white/[0.035] p-4">
           <p className="text-xs text-white/50 mb-1">Current deployed metadata library</p>
           <p className="font-mono text-sm text-white/70 break-all">{existingLib}</p>
         </div>
@@ -176,7 +176,7 @@ export function DeployMetadataLibCard() {
               <p className="font-mono text-white/70 break-all">{state.txHash}</p>
             </div>
           </div>
-          <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
+          <div className="mt-3 rounded border border-white/[0.07] bg-black/20 p-3">
             <p className="text-xs text-white/50 mb-2">
               Next: update <span className="font-mono">packages/shared/src/addresses.ts</span>:
             </p>
@@ -208,7 +208,7 @@ export function DeployMetadataLibCard() {
       )}
 
       {/* What this upgrades */}
-      <div className="space-y-2 border-t border-white/10 pt-4">
+      <div className="space-y-2 border-t border-white/[0.07] pt-4">
         <h3 className="text-sm font-medium text-white/70">What this library changes:</h3>
         <ul className="list-disc list-inside space-y-1 text-xs text-white/50">
           <li>

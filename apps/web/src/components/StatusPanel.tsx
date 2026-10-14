@@ -557,7 +557,7 @@ export async function StatusPanel() {
 
 function Section(props: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <section className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
       <h2 className="mb-3 text-sm font-medium text-white/70">{props.title}</h2>
       <dl className="space-y-1 text-sm">{props.children}</dl>
     </section>
@@ -575,7 +575,7 @@ function KV(props: { k: string; v: string }) {
 
 function AddressTable(props: { rows: ReadonlyArray<readonly [string, Address]> }) {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <section className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
       <h2 className="mb-3 text-sm font-medium text-white/70">Addresses (chain 61803)</h2>
       <dl className="space-y-2 text-sm sm:space-y-1">
         {props.rows.map(([label, addr]) => (

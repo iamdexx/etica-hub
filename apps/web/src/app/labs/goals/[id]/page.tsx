@@ -184,7 +184,7 @@ export default function GoalDetailPage(): JSX.Element {
               {g.keywords.map((k) => (
                 <span
                   key={k}
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/55"
+                  className="rounded-full border border-white/[0.07] bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/55"
                 >
                   {k}
                 </span>
@@ -207,21 +207,21 @@ export default function GoalDetailPage(): JSX.Element {
       </header>
 
       <section className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="surface-2 p-4">
           <p className="text-xs uppercase tracking-wider text-white/45">Runs</p>
           <p className="mt-1 text-2xl font-semibold text-white">{g.runCount}</p>
           <p className="mt-1 text-xs text-white/55">
             last {relativeTime(g.lastRunAt)}
           </p>
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="surface-2 p-4">
           <p className="text-xs uppercase tracking-wider text-white/45">Flag weight</p>
           <p className="mt-1 text-2xl font-semibold text-rose-200">
             {m ? fmtStEtxWei(m.flagWeight) : '—'}
           </p>
           <p className="mt-1 text-xs text-white/55">{m?.flagVoters ?? 0} voters</p>
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="surface-2 p-4">
           <p className="text-xs uppercase tracking-wider text-white/45">Vouch weight</p>
           <p className="mt-1 text-2xl font-semibold text-emerald-200">
             {m ? fmtStEtxWei(m.vouchWeight) : '—'}
@@ -242,7 +242,7 @@ export default function GoalDetailPage(): JSX.Element {
               <Link
                 key={entry.id}
                 href={`/labs/feed/${entry.id}`}
-                className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+                className="flex flex-col gap-2 surface-2 p-4 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
               >
                 <div className="flex items-center justify-between gap-2 text-[11px] text-white/55">
                   <span className="uppercase tracking-wider">{entry.status}</span>
@@ -272,7 +272,7 @@ export default function GoalDetailPage(): JSX.Element {
               <Link
                 key={r.id}
                 href={`/labs/goals/${r.id}`}
-                className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+                className="flex flex-col gap-2 surface-2 p-4 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
               >
                 <p className="text-sm font-medium text-white">{r.title}</p>
                 {r.description && (

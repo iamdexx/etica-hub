@@ -64,16 +64,17 @@ export default async function PoolsPage(): Promise<JSX.Element> {
         ])}
       />
 
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold text-white/95">EticaSwap liquidity pools</h1>
-        <p className="text-sm text-white/60">{DESCRIPTION}</p>
+      <header className="space-y-4" data-stagger>
+        <div className="eyebrow">Liquidity</div>
+        <h1 className="display text-3xl sm:text-4xl md:text-5xl">EticaSwap liquidity pools</h1>
+        <p className="lede max-w-2xl">{DESCRIPTION}</p>
         <p className="text-xs text-white/40">
           {snapshot.pools.length} pools · combined TVL {fmtUsd(totalUsd)} · snapshot{' '}
           {snapshot.asOf.replace('T', ' ').slice(0, 19)} UTC
         </p>
       </header>
 
-      <div className="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03]">
+      <div className="overflow-x-auto rounded-xl border border-white/[0.07] bg-white/[0.03]">
         <table className="w-full text-left text-sm">
           <thead className="text-[11px] uppercase tracking-wider text-white/45">
             <tr>

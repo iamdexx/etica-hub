@@ -24,7 +24,7 @@ export function MarketCandles({
   height?: number;
 }) {
   if (candles.length === 0) {
-    return <div className="rounded-lg border border-white/10 bg-white/[0.02] p-5 text-sm text-white/45">No candle data available.</div>;
+    return <div className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-5 text-sm text-white/45">No candle data available.</div>;
   }
 
   const highs = candles.map((c) => c.high);

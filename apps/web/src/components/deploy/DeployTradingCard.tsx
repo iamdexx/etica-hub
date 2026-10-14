@@ -261,7 +261,7 @@ export function DeployTradingCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Prerequisites</h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-white/70">
           <li>MetaMask installed and unlocked.</li>
@@ -283,7 +283,7 @@ export function DeployTradingCard() {
         </ol>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Wallet</h2>
         {!isConnected && (
           <button
@@ -322,20 +322,20 @@ export function DeployTradingCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Treasury / reactor owner</h2>
         <input
           type="text"
           value={treasuryInput}
           onChange={(e) => setTreasuryInput(e.target.value)}
           spellCheck={false}
-          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+          className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
           placeholder="0x…"
         />
         {!treasury && <div className="mt-2 text-xs text-red-400">Not a valid address.</div>}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">ETX token address</h2>
         <p className="mb-3 text-xs text-white/60">
           The fee controller charges fees in ETX. Defaults to the mainnet ETX deployed with
@@ -346,7 +346,7 @@ export function DeployTradingCard() {
           value={etxInput}
           onChange={(e) => setEtxInput(e.target.value)}
           spellCheck={false}
-          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+          className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
           placeholder="0x…"
         />
         {etxInput.trim().length > 0 && !etx && (
@@ -367,7 +367,7 @@ export function DeployTradingCard() {
           const blocked = !argSpec.ready;
           const busy = s.status === 'signing' || s.status === 'pending';
           return (
-            <div key={step.key} className="rounded-xl border border-white/10 bg-white/5 p-5">
+            <div key={step.key} className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="font-semibold">{step.label}</h3>

@@ -414,7 +414,7 @@ export function AdminStableSwapCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Wallet</h2>
         {!isConnected ? (
           <button
@@ -432,7 +432,7 @@ export function AdminStableSwapCard() {
               <span className="font-mono break-all">{address}</span>
               <button
                 type="button"
-                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/5"
+                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/[0.035]"
                 onClick={() => disconnect()}
               >
                 Disconnect
@@ -468,7 +468,7 @@ export function AdminStableSwapCard() {
         </section>
       )}
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 text-sm">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 text-sm">
         <h2 className="mb-3 text-lg font-semibold">Pool state</h2>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
           <Row label="Pool" value={<ShortAddr value={pool === ZERO_ADDRESS ? null : pool} />} />
@@ -533,7 +533,7 @@ export function AdminStableSwapCard() {
         </dl>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 text-sm">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 text-sm">
         <h2 className="mb-3 text-lg font-semibold">Treasury timelock</h2>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
           <Row
@@ -665,7 +665,7 @@ export function AdminStableSwapCard() {
           </button>
           <button
             type="button"
-            className="rounded-md border border-white/15 px-4 py-2 text-sm text-white/80 hover:bg-white/5 disabled:opacity-40"
+            className="rounded-md border border-white/15 px-4 py-2 text-sm text-white/80 hover:bg-white/[0.035] disabled:opacity-40"
             onClick={doStopRamp}
             disabled={!isOwner || !walletClient}
           >
@@ -746,7 +746,7 @@ function Field({
       {label}
       <input
         type="text"
-        className={`mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-xs text-white placeholder:text-white/30 ${mono ? 'font-mono' : ''}`}
+        className={`mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 text-xs text-white placeholder:text-white/30 ${mono ? 'font-mono' : ''}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -773,7 +773,7 @@ function NumberField({
       <input
         type="text"
         inputMode="numeric"
-        className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-xs text-white placeholder:text-white/30"
+        className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 text-xs text-white placeholder:text-white/30"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -793,7 +793,7 @@ function FormBlock({
 }) {
   return (
     <section
-      className={`rounded-xl border border-white/10 bg-white/5 p-5 ${disabled ? 'opacity-60' : ''}`}
+      className={`rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 ${disabled ? 'opacity-60' : ''}`}
     >
       <h3 className="mb-3 text-sm font-semibold text-white/90">{title}</h3>
       <div className="space-y-3">{children}</div>
@@ -817,7 +817,7 @@ function Action({
   onClick: () => void;
 }) {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+    <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
       <h3 className="mb-1 text-sm font-semibold text-white/90">{title}</h3>
       <p className="mb-3 text-xs text-white/60">{body}</p>
       <button

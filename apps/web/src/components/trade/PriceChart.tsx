@@ -133,7 +133,7 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
   const positive = change >= 0;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+    <div className="surface p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-white/50">
@@ -145,7 +145,7 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
             <button
               type="button"
               onClick={() => setInverted((v) => !v)}
-              className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] tracking-normal text-white/70 hover:bg-white/10 hover:text-white"
+              className="rounded-full border border-white/[0.07] bg-white/[0.035] px-2 py-0.5 text-[10px] tracking-normal text-white/70 hover:bg-white/10 hover:text-white"
               title="Flip the price quote between base and quote tokens"
               aria-label="Invert price quote"
             >
@@ -164,7 +164,7 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
             </div>
           </div>
         </div>
-        <div className="flex gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+        <div className="flex gap-1 rounded-full border border-white/[0.07] bg-white/[0.035] p-1">
           {INTERVALS.map((k) => (
             <button
               key={k}
@@ -173,7 +173,7 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
               className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
                 interval === k
                   ? 'bg-brand-accent text-brand-ink'
-                  : 'text-white/70 hover:bg-white/5 hover:text-white'
+                  : 'text-white/70 hover:bg-white/[0.035] hover:text-white'
               }`}
             >
               {k}
@@ -216,7 +216,7 @@ export function PriceChart({ pairId, baseSymbol, quoteSymbol, apiBaseUrl }: Pric
 
         {(loading || err || !candles || candles.length === 0) && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="rounded-full border border-white/10 bg-black/60 px-3 py-1 text-xs text-white/60">
+            <div className="rounded-full border border-white/[0.07] bg-black/60 px-3 py-1 text-xs text-white/60">
               {loading
                 ? 'Loading price history…'
                 : err

@@ -160,7 +160,7 @@ export default async function AddressPage({ params }: AddressPageProps) {
         ) : null}
       </section>
 
-      <section className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm md:grid-cols-2">
+      <section className="grid gap-3 surface p-5 text-sm md:grid-cols-2">
         <Field label="EGAZ balance">{formatEgaz(nativeBalance)} EGAZ</Field>
         <Field label="ETX balance">
           {d?.etx && d.etx !== ZERO ? formatEgaz(etxBalance) : '—'} ETX
@@ -179,7 +179,7 @@ export default async function AddressPage({ params }: AddressPageProps) {
 
       {verified ? <ContractInteractionView address={addr} abi={verified.abi} /> : null}
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <section className="surface p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Recent transactions</h2>
           <span className="text-xs text-white/40">last {RECENT_SCAN_BLOCKS.toString()} blocks</span>
@@ -325,7 +325,7 @@ async function scanRecentTxs(
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wider text-white/40">{label}</div>
+      <div className="text-[11px] uppercase tracking-eyebrow text-white/45">{label}</div>
       <div className="mt-0.5 break-all text-sm text-white/80">{children}</div>
     </div>
   );
@@ -342,7 +342,7 @@ function TokenTransfersSection({
 }) {
   const viewerLower = viewer.toLowerCase();
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+    <section className="surface p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Token transfers</h2>
         <span className="text-xs text-white/40">recent</span>

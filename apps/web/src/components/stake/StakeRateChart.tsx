@@ -153,7 +153,7 @@ export function StakeRateChart({ stakedETX }: StakeRateChartProps) {
   }, [publicClient, blockNumber, stakedETX, liveRate, totalSupplyQuery.data]);
 
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+    <section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5">
       <div className="mb-3 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold text-white">Exchange rate (last ~14 days)</h3>
         <span className="text-xs text-white/40">

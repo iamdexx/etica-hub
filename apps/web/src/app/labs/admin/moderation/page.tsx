@@ -183,7 +183,7 @@ export default function AdminModerationPage(): JSX.Element {
           {flaggedFirst.map((g) => (
             <div
               key={g.id}
-              className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4"
+              className="flex flex-wrap items-center gap-3 surface-2 p-4"
             >
               <Link
                 href={`/labs/goals/${g.id}`}
@@ -229,7 +229,7 @@ export default function AdminModerationPage(): JSX.Element {
           {jobs.map((j) => (
             <div
               key={j.id}
-              className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4"
+              className="flex flex-wrap items-center gap-3 surface-2 p-4"
             >
               <Link
                 href={`/labs/feed/${j.id}`}

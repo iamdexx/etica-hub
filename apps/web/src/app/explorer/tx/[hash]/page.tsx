@@ -86,7 +86,7 @@ export default async function TxPage({ params }: TxPageProps) {
         <p className="break-all font-mono text-xs text-white/50">{tx.hash}</p>
       </section>
 
-      <section className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm md:grid-cols-2">
+      <section className="grid gap-3 surface p-5 text-sm md:grid-cols-2">
         <Field label="Status">
           <span
             className={
@@ -146,7 +146,7 @@ export default async function TxPage({ params }: TxPageProps) {
         <Field label="Tx type">{tx.type}</Field>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <section className="surface p-5">
         <h2 className="mb-2 text-lg font-semibold">Input data</h2>
         {!tx.input || tx.input === '0x' ? (
           <p className="text-sm text-white/50">No calldata (plain value transfer).</p>
@@ -156,7 +156,7 @@ export default async function TxPage({ params }: TxPageProps) {
       </section>
 
       {receipt && receipt.logs.length > 0 ? (
-        <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+        <section className="surface p-5">
           <h2 className="mb-3 text-lg font-semibold">Events ({receipt.logs.length})</h2>
           <ul className="space-y-3">
             {receipt.logs.map((log, i) => (
@@ -184,7 +184,7 @@ function Field({
 }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wider text-white/40">{label}</div>
+      <div className="text-[11px] uppercase tracking-eyebrow text-white/45">{label}</div>
       <div className="mt-0.5 break-all text-sm text-white/80">{children}</div>
     </div>
   );
@@ -207,7 +207,7 @@ function DecodedCallView({
           </div>
           <div className="mb-2 font-mono text-sm text-white">{decoded.functionName}</div>
           {decoded.args.length > 0 ? (
-            <div className="rounded-lg border border-white/5 bg-black/30 px-3 py-1">
+            <div className="rounded-lg border border-white/5 bg-black/20 px-3 py-1">
               {decoded.args.map((arg, i) => (
                 <DecodedArgRow key={i} arg={arg} contractAddress={to} />
               ))}
@@ -263,7 +263,7 @@ function DecodedLogView({
           </div>
           <div className="mb-2 font-mono text-sm text-white">{decoded.eventName}</div>
           {decoded.args.length > 0 ? (
-            <div className="rounded border border-white/5 bg-black/30 px-2 py-0.5">
+            <div className="rounded border border-white/5 bg-black/20 px-2 py-0.5">
               {decoded.args.map((arg, i) => (
                 <DecodedArgRow key={i} arg={arg} contractAddress={address} />
               ))}

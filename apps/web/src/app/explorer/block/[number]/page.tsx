@@ -65,7 +65,7 @@ export default async function BlockPage({ params }: BlockPageProps) {
         </p>
       </section>
 
-      <section className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm md:grid-cols-2">
+      <section className="grid gap-3 surface p-5 text-sm md:grid-cols-2">
         <Field label="Hash" mono>
           {block.hash}
         </Field>
@@ -99,7 +99,7 @@ export default async function BlockPage({ params }: BlockPageProps) {
         <Field label="Base fee (wei)">{block.baseFeePerGas?.toString() ?? '—'}</Field>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <section className="surface p-5">
         <h2 className="mb-3 text-lg font-semibold">Transactions</h2>
         {txs.length === 0 ? (
           <p className="text-sm text-white/50">No transactions in this block.</p>
@@ -153,7 +153,7 @@ export default async function BlockPage({ params }: BlockPageProps) {
         {block.number > 0n ? (
           <Link
             href={`/explorer/block/${(block.number - 1n).toString()}`}
-            className="rounded-full border border-white/15 bg-white/5 px-4 py-1.5 hover:border-white/30"
+            className="rounded-full border border-white/15 bg-white/[0.035] px-4 py-1.5 hover:border-white/30"
           >
             ← Block {(block.number - 1n).toString()}
           </Link>
@@ -162,7 +162,7 @@ export default async function BlockPage({ params }: BlockPageProps) {
         )}
         <Link
           href={`/explorer/block/${(block.number + 1n).toString()}`}
-          className="rounded-full border border-white/15 bg-white/5 px-4 py-1.5 hover:border-white/30"
+          className="rounded-full border border-white/15 bg-white/[0.035] px-4 py-1.5 hover:border-white/30"
         >
           Block {(block.number + 1n).toString()} →
         </Link>
@@ -182,7 +182,7 @@ function Field({
 }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wider text-white/40">{label}</div>
+      <div className="text-[11px] uppercase tracking-eyebrow text-white/45">{label}</div>
       <div
         className={`mt-0.5 break-all text-sm text-white/80 ${mono ? 'font-mono' : ''}`}
       >
