@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   BaseError,
   UserRejectedRequestError,
@@ -70,7 +70,7 @@ const LAUNCH_TIERS: readonly [bigint[], number[]] = [
   [300, 150, 50, 10],
 ];
 
-type Role = 'operator' | 'seeder';
+type Role = 'operator' | 'seeder' | 'handoff';
 type StepKey =
   | 'deployFactory'
   | 'deployDeployer'
@@ -271,7 +271,7 @@ const STEP_LABELS: Record<StepKey, { label: string; description: string }> = {
   deployMultisig: {
     label: 'Deploy 2-of-2 UnanimousMultisig',
     description:
-      'Owners: the owner above + the second signer. Every admin change needs both; one “no” means no change.',
+      'Owners: the treasury and the second signer. Every admin change needs both; one “no” means no change.',
   },
   setFeeToSetter: {
     label: 'factory.setFeeToSetter(multisig)',
@@ -371,6 +371,10 @@ export function DeployDirectCard({ role }: { role: Role }) {
   const [guardianInput, setGuardianInput] = useState<string>(BRIDGE_ROLES.keeper);
   const [usdPerSide, setUsdPerSide] = useState<string>('10');
   const [factoryInput, setFactoryInput] = useState<string>('');
+  const [editAddrs, setEditAddrs] = useState(false);
+  const [running, setRunning] = useState(false);
+  const deployedRef = useRef<Deployed>({});
+  const okRef = useRef(false);
   const [windows, setWindows] = useState<Windows>({});
   const [balances, setBalances] = useState<{
     usdce: bigint;
@@ -380,6 +384,9 @@ export function DeployDirectCard({ role }: { role: Role }) {
     allowed: boolean;
   } | null>(null);
   const [deployed, setDeployed] = useState<Deployed>({});
+  useEffect(() => {
+    deployedRef.current = deployed;
+  }, [deployed]);
   const [steps, setSteps] = useState<Record<StepKey, StepState>>(
     () => Object.fromEntries(STEP_ORDER.map((k) => [k, initial])) as Record<StepKey, StepState>,
   );
@@ -394,12 +401,15 @@ export function DeployDirectCard({ role }: { role: Role }) {
 
   useEffect(() => {
     const stored = loadDeployed();
-    const pick = (live: Address, saved?: Address) => (live !== ZERO ? live : saved);
+    const q = new URLSearchParams(window.location.search);
+    const fromUrl = (k: string) => parseAddr(q.get(k) ?? '') ?? undefined;
+    const pick = (live: Address, saved?: Address, url?: Address) =>
+      live !== ZERO ? live : (saved ?? url);
     setDeployed({
-      factory: pick(d.directFactory, stored.factory),
+      factory: pick(d.directFactory, stored.factory, fromUrl('factory')),
       deployer: pick(d.directMetaPairDeployer, stored.deployer),
       router: pick(d.directRouter, stored.router),
-      harvester: pick(d.directHarvesterAdapter, stored.harvester),
+      harvester: pick(d.directHarvesterAdapter, stored.harvester, fromUrl('harvester')),
       multisig: pick(d.directAdmin, stored.multisig),
     });
   }, [
@@ -411,6 +421,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
   ]);
 
   function remember(next: Deployed) {
+    deployedRef.current = next;
     setDeployed(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -606,7 +617,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
     multisig: knownMultisig,
   } = deployed;
   useEffect(() => {
-    if (role !== 'operator' || !publicClient || !onMainnet || !knownFactory) return;
+    if (role === 'seeder' || !publicClient || !onMainnet || !knownFactory) return;
     let cancelled = false;
     (async () => {
       try {
@@ -665,6 +676,21 @@ export function DeployDirectCard({ role }: { role: Role }) {
           Address,
         ];
         if (cancelled) return;
+        if ((!knownDeployer && metaDeployer !== ZERO) || (!knownHarvester && feeTo !== ZERO)) {
+          setDeployed((prev) => {
+            const next = {
+              ...prev,
+              deployer: prev.deployer ?? (metaDeployer !== ZERO ? metaDeployer : undefined),
+              harvester: prev.harvester ?? (feeTo !== ZERO ? feeTo : undefined),
+            };
+            try {
+              window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+            } catch {
+              /* storage unavailable */
+            }
+            return next;
+          });
+        }
         const done: Partial<Record<StepKey, boolean>> = {
           setDeployer: same(metaDeployer, knownDeployer),
           whitelistRouter: wlRouter,
@@ -818,6 +844,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
         return undefined;
       }
       setSteps((s) => ({ ...s, [key]: { status: 'confirmed', txHash } }));
+      okRef.current = true;
       return (receipt.contractAddress ?? undefined) as Address | undefined;
     } catch (err) {
       setSteps((s) => ({ ...s, [key]: { status: 'error', txHash, error: shortError(err) } }));
@@ -825,11 +852,12 @@ export function DeployDirectCard({ role }: { role: Role }) {
     }
   }
 
-  async function runStep(key: StepKey) {
-    if (!walletClient || !address || !onMainnet) return;
+  async function runStep(key: StepKey): Promise<boolean> {
+    okRef.current = false;
+    if (!walletClient || !address || !onMainnet) return false;
     const wc = walletClient;
     const account = address;
-    const { factory, deployer, router, harvester, multisig } = deployed;
+    const { factory, deployer, router, harvester, multisig } = deployedRef.current;
 
     const deploy = (artifact: { abi: Abi; bytecode: Hex }, args: readonly unknown[]) =>
       wc.sendTransaction({
@@ -850,26 +878,26 @@ export function DeployDirectCard({ role }: { role: Role }) {
 
     switch (key) {
       case 'deployFactory': {
-        if (!owner) return;
+        if (!owner) return false;
         const a = await send(key, () =>
           deploy(directFactoryArtifact, [owner, tokens.stEtx, LAUNCH_MIN_STETX]),
         );
-        if (a) remember({ ...deployed, factory: a });
-        return;
+        if (a) remember({ ...deployedRef.current, factory: a });
+        return okRef.current;
       }
       case 'deployDeployer': {
         const a = await send(key, () => deploy(directMetaPairDeployerArtifact, []));
-        if (a) remember({ ...deployed, deployer: a });
-        return;
+        if (a) remember({ ...deployedRef.current, deployer: a });
+        return okRef.current;
       }
       case 'deployRouter': {
-        if (!factory) return;
+        if (!factory) return false;
         const a = await send(key, () => deploy(directRouterArtifact, [factory, tokens.wegaz]));
-        if (a) remember({ ...deployed, router: a });
-        return;
+        if (a) remember({ ...deployedRef.current, router: a });
+        return okRef.current;
       }
       case 'deployHarvester': {
-        if (!factory || !owner) return;
+        if (!factory || !owner) return false;
         const a = await send(key, () =>
           deploy(directHarvesterAdapterArtifact, [
             owner,
@@ -881,111 +909,112 @@ export function DeployDirectCard({ role }: { role: Role }) {
             owner,
           ]),
         );
-        if (a) remember({ ...deployed, harvester: a });
-        return;
+        if (a) remember({ ...deployedRef.current, harvester: a });
+        return okRef.current;
       }
       case 'setDeployer':
-        if (!deployer) return;
+        if (!deployer) return false;
         await send(key, () => fac('setMetaPairDeployer', [deployer]));
-        return;
+        return okRef.current;
       case 'whitelistRouter':
-        if (!router) return;
+        if (!router) return false;
         await send(key, () => fac('setWhitelist', [router, true]));
-        return;
+        return okRef.current;
       case 'whitelistHarvester':
-        if (!harvester) return;
+        if (!harvester) return false;
         await send(key, () => fac('setWhitelist', [harvester, true]));
-        return;
+        return okRef.current;
       case 'whitelistSeeder':
-        if (!seeder) return;
+        if (!seeder) return false;
         await send(key, () => fac('setWhitelist', [seeder, true]));
-        return;
+        return okRef.current;
       case 'setFeeTo':
-        if (!harvester) return;
+        if (!harvester) return false;
         await send(key, () => fac('setFeeTo', [harvester]));
-        return;
+        return okRef.current;
       case 'setFeeTiers':
         await send(key, () => fac('setFeeTiers', [LAUNCH_TIERS[0], LAUNCH_TIERS[1]]));
-        return;
+        return okRef.current;
       case 'setTreasuryToken':
-        if (!harvester) return;
+        if (!harvester) return false;
         await send(key, () =>
           write(harvester, directHarvesterAdapterArtifact.abi, 'setTreasuryToken', [tokens.usdce]),
         );
-        return;
+        return okRef.current;
       case 'createWindowWegaz':
         await send(key, () =>
           fac('createMetaPair', [tokens.wegaz, tokens.usdce, tokens.hubRouter]),
         );
-        return;
+        return okRef.current;
       case 'createWindowEti':
         await send(key, () => fac('createMetaPair', [tokens.eti, tokens.usdce, tokens.hubRouter]));
-        return;
+        return okRef.current;
       case 'setGuardian':
-        if (!guardian) return;
+        if (!guardian) return false;
         await send(key, () => fac('setGuardian', [guardian]));
-        return;
+        return okRef.current;
       case 'setUnpauserOwner':
-        if (!owner) return;
+        if (!owner) return false;
         await send(key, () => fac('setUnpauser', [owner, true]));
-        return;
+        return okRef.current;
       case 'setUnpauserSigner':
-        if (!signer) return;
+        if (!signer) return false;
         await send(key, () => fac('setUnpauser', [signer, true]));
-        return;
+        return okRef.current;
       case 'deployMultisig': {
-        if (!owner || !signer || same(owner, signer)) return;
+        if (!owner || !signer || same(owner, signer)) return false;
         const a = await send(key, () => deploy(unanimousMultisigArtifact, [[owner, signer]]));
-        if (a) remember({ ...deployed, multisig: a });
-        return;
+        if (a) remember({ ...deployedRef.current, multisig: a });
+        return okRef.current;
       }
       case 'setFeeToSetter':
-        if (!multisig) return;
+        if (!multisig) return false;
         await send(key, () => fac('setFeeToSetter', [multisig]));
-        return;
+        return okRef.current;
       case 'transferHarvester':
-        if (!harvester || !multisig) return;
+        if (!harvester || !multisig) return false;
         await send(key, () => write(harvester, OWNABLE_ABI, 'transferOwnership', [multisig]));
-        return;
+        return okRef.current;
       case 'wrapEgaz':
-        if (!quote) return;
+        if (!quote) return false;
         await send(key, () => write(tokens.wegaz, ERC20_ABI, 'deposit', [], quote.egaz));
-        return;
+        return okRef.current;
       case 'sendUsdceWegaz':
-        if (!windows.wegaz || !usdcePerSide) return;
+        if (!windows.wegaz || !usdcePerSide) return false;
         await send(key, () =>
           write(tokens.usdce, ERC20_ABI, 'transfer', [windows.wegaz, usdcePerSide]),
         );
-        return;
+        return okRef.current;
       case 'sendWegaz':
-        if (!windows.wegaz || !quote) return;
+        if (!windows.wegaz || !quote) return false;
         await send(key, () =>
           write(tokens.wegaz, ERC20_ABI, 'transfer', [windows.wegaz, quote.egaz]),
         );
-        return;
+        return okRef.current;
       case 'mintWegaz':
-        if (!windows.wegaz) return;
+        if (!windows.wegaz) return false;
         await send(key, () =>
           write(windows.wegaz as Address, directMetaPairArtifact.abi, 'mint', [DEAD]),
         );
-        return;
+        return okRef.current;
       case 'sendUsdceEti':
-        if (!windows.eti || !usdcePerSide) return;
+        if (!windows.eti || !usdcePerSide) return false;
         await send(key, () =>
           write(tokens.usdce, ERC20_ABI, 'transfer', [windows.eti, usdcePerSide]),
         );
-        return;
+        return okRef.current;
       case 'sendEti':
-        if (!windows.eti || !quote) return;
+        if (!windows.eti || !quote) return false;
         await send(key, () => write(tokens.eti, ERC20_ABI, 'transfer', [windows.eti, quote.eti]));
-        return;
+        return okRef.current;
       case 'mintEti':
-        if (!windows.eti) return;
+        if (!windows.eti) return false;
         await send(key, () =>
           write(windows.eti as Address, directMetaPairArtifact.abi, 'mint', [DEAD]),
         );
-        return;
+        return okRef.current;
     }
+    return okRef.current;
   }
 
   const deployedFor = (k: StepKey): Address | undefined =>
@@ -1018,17 +1047,36 @@ export function DeployDirectCard({ role }: { role: Role }) {
     if (key === 'setUnpauserSigner' && !signer) return false;
     if (key === 'deployMultisig' && (!signer || same(owner, signer))) return false;
     if (HANDOFF_STEPS.includes(key)) {
-      return (
-        SETUP_STEPS.every((k) => k === 'setGuardian' || isDone(k)) &&
-        HANDOFF_STEPS.slice(0, HANDOFF_STEPS.indexOf(key)).every(isDone)
-      );
+      const base =
+        role === 'handoff'
+          ? Boolean(knownFactory && knownHarvester)
+          : SETUP_STEPS.every((k) => k === 'setGuardian' || isDone(k));
+      return base && HANDOFF_STEPS.slice(0, HANDOFF_STEPS.indexOf(key)).every(isDone);
     }
     return SETUP_STEPS.slice(0, SETUP_STEPS.indexOf(key)).every(
       (k) => k === 'setGuardian' || isDone(k),
     );
   }
 
-  const visibleSteps = role === 'operator' ? OPERATOR_STEPS : SEED_STEPS;
+  const visibleSteps =
+    role === 'operator' ? SETUP_STEPS : role === 'handoff' ? HANDOFF_STEPS : SEED_STEPS;
+  const optional = (k: StepKey) => k === 'setGuardian' && !guardian;
+  const remaining = visibleSteps.filter((k) => !isDone(k) && !optional(k));
+  const nextKey = remaining[0];
+  const canRunAll = !running && nextKey !== undefined && ready(nextKey);
+
+  async function runAll() {
+    if (!canRunAll) return;
+    setRunning(true);
+    try {
+      for (const key of remaining) {
+        const ok = await runStep(key);
+        if (!ok) break;
+      }
+    } finally {
+      setRunning(false);
+    }
+  }
   const fmt = (v: bigint, dec: number, max = 4) =>
     Number(formatUnits(v, dec)).toLocaleString(undefined, { maximumFractionDigits: max });
   const short =
@@ -1119,72 +1167,115 @@ export function DeployDirectCard({ role }: { role: Role }) {
         </section>
       )}
 
-      {role === 'operator' && (
+      {role !== 'seeder' && (
         <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
-          <h2 className="mb-4 text-lg font-semibold">Parameters</h2>
-          <label className="block text-sm text-white/70">
-            Launch owner (feeToSetter, harvester owner, treasury sink)
-            <input
-              type="text"
-              className={input}
-              value={ownerInput}
-              onChange={(e) => setOwnerInput(e.target.value)}
-              spellCheck={false}
-            />
-          </label>
-          <p className="mt-1 text-xs text-white/50">
-            Defaults to the treasury. Signs every step; the last three steps hand feeToSetter and
-            the harvester to the 2-of-2 multisig. Receives the 40% treasury slice (USDC.e).
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Addresses</h2>
+            <button
+              type="button"
+              className="rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/[0.035]"
+              onClick={() => setEditAddrs((v) => !v)}
+            >
+              {editAddrs ? 'Done' : 'Edit'}
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-white/50">
+            All prefilled.{' '}
+            {role === 'operator'
+              ? 'Every step below is signed by the treasury.'
+              : 'Both steps below are signed by the treasury.'}{' '}
+            Nothing here needs typing unless an address changed.
           </p>
-          <label className="mt-4 block text-sm text-white/70">
-            Second multisig signer
-            <input
-              type="text"
-              className={input}
-              value={signerInput}
-              onChange={(e) => setSignerInput(e.target.value)}
-              spellCheck={false}
-            />
-          </label>
-          <label className="mt-4 block text-sm text-white/70">
-            Seeder wallet (whitelisted to deposit into the windows)
-            <input
-              type="text"
-              className={input}
-              value={seederInput}
-              onChange={(e) => setSeederInput(e.target.value)}
-              spellCheck={false}
-            />
-          </label>
-          <label className="mt-4 block text-sm text-white/70">
-            Guardian (pause-only; the direct-watcher signs with this key)
-            <input
-              type="text"
-              className={input}
-              value={guardianInput}
-              onChange={(e) => setGuardianInput(e.target.value)}
-              placeholder="0x… leave blank to skip setGuardian"
-              spellCheck={false}
-            />
-          </label>
-          <dl className="mt-4 grid gap-1 text-xs text-white/50 sm:grid-cols-2">
-            {(
-              [
-                ['stETX (gate)', tokens.stEtx],
-                ['WEGAZ', tokens.wegaz],
-                ['ETI', tokens.eti],
-                ['USDC.e', tokens.usdce],
-                ['ETX', tokens.etx],
-                ['Hub router', tokens.hubRouter],
-                ['Farms sink', tokens.farms],
-              ] as const
-            ).map(([k, v]) => (
-              <div key={k} className="flex gap-2">
-                <dt className="shrink-0">{k}</dt>
-                <dd className="truncate font-mono">{v}</dd>
-              </div>
-            ))}
-          </dl>
+          {editAddrs ? (
+            <>
+              <label className="block text-sm text-white/70">
+                Treasury (launch owner, harvester owner, treasury sink)
+                <input
+                  type="text"
+                  className={input}
+                  value={ownerInput}
+                  onChange={(e) => setOwnerInput(e.target.value)}
+                  spellCheck={false}
+                />
+              </label>
+              <label className="mt-4 block text-sm text-white/70">
+                Second multisig signer (also gets the solo-unpause right)
+                <input
+                  type="text"
+                  className={input}
+                  value={signerInput}
+                  onChange={(e) => setSignerInput(e.target.value)}
+                  spellCheck={false}
+                />
+              </label>
+              {role === 'operator' && (
+                <>
+                  <label className="mt-4 block text-sm text-white/70">
+                    Seeder wallet (whitelisted to deposit into the windows)
+                    <input
+                      type="text"
+                      className={input}
+                      value={seederInput}
+                      onChange={(e) => setSeederInput(e.target.value)}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="mt-4 block text-sm text-white/70">
+                    Guardian (keeper wallet; pause-only)
+                    <input
+                      type="text"
+                      className={input}
+                      value={guardianInput}
+                      onChange={(e) => setGuardianInput(e.target.value)}
+                      placeholder="0x… leave blank to skip setGuardian"
+                      spellCheck={false}
+                    />
+                  </label>
+                </>
+              )}
+            </>
+          ) : (
+            <dl className="grid gap-1 text-xs sm:grid-cols-[auto_1fr]">
+              {(
+                [
+                  ['Treasury (signs everything)', owner ?? ownerInput],
+                  ['Second signer (Ulmo)', signer ?? signerInput],
+                  ...(role === 'operator'
+                    ? ([
+                        ['Seeder', seeder ?? seederInput],
+                        ['Guardian (keeper, pause-only)', (guardian ?? guardianInput) || 'none'],
+                      ] as const)
+                    : ([
+                        ['Factory', knownFactory ?? 'not found'],
+                        ['Harvester', knownHarvester ?? 'not found'],
+                        ['Multisig', knownMultisig ?? 'not deployed yet'],
+                      ] as const)),
+                ] as const
+              ).map(([k, v]) => (
+                <div key={k} className="contents">
+                  <dt className="text-white/50 sm:pr-4">{k}</dt>
+                  <dd className="truncate font-mono text-white/80">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {role === 'handoff' && !knownFactory && (
+            <label className="mt-4 block text-sm text-white/70">
+              Direct factory address
+              <input
+                type="text"
+                className={input}
+                value={factoryInput}
+                onChange={(e) => {
+                  setFactoryInput(e.target.value);
+                  const a = parseAddr(e.target.value);
+                  if (a) remember({ ...deployed, factory: a });
+                }}
+                placeholder="0x… (from the deploy page, or ?factory= in the URL)"
+                spellCheck={false}
+              />
+            </label>
+          )}
         </section>
       )}
 
@@ -1226,7 +1317,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
                 </button>
               )}
             </div>
-            {role === 'operator' && address && owner && !same(address, owner) && (
+            {role !== 'seeder' && address && owner && !same(address, owner) && (
               <p className="text-xs text-amber-300/80">
                 Connected wallet is not the owner above: the setter steps will revert unless signed
                 by the owner.
@@ -1237,7 +1328,30 @@ export function DeployDirectCard({ role }: { role: Role }) {
       </section>
 
       <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
-        <h2 className="mb-4 text-lg font-semibold">Steps</h2>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold">Steps</h2>
+          <button
+            type="button"
+            className="ml-auto rounded-md bg-emerald-500/90 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-30"
+            onClick={() => void runAll()}
+            disabled={!canRunAll}
+          >
+            {running
+              ? `Running… approve each popup (${remaining.length} left)`
+              : remaining.length === 0
+                ? 'All done'
+                : role === 'operator'
+                  ? `Launch everything (${remaining.length} signatures)`
+                  : role === 'handoff'
+                    ? `Hand off to the 2-of-2 (${remaining.length} signatures)`
+                    : `Seed both windows (${remaining.length} signatures)`}
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-white/50">
+          One click runs every remaining step in order; your wallet asks you to approve each
+          transaction. If one fails it stops there and the step shows the error; fix it and click
+          again to continue, or sign a single step below.
+        </p>
         <ol className="space-y-3">
           {visibleSteps.map((key) => {
             const st = steps[key];
@@ -1245,11 +1359,6 @@ export function DeployDirectCard({ role }: { role: Role }) {
             const done = isDone(key);
             return (
               <li key={key}>
-                {key === 'deployMultisig' && (
-                  <p className="mb-2 mt-4 text-xs uppercase tracking-wide text-white/40">
-                    Hand-off to the 2-of-2 (after seeding and checking the venue)
-                  </p>
-                )}
                 <div
                   className={`rounded-md border p-3 ${done ? 'border-emerald-400/30 bg-emerald-500/5' : 'border-white/[0.07]'}`}
                 >
@@ -1261,8 +1370,8 @@ export function DeployDirectCard({ role }: { role: Role }) {
                     <button
                       type="button"
                       className="ml-auto rounded-md bg-emerald-500/90 px-3 py-1 text-xs font-medium text-black transition hover:bg-emerald-400 disabled:opacity-30"
-                      onClick={() => runStep(key)}
-                      disabled={!ready(key)}
+                      onClick={() => void runStep(key)}
+                      disabled={running || !ready(key)}
                     >
                       {st.status === 'signing'
                         ? 'Sign in wallet…'
@@ -1313,7 +1422,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
         </section>
       )}
 
-      {role === 'operator' && deployed.factory && deployed.router && deployed.harvester && (
+      {role !== 'seeder' && deployed.factory && deployed.harvester && (
         <section className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-5 text-sm">
           <h2 className="mb-2 text-lg font-semibold text-emerald-200">
             {handoffDone
@@ -1329,15 +1438,29 @@ export function DeployDirectCard({ role }: { role: Role }) {
           <pre className="mt-2 overflow-x-auto rounded-md bg-black/30 p-3 font-mono text-xs text-emerald-100">
             {`directFactory: '${deployed.factory}',\ndirectMetaPairDeployer: '${deployed.deployer ?? ZERO}',\ndirectRouter: '${deployed.router}',\ndirectHarvesterAdapter: '${deployed.harvester}',\ndirectAdmin: '${deployed.multisig ?? ZERO}',`}
           </pre>
-          <p className="mt-2 text-xs text-emerald-200/70">
-            Seeder link (send to the whitelisted wallet):{' '}
-            <a
-              className="font-mono underline"
-              href={`https://eticahub.com/deploy/direct/seed?factory=${deployed.factory}`}
-            >
-              https://eticahub.com/deploy/direct/seed?factory={deployed.factory}
-            </a>
-          </p>
+          {role === 'operator' && (
+            <>
+              <p className="mt-2 text-xs text-emerald-200/70">
+                Send this link to the seeder (his page reads the windows from the factory):{' '}
+                <a
+                  className="font-mono underline"
+                  href={`https://eticahub.com/deploy/direct/seed?factory=${deployed.factory}`}
+                >
+                  https://eticahub.com/deploy/direct/seed?factory={deployed.factory}
+                </a>
+              </p>
+              <p className="mt-2 text-xs text-emerald-200/70">
+                When you want admin on the 2-of-2 (treasury signs, after seeding):{' '}
+                <a
+                  className="font-mono underline"
+                  href={`https://eticahub.com/deploy/direct/handoff?factory=${deployed.factory}&harvester=${deployed.harvester}`}
+                >
+                  https://eticahub.com/deploy/direct/handoff?factory={deployed.factory}
+                  &amp;harvester={deployed.harvester}
+                </a>
+              </p>
+            </>
+          )}
           <p className="mt-2 text-xs text-emerald-200/70">
             Then: fill <span className="font-mono">apps/direct-watcher/expected.json</span> with
             these addresses (the keeper key already signs for the guardian), enable the
