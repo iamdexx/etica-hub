@@ -34,15 +34,16 @@ The pair prices a direct `swap(to)` at the recipient's tier. The router prices e
 
 ## Deploying (`/deploy/direct`)
 
-The page at `/deploy/direct` has two roles. **Operator** (treasury wallet) deploys and configures
-the venue, one signature per step: factory (gate 40,000 stETX) → router → harvester adapter → whitelist router /
+Two pages. **`/deploy/direct`** (operator, treasury wallet) deploys and configures the venue, one
+signature per step: factory (gate 40,000 stETX) → router → harvester adapter → whitelist router /
 harvester / dead → `setFeeTo(harvester)` → `setFeeTiers` (40k 3.00%, 100k 1.50%, 250k 0.50%,
-500k+ 0.10%) → `createPair` WEGAZ/USDC.e and ETI/USDC.e. **Seeder** (`?role=seeder&router=0x…`,
-any wallet — the router only gates the LP recipient, which is `0x…dEaD`) signs four prefilled txs:
-approve USDC.e, approve ETI, `addLiquidityEGAZ` and `addLiquidity` with 10 USDC.e per side plus the
-EGAZ / ETI the public hub router quotes for it, LP minted to `0x…dEaD`; the page checks the wallet's
-USDC.e / EGAZ / ETI balances against the plan first. Operator progress is kept in `localStorage`
-so a reload resumes the flow. Afterwards paste the three addresses into
+500k+ 0.10%) → `createPair` WEGAZ/USDC.e and ETI/USDC.e (empty). **`/deploy/direct/seed?router=0x…`**
+(seeder, any wallet — the router only gates the LP recipient, which is `0x…dEaD`) signs four
+prefilled txs: approve USDC.e, approve ETI, `addLiquidityEGAZ` and `addLiquidity` with 10 USDC.e per
+side plus the EGAZ / ETI at the hub *spot* price (reserves of USDC.e/ETX × ETX/WEGAZ|ETI, not a
+fee-inclusive router quote), LP minted to `0x…dEaD`; the page checks the wallet's USDC.e / EGAZ /
+ETI balances against the plan first. Setup state (whitelists, feeTo, tiers, pairs, allowances) is
+re-read from chain, so a reload or a second browser resumes where things actually are. Afterwards paste the three addresses into
 `packages/shared/src/addresses.ts` (`directFactory`, `directRouter`, `directHarvesterAdapter`) and
 add the keeper with `harvester.setKeeper(keeper, true)`.
 

@@ -11,9 +11,10 @@ export default function DeployDirectPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Deploy EticaSwap Direct</h1>
         <p className="text-sm text-white/60">
           Browser-side deployer for the stETX-gated direct venue: factory, router and fee harvester,
-          then the curated WEGAZ/USDC.e and ETI/USDC.e pairs seeded at the hub price with the LP
-          sent to the dead address. Signs with your connected wallet, one step at a time; no private
-          key ever leaves the browser.
+          then the curated WEGAZ/USDC.e and ETI/USDC.e pairs (empty). Signs with your connected
+          treasury wallet, one step at a time; no private key ever leaves the browser. Seeding the
+          pairs is a separate page, <span className="font-mono">/deploy/direct/seed</span>, for
+          whoever funds the liquidity.
         </p>
         <p className="text-sm text-white/60">
           The public EticaSwap stays hub-and-spoke through ETX. Only wallets holding the stETX
@@ -25,7 +26,7 @@ export default function DeployDirectPage() {
           the chain indicator reads <span className="font-mono">61803</span> before signing.
         </p>
       </header>
-      <DeployDirectCard />
+      <DeployDirectCard role="operator" />
     </div>
   );
 }

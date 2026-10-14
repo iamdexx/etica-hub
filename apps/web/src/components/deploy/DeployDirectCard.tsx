@@ -83,6 +83,13 @@ const LAUNCH_TIERS: readonly [bigint[], number[]] = [
 const ERC20_ABI = [
   {
     type: 'function',
+    name: 'allowance',
+    stateMutability: 'view',
+    inputs: [{ type: 'address' }, { type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
     name: 'approve',
     stateMutability: 'nonpayable',
     inputs: [
@@ -100,19 +107,31 @@ const ERC20_ABI = [
   },
 ] as const satisfies Abi;
 
-const HUB_ROUTER_ABI = [
+const HUB_FACTORY_ABI = [
   {
     type: 'function',
-    name: 'getAmountsOut',
+    name: 'getPair',
     stateMutability: 'view',
-    inputs: [
-      { name: 'amountIn', type: 'uint256' },
-      { name: 'path', type: 'address[]' },
-    ],
-    outputs: [{ name: 'amounts', type: 'uint256[]' }],
+    inputs: [{ type: 'address' }, { type: 'address' }],
+    outputs: [{ type: 'address' }],
   },
-] as const satisfies Abi;
-
+] as const;
+const HUB_PAIR_ABI = [
+  {
+    type: 'function',
+    name: 'token0',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'getReserves',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint112' }, { type: 'uint112' }, { type: 'uint32' }],
+  },
+] as const;
 type StepStatus = 'idle' | 'signing' | 'pending' | 'confirmed' | 'error';
 type StepState = { status: StepStatus; txHash?: Hex; error?: string };
 const initial: StepState = { status: 'idle' };
@@ -239,7 +258,7 @@ function loadDeployed(): Deployed {
   }
 }
 
-export function DeployDirectCard() {
+export function DeployDirectCard({ role }: { role: Role }) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const publicClient = usePublicClient();
@@ -258,11 +277,11 @@ export function DeployDirectCard() {
     stEtx: d.stakedETX,
     farms: d.etxFarms,
     hubRouter: d.swapRouter,
+    hubFactory: d.swapFactory,
   };
 
   const [ownerInput, setOwnerInput] = useState<string>(TREASURY_ADDRESS);
   const [usdPerSide, setUsdPerSide] = useState<string>('10');
-  const [role, setRole] = useState<Role>('operator');
   const [routerInput, setRouterInput] = useState<string>('');
   const [pairsReady, setPairsReady] = useState<boolean>(false);
   const [balances, setBalances] = useState<{ usdce: bigint; eti: bigint; egaz: bigint } | null>(
@@ -277,7 +296,6 @@ export function DeployDirectCard() {
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
-    if (q.get('role') === 'seeder') setRole('seeder');
     const r = q.get('router');
     if (r) setRouterInput(r);
   }, []);
@@ -403,32 +421,47 @@ export function DeployDirectCard() {
     }
   }, [usdPerSide]);
 
-  // Hub-price quote: what the public router gives for `usdcePerSide` via ETX,
-  // so both direct pairs open at exactly the hub price (no arb gap at birth).
+  // Hub spot price from the public pools' reserves (USDC.e/ETX × ETX/WEGAZ|ETI),
+  // so both direct pairs open at exactly the hub mid price — a fee-inclusive
+  // router quote would skew the ratio and hand the locked LP to arbitrage.
   useEffect(() => {
     if (!publicClient || !onMainnet || !usdcePerSide) {
       setQuote(null);
       return;
     }
     let cancelled = false;
+    const reservesOf = async (a: Address, b: Address): Promise<[bigint, bigint]> => {
+      const pair = (await publicClient.readContract({
+        address: tokens.hubFactory,
+        abi: HUB_FACTORY_ABI,
+        functionName: 'getPair',
+        args: [a, b],
+      })) as Address;
+      if (pair === ZERO) throw new Error('hub pair missing');
+      const [token0, [r0, r1]] = await Promise.all([
+        publicClient.readContract({ address: pair, abi: HUB_PAIR_ABI, functionName: 'token0' }),
+        publicClient.readContract({
+          address: pair,
+          abi: HUB_PAIR_ABI,
+          functionName: 'getReserves',
+        }),
+      ]);
+      if (r0 === 0n || r1 === 0n) throw new Error('hub pair empty');
+      return token0.toLowerCase() === a.toLowerCase() ? [r0, r1] : [r1, r0];
+    };
     (async () => {
       try {
-        const [egazPath, etiPath] = await Promise.all([
-          publicClient.readContract({
-            address: tokens.hubRouter,
-            abi: HUB_ROUTER_ABI,
-            functionName: 'getAmountsOut',
-            args: [usdcePerSide, [tokens.usdce, tokens.etx, tokens.wegaz]],
-          }),
-          publicClient.readContract({
-            address: tokens.hubRouter,
-            abi: HUB_ROUTER_ABI,
-            functionName: 'getAmountsOut',
-            args: [usdcePerSide, [tokens.usdce, tokens.etx, tokens.eti]],
-          }),
+        const [[rUsdce, rEtxA], [rEtxB, rWegaz], [rEtxC, rEti]] = await Promise.all([
+          reservesOf(tokens.usdce, tokens.etx),
+          reservesOf(tokens.etx, tokens.wegaz),
+          reservesOf(tokens.etx, tokens.eti),
         ]);
         if (cancelled) return;
-        setQuote({ egaz: egazPath[2], eti: etiPath[2] });
+        const etxValue = usdcePerSide * rEtxA; // scaled by rUsdce
+        setQuote({
+          egaz: (etxValue * rWegaz) / (rUsdce * rEtxB),
+          eti: (etxValue * rEti) / (rUsdce * rEtxC),
+        });
         setQuoteError(null);
       } catch (err) {
         if (cancelled) return;
@@ -443,11 +476,125 @@ export function DeployDirectCard() {
     publicClient,
     onMainnet,
     usdcePerSide,
-    tokens.hubRouter,
+    tokens.hubFactory,
     tokens.usdce,
     tokens.etx,
     tokens.wegaz,
     tokens.eti,
+  ]);
+
+  // Setup steps re-derive from chain so a reload (or a second browser) resumes
+  // instead of replaying whitelist/feeTo/createPair txs that would revert.
+  const { factory: knownFactory, router: knownRouter, harvester: knownHarvester } = deployed;
+  useEffect(() => {
+    if (!publicClient || !onMainnet || !knownFactory) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const fac = { address: knownFactory, abi: directFactoryArtifact.abi } as const;
+        const read = (functionName: string, args: readonly unknown[] = []) =>
+          publicClient.readContract({ ...fac, functionName, args });
+        const [wlRouter, wlHarv, wlDead, feeTo, tierCount, pWegaz, pEti] = (await Promise.all([
+          knownRouter ? read('whitelist', [knownRouter]) : false,
+          knownHarvester ? read('whitelist', [knownHarvester]) : false,
+          read('whitelist', [DEAD]),
+          read('feeTo'),
+          read('feeTierCount'),
+          read('getPair', [tokens.wegaz, tokens.usdce]),
+          read('getPair', [tokens.eti, tokens.usdce]),
+        ])) as [boolean, boolean, boolean, Address, bigint, Address, Address];
+        if (cancelled) return;
+        const done: Partial<Record<StepKey, boolean>> = {
+          whitelistRouter: wlRouter,
+          whitelistHarvester: wlHarv,
+          whitelistDead: wlDead,
+          setFeeTo:
+            knownHarvester !== undefined && feeTo.toLowerCase() === knownHarvester.toLowerCase(),
+          setFeeTiers: tierCount >= BigInt(LAUNCH_TIERS[0].length),
+          createPairWegaz: pWegaz !== ZERO,
+          createPairEti: pEti !== ZERO,
+        };
+        setSteps((s) => {
+          let next = s;
+          for (const [k, ok] of Object.entries(done) as [StepKey, boolean][]) {
+            if (ok && s[k].status !== 'confirmed') next = { ...next, [k]: { status: 'confirmed' } };
+          }
+          return next;
+        });
+      } catch {
+        /* keep local state; buttons stay available */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    publicClient,
+    onMainnet,
+    knownFactory,
+    knownRouter,
+    knownHarvester,
+    tokens.wegaz,
+    tokens.eti,
+    tokens.usdce,
+  ]);
+
+  // Approvals track the live allowance: a bigger seed (or a reload) re-arms
+  // the approve step instead of leaving the seed tx to revert.
+  useEffect(() => {
+    if (!publicClient || !onMainnet || !address || !seedRouter || !usdcePerSide || !quote) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [aUsdce, aEti] = await Promise.all([
+          publicClient.readContract({
+            address: tokens.usdce,
+            abi: ERC20_ABI,
+            functionName: 'allowance',
+            args: [address, seedRouter],
+          }),
+          publicClient.readContract({
+            address: tokens.eti,
+            abi: ERC20_ABI,
+            functionName: 'allowance',
+            args: [address, seedRouter],
+          }),
+        ]);
+        if (cancelled) return;
+        const want: Record<'approveUsdce' | 'approveEti', boolean> = {
+          approveUsdce: aUsdce >= usdcePerSide * 2n,
+          approveEti: aEti >= quote.eti,
+        };
+        setSteps((s) => {
+          let next = s;
+          for (const [k, ok] of Object.entries(want) as [StepKey, boolean][]) {
+            const st = s[k].status;
+            if (st === 'signing' || st === 'pending') continue;
+            if (ok && st !== 'confirmed') next = { ...next, [k]: { status: 'confirmed' } };
+            if (!ok && st === 'confirmed') next = { ...next, [k]: initial };
+          }
+          return next;
+        });
+      } catch {
+        /* allowance unreadable: leave local state */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    publicClient,
+    onMainnet,
+    address,
+    seedRouter,
+    usdcePerSide,
+    quote,
+    tokens.usdce,
+    tokens.eti,
+    steps.approveUsdce.status,
+    steps.approveEti.status,
+    steps.seedWegaz.status,
+    steps.seedEti.status,
   ]);
 
   async function send(key: StepKey, fn: () => Promise<Hex>): Promise<Address | undefined> {
@@ -667,23 +814,6 @@ export function DeployDirectCard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2">
-        {(['operator', 'seeder'] as Role[]).map((r) => (
-          <button
-            key={r}
-            type="button"
-            onClick={() => setRole(r)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-              role === r
-                ? 'bg-emerald-500/90 text-black'
-                : 'border border-white/15 text-white/70 hover:bg-white/[0.035]'
-            }`}
-          >
-            {r === 'operator' ? 'Operator (treasury)' : 'Seeder (liquidity)'}
-          </button>
-        ))}
-      </div>
-
       {role === 'seeder' && (
         <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
           <h2 className="mb-3 text-lg font-semibold">Seed plan</h2>
@@ -961,6 +1091,15 @@ export function DeployDirectCard() {
           <pre className="mt-2 overflow-x-auto rounded-md bg-black/30 p-3 font-mono text-xs text-emerald-100">
             {`directFactory: '${deployed.factory}',\ndirectRouter: '${deployed.router}',\ndirectHarvesterAdapter: '${deployed.harvester}',`}
           </pre>
+          <p className="mt-2 text-xs text-emerald-200/70">
+            Seeder link (send to whoever funds the pools):{' '}
+            <a
+              className="font-mono underline"
+              href={`/deploy/direct/seed?router=${deployed.router}`}
+            >
+              /deploy/direct/seed?router={deployed.router}
+            </a>
+          </p>
           <p className="mt-2 text-xs text-emerald-200/70">
             Then: register the factory with GeckoTerminal, enable the direct-harvest keeper, and add
             the “Direct route (stETX)” toggle on /swap.
