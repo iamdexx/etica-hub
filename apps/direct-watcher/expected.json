@@ -1,0 +1,14 @@
+{
+  "_comment": "Fill in after /deploy/direct. The watcher alerts (and auto-pauses on critical keys) when the chain disagrees with this file.",
+  "feeTo": "0x0000000000000000000000000000000000000000",
+  "feeToSetter": "0xB2B4bC9d02970A55efF64C2D84c622c87967C19D",
+  "minStEtx": "40000000000000000000000",
+  "baseFeeBps": 300,
+  "tiers": [
+    { "minStEtx": "40000000000000000000000", "feeBps": 300 },
+    { "minStEtx": "100000000000000000000000", "feeBps": 150 },
+    { "minStEtx": "250000000000000000000000", "feeBps": 50 },
+    { "minStEtx": "500000000000000000000000", "feeBps": 10 }
+  ],
+  "whitelist": []
+}

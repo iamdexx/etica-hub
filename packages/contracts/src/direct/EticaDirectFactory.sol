@@ -2,6 +2,19 @@
 pragma solidity ^0.8.26;
 
 import {EticaDirectPair} from "./EticaDirectPair.sol";
+
+interface IEticaDirectMetaPairDeployer {
+    function deploy(address factory) external returns (address pair);
+}
+
+interface IEticaDirectMetaPairInit {
+    function initialize(address token0, address token1, address hubRouter) external;
+}
+
+interface IEticaDirectPairTokens {
+    function token0() external view returns (address);
+    function token1() external view returns (address);
+}
 import {IEticaDirectFactory} from "./IEticaDirectFactory.sol";
 import {IERC20Minimal} from "../swap/interfaces/IERC20Minimal.sol";
 
@@ -31,8 +44,29 @@ contract EticaDirectFactory is IEticaDirectFactory {
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
     mapping(address => bool) public isPair;
+    /// @notice Pairs that are hub windows ({EticaDirectMetaPair}) rather than
+    ///         constant-product pools.
+    mapping(address => bool) public isMetaPair;
+    /// @notice {EticaDirectMetaPairDeployer} used by {createMetaPair}.
+    address public metaPairDeployer;
     mapping(address => bool) public trustedCreators;
     mapping(address => bool) public whitelist;
+
+    /// @notice Circuit breaker. The guardian (a watcher key) can only pause
+    ///         swaps, and its pause lapses after {guardianPauseDuration};
+    ///         a pause by `feeToSetter` holds until {unpauseSwaps}. Pausing
+    ///         never traps funds: there is nothing to withdraw from a window,
+    ///         and plain pairs keep mint/burn open.
+    address public guardian;
+    /// @notice How long a guardian pause lasts before swaps reopen on their own.
+    uint256 public guardianPauseDuration = 7 days;
+    /// @notice Timestamp a guardian pause lapses; 0 while a setter pause holds.
+    uint256 public pauseExpiresAt;
+    bool private paused;
+    /// @notice Pairs taken out of service by {retirePair}: swaps refuse, the
+    ///         token pair can be re-opened with a replacement, fee harvesting
+    ///         keeps working.
+    mapping(address => bool) public retired;
 
     /// @notice Hard cap on any venue fee (10%).
     uint16 public constant MAX_FEE_BPS = 1_000;
@@ -83,6 +117,99 @@ contract EticaDirectFactory is IEticaDirectFactory {
         isPair[pair] = true;
         allPairs.push(pair);
         emit PairCreated(token0, token1, pair, allPairs.length);
+    }
+
+    /// @notice Open a hub window for `tokenA`/`tokenB`: a {EticaDirectMetaPair}
+    ///         whose liquidity lives in the `tokenA`/ETX and `tokenB`/ETX pools
+    ///         behind `hubRouter`. Same curation, registry and PairCreated
+    ///         event as {createPair}, so indexers treat it as a plain pair.
+    function createMetaPair(address tokenA, address tokenB, address hubRouter)
+        external
+        returns (address pair)
+    {
+        require(msg.sender == feeToSetter || trustedCreators[msg.sender], "EDirect: NOT_CREATOR");
+        require(tokenA != tokenB, "EDirect: IDENTICAL_ADDRESSES");
+        require(hubRouter != address(0), "EDirect: ZERO_ADDRESS");
+        (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        require(token0 != address(0), "EDirect: ZERO_ADDRESS");
+        require(getPair[token0][token1] == address(0), "EDirect: PAIR_EXISTS");
+
+        require(metaPairDeployer != address(0), "EDirect: NO_DEPLOYER");
+        pair = IEticaDirectMetaPairDeployer(metaPairDeployer).deploy(address(this));
+        IEticaDirectMetaPairInit(pair).initialize(token0, token1, hubRouter);
+
+        getPair[token0][token1] = pair;
+        getPair[token1][token0] = pair;
+        isPair[pair] = true;
+        isMetaPair[pair] = true;
+        allPairs.push(pair);
+        emit PairCreated(token0, token1, pair, allPairs.length);
+        emit MetaPairCreated(token0, token1, pair, hubRouter);
+    }
+
+    /// @inheritdoc IEticaDirectFactory
+    function swapsPaused() public view returns (bool) {
+        return paused && (pauseExpiresAt == 0 || block.timestamp < pauseExpiresAt);
+    }
+
+    /// @inheritdoc IEticaDirectFactory
+    function swapsOpen(address pair) external view returns (bool) {
+        return !swapsPaused() && !retired[pair];
+    }
+
+    function setGuardian(address _guardian) external onlySetter {
+        guardian = _guardian;
+        emit GuardianSet(_guardian);
+    }
+
+    function setGuardianPauseDuration(uint256 duration) external onlySetter {
+        require(duration > 0, "EDirect: ZERO_DURATION");
+        guardianPauseDuration = duration;
+        emit GuardianPauseDurationSet(duration);
+    }
+
+    /// @notice Stop every swap on the venue. The setter's pause holds until
+    ///         {unpauseSwaps}; the guardian's lapses after
+    ///         {guardianPauseDuration} and cannot shorten a setter pause.
+    function pauseSwaps() external {
+        bool bySetter = msg.sender == feeToSetter;
+        require(bySetter || msg.sender == guardian, "EDirect: NOT_GUARDIAN");
+        if (bySetter) {
+            pauseExpiresAt = 0;
+        } else {
+            require(!(swapsPaused() && pauseExpiresAt == 0), "EDirect: SETTER_PAUSED");
+            pauseExpiresAt = block.timestamp + guardianPauseDuration;
+        }
+        paused = true;
+        emit SwapsPaused(msg.sender, pauseExpiresAt);
+    }
+
+    function unpauseSwaps() external onlySetter {
+        paused = false;
+        pauseExpiresAt = 0;
+        emit SwapsUnpaused(msg.sender);
+    }
+
+    /// @notice Retire `pair`: swaps on it revert, `getPair` for its tokens is
+    ///         cleared so {createPair}/{createMetaPair} can open a replacement.
+    ///         `isPair`/`isMetaPair` stay set so the harvester can still
+    ///         collect fees already forwarded. A window's hub LP stays in the
+    ///         hub pools; it is simply no longer attributed to a venue pair.
+    function retirePair(address pair) external onlySetter {
+        require(isPair[pair] && !retired[pair], "EDirect: NOT_PAIR");
+        address token0 = IEticaDirectPairTokens(pair).token0();
+        address token1 = IEticaDirectPairTokens(pair).token1();
+        retired[pair] = true;
+        if (getPair[token0][token1] == pair) {
+            delete getPair[token0][token1];
+            delete getPair[token1][token0];
+        }
+        emit PairRetired(token0, token1, pair);
+    }
+
+    function setMetaPairDeployer(address deployer) external onlySetter {
+        metaPairDeployer = deployer;
+        emit MetaPairDeployerSet(deployer);
     }
 
     function setFeeTo(address _feeTo) external onlySetter {

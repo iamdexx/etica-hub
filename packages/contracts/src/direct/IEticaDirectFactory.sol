@@ -8,10 +8,20 @@ pragma solidity ^0.8.0;
 interface IEticaDirectFactory {
     event PairCreated(address indexed token0, address indexed token1, address pair, uint256);
     event TrustedCreatorSet(address indexed creator, bool trusted);
+    event MetaPairDeployerSet(address deployer);
+    event MetaPairCreated(
+        address indexed token0, address indexed token1, address pair, address hubRouter
+    );
     event WhitelistSet(address indexed account, bool allowed);
     event MinStEtxSet(uint256 minStEtx);
     event FeeTiersSet(uint256[] minStEtx, uint16[] feeBps);
     event BaseFeeBpsSet(uint16 feeBps);
+    event GuardianSet(address indexed guardian);
+    event GuardianPauseDurationSet(uint256 duration);
+    /// @param expiresAt When a guardian pause lapses; 0 for a setter pause.
+    event SwapsPaused(address indexed by, uint256 expiresAt);
+    event SwapsUnpaused(address indexed by);
+    event PairRetired(address indexed token0, address indexed token1, address pair);
 
     function stEtx() external view returns (address);
     function minStEtx() external view returns (uint256);
@@ -20,6 +30,21 @@ interface IEticaDirectFactory {
     function trustedCreators(address creator) external view returns (bool);
     function whitelist(address account) external view returns (bool);
     function isPair(address pair) external view returns (bool);
+    function isMetaPair(address pair) external view returns (bool);
+    function metaPairDeployer() external view returns (address);
+    /// @notice Address allowed to pause swaps (never to move funds or unpause).
+    function guardian() external view returns (address);
+    /// @notice Seconds a guardian pause lasts before swaps reopen by themselves.
+    function guardianPauseDuration() external view returns (uint256);
+    /// @notice Timestamp the current guardian pause lapses; 0 while a setter
+    ///         pause holds (or nothing is paused).
+    function pauseExpiresAt() external view returns (uint256);
+    /// @notice True while a setter pause holds or a guardian pause has not lapsed.
+    function swapsPaused() external view returns (bool);
+    function retired(address pair) external view returns (bool);
+    /// @notice False while the venue is paused or `pair` has been retired;
+    ///         pairs refuse swaps (but not mint/skim/sync) when false.
+    function swapsOpen(address pair) external view returns (bool);
 
     function getPair(address tokenA, address tokenB) external view returns (address pair);
     function allPairs(uint256) external view returns (address pair);
@@ -37,6 +62,9 @@ interface IEticaDirectFactory {
     function feeTier(uint256 index) external view returns (uint256 minStEtx, uint16 feeBps);
 
     function createPair(address tokenA, address tokenB) external returns (address pair);
+    function createMetaPair(address tokenA, address tokenB, address hubRouter)
+        external
+        returns (address pair);
 
     function setFeeTo(address) external;
     function setFeeToSetter(address) external;
@@ -45,4 +73,9 @@ interface IEticaDirectFactory {
     function setMinStEtx(uint256 minStEtx) external;
     function setBaseFeeBps(uint16 feeBps) external;
     function setFeeTiers(uint256[] calldata minStEtx, uint16[] calldata feeBps) external;
+    function setGuardian(address guardian) external;
+    function setGuardianPauseDuration(uint256 duration) external;
+    function pauseSwaps() external;
+    function unpauseSwaps() external;
+    function retirePair(address pair) external;
 }

@@ -1,0 +1,76 @@
+name: Direct watcher (live)
+
+# Invariant watcher for EticaSwap Direct windows: hub LP never decreases,
+# admin settings match apps/direct-watcher/expected.json, reported price
+# tracks the hub. Alerts to Telegram; auto-pauses swaps via the guardian
+# key on a critical finding (guardian can only pause, never unpause).
+# Skip-clean while the factory address is zero.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: direct-watcher
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    environment: bridge-watcher
+    env:
+      DIRECT_RPC_URL: ${{ vars.DIRECT_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      DIRECT_FACTORY_ADDRESS: ${{ vars.DIRECT_FACTORY_ADDRESS }}
+      DIRECT_HARVESTER_ADDRESS: ${{ vars.DIRECT_HARVESTER_ADDRESS }}
+      DIRECT_RESERVE_DRIFT_BPS: ${{ vars.DIRECT_RESERVE_DRIFT_BPS || '100' }}
+      DIRECT_LARGE_SWAP_BPS: ${{ vars.DIRECT_LARGE_SWAP_BPS || '500' }}
+      DIRECT_GUARDIAN_PRIVATE_KEY: ${{ secrets.DIRECT_GUARDIAN_PRIVATE_KEY }}
+      DIRECT_PRICE_IMPACT_BPS: ${{ vars.DIRECT_PRICE_IMPACT_BPS || '300' }}
+      DIRECT_ROUND_TRIP_BLOCKS: ${{ vars.DIRECT_ROUND_TRIP_BLOCKS || '3' }}
+      # Dedicated bot preferred (getUpdates needs a bot nobody else polls); falls back to the bridge bot.
+      DIRECT_TELEGRAM_BOT_TOKEN: ${{ secrets.DIRECT_TELEGRAM_BOT_TOKEN || secrets.BRIDGE_TELEGRAM_BOT_TOKEN }}
+      DIRECT_TELEGRAM_BOT_NAME: ${{ vars.DIRECT_TELEGRAM_BOT_NAME }}
+      # Operators' private group; admins may run /status and /pause from it (or by DM).
+      DIRECT_TELEGRAM_CHAT_ID: ${{ vars.DIRECT_TELEGRAM_CHAT_ID || '-5558279555' }}
+      DIRECT_TELEGRAM_ADMIN_IDS: ${{ vars.DIRECT_TELEGRAM_ADMIN_IDS || '1954950984,1762222862' }}
+      DIRECT_STATE_PATH: ${{ github.workspace }}/.watch-state/direct-watch.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore state branch
+        run: |
+          git fetch origin direct-watcher-state:direct-watcher-state 2>/dev/null || true
+          mkdir -p .watch-state
+          git show direct-watcher-state:direct-watch.json > .watch-state/direct-watch.json 2>/dev/null || true
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Watch
+        id: watch
+        working-directory: apps/direct-watcher
+        run: pnpm run watch
+
+      - name: Persist state
+        if: always() && hashFiles('.watch-state/direct-watch.json') != ''
+        run: |
+          git config user.name "direct-watcher[bot]"
+          git config user.email "direct-watcher@users.noreply.github.com"
+          tmp=$(mktemp -d)
+          git worktree add "$tmp" direct-watcher-state 2>/dev/null || git worktree add --orphan -b direct-watcher-state "$tmp"
+          cp .watch-state/direct-watch.json "$tmp/direct-watch.json"
+          cd "$tmp"
+          git add direct-watch.json
+          git diff --cached --quiet || git commit -q -m "direct-watcher: state $(date -u +%FT%TZ)"
+          git push origin direct-watcher-state
