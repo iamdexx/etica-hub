@@ -36,7 +36,20 @@ export interface WindowSnapshot {
   loose0: bigint;
   loose1: bigint;
   looseEtx: bigint;
-  swaps: { amount0In: bigint; amount1In: bigint; sender: Address; txHash: `0x${string}` }[];
+  swaps: SwapRecord[];
+}
+
+export interface SwapRecord {
+  amount0In: bigint;
+  amount1In: bigint;
+  amount0Out: bigint;
+  amount1Out: bigint;
+  sender: Address;
+  to: Address;
+  txHash: `0x${string}`;
+  blockNumber: bigint;
+  /** Reserves reported by the window just before this swap (last Sync), if seen in range. */
+  pre?: { r0: bigint; r1: bigint };
 }
 
 export interface FactorySnapshot {
@@ -45,6 +58,8 @@ export interface FactorySnapshot {
   guardian: Address;
   metaPairDeployer: Address;
   swapsPaused: boolean;
+  /** Unix seconds a guardian pause lapses; 0 for a setter pause or when open. */
+  pauseExpiresAt: number;
   minStEtx: bigint;
   baseFeeBps: number;
   tiers: { minStEtx: bigint; feeBps: number }[];
@@ -59,6 +74,8 @@ export interface WindowState {
 export interface WatcherState {
   lastBlock: string;
   windows: Record<string, WindowState>;
+  /** Last Telegram update_id answered, so commands are not replayed. */
+  lastUpdateId?: number;
 }
 
 const eq = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
@@ -94,8 +111,12 @@ export function checkFactory(snap: FactorySnapshot, expected: ExpectedSettings):
     if (allowed && !(expected.whitelist ?? []).some((w) => eq(w, a)))
       crit('WHITELIST_EXTRA', `whitelist[${a}]`, 'false', 'true');
   }
-  if (snap.swapsPaused)
-    out.push({ severity: 'warning', code: 'PAUSED', message: 'swaps are paused on the venue' });
+  if (snap.swapsPaused) {
+    const until = snap.pauseExpiresAt
+      ? `guardian pause, reopens by itself ${new Date(snap.pauseExpiresAt * 1000).toISOString()} unless the multisig unpauses first`
+      : 'setter pause, holds until the multisig unpauses';
+    out.push({ severity: 'warning', code: 'PAUSED', message: `swaps are paused on the venue (${until})` });
+  }
   return out;
 }
 
@@ -155,12 +176,80 @@ export function checkWindow(
   return out;
 }
 
+/**
+ * Gaming heuristics. None of these can move funds (the hub prices every
+ * trade and the backing has no exit), so they are warnings for the group,
+ * never a pause trigger. A gamer pays the tier fee on every leg.
+ */
+export function checkGaming(w: WindowSnapshot, priceImpactBps: number, roundTripBlocks: number): Finding[] {
+  const out: Finding[] = [];
+  const tag = `${w.pair}`;
+  const dir = (s: SwapRecord) => (s.amount0In > 0n ? 'buy1' : 'buy0');
+  for (const s of w.swaps) {
+    if (!s.pre || s.pre.r0 === 0n || s.pre.r1 === 0n) continue;
+    const in0 = s.amount0In > 0n;
+    const amountIn = in0 ? s.amount0In : s.amount1In;
+    const amountOut = in0 ? s.amount1Out : s.amount0Out;
+    if (amountIn === 0n || amountOut === 0n) continue;
+    // executed price (out/in) vs pre-trade reserve price (rOut/rIn), in bps below spot
+    const rIn = in0 ? s.pre.r0 : s.pre.r1;
+    const rOut = in0 ? s.pre.r1 : s.pre.r0;
+    const spot = amountIn * rOut; // amountIn at spot would return amountIn*rOut/rIn
+    const got = amountOut * rIn;
+    if (got >= spot) continue;
+    const impactBps = Number(((spot - got) * 10_000n) / spot);
+    if (impactBps > priceImpactBps) {
+      out.push({
+        severity: 'warning',
+        code: 'PRICE_IMPACT',
+        message: `${tag} swap filled ${impactBps} bps below the pre-trade price (hub pushed or oversized trade) by ${s.sender} ${s.txHash}`,
+      });
+    }
+  }
+  const bySender = new Map<string, SwapRecord[]>();
+  for (const s of w.swaps) {
+    const k = s.sender.toLowerCase();
+    bySender.set(k, [...(bySender.get(k) ?? []), s]);
+  }
+  for (const [sender, list] of bySender) {
+    list.sort((a, b) => (a.blockNumber < b.blockNumber ? -1 : a.blockNumber > b.blockNumber ? 1 : 0));
+    let flips = 0;
+    const seen = new Set<string>();
+    for (let i = 1; i < list.length; i++) {
+      const a = list[i - 1]!;
+      const b = list[i]!;
+      if (dir(a) === dir(b)) continue;
+      flips++;
+      if (b.blockNumber - a.blockNumber <= BigInt(roundTripBlocks) && !seen.has(b.txHash)) {
+        seen.add(b.txHash);
+        out.push({
+          severity: 'warning',
+          code: 'ROUND_TRIP',
+          message: `${tag} ${sender} traded both directions within ${b.blockNumber - a.blockNumber} block(s) (sandwich shape) ${a.txHash} -> ${b.txHash}`,
+        });
+      }
+    }
+    if (flips >= 4) {
+      out.push({
+        severity: 'info',
+        code: 'FLIPPING',
+        message: `${tag} ${sender} changed direction ${flips} times across ${list.length} swaps in this scan`,
+      });
+    }
+  }
+  return out;
+}
+
 export function nextState(
   windows: WindowSnapshot[],
   prev: WatcherState | undefined,
   head: bigint,
 ): WatcherState {
-  const out: WatcherState = { lastBlock: head.toString(), windows: { ...(prev?.windows ?? {}) } };
+  const out: WatcherState = {
+    lastBlock: head.toString(),
+    windows: { ...(prev?.windows ?? {}) },
+    ...(prev?.lastUpdateId !== undefined ? { lastUpdateId: prev.lastUpdateId } : {}),
+  };
   for (const w of windows) {
     const key = w.pair.toLowerCase();
     const old = out.windows[key];

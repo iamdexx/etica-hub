@@ -17,7 +17,9 @@ interface IEticaDirectFactory {
     event FeeTiersSet(uint256[] minStEtx, uint16[] feeBps);
     event BaseFeeBpsSet(uint16 feeBps);
     event GuardianSet(address indexed guardian);
-    event SwapsPaused(address indexed by);
+    event GuardianPauseDurationSet(uint256 duration);
+    /// @param expiresAt When a guardian pause lapses; 0 for a setter pause.
+    event SwapsPaused(address indexed by, uint256 expiresAt);
     event SwapsUnpaused(address indexed by);
     event PairRetired(address indexed token0, address indexed token1, address pair);
 
@@ -32,6 +34,12 @@ interface IEticaDirectFactory {
     function metaPairDeployer() external view returns (address);
     /// @notice Address allowed to pause swaps (never to move funds or unpause).
     function guardian() external view returns (address);
+    /// @notice Seconds a guardian pause lasts before swaps reopen by themselves.
+    function guardianPauseDuration() external view returns (uint256);
+    /// @notice Timestamp the current guardian pause lapses; 0 while a setter
+    ///         pause holds (or nothing is paused).
+    function pauseExpiresAt() external view returns (uint256);
+    /// @notice True while a setter pause holds or a guardian pause has not lapsed.
     function swapsPaused() external view returns (bool);
     function retired(address pair) external view returns (bool);
     /// @notice False while the venue is paused or `pair` has been retired;
@@ -66,6 +74,7 @@ interface IEticaDirectFactory {
     function setBaseFeeBps(uint16 feeBps) external;
     function setFeeTiers(uint256[] calldata minStEtx, uint16[] calldata feeBps) external;
     function setGuardian(address guardian) external;
+    function setGuardianPauseDuration(uint256 duration) external;
     function pauseSwaps() external;
     function unpauseSwaps() external;
     function retirePair(address pair) external;

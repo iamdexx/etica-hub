@@ -29,8 +29,14 @@ jobs:
       DIRECT_RESERVE_DRIFT_BPS: ${{ vars.DIRECT_RESERVE_DRIFT_BPS || '100' }}
       DIRECT_LARGE_SWAP_BPS: ${{ vars.DIRECT_LARGE_SWAP_BPS || '500' }}
       DIRECT_GUARDIAN_PRIVATE_KEY: ${{ secrets.DIRECT_GUARDIAN_PRIVATE_KEY }}
-      DIRECT_TELEGRAM_BOT_TOKEN: ${{ secrets.BRIDGE_TELEGRAM_BOT_TOKEN }}
-      DIRECT_TELEGRAM_CHAT_ID: ${{ secrets.BRIDGE_TELEGRAM_CHAT_ID }}
+      DIRECT_PRICE_IMPACT_BPS: ${{ vars.DIRECT_PRICE_IMPACT_BPS || '300' }}
+      DIRECT_ROUND_TRIP_BLOCKS: ${{ vars.DIRECT_ROUND_TRIP_BLOCKS || '3' }}
+      # Dedicated bot preferred (getUpdates needs a bot nobody else polls); falls back to the bridge bot.
+      DIRECT_TELEGRAM_BOT_TOKEN: ${{ secrets.DIRECT_TELEGRAM_BOT_TOKEN || secrets.BRIDGE_TELEGRAM_BOT_TOKEN }}
+      DIRECT_TELEGRAM_BOT_NAME: ${{ vars.DIRECT_TELEGRAM_BOT_NAME }}
+      # Operators' private group; admins may run /status and /pause from it (or by DM).
+      DIRECT_TELEGRAM_CHAT_ID: ${{ vars.DIRECT_TELEGRAM_CHAT_ID || '-5558279555' }}
+      DIRECT_TELEGRAM_ADMIN_IDS: ${{ vars.DIRECT_TELEGRAM_ADMIN_IDS || '1954950984,1762222862' }}
       DIRECT_STATE_PATH: ${{ github.workspace }}/.watch-state/direct-watch.json
     steps:
       - uses: actions/checkout@v4

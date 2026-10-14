@@ -5,6 +5,7 @@ export const directFactoryAbi = parseAbi([
   'function feeToSetter() view returns (address)',
   'function guardian() view returns (address)',
   'function swapsPaused() view returns (bool)',
+  'function pauseExpiresAt() view returns (uint256)',
   'function minStEtx() view returns (uint256)',
   'function baseFeeBps() view returns (uint16)',
   'function feeTierCount() view returns (uint256)',
@@ -27,6 +28,7 @@ export const metaPairAbi = parseAbi([
   'function hubLiquidity() view returns (uint256 lp0, uint256 lp1)',
   'function liveReserves() view returns (uint256 r0, uint256 r1)',
   'event Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to)',
+  'event Sync(uint112 reserve0, uint112 reserve1)',
 ]);
 
 export const hubPairAbi = parseAbi([
