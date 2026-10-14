@@ -198,7 +198,7 @@ export const DEPLOYMENTS: Record<
     directRouter: Address;
     /**
      * DirectSwapHarvesterAdapter — `feeTo` of the direct factory; burns fee LP,
-     * swaps legs to ETX on the hub router and splits 50/50 stETX / treasury.
+     * swaps legs to ETX on the hub router and splits 10/10/40/40 (stETX / farms / POL burned into the direct pair / treasury).
      * Zero until deployed.
      */
     directHarvesterAdapter: Address;
