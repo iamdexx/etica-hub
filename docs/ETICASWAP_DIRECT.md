@@ -11,7 +11,7 @@ EticaSwap Direct is a second, smaller venue that resolves this without weakening
 
 Why this keeps the fundamentals: using a direct route requires holding stETX, i.e. staked ETX, so direct flow still creates ETX demand, and the venue's fees are paid to ETX stakers. The public DEX, token picker and default routing remain hub-only; the direct venue is an unlock for stakers.
 
-Deployment (not yet done): deploy factory (feeToSetter = treasury, `minStEtx` e.g. 1,000 stETX), router, adapter; `setWhitelist(router)`, `setWhitelist(adapter)`, `setFeeTo(adapter)`; `createPair(WEGAZ, USDC.e)` and `createPair(ETI, USDC.e)`; seed via the router from a staker wallet; register the factory with GeckoTerminal as a V2-style DEX; wire the keeper to call `adapter.harvest` with hub quotes as `minEtxOut`. Addresses live in `packages/shared/src/addresses.ts` (`directFactory`, `directRouter`, `directHarvesterAdapter`).
+Deployment (live on Etica since 2026-10-05, see the table below; the original plan): deploy factory (feeToSetter = treasury, `minStEtx` e.g. 1,000 stETX), router, adapter; `setWhitelist(router)`, `setWhitelist(adapter)`, `setFeeTo(adapter)`; `createPair(WEGAZ, USDC.e)` and `createPair(ETI, USDC.e)`; seed via the router from a staker wallet; register the factory with GeckoTerminal as a V2-style DEX; wire the keeper to call `adapter.harvest` with hub quotes as `minEtxOut`. Addresses live in `packages/shared/src/addresses.ts` (`directFactory`, `directRouter`, `directHarvesterAdapter`).
 
 ## Curation rules
 
@@ -22,15 +22,33 @@ Deployment (not yet done): deploy factory (feeToSetter = treasury, `minStEtx` e.
 
 The venue fee is not flat: `EticaDirectFactory.feeBpsFor(trader)` returns the fee in basis points from a ladder set by `feeToSetter` (`setFeeTiers`, `setBaseFeeBps`, cap 10%). Launch ladder:
 
-| stETX held | fee |
-|-----------:|----:|
-| < 40,000 | blocked (`minStEtx`) |
-| 40,000 | 3.00% |
-| 100,000 | 1.50% |
-| 250,000 | 0.50% |
-| 500,000+ | 0.10% |
+| stETX held |                  fee |
+| ---------: | -------------------: |
+|   < 40,000 | blocked (`minStEtx`) |
+|     40,000 |                3.00% |
+|    100,000 |                1.50% |
+|    250,000 |                0.50% |
+|   500,000+ |                0.10% |
 
 The pair prices a direct `swap(to)` at the recipient's tier. The router prices every swap at its `msg.sender` (the wallet signing the trade, which must itself pass the gate) via `swapFor(..., trader)` — whitelisted callers only — so EGAZ unwrap hops and multi-hop intermediates are charged to the signer, never to the router, a pair or a recipient who did not consent. Quotes: the two-argument V2 `getAmountsOut`/`getAmountsIn` price for `msg.sender` (`eth_call` `from`) exactly as the swap will charge; `getAmountsOut(amountIn, path, trader)` quotes for another wallet.
+
+## Live deployment (Etica, chain 61803)
+
+Launched 2026-10-05 from the treasury wallet via `/deploy/direct` (16 txs, nonces 133–148, blocks 10986269–10986299).
+
+| Contract                                                                  | Address                                                                                             |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `EticaDirectFactory` (`feeToSetter` = treasury until the 2-of-2 hand-off) | `0x79Fe1715387Cd90541C6e1997185A6f0532F6D90`                                                        |
+| `EticaDirectMetaPairDeployer`                                             | `0x64914b3c034a9872f2B2D8B49938BdB466e7A423`                                                        |
+| `EticaDirectRouter`                                                       | `0xa3f84D02b96Ab59B75D67c03B3397B682EE1740B`                                                        |
+| `DirectSwapHarvesterAdapter` (`feeTo`; treasury token USDC.e)             | `0x5bf07FcE67B52612aBB27DB2AaD6531a542C32C2`                                                        |
+| Window USDC.e/WEGAZ (metapair, `allPairs(0)`)                             | `0xbAE218bB3CBB62CD8e4f19fD9850c7341DB9e613`                                                        |
+| Window USDC.e/ETI (metapair, `allPairs(1)`)                               | `0x1eE9f4b6636eA20b9231CbeBe3ef8115D91Aa6b3`                                                        |
+| Guardian (pause-only)                                                     | keeper wallet `0xfcDd0d3d9A167092d094287E109B9315f08d05a7`                                          |
+| Unpausers (1-of-2)                                                        | treasury `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`, `0x98d057B8fD9eA2256CbaeDc2d33A5e59af9c2051` |
+| Whitelist                                                                 | router, harvester, seeder `0x98d057B8fD9eA2256CbaeDc2d33A5e59af9c2051`                              |
+
+Gate 40,000 stETX; tiers 40k/300 bps, 100k/150, 250k/50, 500k/10; guardian pause 7 days. Not yet done: seeding (seeder page), the 2-of-2 hand-off (`/deploy/direct/handoff`), `harvester.setKeeper(keeper wallet)` plus a harvest job, explorer source verification, GeckoTerminal listing.
 
 ## Deploying (`/deploy/direct`)
 
@@ -46,7 +64,7 @@ checking the venue, since every later admin change then needs both signatures.
 
 **`/deploy/direct/seed?factory=0x…`** (seeder, the whitelisted wallet) signs seven prefilled txs:
 `WEGAZ.deposit`, then per window a plain `transfer` of 10 USDC.e and of the EGAZ / ETI worth $10 at
-the hub *spot* price (reserves of USDC.e/ETX × ETX/WEGAZ|ETI) into the window followed by
+the hub _spot_ price (reserves of USDC.e/ETX × ETX/WEGAZ|ETI) into the window followed by
 `mint(0x…dEaD)`. The window turns each leg into token/ETX hub LP it can never withdraw; the shares at
 the dead address are accounting only. Between a transfer and its mint the tokens sit on the window;
 the only thing anyone else can do with them is `skim` to the fee sink (the harvester, owner-rescuable),
@@ -79,9 +97,8 @@ A plain direct pair holds its own EGAZ and USDC.e, which is a spoke-to-spoke byp
 
 - `factory.setGuardian(addr)` names a key that can call `pauseSwaps()` and nothing else; `unpauseSwaps()` is open to `feeToSetter` and to any account flagged by `setUnpauser(addr, true)` (setter-only): each multisig owner is flagged at deploy, so either signer can resume alone while every other admin change stays 2-of-2. A guardian pause lapses by itself after `guardianPauseDuration` (default 7 days, `setGuardianPauseDuration` is setter-only, `pauseExpiresAt` tells when), so a watcher key can never freeze the venue for good; if the finding persists the watcher simply pauses again. A pause by the setter has no expiry and the guardian cannot shorten it. Every swap entry point on pairs and windows checks `factory.swapsOpen(pair)` and reverts `EDirect: PAUSED`. Deposits, `skim`, `sync` and fee harvesting keep working while paused, so a pause can never trap funds.
 - `factory.retirePair(pair)` turns a pair's swaps off for good, clears `getPair` for its tokens so a fixed replacement can be opened with `createPair`/`createMetaPair`, and keeps `isPair`/`isMetaPair` so the harvester still collects fees already forwarded. A retired window's hub LP stays in the public hub pools (deepening them); it just stops being attributed to a venue pair.
-- `apps/direct-watcher` (cron every 5 min) checks hub LP monotonicity, admin settings against `expected.json`, reported price vs the hub cross price, large swaps and loose tokens; alerts to the operators' Telegram group and auto-pauses on a critical finding when it holds the guardian key; gaming shapes (fills far below the pre-trade price, same-wallet round trips) are warnings only. Admins (Deaven, Ulmo) can ask it `/status` or `/pause` from the group. Runbook: after deploy, fill `apps/direct-watcher/expected.json`, set the `DIRECT_FACTORY_ADDRESS` variable and the `DIRECT_GUARDIAN_PRIVATE_KEY` secret (a fresh EOA you then pass to `setGuardian`), and dispatch the workflow once.
+- `apps/direct-watcher` (cron every 5 min) checks hub LP monotonicity, admin settings against `expected.json`, reported price vs the hub cross price, large swaps and loose tokens; alerts to the operators' Telegram group and auto-pauses on a critical finding when it holds the guardian key; gaming shapes (fills far below the pre-trade price, same-wallet round trips) are warnings only. Admins (Deaven, Ulmo) can ask it `/status` or `/pause` from the group. Runbook: after deploy, fill `apps/direct-watcher/expected.json` and `DEPLOYMENTS[61803]` (the workflow reads the factory from there; `DIRECT_FACTORY_ADDRESS` only overrides it), make sure the guardian named on the factory is the wallet whose key the workflow holds (the harvest keeper, `HARVEST_KEEPER_PRIVATE_KEY`), and dispatch the workflow once.
 
 ### Admin key: 2-of-2 multisig
 
 `packages/contracts/src/governance/UnanimousMultisig.sol` is a minimal N-of-N multisig (owners fixed at construction; `propose` counts as the proposer's confirmation, the last `confirm` executes, any owner can `cancel`, a failed call keeps the proposal open). Launch recipe: deploy the venue from the treasury wallet, then `new UnanimousMultisig([treasury, 0x98d057B8fD9eA2256CbaeDc2d33A5e59af9c2051])`, `factory.setFeeToSetter(multisig)` and `harvester.transferOwnership(multisig)`. From then on tiers, whitelist, deployer, treasury token, `unpauseSwaps` and `retirePair`/`createMetaPair` ("upgrades") need both signatures; one "no" means no change. Caveat: with 2-of-2, losing either key freezes admin for good (no unpause, no tier changes); rotate by deploying a new multisig and handing the roles over through the old one.
-

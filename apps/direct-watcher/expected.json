@@ -1,7 +1,10 @@
 {
-  "_comment": "Fill in after /deploy/direct. The watcher alerts (and auto-pauses on critical keys) when the chain disagrees with this file.",
-  "feeTo": "0x0000000000000000000000000000000000000000",
+  "_comment": "Live EticaSwap Direct venue on Etica (61803), launched 2026-10-05 from the treasury via /deploy/direct. The watcher alerts (and auto-pauses on critical keys) when the chain disagrees with this file. feeToSetter moves to the 2-of-2 multisig after the hand-off page is run; update it then.",
+  "factory": "0x79Fe1715387Cd90541C6e1997185A6f0532F6D90",
+  "feeTo": "0x5bf07FcE67B52612aBB27DB2AaD6531a542C32C2",
   "feeToSetter": "0xB2B4bC9d02970A55efF64C2D84c622c87967C19D",
+  "guardian": "0xfcDd0d3d9A167092d094287E109B9315f08d05a7",
+  "metaPairDeployer": "0x64914b3c034a9872f2B2D8B49938BdB466e7A423",
   "minStEtx": "40000000000000000000000",
   "baseFeeBps": 300,
   "tiers": [
@@ -10,5 +13,9 @@
     { "minStEtx": "250000000000000000000000", "feeBps": 50 },
     { "minStEtx": "500000000000000000000000", "feeBps": 10 }
   ],
-  "whitelist": []
+  "whitelist": [
+    "0xa3f84D02b96Ab59B75D67c03B3397B682EE1740B",
+    "0x5bf07FcE67B52612aBB27DB2AaD6531a542C32C2",
+    "0x98d057B8fD9eA2256CbaeDc2d33A5e59af9c2051"
+  ]
 }
