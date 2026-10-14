@@ -31,3 +31,17 @@ The venue fee is not flat: `EticaDirectFactory.feeBpsFor(trader)` returns the fe
 | 500,000+ | 0.10% |
 
 The pair prices a direct `swap(to)` at the recipient's tier. The router prices every swap at its `msg.sender` (the wallet signing the trade, which must itself pass the gate) via `swapFor(..., trader)` — whitelisted callers only — so EGAZ unwrap hops and multi-hop intermediates are charged to the signer, never to the router, a pair or a recipient who did not consent. Quotes: the two-argument V2 `getAmountsOut`/`getAmountsIn` price for `msg.sender` (`eth_call` `from`) exactly as the swap will charge; `getAmountsOut(amountIn, path, trader)` quotes for another wallet.
+
+## Deploying (`/deploy/direct`)
+
+The operator page at `/deploy/direct` deploys the venue from the connected treasury wallet, one
+signature per step: factory (gate 40,000 stETX) → router → harvester adapter → whitelist router /
+harvester / dead → `setFeeTo(harvester)` → `setFeeTiers` (40k 3.00%, 100k 1.50%, 250k 0.50%,
+500k+ 0.10%) → `createPair` WEGAZ/USDC.e and ETI/USDC.e → seed both pairs with N USDC.e per side
+plus the EGAZ / ETI the public hub router quotes for it, LP minted to `0x…dEaD`. Progress is kept
+in `localStorage` so a reload resumes the flow. Afterwards paste the three addresses into
+`packages/shared/src/addresses.ts` (`directFactory`, `directRouter`, `directHarvesterAdapter`) and
+add the keeper with `harvester.setKeeper(keeper, true)`.
+
+Artifacts come from `node packages/contracts/script/extract-direct-artifacts.mjs` (after
+`forge build`), which writes `apps/web/src/lib/direct-deploy-artifacts.json`.
