@@ -12,6 +12,7 @@ import {
   type Address,
   type Hex,
   encodeFunctionData,
+  formatEther,
 } from 'viem';
 import {
   useAccount,
@@ -317,9 +318,33 @@ type Windows = { wegaz?: Address; eti?: Address };
 
 function shortError(err: unknown): string {
   if (err instanceof UserRejectedRequestError) return 'Rejected in wallet.';
-  if (err instanceof BaseError) return err.shortMessage ?? err.message;
-  if (err instanceof Error) return err.message;
-  return 'Unknown error';
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (cur && typeof cur === 'object' && !seen.has(cur)) {
+    seen.add(cur);
+    const e = cur as {
+      message?: string;
+      details?: string;
+      code?: unknown;
+      data?: unknown;
+      cause?: unknown;
+    };
+    for (const v of [e.message, e.details]) {
+      if (typeof v === 'string' && v && !parts.some((x) => x.includes(v))) parts.push(v);
+    }
+    if (e.code !== undefined) parts.push(`code ${String(e.code)}`);
+    if (e.data !== undefined) {
+      try {
+        parts.push(`data ${typeof e.data === 'string' ? e.data : JSON.stringify(e.data)}`);
+      } catch {
+        /* unserialisable data */
+      }
+    }
+    cur = e.cause;
+  }
+  if (parts.length) return parts.join(' | ');
+  return err instanceof BaseError ? (err.shortMessage ?? err.message) : 'Unknown error';
 }
 
 function parseAddr(s: string): Address | null {
@@ -362,11 +387,44 @@ export function DeployDirectCard({ role }: { role: Role }) {
   const chainId = useChainId();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  const [walletRpc, setWalletRpc] = useState<string>('');
   const { connectors, connect, status: connectStatus } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain, isPending: switching } = useSwitchChain();
 
   const onMainnet = chainId === eticaMainnet.id;
+
+  // Asks the wallet's own RPC (not the app's) for the head block and the
+  // signer's balance: a wallet that cannot answer these cannot broadcast either.
+  useEffect(() => {
+    if (!walletClient || !address) {
+      setWalletRpc('');
+      return;
+    }
+    let cancelled = false;
+    setWalletRpc('checking…');
+    (async () => {
+      try {
+        const req = walletClient.request as (args: {
+          method: string;
+          params?: unknown[];
+        }) => Promise<unknown>;
+        const [block, bal] = await Promise.all([
+          req({ method: 'eth_blockNumber' }),
+          req({ method: 'eth_getBalance', params: [address, 'latest'] }),
+        ]);
+        if (!cancelled)
+          setWalletRpc(
+            `ok · block ${Number(block as string)} · ${Number(formatEther(BigInt(bal as string))).toFixed(2)} EGAZ`,
+          );
+      } catch (err) {
+        if (!cancelled) setWalletRpc(`FAILED: ${shortError(err)}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [walletClient, address, chainId]);
   const d = DEPLOYMENTS[eticaMainnet.id];
   const tokens = {
     etx: d.etx,
@@ -1349,6 +1407,18 @@ export function DeployDirectCard({ role }: { role: Role }) {
             <div className="flex items-center gap-3">
               <span className="text-white/60">Chain:</span>
               <span className="font-mono">{chainId}</span>
+            </div>
+            {walletRpc && (
+              <div className="flex items-start gap-3 text-xs">
+                <span className="shrink-0 text-white/60">Wallet RPC:</span>
+                <span
+                  className={`break-all font-mono ${walletRpc.startsWith('FAILED') ? 'text-red-300' : 'text-white/80'}`}
+                >
+                  {walletRpc}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center gap-3">
               {!onMainnet && (
                 <button
                   type="button"
