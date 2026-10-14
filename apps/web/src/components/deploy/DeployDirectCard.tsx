@@ -340,6 +340,19 @@ function loadDeployed(): Deployed {
   }
 }
 
+const deployedIn = (dep: Deployed, k: StepKey): Address | undefined =>
+  k === 'deployFactory'
+    ? dep.factory
+    : k === 'deployDeployer'
+      ? dep.deployer
+      : k === 'deployRouter'
+        ? dep.router
+        : k === 'deployHarvester'
+          ? dep.harvester
+          : k === 'deployMultisig'
+            ? dep.multisig
+            : undefined;
+
 const same = (a?: Address | null, b?: Address | null) =>
   Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 
@@ -390,6 +403,10 @@ export function DeployDirectCard({ role }: { role: Role }) {
   const [steps, setSteps] = useState<Record<StepKey, StepState>>(
     () => Object.fromEntries(STEP_ORDER.map((k) => [k, initial])) as Record<StepKey, StepState>,
   );
+  const stepsRef = useRef(steps);
+  useEffect(() => {
+    stepsRef.current = steps;
+  }, [steps]);
   const [quote, setQuote] = useState<{ egaz: bigint; eti: bigint } | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
 
@@ -398,19 +415,25 @@ export function DeployDirectCard({ role }: { role: Role }) {
     const f = q.get('factory');
     if (f) setFactoryInput(f);
   }, []);
+  useEffect(() => {
+    if (role === 'handoff' && deployed.factory) setFactoryInput(deployed.factory);
+  }, [role, deployed.factory]);
 
   useEffect(() => {
-    const stored = loadDeployed();
     const q = new URLSearchParams(window.location.search);
     const fromUrl = (k: string) => parseAddr(q.get(k) ?? '') ?? undefined;
-    const pick = (live: Address, saved?: Address, url?: Address) =>
-      live !== ZERO ? live : (saved ?? url);
+    const urlFactory = fromUrl('factory');
+    const stored = loadDeployed();
+    const saved: Deployed =
+      urlFactory && stored.factory && !same(urlFactory, stored.factory) ? {} : stored;
+    const pick = (live: Address, url?: Address, savedAddr?: Address) =>
+      live !== ZERO ? live : (url ?? savedAddr);
     setDeployed({
-      factory: pick(d.directFactory, stored.factory, fromUrl('factory')),
-      deployer: pick(d.directMetaPairDeployer, stored.deployer),
-      router: pick(d.directRouter, stored.router),
-      harvester: pick(d.directHarvesterAdapter, stored.harvester, fromUrl('harvester')),
-      multisig: pick(d.directAdmin, stored.multisig),
+      factory: pick(d.directFactory, urlFactory, saved.factory),
+      deployer: pick(d.directMetaPairDeployer, undefined, saved.deployer),
+      router: pick(d.directRouter, undefined, saved.router),
+      harvester: pick(d.directHarvesterAdapter, fromUrl('harvester'), saved.harvester),
+      multisig: pick(d.directAdmin, undefined, saved.multisig),
     });
   }, [
     d.directFactory,
@@ -1017,19 +1040,10 @@ export function DeployDirectCard({ role }: { role: Role }) {
     return okRef.current;
   }
 
-  const deployedFor = (k: StepKey): Address | undefined =>
-    k === 'deployFactory'
-      ? deployed.factory
-      : k === 'deployDeployer'
-        ? deployed.deployer
-        : k === 'deployRouter'
-          ? deployed.router
-          : k === 'deployHarvester'
-            ? deployed.harvester
-            : k === 'deployMultisig'
-              ? deployed.multisig
-              : undefined;
+  const deployedFor = (k: StepKey) => deployedIn(deployed, k);
   const isDone = (k: StepKey) => steps[k].status === 'confirmed' || Boolean(deployedFor(k));
+  const isDoneNow = (k: StepKey) =>
+    stepsRef.current[k].status === 'confirmed' || Boolean(deployedIn(deployedRef.current, k));
 
   function ready(key: StepKey): boolean {
     if (!isConnected || !walletClient || !onMainnet) return false;
@@ -1070,6 +1084,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
     setRunning(true);
     try {
       for (const key of remaining) {
+        if (isDoneNow(key)) continue;
         const ok = await runStep(key);
         if (!ok) break;
       }
@@ -1259,7 +1274,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
               ))}
             </dl>
           )}
-          {role === 'handoff' && !knownFactory && (
+          {role === 'handoff' && (
             <label className="mt-4 block text-sm text-white/70">
               Direct factory address
               <input
@@ -1269,7 +1284,13 @@ export function DeployDirectCard({ role }: { role: Role }) {
                 onChange={(e) => {
                   setFactoryInput(e.target.value);
                   const a = parseAddr(e.target.value);
-                  if (a) remember({ ...deployed, factory: a });
+                  if (same(a, deployed.factory)) return;
+                  setDeployed(a ? { factory: a } : {});
+                  setSteps((prev) => {
+                    const next = { ...prev };
+                    for (const k of HANDOFF_STEPS) next[k] = initial;
+                    return next;
+                  });
                 }}
                 placeholder="0x… (from the deploy page, or ?factory= in the URL)"
                 spellCheck={false}
