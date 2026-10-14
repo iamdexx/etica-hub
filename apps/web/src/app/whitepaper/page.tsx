@@ -58,7 +58,7 @@ const PAPER_STATS = [
   ['Governance', 'Community-built'],
 ];
 
-const SPEC_BARS = [48, 58, 64, 82, 76, 104, 92, 122, 110, 96, 132, 118];
+const SPEC_BARS = [34, 42, 46, 60, 55, 76, 67, 90, 80, 70, 96, 86];
 
 export default function WhitepaperPage() {
   const md = loadWhitepaper();
@@ -100,8 +100,11 @@ export default function WhitepaperPage() {
             </div>
             <div className="mt-4 flex h-36 items-end gap-2 rounded-xl border border-white/[0.07] bg-black/20 p-3">
               {SPEC_BARS.map((height, index) => (
-                <div key={index} className="flex flex-1 flex-col items-center justify-end gap-1">
-                  <span className="w-full rounded-t bg-white/70" style={{ height }} />
+                <div
+                  key={index}
+                  className="flex h-full flex-1 flex-col items-center justify-end gap-1"
+                >
+                  <span className="w-full rounded-t bg-white/70" style={{ height: `${height}%` }} />
                   <span className="h-1 w-full rounded bg-white/15" />
                 </div>
               ))}
