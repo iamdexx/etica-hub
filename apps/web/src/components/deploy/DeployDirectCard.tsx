@@ -14,6 +14,7 @@ import {
   encodeFunctionData,
   formatEther,
 } from 'viem';
+import { capGasPrice } from '@/lib/legacyTx';
 import {
   useAccount,
   useChainId,
@@ -950,7 +951,8 @@ export function DeployDirectCard({ role }: { role: Role }) {
         publicClient.estimateGas({ account, ...tx }),
         publicClient.getGasPrice(),
       ]);
-      return { gas: (gas * 13n) / 10n, gasPrice, type: 'legacy' as const };
+      const gasLimit = (gas * 13n) / 10n;
+      return { gas: gasLimit, gasPrice: capGasPrice(gasLimit, gasPrice), type: 'legacy' as const };
     };
     const deploy = async (artifact: { abi: Abi; bytecode: Hex }, args: readonly unknown[]) => {
       const data = encodeDeployData({ abi: artifact.abi, bytecode: artifact.bytecode, args });
