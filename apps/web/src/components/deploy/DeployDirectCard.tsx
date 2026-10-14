@@ -707,6 +707,8 @@ export function DeployDirectCard({ role }: { role: Role }) {
     tokens.wegaz,
     tokens.eti,
     tokens.usdce,
+    owner,
+    signer,
   ]);
 
   // Seeder steps re-derive from the windows: tokens already sitting on a window
