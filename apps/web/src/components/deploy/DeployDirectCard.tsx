@@ -383,7 +383,7 @@ const same = (a?: Address | null, b?: Address | null) =>
   Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 
 export function DeployDirectCard({ role }: { role: Role }) {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain: walletChain } = useAccount();
   const chainId = useChainId();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
@@ -415,7 +415,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
         ]);
         if (!cancelled)
           setWalletRpc(
-            `ok · block ${Number(block as string)} · ${Number(formatEther(BigInt(bal as string))).toFixed(2)} EGAZ`,
+            `ok · block ${Number(block as string)} · ${Number(formatEther(BigInt(bal as string))).toFixed(2)} ${walletChain?.nativeCurrency.symbol ?? 'native'}`,
           );
       } catch (err) {
         if (!cancelled) setWalletRpc(`FAILED: ${shortError(err)}`);
@@ -424,7 +424,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
     return () => {
       cancelled = true;
     };
-  }, [walletClient, address, chainId]);
+  }, [walletClient, address, chainId, walletChain]);
   const d = DEPLOYMENTS[eticaMainnet.id];
   const tokens = {
     etx: d.etx,
