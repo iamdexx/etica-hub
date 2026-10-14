@@ -23,6 +23,7 @@ import {
 } from 'wagmi';
 import { eticaMainnet } from '@etica-hub/shared/chains';
 import {
+  BRIDGE_ROLES,
   DEPLOYMENTS,
   EXTERNAL_ADDRESSES,
   TREASURY_ADDRESS,
@@ -367,7 +368,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
   const [ownerInput, setOwnerInput] = useState<string>(TREASURY_ADDRESS);
   const [seederInput, setSeederInput] = useState<string>(SECOND_SIGNER);
   const [signerInput, setSignerInput] = useState<string>(SECOND_SIGNER);
-  const [guardianInput, setGuardianInput] = useState<string>('');
+  const [guardianInput, setGuardianInput] = useState<string>(BRIDGE_ROLES.keeper);
   const [usdPerSide, setUsdPerSide] = useState<string>('10');
   const [factoryInput, setFactoryInput] = useState<string>('');
   const [windows, setWindows] = useState<Windows>({});
@@ -674,7 +675,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
           setTreasuryToken: same(tTok, tokens.usdce),
           createWindowWegaz: pWegaz !== ZERO,
           createWindowEti: pEti !== ZERO,
-          setGuardian: g !== ZERO,
+          setGuardian: guardian ? same(g, guardian) : g !== ZERO,
           setUnpauserOwner: upOwner,
           setUnpauserSigner: upSigner,
           setFeeToSetter: same(setter, knownMultisig),
@@ -709,6 +710,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
     tokens.usdce,
     owner,
     signer,
+    guardian,
   ]);
 
   // Seeder steps re-derive from the windows: tokens already sitting on a window
@@ -1155,13 +1157,13 @@ export function DeployDirectCard({ role }: { role: Role }) {
             />
           </label>
           <label className="mt-4 block text-sm text-white/70">
-            Guardian (pause-only key for the direct-watcher; optional)
+            Guardian (pause-only; the direct-watcher signs with this key)
             <input
               type="text"
               className={input}
               value={guardianInput}
               onChange={(e) => setGuardianInput(e.target.value)}
-              placeholder="0x… fresh wallet whose key goes into the DIRECT_GUARDIAN_PRIVATE_KEY secret"
+              placeholder="0x… leave blank to skip setGuardian"
               spellCheck={false}
             />
           </label>
@@ -1331,16 +1333,16 @@ export function DeployDirectCard({ role }: { role: Role }) {
             Seeder link (send to the whitelisted wallet):{' '}
             <a
               className="font-mono underline"
-              href={`/deploy/direct/seed?factory=${deployed.factory}`}
+              href={`https://eticahub.com/deploy/direct/seed?factory=${deployed.factory}`}
             >
-              /deploy/direct/seed?factory={deployed.factory}
+              https://eticahub.com/deploy/direct/seed?factory={deployed.factory}
             </a>
           </p>
           <p className="mt-2 text-xs text-emerald-200/70">
             Then: fill <span className="font-mono">apps/direct-watcher/expected.json</span> with
-            these addresses, add the guardian key + Telegram secrets, enable the direct-watcher and
-            direct-harvest workflows, verify source on the explorer, and ask GeckoTerminal to index
-            the windows.
+            these addresses (the keeper key already signs for the guardian), enable the
+            direct-watcher and direct-harvest workflows, verify source on the explorer, and ask
+            GeckoTerminal to index the windows.
           </p>
         </section>
       )}
