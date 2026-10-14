@@ -675,7 +675,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
           setTreasuryToken: same(tTok, tokens.usdce),
           createWindowWegaz: pWegaz !== ZERO,
           createWindowEti: pEti !== ZERO,
-          setGuardian: g !== ZERO,
+          setGuardian: guardian ? same(g, guardian) : g !== ZERO,
           setUnpauserOwner: upOwner,
           setUnpauserSigner: upSigner,
           setFeeToSetter: same(setter, knownMultisig),
@@ -710,6 +710,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
     tokens.usdce,
     owner,
     signer,
+    guardian,
   ]);
 
   // Seeder steps re-derive from the windows: tokens already sitting on a window
