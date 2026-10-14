@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { PageHero } from '@/components/PageHero';
 import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
-import { SwapCard } from '@/components/swap/SwapCard';
+import { SwapVersionTabs } from '@/components/swap/SwapVersionTabs';
 import { TelemetrySection, SourceBadge } from '@/components/telemetry/TelemetryCards';
 import { TvlBanner } from '@/components/TvlBanner';
 import { GraduatedMarketsSection } from '@/components/research-markets/GraduatedMarketsSection';
@@ -18,7 +18,7 @@ const ROUTE_STATS = [
   },
   { label: 'LP fee', value: '0.30%', detail: 'AMM swap fee', tone: 'emerald' as const },
   { label: 'Protection', value: 'Slippage guarded', detail: 'User-defined max impact' },
-  { label: 'Markets', value: 'EGAZ · ETI · ETX · USDC.e', detail: 'Configured swap assets' },
+  { label: 'Venues', value: 'V2 · V3 · V4 · V5', detail: 'Hub · stableswap · launchpad · Direct' },
 ];
 
 export default function SwapPage() {
@@ -29,7 +29,7 @@ export default function SwapPage() {
         tone="emerald"
         eyebrow="EticaSwap Terminal"
         title="Swap with scanner-grade context."
-        description="Trade EGAZ, ETI, ETX, USDC.e, and routed Etica assets from the same terminal surface as EticaHub Scan. TVL, volume, route rules, and market entry points stay visible around the swap card."
+        description="Trade EGAZ, ETI, ETX and USDC.e across every EticaSwap venue from one terminal: V2 hub swap, V3 stableswap, V4 research launchpad and V5 Direct dollar markets that settle on the ETX hub. TVL, volume and route rules stay visible around the card."
         actions={
           <>
             <Link href="/explorer/pairs" className="btn-tone px-3.5 py-1.5 text-xs">
@@ -78,7 +78,7 @@ export default function SwapPage() {
           </div>
         </div>
         <div className="surface p-3">
-          <SwapCard geoRestricted={geoRestricted} />
+          <SwapVersionTabs geoRestricted={geoRestricted} />
         </div>
       </section>
 
