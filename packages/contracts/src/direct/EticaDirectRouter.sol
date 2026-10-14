@@ -24,9 +24,18 @@ contract EticaDirectRouter {
         _;
     }
 
+    /// @dev Final recipients must pass the stETX gate and must be a wallet or
+    ///      external contract, never the router itself or a venue pair (tokens
+    ///      sent there would be stranded or skimmable).
     modifier gated(address to) {
-        require(IEticaDirectFactory(factory).isAllowed(to), "EDirect: NOT_STAKER");
+        _gate(to);
         _;
+    }
+
+    function _gate(address to) private view {
+        IEticaDirectFactory fac = IEticaDirectFactory(factory);
+        require(to != address(this) && !fac.isPair(to), "EDirect: INVALID_TO");
+        require(fac.isAllowed(to), "EDirect: NOT_STAKER");
     }
 
     constructor(address _factory, address _wegaz) {

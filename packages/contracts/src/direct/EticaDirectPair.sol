@@ -104,12 +104,14 @@ contract EticaDirectPair is EticaDirectERC20 {
         emit Sync(reserve0, reserve1);
     }
 
-    /// @dev The venue gate. Another venue pair is only a valid recipient when
-    ///      a whitelisted router is doing the hop, so a non-staker cannot park
-    ///      output on a sibling pair and `skim` it out.
+    /// @dev The venue gate. Venue contracts (sibling pairs, whitelisted
+    ///      routers / harvester) are only valid recipients when a whitelisted
+    ///      contract is the caller, so a non-staker can neither park output on
+    ///      a sibling pair and `skim` it nor dump it into the router. Everyone
+    ///      else must pass the stETX check.
     function _requireAllowed(address to) private view {
         IEticaDirectFactory fac = IEticaDirectFactory(factory);
-        if (fac.isPair(to)) {
+        if (fac.isPair(to) || fac.whitelist(to)) {
             require(fac.whitelist(msg.sender), "EDirect: NOT_STAKER");
             return;
         }

@@ -274,6 +274,31 @@ contract EticaDirectTest is Test {
         pair.skim(STAKER);
     }
 
+    function test_gate_venueContractsAreNotRecipientsForOutsiders() public {
+        _seedDirectPool();
+        usdce.mint(address(pair), 100 ether);
+        (uint256 out0, uint256 out1) = pair.token0() == address(usdce)
+            ? (uint256(0), uint256(1 ether))
+            : (uint256(1 ether), uint256(0));
+        // Non-staker cannot dump output into the whitelisted router.
+        vm.prank(NOBODY);
+        vm.expectRevert(bytes("EDirect: NOT_STAKER"));
+        pair.swap(out0, out1, address(router), "");
+        vm.prank(NOBODY);
+        vm.expectRevert(bytes("EDirect: NOT_STAKER"));
+        pair.swap(out0, out1, address(adapter), "");
+        // Even a staker cannot route to the router or a pair through the router.
+        address[] memory path = new address[](2);
+        path[0] = address(usdce);
+        path[1] = address(wegaz);
+        vm.startPrank(STAKER);
+        vm.expectRevert(bytes("EDirect: INVALID_TO"));
+        router.swapExactTokensForTokens(1 ether, 0, path, address(router), block.timestamp);
+        vm.expectRevert(bytes("EDirect: INVALID_TO"));
+        router.swapExactTokensForTokens(1 ether, 0, path, address(pair), block.timestamp);
+        vm.stopPrank();
+    }
+
     // ---------- fee harvest -> stETX ----------
 
     function test_harvest_feesFlowToStakersAndTreasury() public {
