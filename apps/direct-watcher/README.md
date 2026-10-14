@@ -12,7 +12,7 @@ An extra pair of eyes on EticaSwap Direct. Every 5 minutes (GitHub Actions cron)
 | `PRICE_IMPACT`, `ROUND_TRIP` | warning | gaming shapes: a fill > `DIRECT_PRICE_IMPACT_BPS` below the pre-trade price (hub pushed or oversized trade); one wallet trading both directions within `DIRECT_ROUND_TRIP_BLOCKS` blocks (sandwich shape). Never a pause trigger: the hub prices every trade and the gamer pays the tier fee on each leg |
 | `LARGE_SWAP`, `LOOSE_TOKENS`, `RETIRED`, `FLIPPING` | info | notable activity |
 
-Findings go to Telegram (`DIRECT_TELEGRAM_*`, falling back to the bridge bot). On any **critical** finding, if `DIRECT_GUARDIAN_PRIVATE_KEY` is set and the venue is not already paused, the watcher calls `factory.pauseSwaps()`. The guardian key can only pause, and its pause lapses after `guardianPauseDuration` (7 days by default) so the watcher can never freeze the venue for good; `unpauseSwaps` is the setter's, after a human has looked. Pausing never traps funds: windows have nothing to withdraw, plain pairs keep mint/burn open.
+Findings go to Telegram (`DIRECT_TELEGRAM_*`, falling back to the bridge bot). On any **critical** finding, if `DIRECT_GUARDIAN_PRIVATE_KEY` is set (the workflow falls back to `HARVEST_KEEPER_PRIVATE_KEY`, so the keeper wallet `0xfcDd…05a7` is the guardian unless a dedicated key is added) and the venue is not already paused, the watcher calls `factory.pauseSwaps()`. The guardian key can only pause, and its pause lapses after `guardianPauseDuration` (7 days by default) so the watcher can never freeze the venue for good; `unpauseSwaps` is the setter's, after a human has looked. Pausing never traps funds: windows have nothing to withdraw, plain pairs keep mint/burn open.
 
 ## Telegram admins
 

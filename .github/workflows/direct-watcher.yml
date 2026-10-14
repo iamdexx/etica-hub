@@ -21,14 +21,15 @@ concurrency:
 jobs:
   watch:
     runs-on: ubuntu-latest
-    environment: bridge-watcher
+    # harvest-live holds HARVEST_KEEPER_PRIVATE_KEY: the keeper wallet doubles as the Direct guardian.
+    environment: harvest-live
     env:
       DIRECT_RPC_URL: ${{ vars.DIRECT_RPC_URL || 'https://rpc2.etica-stats.org' }}
       DIRECT_FACTORY_ADDRESS: ${{ vars.DIRECT_FACTORY_ADDRESS }}
       DIRECT_HARVESTER_ADDRESS: ${{ vars.DIRECT_HARVESTER_ADDRESS }}
       DIRECT_RESERVE_DRIFT_BPS: ${{ vars.DIRECT_RESERVE_DRIFT_BPS || '100' }}
       DIRECT_LARGE_SWAP_BPS: ${{ vars.DIRECT_LARGE_SWAP_BPS || '500' }}
-      DIRECT_GUARDIAN_PRIVATE_KEY: ${{ secrets.DIRECT_GUARDIAN_PRIVATE_KEY }}
+      DIRECT_GUARDIAN_PRIVATE_KEY: ${{ secrets.DIRECT_GUARDIAN_PRIVATE_KEY || secrets.HARVEST_KEEPER_PRIVATE_KEY }}
       DIRECT_PRICE_IMPACT_BPS: ${{ vars.DIRECT_PRICE_IMPACT_BPS || '300' }}
       DIRECT_ROUND_TRIP_BLOCKS: ${{ vars.DIRECT_ROUND_TRIP_BLOCKS || '3' }}
       # Dedicated bot preferred (getUpdates needs a bot nobody else polls); falls back to the bridge bot.
