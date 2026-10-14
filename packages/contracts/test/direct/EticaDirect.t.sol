@@ -17,6 +17,20 @@ import {
 } from "../../src/direct/DirectSwapHarvesterAdapter.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 
+contract MockRewardSink {
+    IERC20 public immutable etx;
+    uint256 public received;
+
+    constructor(IERC20 _etx) {
+        etx = _etx;
+    }
+
+    function distributeRewards(uint256 amount) external {
+        etx.transferFrom(msg.sender, address(this), amount);
+        received += amount;
+    }
+}
+
 contract EticaDirectTest is Test {
     address internal constant TREASURY = address(0x7EA5);
     address internal constant STAKER = address(0x57A4E);
@@ -34,12 +48,14 @@ contract EticaDirectTest is Test {
     EticaDirectRouter internal router;
     DirectSwapHarvesterAdapter internal adapter;
     IEticaSwapPair internal pair; // WEGAZ/USDC.e direct pair
+    MockRewardSink internal farms;
 
     function setUp() public {
         etx = new MockERC20("ETX (mock)", "ETX");
         usdce = new MockERC20("USDC.e (mock)", "USDC.e");
         wegaz = new WEGAZ();
         stEtx = new StakedETX(IERC20(address(etx)));
+        farms = new MockRewardSink(IERC20(address(etx)));
 
         hubFactory = new EticaSwapFactory(TREASURY, address(etx));
         hubRouter = new EticaSwapRouter(address(hubFactory), address(wegaz));
@@ -52,6 +68,7 @@ contract EticaDirectTest is Test {
             IHubRouter(address(hubRouter)),
             IERC20(address(etx)),
             address(stEtx),
+            address(farms),
             TREASURY
         );
         vm.startPrank(TREASURY);
@@ -248,21 +265,28 @@ contract EticaDirectTest is Test {
         uint256 treasuryBefore = etx.balanceOf(TREASURY);
         DirectSwapHarvesterAdapter.LegPlan[] memory plans =
             new DirectSwapHarvesterAdapter.LegPlan[](1);
-        plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(pair), 0, 0);
+        plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(pair), 0, 0, 0, 0);
+        uint256 deadBefore = pair.balanceOf(adapter.DEAD());
         vm.prank(TREASURY);
-        (uint256 total, uint256 staked, uint256 treas) = adapter.harvest(plans);
+        (uint256 total, uint256 polLp) = adapter.harvest(plans);
         assertGt(total, 0);
-        assertEq(staked + treas, total);
-        assertEq(staked, total / 2);
+        // 10% stETX, 10% farms, 40% POL burned into the direct pair, 40% treasury.
         assertGt(stEtx.convertToAssets(1e18), navBefore);
-        assertEq(etx.balanceOf(TREASURY) - treasuryBefore, treas);
+        assertEq(farms.received(), total / 10);
+        assertGt(polLp, 0);
+        assertEq(pair.balanceOf(adapter.DEAD()) - deadBefore, polLp);
+        assertEq(
+            etx.balanceOf(TREASURY) - treasuryBefore,
+            total - total / 10 - total / 10 - (total * 4) / 10
+        );
         assertEq(pair.balanceOf(address(adapter)), 0);
+        assertEq(etx.balanceOf(address(adapter)), 0);
     }
 
     function test_harvest_onlyKeeper_andOnlyVenuePairs() public {
         DirectSwapHarvesterAdapter.LegPlan[] memory plans =
             new DirectSwapHarvesterAdapter.LegPlan[](1);
-        plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(pair), 0, 0);
+        plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(pair), 0, 0, 0, 0);
         vm.prank(NOBODY);
         vm.expectRevert(DirectSwapHarvesterAdapter.NotKeeper.selector);
         adapter.harvest(plans);
