@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkFactory, checkWindow, nextState, worst, type FactorySnapshot, type WindowSnapshot } from '../src/checks.js';
+import { checkFactory, checkGuardianKey, checkWindow, nextState, worst, type FactorySnapshot, type WindowSnapshot } from '../src/checks.js';
 
 const A = '0x00000000000000000000000000000000000000a1' as const;
 const B = '0x00000000000000000000000000000000000000b2' as const;
@@ -89,5 +89,17 @@ describe('nextState', () => {
   it('keeps the LP floor when a window reports less', () => {
     const s = nextState([{ ...window, lp0: 50n }], { lastBlock: '1', windows: { [A]: { lp0: '100', lp1: '100' } } }, 9n);
     expect(s).toEqual({ lastBlock: '9', windows: { [A]: { lp0: '100', lp1: '100' } } });
+  });
+});
+
+describe('checkGuardianKey', () => {
+  it('is quiet without a key or when the key is the guardian', () => {
+    expect(checkGuardianKey(factory, undefined)).toEqual([]);
+    expect(checkGuardianKey(factory, A.toUpperCase() as typeof A)).toEqual([]);
+  });
+  it('warns when the pause key is no longer the on-chain guardian', () => {
+    const [f] = checkGuardianKey(factory, B);
+    expect(f.severity).toBe('warning');
+    expect(f.code).toBe('GUARDIAN_KEY');
   });
 });
