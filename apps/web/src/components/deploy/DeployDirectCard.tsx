@@ -1013,6 +1013,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
     if (deployedFor(key)) return false;
     if (key === 'whitelistSeeder' && !seeder) return false;
     if (key === 'setGuardian' && !guardian) return false;
+    if (key === 'setUnpauserSigner' && !signer) return false;
     if (key === 'deployMultisig' && (!signer || same(owner, signer))) return false;
     if (HANDOFF_STEPS.includes(key)) {
       return (
@@ -1020,7 +1021,9 @@ export function DeployDirectCard({ role }: { role: Role }) {
         HANDOFF_STEPS.slice(0, HANDOFF_STEPS.indexOf(key)).every(isDone)
       );
     }
-    return SETUP_STEPS.slice(0, SETUP_STEPS.indexOf(key)).every(isDone);
+    return SETUP_STEPS.slice(0, SETUP_STEPS.indexOf(key)).every(
+      (k) => k === 'setGuardian' || isDone(k),
+    );
   }
 
   const visibleSteps = role === 'operator' ? OPERATOR_STEPS : SEED_STEPS;
