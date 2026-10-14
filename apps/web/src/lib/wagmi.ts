@@ -4,6 +4,7 @@ import { injected, walletConnect } from 'wagmi/connectors';
 import { mainnet } from 'wagmi/chains';
 import { eticaMainnet, eticaLocalFork } from '@etica-hub/shared/chains';
 import { ETHEREUM_BROWSER_RPCS } from '@/lib/bridge/ethereum-rpcs';
+import { withLegacyTxs } from '@/lib/legacyTx';
 
 /**
  * Single source of truth for the wallet/RPC config.
@@ -58,9 +59,23 @@ const walletConnectConnector: CreateConnectorFn = (config) => {
   return isBrowser ? connector : { ...connector, setup: undefined };
 };
 
+// Every wallet tx on Etica is sent as a legacy tx with explicit gasPrice/gas
+// (see lib/legacyTx.ts); applied at the provider so all connectors get it.
+const legacyTxs =
+  (create: CreateConnectorFn): CreateConnectorFn =>
+  (config) => {
+    const connector = create(config);
+    const getProvider = connector.getProvider.bind(connector);
+    return {
+      ...connector,
+      getProvider: async (parameters?: { chainId?: number }) =>
+        withLegacyTxs(await getProvider(parameters)),
+    };
+  };
+
 export const wagmiConfig = createConfig({
   chains: [eticaMainnet, mainnet, eticaLocalFork],
-  connectors: [injected({ shimDisconnect: true }), walletConnectConnector],
+  connectors: [legacyTxs(injected({ shimDisconnect: true })), legacyTxs(walletConnectConnector)],
   transports: {
     [eticaMainnet.id]: fallback(
       eticaMainnet.rpcUrls.default.http.map((url) =>
