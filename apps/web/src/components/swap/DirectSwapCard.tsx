@@ -200,12 +200,16 @@ export function DirectSwapCard() {
   const [amountInStr, setAmountInStr] = useState('');
   const win = windows.find((w) => w.pair === pairSel) ?? windows[0] ?? null;
 
-  // Default: trade from the dollar side (USDC.e) into the asset.
-  const dollarFirst = Boolean(
+  // Default direction: dollars in, asset out.
+  const usdcIsToken0 = Boolean(
+    win && ctx && win.token0.toLowerCase() === ctx.usdce.toLowerCase(),
+  );
+  const usdcIsToken1 = Boolean(
     win && ctx && win.token1.toLowerCase() === ctx.usdce.toLowerCase(),
   );
-  const tokenIn = win ? (flipped !== dollarFirst ? win.token0 : win.token1) : null;
-  const tokenOut = win ? (flipped !== dollarFirst ? win.token1 : win.token0) : null;
+  const inIsToken0 = (usdcIsToken0 || !usdcIsToken1) !== flipped;
+  const tokenIn = win ? (inIsToken0 ? win.token0 : win.token1) : null;
+  const tokenOut = win ? (inIsToken0 ? win.token1 : win.token0) : null;
   const metaIn = ctx && tokenIn ? tokenMeta(ctx, tokenIn) : null;
   const metaOut = ctx && tokenOut ? tokenMeta(ctx, tokenOut) : null;
 
