@@ -1578,9 +1578,9 @@ export function DeployDirectCard({ role }: { role: Role }) {
           )}
           <p className="mt-2 text-xs text-emerald-200/70">
             Then: fill <span className="font-mono">apps/direct-watcher/expected.json</span> with
-            these addresses (the keeper key already signs for the guardian), enable the
-            direct-watcher and direct-harvest workflows, verify source on the explorer, and ask
-            GeckoTerminal to index the windows.
+            these addresses (the keeper key already signs for the guardian), dispatch the
+            direct-watcher workflow once, verify source on the explorer, and ask GeckoTerminal to
+            index the windows.
           </p>
         </section>
       )}
