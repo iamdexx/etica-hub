@@ -10,6 +10,8 @@ interface IEticaDirectFactory {
     event TrustedCreatorSet(address indexed creator, bool trusted);
     event WhitelistSet(address indexed account, bool allowed);
     event MinStEtxSet(uint256 minStEtx);
+    event FeeTiersSet(uint256[] minStEtx, uint16[] feeBps);
+    event BaseFeeBpsSet(uint16 feeBps);
 
     function stEtx() external view returns (address);
     function minStEtx() external view returns (uint256);
@@ -26,6 +28,13 @@ interface IEticaDirectFactory {
     /// @notice True when `account` may receive the output of a mint, burn or
     ///         swap on any venue pair.
     function isAllowed(address account) external view returns (bool);
+    /// @notice Swap fee (basis points of the input) charged to `trader`,
+    ///         based on its stETX balance: `baseFeeBps` below the first tier,
+    ///         then the fee of the highest tier whose threshold it meets.
+    function feeBpsFor(address trader) external view returns (uint16);
+    function baseFeeBps() external view returns (uint16);
+    function feeTierCount() external view returns (uint256);
+    function feeTier(uint256 index) external view returns (uint256 minStEtx, uint16 feeBps);
 
     function createPair(address tokenA, address tokenB) external returns (address pair);
 
@@ -34,4 +43,6 @@ interface IEticaDirectFactory {
     function setTrustedCreator(address creator, bool trusted) external;
     function setWhitelist(address account, bool allowed) external;
     function setMinStEtx(uint256 minStEtx) external;
+    function setBaseFeeBps(uint16 feeBps) external;
+    function setFeeTiers(uint256[] calldata minStEtx, uint16[] calldata feeBps) external;
 }

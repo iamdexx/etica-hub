@@ -11,6 +11,7 @@ import {IEticaSwapPair} from "../../src/swap/interfaces/IEticaSwapPair.sol";
 import {StakedETX} from "../../src/etx/StakedETX.sol";
 import {EticaDirectFactory} from "../../src/direct/EticaDirectFactory.sol";
 import {IEticaDirectFactory} from "../../src/direct/IEticaDirectFactory.sol";
+import {IEticaDirectPair} from "../../src/direct/IEticaDirectPair.sol";
 import {
     DirectSwapHarvesterAdapter,
     IHubRouter
@@ -76,6 +77,7 @@ contract EticaDirectTest is Test {
         factory.setWhitelist(address(adapter), true);
         factory.setFeeTo(address(adapter));
         pair = IEticaSwapPair(factory.createPair(address(wegaz), address(usdce)));
+        _setTiers();
         vm.stopPrank();
 
         // Hub pools so the adapter can swap WEGAZ and USDC.e legs into ETX.
@@ -113,6 +115,29 @@ contract EticaDirectTest is Test {
         vm.stopPrank();
         vm.prank(NOBODY);
         usdce.approve(address(router), type(uint256).max);
+    }
+
+    // Mirrors the launch ladder (40k / 100k / 250k / 500k stETX) scaled to MIN_STETX.
+    function _setTiers() internal {
+        uint256[] memory mins = new uint256[](4);
+        uint16[] memory bps = new uint16[](4);
+        mins[0] = MIN_STETX;
+        bps[0] = 300;
+        mins[1] = MIN_STETX * 5 / 2;
+        bps[1] = 150;
+        mins[2] = MIN_STETX * 25 / 4;
+        bps[2] = 50;
+        mins[3] = MIN_STETX * 25 / 2;
+        bps[3] = 10;
+        factory.setFeeTiers(mins, bps);
+    }
+
+    function _quoteOut(uint256 amountIn, uint256 rIn, uint256 rOut, uint256 feeBps)
+        internal
+        pure
+        returns (uint256)
+    {
+        return (amountIn * (10_000 - feeBps) * rOut) / (rIn * 10_000 + amountIn * (10_000 - feeBps));
     }
 
     function _seedDirectPool() internal {
@@ -221,26 +246,103 @@ contract EticaDirectTest is Test {
         assertTrue(sawSync && sawSwap);
     }
 
-    function test_swap_feeIsOnePercent() public {
+    function test_fee_tiersFollowStEtxBalance() public {
+        // Below first tier -> base 3%; whitelisted contracts and non-stakers too.
+        assertEq(factory.feeBpsFor(NOBODY), 300);
+        assertEq(factory.feeBpsFor(address(router)), 300);
+        assertEq(factory.feeBpsFor(STAKER), 300); // holds exactly MIN_STETX
+        vm.startPrank(STAKER);
+        stEtx.deposit(MIN_STETX * 3 / 2, STAKER); // 2.5x
+        assertEq(factory.feeBpsFor(STAKER), 150);
+        stEtx.deposit(MIN_STETX * 15 / 4, STAKER); // 6.25x
+        assertEq(factory.feeBpsFor(STAKER), 50);
+        stEtx.deposit(MIN_STETX * 25 / 4, STAKER); // 12.5x
+        assertEq(factory.feeBpsFor(STAKER), 10);
+        stEtx.deposit(MIN_STETX * 10, STAKER); // beyond the ladder stays at the floor
+        assertEq(factory.feeBpsFor(STAKER), 10);
+        vm.stopPrank();
+    }
+
+    function test_fee_setTiersValidation() public {
+        uint256[] memory mins = new uint256[](2);
+        uint16[] memory bps = new uint16[](2);
+        mins[0] = 2 ether;
+        mins[1] = 1 ether;
+        bps[0] = 100;
+        bps[1] = 50;
+        vm.startPrank(TREASURY);
+        vm.expectRevert(bytes("EDirect: TIERS_NOT_ASCENDING"));
+        factory.setFeeTiers(mins, bps);
+        mins[1] = 3 ether;
+        bps[1] = 200;
+        vm.expectRevert(bytes("EDirect: FEE_NOT_DESCENDING"));
+        factory.setFeeTiers(mins, bps);
+        bps[0] = 400; // above base fee
+        vm.expectRevert(bytes("EDirect: FEE_NOT_DESCENDING"));
+        factory.setFeeTiers(mins, bps);
+        vm.expectRevert(bytes("EDirect: FEE_TOO_HIGH"));
+        factory.setBaseFeeBps(1_001);
+        vm.stopPrank();
+        vm.prank(NOBODY);
+        vm.expectRevert(bytes("EDirect: FORBIDDEN"));
+        factory.setBaseFeeBps(100);
+    }
+
+    function test_swap_pairChargesTraderTier() public {
         _seedDirectPool();
         uint256 amountIn = 100 ether;
         (uint112 r0, uint112 r1,) = pair.getReserves();
         (uint256 rIn, uint256 rOut) = pair.token0() == address(usdce) ? (r0, r1) : (r1, r0);
-        uint256 expected = (amountIn * 990 * rOut) / (rIn * 1000 + amountIn * 990);
-        assertEq(router.getAmountOut(amountIn, rIn, rOut), expected);
+        uint256 at3pct = _quoteOut(amountIn, rIn, rOut, 300);
+        uint256 at1pct = _quoteOut(amountIn, rIn, rOut, 100);
+        assertEq(router.getAmountOut(amountIn, rIn, rOut, 300), at3pct);
 
-        // The 0.30% venue's output is too much for a 1.00% pair: K check rejects it.
-        uint256 tooMuch = (amountIn * 997 * rOut) / (rIn * 1000 + amountIn * 997);
+        // STAKER sits on the 3% tier: a 1% output breaks K, the 3% output passes.
         usdce.mint(address(pair), amountIn);
         (uint256 out0, uint256 out1) =
-            pair.token0() == address(usdce) ? (uint256(0), tooMuch) : (tooMuch, uint256(0));
+            pair.token0() == address(usdce) ? (uint256(0), at1pct) : (at1pct, uint256(0));
         vm.prank(STAKER);
         vm.expectRevert(bytes("ESwap: K"));
         pair.swap(out0, out1, STAKER, "");
-        (out0, out1) =
-            pair.token0() == address(usdce) ? (uint256(0), expected) : (expected, uint256(0));
+        (out0, out1) = pair.token0() == address(usdce) ? (uint256(0), at3pct) : (at3pct, uint256(0));
         vm.prank(STAKER);
         pair.swap(out0, out1, STAKER, "");
+    }
+
+    function test_swap_routerPricesEgazUnwrapAtTraderTier() public {
+        _seedDirectPool();
+        // Move STAKER to the 0.10% tier.
+        vm.prank(STAKER);
+        stEtx.deposit(MIN_STETX * 12, STAKER);
+        assertEq(factory.feeBpsFor(STAKER), 10);
+        uint256 amountIn = 100 ether;
+        (uint112 r0, uint112 r1,) = pair.getReserves();
+        (uint256 rIn, uint256 rOut) = pair.token0() == address(usdce) ? (r0, r1) : (r1, r0);
+        uint256 expected = _quoteOut(amountIn, rIn, rOut, 10);
+        address[] memory path = new address[](2);
+        path[0] = address(usdce);
+        path[1] = address(wegaz);
+        assertEq(router.getAmountsOut(amountIn, path, STAKER)[1], expected);
+        // Recipient is the router (unwrap hop) but the fee is the trader's 0.10%.
+        uint256 before = STAKER.balance;
+        vm.prank(STAKER);
+        router.swapExactTokensForEGAZ(amountIn, expected, path, STAKER, block.timestamp);
+        assertEq(STAKER.balance - before, expected);
+    }
+
+    function test_swapFor_onlyWhitelistedCallerAndStakerTrader() public {
+        _seedDirectPool();
+        usdce.mint(address(pair), 100 ether);
+        (uint256 out0, uint256 out1) = pair.token0() == address(usdce)
+            ? (uint256(0), uint256(1 ether))
+            : (uint256(1 ether), uint256(0));
+        vm.prank(STAKER);
+        vm.expectRevert(bytes("EDirect: NOT_ROUTER"));
+        IEticaDirectPair(address(pair)).swapFor(out0, out1, STAKER, STAKER, "");
+        // A whitelisted caller cannot name a non-staker as trader either.
+        vm.prank(address(adapter));
+        vm.expectRevert(bytes("EDirect: NOT_STAKER"));
+        IEticaDirectPair(address(pair)).swapFor(out0, out1, STAKER, NOBODY, "");
     }
 
     function test_addLiquidity_unopenedPairReverts() public {

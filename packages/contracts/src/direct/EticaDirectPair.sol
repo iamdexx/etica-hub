@@ -194,17 +194,67 @@ contract EticaDirectPair is EticaDirectERC20 {
 
     /// @notice Swap: the caller must have pre-paid `amount{0,1}In` (constant-product check).
     ///         Supports flash swaps via the `data` callback to `IEticaSwapCallee.eticaSwapCall`.
+    /// @notice Swap with the fee tier of the recipient `to` (direct callers).
     function swap(uint256 amount0Out, uint256 amount1Out, address to, bytes calldata data)
         external
         lock
     {
         _requireAllowed(to);
-        require(amount0Out > 0 || amount1Out > 0, "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
-        (uint112 _reserve0, uint112 _reserve1,) = getReserves();
-        require(amount0Out < _reserve0 && amount1Out < _reserve1, "ESwap: INSUFFICIENT_LIQUIDITY");
+        _swap(amount0Out, amount1Out, to, IEticaDirectFactory(factory).feeBpsFor(to), data);
+    }
 
+    /// @notice Swap on behalf of `trader`, whose stETX balance sets the fee.
+    ///         Only whitelisted routers may name a trader, so the recipient of
+    ///         an EGAZ unwrap or an intermediate hop still pays the fee of the
+    ///         wallet that initiated the trade.
+    function swapFor(
+        uint256 amount0Out,
+        uint256 amount1Out,
+        address to,
+        address trader,
+        bytes calldata data
+    ) external lock {
+        IEticaDirectFactory fac = IEticaDirectFactory(factory);
+        require(fac.whitelist(msg.sender), "EDirect: NOT_ROUTER");
+        require(fac.isAllowed(trader), "EDirect: NOT_STAKER");
+        _requireAllowed(to);
+        _swap(amount0Out, amount1Out, to, fac.feeBpsFor(trader), data);
+    }
+
+    struct SwapVars {
+        uint112 reserve0;
+        uint112 reserve1;
         uint256 balance0;
         uint256 balance1;
+        uint256 amount0In;
+        uint256 amount1In;
+        uint256 feeBps;
+    }
+
+    /// @dev Constant-product check with the tiered fee on the input, in basis
+    ///      points (10_000 = 100%).
+    function _requireK(SwapVars memory v) private pure {
+        uint256 balance0Adjusted = v.balance0 * 10_000 - v.amount0In * v.feeBps;
+        uint256 balance1Adjusted = v.balance1 * 10_000 - v.amount1In * v.feeBps;
+        require(
+            balance0Adjusted * balance1Adjusted >= uint256(v.reserve0) * v.reserve1 * (10_000 ** 2),
+            "ESwap: K"
+        );
+    }
+
+    function _swap(
+        uint256 amount0Out,
+        uint256 amount1Out,
+        address to,
+        uint256 feeBps,
+        bytes calldata data
+    ) private {
+        require(amount0Out > 0 || amount1Out > 0, "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
+        SwapVars memory v;
+        v.feeBps = feeBps;
+        (v.reserve0, v.reserve1,) = getReserves();
+        require(amount0Out < v.reserve0 && amount1Out < v.reserve1, "ESwap: INSUFFICIENT_LIQUIDITY");
+
         {
             address _token0 = token0;
             address _token1 = token1;
@@ -214,25 +264,18 @@ contract EticaDirectPair is EticaDirectERC20 {
             if (data.length > 0) {
                 IEticaSwapCallee(to).eticaSwapCall(msg.sender, amount0Out, amount1Out, data);
             }
-            balance0 = IERC20Minimal(_token0).balanceOf(address(this));
-            balance1 = IERC20Minimal(_token1).balanceOf(address(this));
+            v.balance0 = IERC20Minimal(_token0).balanceOf(address(this));
+            v.balance1 = IERC20Minimal(_token1).balanceOf(address(this));
         }
-        uint256 amount0In =
-            balance0 > _reserve0 - amount0Out ? balance0 - (_reserve0 - amount0Out) : 0;
-        uint256 amount1In =
-            balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
-        require(amount0In > 0 || amount1In > 0, "ESwap: INSUFFICIENT_INPUT_AMOUNT");
-        {
-            uint256 balance0Adjusted = balance0 * 1000 - amount0In * 10;
-            uint256 balance1Adjusted = balance1 * 1000 - amount1In * 10;
-            require(
-                balance0Adjusted * balance1Adjusted >= uint256(_reserve0) * _reserve1 * (1000 ** 2),
-                "ESwap: K"
-            );
-        }
+        v.amount0In =
+            v.balance0 > v.reserve0 - amount0Out ? v.balance0 - (v.reserve0 - amount0Out) : 0;
+        v.amount1In =
+            v.balance1 > v.reserve1 - amount1Out ? v.balance1 - (v.reserve1 - amount1Out) : 0;
+        require(v.amount0In > 0 || v.amount1In > 0, "ESwap: INSUFFICIENT_INPUT_AMOUNT");
+        _requireK(v);
 
-        _update(balance0, balance1, _reserve0, _reserve1);
-        emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
+        _update(v.balance0, v.balance1, v.reserve0, v.reserve1);
+        emit Swap(msg.sender, v.amount0In, v.amount1In, amount0Out, amount1Out, to);
     }
 
     /// @notice Force balances to match reserves (sends excess to `to`).

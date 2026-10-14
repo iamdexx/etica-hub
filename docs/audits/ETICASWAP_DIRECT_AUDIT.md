@@ -1,6 +1,6 @@
 # EticaSwap Direct — internal security audit
 
-Scope: `packages/contracts/src/direct/` (`EticaDirectFactory`, `EticaDirectPair`, `EticaDirectERC20`, `EticaDirectLibrary`, `EticaDirectRouter`, `DirectSwapHarvesterAdapter`, `IEticaDirectFactory`) at PR #346. Method: line-by-line review against the audited EticaSwap V2 sources they were derived from (diffs are limited to the gate, the 1.00% fee constants, LP name/symbol and the curated `createPair`), Slither 0.10 (`--exclude-informational --exclude-optimization --exclude-low`), and adversarial Foundry tests in `test/direct/EticaDirect.t.sol` (14 tests).
+Scope: `packages/contracts/src/direct/` (`EticaDirectFactory`, `EticaDirectPair`, `EticaDirectERC20`, `EticaDirectLibrary`, `EticaDirectRouter`, `DirectSwapHarvesterAdapter`, `IEticaDirectFactory`) at PR #346. Method: line-by-line review against the audited EticaSwap V2 sources they were derived from (diffs are limited to the gate, the 1.00% fee constants, LP name/symbol and the curated `createPair`), Slither 0.10 (`--exclude-informational --exclude-optimization --exclude-low`), and adversarial Foundry tests in `test/direct/EticaDirect.t.sol` (18 tests).
 
 Nothing is deployed; all fixes below are in the PR.
 
@@ -16,6 +16,7 @@ Nothing is deployed; all fixes below are in the PR.
 | 6 | Low | POL buyback deposits the two legs half/half by ETX value; the pair's ratio decides how much LP mints and the remainder is left in the pair as reserves (donated to all LPs, incl. the dead-address POL). | Accepted; documented in the adapter. |
 | 7 | Info | Gate is a balance check at execution time. A wallet can buy stETX, trade, and sell stETX in one transaction. This is intended: the gate is "stake ETX to use direct routes", and the round-trip costs stableswap fees. There is no flash-loan source for stETX. | Accepted. |
 | 8 | Info | Admin surface: `feeToSetter` (treasury) can change `minStEtx` (incl. to brick the venue), whitelist, trusted creators and `feeTo`; adapter owner can `rescue` tokens sitting in the adapter (incl. unharvested fee LP) and change sinks/split. Single-key trust identical to the rest of the protocol. | Accepted; move `feeToSetter`/owner to the multisig when one exists. |
+| 10 | Low | Fee tiers (added after the first pass): because the pair can only see `to`, the router passes the initiating wallet as `trader` to `swapFor`. Only whitelisted routers may call it and `trader` must pass the gate, so a non-staker cannot borrow a staker's tier; a staker can still trade *for* another staker's wallet at that wallet's tier (recipient-priced), which is intended. Tier reads are balance snapshots, so a wallet can borrow stETX for one tx to buy a cheaper tier — same trust model as the gate (#7). | Accepted; tests `test_fee_*`, `test_swap_pairChargesTraderTier`, `test_swap_routerPricesEgazUnwrapAtTraderTier`, `test_swapFor_onlyWhitelistedCallerAndStakerTrader`. |
 | 9 | Info | LP tokens are freely transferable; a non-staker can hold direct LP but cannot `burn` it (gated). | Accepted. |
 
 ## Slither triage
@@ -33,6 +34,6 @@ All remaining medium findings are the inherited Uniswap V2 patterns and are prot
 - Only `feeToSetter`/trusted creators open pairs; no ETX rule, no creation fee.
 - `isAllowed`: whitelist, `minStEtx == 0`, stETX balance; pairs are never allowed accounts.
 - Add/remove liquidity and swaps through the router and directly on the pair require a staker recipient; transferring stETX away revokes access; router/pair/adapter cannot be used as recipients by outsiders.
-- Swap fee is 1.00% (`990/1000`): a 0.30%-sized output fails the K check; router quotes match the pair.
+- Swap fee is tiered by the trader's stETX balance (`feeBpsFor`, base 3.00%, ladder non-increasing, ≤10%): a cheaper tier's output fails the K check; router quotes match the pair; EGAZ-unwrap and multi-hop hops are priced at the initiating wallet's tier via `swapFor`; `swapFor` is whitelisted-caller-only and the named trader must pass the gate.
 - V2 `Sync`/`Swap`/`PairCreated` events for indexers.
 - Harvest: 10% stETX (NAV rises), 10% farms, 40% POL LP burned to `0xdead`, 40% + dust to treasury; adapter ends with zero ETX and zero LP; keeper-only; venue pairs only.
