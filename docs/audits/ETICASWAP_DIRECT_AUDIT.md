@@ -30,6 +30,11 @@ Threat model: the window must not be drainable and must not let a trader settle 
 | M3 | Low | `mint` is for POL seeding: half-swaps and `addLiquidity` use zero min-outs inside the window, so a sandwicher can tax a deposit. `mint` is restricted to `feeToSetter` and whitelisted contracts (seeder, harvester), so a third party cannot be lured into a locked deposit; nothing is withdrawable, so there is no gain beyond that tax. | Accepted; seed in small clips, harvest with the keeper's own tx ordering. |
 | M4 | Info | Hub swap fee is paid twice per window trade (two hops) on top of the tier fee; quotes via `quoteOut` include both. A constant-product quote off `getReserves` would be wrong (window reserves ≠ settlement depth). | Documented; the Direct router does not route through windows. |
 | M5 | Info | Windows report value, not raw balances: the two sides are each half the window's ETX value, so an aggregator summing TVL across the hub pool and the window double-counts. | Documented. |
+| M6 | Medium | **Fee-tier borrowing via `swap(to)`** (metapair and plain pair). The V2-shaped `swap` priced the trade at the *recipient's* tier and gated only the recipient, so a 3%-tier wallet could pre-pay a pair and name a 0.1%-tier wallet as `to` to trade at the whale's discount, and a non-staker could trade at all by naming a staker. Same class as the #347 router finding; the router (`swapFor`) was fixed, the raw pair entry point was not. | Fixed: `swap` now requires `isAllowed(msg.sender)` and bills `feeBpsFor(msg.sender)`; `_requireAllowed(to)` still applies. `test_swap_billsCallerTierNotRecipient`. |
+| M7 | Low | **Harvest bricked by dust.** `_payTreasury` swapped the treasury slice to `treasuryToken` unconditionally; a slice too small to buy one unit reverts in V2 (`INSUFFICIENT_OUTPUT_AMOUNT`) and takes the whole harvest with it (same pattern already guarded in `_toEtx`). | Fixed: zero-quote slices are paid in ETX. `test_harvest_treasuryDustPaidInEtxNotReverted`. |
+| M8 | Low | **Shared-leg windows lose POL.** Two windows sharing a token (EGAZ/USDC.e and ETI/USDC.e) forward fees in the same USDC.e; the first plan sold the entire balance, the second saw `0/0` and was skipped from the POL split. | Fixed: a listed window always counts for the POL split (the keeper decides which windows to list). `test_harvest_twoWindowsSharingLegBothGetPol`. |
+| M9 | Info | Admin surface: `createMetaPair` trusts the `hubRouter` argument (reads `factory()`/`WEGAZ_TOKEN()` from it, settles every trade through it) and `setTreasuryToken` accepts any token; both are `feeToSetter`/owner-only one-shot settings. Rogue `deploy()` on the deployer yields an uninitialised window the factory never registers. `rescue` on the adapter can move raw fee tokens and window shares (non-redeemable), never hub LP. | Accepted (single-key admin, as in F-L3). |
+| M10 | Info | `_update` reverts with `ESwap: OVERFLOW` if a reported reserve exceeds `uint112`; that needs a hub pool skewed by ~10^11×, unreachable under constant product with real reserves. `sync`/`swap` would pause, nothing moves. | Accepted. |
 
 ## Slither triage
 
@@ -41,6 +46,8 @@ All remaining medium findings are the inherited Uniswap V2 patterns and are prot
 - `divide-before-multiply` in `harvest`: intentional, computes the per-pair rounding dust sent to treasury.
 - `incorrect-equality` on `== 0` guards: zero-amount short-circuits.
 
+Metapair pass (Slither 0.11, `src/direct`, 96 results, 0 high): `reentrancy-benign`/`reentrancy-events` in `createMetaPair` (writes after `deploy`/`initialize` on the pair it just created; `initialize` is factory-only) and in `EticaDirectMetaPair._swap` (event after the fee `safeTransfer`; entry points hold `lock`, and the only external targets are the immutable hub router/pairs and the fee sink); `missing-inheritance` (pairs implement the V2 shape without declaring `IEticaDirectPair`, by design); `unindexed-event-address` on `MetaPairDeployerSet`; `cyclomatic-complexity` on `harvest`. No new finding class.
+
 ## Invariants covered by tests
 
 - Only `feeToSetter`/trusted creators open pairs; no ETX rule, no creation fee.
@@ -49,3 +56,4 @@ All remaining medium findings are the inherited Uniswap V2 patterns and are prot
 - Swap fee is tiered by the trader's stETX balance (`feeBpsFor`, base 3.00%, ladder non-increasing, ≤10%): a cheaper tier's output fails the K check; router quotes match the pair; EGAZ-unwrap and multi-hop hops are priced at the initiating wallet's tier via `swapFor`; `swapFor` is whitelisted-caller-only and the named trader must pass the gate.
 - V2 `Sync`/`Swap`/`PairCreated` events for indexers.
 - Harvest: 10% stETX (NAV rises), 10% farms, 40% POL LP burned to `0xdead`, 40% + dust to treasury; adapter ends with zero ETX and zero LP; keeper-only; venue pairs only.
+- Metapair: `swap`/`swapExactIn` bill the caller's tier and gate the caller; the recipient's tier is never used (`swapFor` is router-only). Harvest pays dust slices in ETX, never reverts on a zero quote; every listed window gets an equal POL share.

@@ -194,13 +194,16 @@ contract EticaDirectPair is EticaDirectERC20 {
 
     /// @notice Swap: the caller must have pre-paid `amount{0,1}In` (constant-product check).
     ///         Supports flash swaps via the `data` callback to `IEticaSwapCallee.eticaSwapCall`.
-    /// @notice Swap with the fee tier of the recipient `to` (direct callers).
+    /// @notice Direct callers must pass the gate and are charged their own
+    ///         tier, never the recipient's.
     function swap(uint256 amount0Out, uint256 amount1Out, address to, bytes calldata data)
         external
         lock
     {
+        IEticaDirectFactory fac = IEticaDirectFactory(factory);
+        require(fac.isAllowed(msg.sender), "EDirect: NOT_STAKER");
         _requireAllowed(to);
-        _swap(amount0Out, amount1Out, to, IEticaDirectFactory(factory).feeBpsFor(to), data);
+        _swap(amount0Out, amount1Out, to, fac.feeBpsFor(msg.sender), data);
     }
 
     /// @notice Swap priced at `trader`'s stETX tier. Only whitelisted routers

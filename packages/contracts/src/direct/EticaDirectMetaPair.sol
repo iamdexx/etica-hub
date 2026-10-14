@@ -331,7 +331,8 @@ contract EticaDirectMetaPair is EticaDirectERC20 {
     // ------------------------------------------------------------------ SWAP (settles on the hub)
 
     /// @notice V2-shaped swap: pre-pay the input token to this contract, ask
-    ///         for `amount0Out` xor `amount1Out`. The trader's tier fee is
+    ///         for `amount0Out` xor `amount1Out`. The caller must pass the gate
+    ///         and is charged its own tier (never the recipient's); the fee is
     ///         taken from the input and forwarded to `feeTo`; the rest is
     ///         swapped on the hub (`in` → ETX → `out`) with `amountXOut` as the
     ///         min-out, and the full hub output goes to `to`. Flash swaps are
@@ -340,12 +341,12 @@ contract EticaDirectMetaPair is EticaDirectERC20 {
         external
         lock
     {
+        IEticaDirectFactory fac = IEticaDirectFactory(factory);
+        require(fac.isAllowed(msg.sender), "EDirect: NOT_STAKER");
         _requireAllowed(to);
         require(data.length == 0, "EDirect: NO_FLASH_SWAP");
         require((amount0Out > 0) != (amount1Out > 0), "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
-        _swap(
-            amount0Out > 0, amount0Out + amount1Out, to, IEticaDirectFactory(factory).feeBpsFor(to)
-        );
+        _swap(amount0Out > 0, amount0Out + amount1Out, to, fac.feeBpsFor(msg.sender));
     }
 
     /// @notice Swap priced at `trader`'s stETX tier; whitelisted routers only.

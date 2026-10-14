@@ -145,10 +145,11 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
             uint256 amount0;
             uint256 amount1;
             if (factory.isMetaPair(p.pair)) {
-                // Windows forward their fee in kind: sell what sits here.
+                // Windows forward their fee in kind: sell what sits here. Two
+                // windows can share a leg token, so a listed window always
+                // counts for the POL split even if a sibling sold its leg.
                 amount0 = IERC20(pair.token0()).balanceOf(address(this));
                 amount1 = IERC20(pair.token1()).balanceOf(address(this));
-                if (amount0 == 0 && amount1 == 0) continue;
             } else {
                 uint256 lp = pair.balanceOf(address(this));
                 if (lp == 0) continue;
@@ -255,10 +256,15 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
             etx.safeTransfer(treasury, etxAmount);
             return;
         }
-        etx.forceApprove(address(hubRouter), etxAmount);
         address[] memory path = new address[](2);
         path[0] = address(etx);
         path[1] = token;
+        if (hubRouter.getAmountsOut(etxAmount, path)[1] == 0) {
+            // Too small to buy any of the treasury token: pay ETX rather than revert.
+            etx.safeTransfer(treasury, etxAmount);
+            return;
+        }
+        etx.forceApprove(address(hubRouter), etxAmount);
         hubRouter.swapExactTokensForTokens(etxAmount, minOut, path, treasury, block.timestamp);
     }
 
