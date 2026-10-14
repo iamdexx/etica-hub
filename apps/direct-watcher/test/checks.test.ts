@@ -10,6 +10,7 @@ const factory: FactorySnapshot = {
   guardian: A,
   metaPairDeployer: B,
   swapsPaused: false,
+  pauseExpiresAt: 0,
   minStEtx: 40_000n * 10n ** 18n,
   baseFeeBps: 300,
   tiers: [{ minStEtx: 40_000n * 10n ** 18n, feeBps: 300 }],

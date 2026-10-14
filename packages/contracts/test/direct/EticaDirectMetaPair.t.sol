@@ -671,6 +671,70 @@ contract EticaDirectMetaPairTest is Test {
         meta.swapExactIn(address(usdce), 1 ether, 0, STAKER, block.timestamp);
     }
 
+    function test_guardianPause_lapsesAfterDuration_setterPauseHolds() public {
+        address guardian = address(0x6A2D);
+        vm.prank(TREASURY);
+        factory.setGuardian(guardian);
+        _seed(10 ether, 5 ether);
+        assertEq(factory.guardianPauseDuration(), 7 days);
+
+        // guardian pause: swaps off, lapses on its own after 7 days
+        vm.prank(guardian);
+        factory.pauseSwaps();
+        assertTrue(factory.swapsPaused());
+        assertEq(factory.pauseExpiresAt(), block.timestamp + 7 days);
+        vm.warp(block.timestamp + 7 days - 1);
+        assertTrue(factory.swapsPaused());
+        vm.prank(STAKER);
+        vm.expectRevert(bytes("EDirect: PAUSED"));
+        meta.swapExactIn(address(usdce), 1 ether, 0, STAKER, block.timestamp);
+        vm.warp(block.timestamp + 1);
+        assertFalse(factory.swapsPaused());
+        assertTrue(factory.swapsOpen(address(meta)));
+        vm.prank(STAKER);
+        meta.swapExactIn(address(usdce), 1 ether, 0, STAKER, block.timestamp);
+
+        // guardian may pause again once the previous pause lapsed
+        vm.prank(guardian);
+        factory.pauseSwaps();
+        assertTrue(factory.swapsPaused());
+        assertEq(factory.pauseExpiresAt(), block.timestamp + 7 days);
+
+        // setter may shorten the leash; zero is refused
+        vm.expectRevert(bytes("EDirect: ZERO_DURATION"));
+        vm.prank(TREASURY);
+        factory.setGuardianPauseDuration(0);
+        vm.expectRevert(bytes("EDirect: FORBIDDEN"));
+        vm.prank(guardian);
+        factory.setGuardianPauseDuration(1 hours);
+        vm.prank(TREASURY);
+        factory.setGuardianPauseDuration(1 hours);
+        vm.prank(TREASURY);
+        factory.unpauseSwaps();
+        assertEq(factory.pauseExpiresAt(), 0);
+        vm.prank(guardian);
+        factory.pauseSwaps();
+        assertEq(factory.pauseExpiresAt(), block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 1 hours);
+        assertFalse(factory.swapsPaused());
+
+        // setter pause never lapses and the guardian cannot shorten it
+        vm.prank(TREASURY);
+        factory.pauseSwaps();
+        assertEq(factory.pauseExpiresAt(), 0);
+        vm.warp(block.timestamp + 365 days);
+        assertTrue(factory.swapsPaused());
+        vm.expectRevert(bytes("EDirect: SETTER_PAUSED"));
+        vm.prank(guardian);
+        factory.pauseSwaps();
+        assertTrue(factory.swapsPaused());
+        vm.prank(TREASURY);
+        factory.unpauseSwaps();
+        assertFalse(factory.swapsPaused());
+        vm.prank(STAKER);
+        meta.swapExactIn(address(usdce), 1 ether, 0, STAKER, block.timestamp);
+    }
+
     function test_retirePair_blocksSwaps_allowsReplacement_keepsHarvest() public {
         DirectSwapHarvesterAdapter adapter = _newAdapter();
         _seed(10 ether, 5 ether);

@@ -5,6 +5,7 @@ export const directFactoryAbi = parseAbi([
   'function feeToSetter() view returns (address)',
   'function guardian() view returns (address)',
   'function swapsPaused() view returns (bool)',
+  'function pauseExpiresAt() view returns (uint256)',
   'function minStEtx() view returns (uint256)',
   'function baseFeeBps() view returns (uint16)',
   'function feeTierCount() view returns (uint256)',

@@ -53,11 +53,16 @@ contract EticaDirectFactory is IEticaDirectFactory {
     mapping(address => bool) public whitelist;
 
     /// @notice Circuit breaker. The guardian (a watcher key) can only pause
-    ///         swaps; only `feeToSetter` can unpause. Pausing never traps
-    ///         funds: there is nothing to withdraw from a window, and plain
-    ///         pairs keep mint/burn open.
+    ///         swaps, and its pause lapses after {guardianPauseDuration};
+    ///         a pause by `feeToSetter` holds until {unpauseSwaps}. Pausing
+    ///         never traps funds: there is nothing to withdraw from a window,
+    ///         and plain pairs keep mint/burn open.
     address public guardian;
-    bool public swapsPaused;
+    /// @notice How long a guardian pause lasts before swaps reopen on their own.
+    uint256 public guardianPauseDuration = 7 days;
+    /// @notice Timestamp a guardian pause lapses; 0 while a setter pause holds.
+    uint256 public pauseExpiresAt;
+    bool private paused;
     /// @notice Pairs taken out of service by {retirePair}: swaps refuse, the
     ///         token pair can be re-opened with a replacement, fee harvesting
     ///         keeps working.
@@ -143,8 +148,13 @@ contract EticaDirectFactory is IEticaDirectFactory {
     }
 
     /// @inheritdoc IEticaDirectFactory
+    function swapsPaused() public view returns (bool) {
+        return paused && (pauseExpiresAt == 0 || block.timestamp < pauseExpiresAt);
+    }
+
+    /// @inheritdoc IEticaDirectFactory
     function swapsOpen(address pair) external view returns (bool) {
-        return !swapsPaused && !retired[pair];
+        return !swapsPaused() && !retired[pair];
     }
 
     function setGuardian(address _guardian) external onlySetter {
@@ -152,15 +162,31 @@ contract EticaDirectFactory is IEticaDirectFactory {
         emit GuardianSet(_guardian);
     }
 
-    /// @notice Stop every swap on the venue. Guardian or setter.
+    function setGuardianPauseDuration(uint256 duration) external onlySetter {
+        require(duration > 0, "EDirect: ZERO_DURATION");
+        guardianPauseDuration = duration;
+        emit GuardianPauseDurationSet(duration);
+    }
+
+    /// @notice Stop every swap on the venue. The setter's pause holds until
+    ///         {unpauseSwaps}; the guardian's lapses after
+    ///         {guardianPauseDuration} and cannot shorten a setter pause.
     function pauseSwaps() external {
-        require(msg.sender == guardian || msg.sender == feeToSetter, "EDirect: NOT_GUARDIAN");
-        swapsPaused = true;
-        emit SwapsPaused(msg.sender);
+        bool bySetter = msg.sender == feeToSetter;
+        require(bySetter || msg.sender == guardian, "EDirect: NOT_GUARDIAN");
+        if (bySetter) {
+            pauseExpiresAt = 0;
+        } else {
+            require(!(swapsPaused() && pauseExpiresAt == 0), "EDirect: SETTER_PAUSED");
+            pauseExpiresAt = block.timestamp + guardianPauseDuration;
+        }
+        paused = true;
+        emit SwapsPaused(msg.sender, pauseExpiresAt);
     }
 
     function unpauseSwaps() external onlySetter {
-        swapsPaused = false;
+        paused = false;
+        pauseExpiresAt = 0;
         emit SwapsUnpaused(msg.sender);
     }
 

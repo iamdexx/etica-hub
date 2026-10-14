@@ -11,7 +11,7 @@ An extra pair of eyes on EticaSwap Direct. Every 5 minutes (GitHub Actions cron)
 | `PAUSED` | warning | venue is paused (reminder every run) |
 | `LARGE_SWAP`, `LOOSE_TOKENS`, `RETIRED` | info | notable activity |
 
-Findings go to Telegram (`DIRECT_TELEGRAM_*`, falling back to the bridge bot). On any **critical** finding, if `DIRECT_GUARDIAN_PRIVATE_KEY` is set and the venue is not already paused, the watcher calls `factory.pauseSwaps()`. The guardian key can only pause; `unpauseSwaps` is the setter's, after a human has looked. Pausing never traps funds: windows have nothing to withdraw, plain pairs keep mint/burn open.
+Findings go to Telegram (`DIRECT_TELEGRAM_*`, falling back to the bridge bot). On any **critical** finding, if `DIRECT_GUARDIAN_PRIVATE_KEY` is set and the venue is not already paused, the watcher calls `factory.pauseSwaps()`. The guardian key can only pause, and its pause lapses after `guardianPauseDuration` (7 days by default) so the watcher can never freeze the venue for good; `unpauseSwaps` is the setter's, after a human has looked. Pausing never traps funds: windows have nothing to withdraw, plain pairs keep mint/burn open.
 
 State (per-window LP floor, last scanned block) is committed back to the `direct-watcher-state` branch by the workflow so the monotonic check spans runs.
 

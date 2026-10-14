@@ -49,13 +49,14 @@ async function snapshotFactory(
 ): Promise<FactorySnapshot> {
   const read = <T>(functionName: string, args: unknown[] = []) =>
     client.readContract({ address: factory, abi: directFactoryAbi, functionName, args } as never) as Promise<T>;
-  const [feeTo, feeToSetter, guardian, metaPairDeployer, swapsPaused, minStEtx, baseFeeBps, tierCount] =
+  const [feeTo, feeToSetter, guardian, metaPairDeployer, swapsPaused, pauseExpiresAt, minStEtx, baseFeeBps, tierCount] =
     await Promise.all([
       read<Address>('feeTo'),
       read<Address>('feeToSetter'),
       read<Address>('guardian'),
       read<Address>('metaPairDeployer'),
       read<boolean>('swapsPaused'),
+      read<bigint>('pauseExpiresAt'),
       read<bigint>('minStEtx'),
       read<number>('baseFeeBps'),
       read<bigint>('feeTierCount'),
@@ -69,7 +70,18 @@ async function snapshotFactory(
   for (const a of expected.whitelist ?? []) {
     whitelisted[a.toLowerCase()] = await read<boolean>('whitelist', [a]);
   }
-  return { feeTo, feeToSetter, guardian, metaPairDeployer, swapsPaused, minStEtx, baseFeeBps, tiers, whitelisted };
+  return {
+    feeTo,
+    feeToSetter,
+    guardian,
+    metaPairDeployer,
+    swapsPaused,
+    pauseExpiresAt: Number(pauseExpiresAt),
+    minStEtx,
+    baseFeeBps,
+    tiers,
+    whitelisted,
+  };
 }
 
 async function snapshotWindow(

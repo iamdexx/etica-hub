@@ -45,6 +45,8 @@ export interface FactorySnapshot {
   guardian: Address;
   metaPairDeployer: Address;
   swapsPaused: boolean;
+  /** Unix seconds a guardian pause lapses; 0 for a setter pause or when open. */
+  pauseExpiresAt: number;
   minStEtx: bigint;
   baseFeeBps: number;
   tiers: { minStEtx: bigint; feeBps: number }[];
@@ -94,8 +96,12 @@ export function checkFactory(snap: FactorySnapshot, expected: ExpectedSettings):
     if (allowed && !(expected.whitelist ?? []).some((w) => eq(w, a)))
       crit('WHITELIST_EXTRA', `whitelist[${a}]`, 'false', 'true');
   }
-  if (snap.swapsPaused)
-    out.push({ severity: 'warning', code: 'PAUSED', message: 'swaps are paused on the venue' });
+  if (snap.swapsPaused) {
+    const until = snap.pauseExpiresAt
+      ? `guardian pause, reopens by itself ${new Date(snap.pauseExpiresAt * 1000).toISOString()} unless the multisig unpauses first`
+      : 'setter pause, holds until the multisig unpauses';
+    out.push({ severity: 'warning', code: 'PAUSED', message: `swaps are paused on the venue (${until})` });
+  }
   return out;
 }
 
