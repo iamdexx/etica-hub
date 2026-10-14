@@ -153,6 +153,17 @@ contract EticaDirectRouter {
         address to,
         uint256 deadline
     ) public ensure(deadline) gated(to) returns (uint256 amountA, uint256 amountB) {
+        return _removeLiquidity(tokenA, tokenB, liquidity, amountAMin, amountBMin, to);
+    }
+
+    function _removeLiquidity(
+        address tokenA,
+        address tokenB,
+        uint256 liquidity,
+        uint256 amountAMin,
+        uint256 amountBMin,
+        address to
+    ) internal returns (uint256 amountA, uint256 amountB) {
         address pair = EticaDirectLibrary.pairFor(factory, tokenA, tokenB);
         IEticaSwapPair(pair).transferFrom(msg.sender, pair, liquidity);
         (uint256 amount0, uint256 amount1) = IEticaSwapPair(pair).burn(to);
@@ -170,8 +181,8 @@ contract EticaDirectRouter {
         address to,
         uint256 deadline
     ) public ensure(deadline) gated(to) returns (uint256 amountToken, uint256 amountEGAZ) {
-        (amountToken, amountEGAZ) = removeLiquidity(
-            token, WEGAZ_TOKEN, liquidity, amountTokenMin, amountEGAZMin, address(this), deadline
+        (amountToken, amountEGAZ) = _removeLiquidity(
+            token, WEGAZ_TOKEN, liquidity, amountTokenMin, amountEGAZMin, address(this)
         );
         TransferHelper.safeTransfer(token, to, amountToken);
         IWEGAZ(WEGAZ_TOKEN).withdraw(amountEGAZ);
