@@ -1,140 +1,112 @@
 import Link from 'next/link';
-import { PageHero } from '@/components/PageHero';
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
+import { PageHero } from '@/components/PageHero';
 import { StatusPanel } from '@/components/StatusPanel';
 import { UptimeHistory } from '@/components/UptimeHistory';
 import { StatusAutoRefresh } from '@/components/StatusAutoRefresh';
 import { StatusLiquidityFlowCard, StatusRevenueCard } from '@/components/StatusRevenueCards';
-import { SourceBadge, TelemetrySection } from '@/components/telemetry/TelemetryCards';
+import {
+  AutomationModule,
+  BridgeModule,
+  ChainModule,
+  DexModule,
+  IndexerModule,
+  LabsModule,
+  ModuleSkeleton,
+  StakingModule,
+} from '@/components/status/StatusModules';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: 'Status · EticaHub',
+  title: 'Status',
   description:
-    'Live on-chain diagnostic of EticaHub v1 mainnet deployment — factory, router, ETX, pools, reserves.',
+    'Live health of every EticaHub system: Etica chain, EticaSwap, staking, the USDC bridge, EticaLabs, the explorer indexer and the automation that runs them.',
 };
 
-const STATUS_STATS = [
-  {
-    label: 'Network',
-    value: 'Etica 61803',
-    detail: 'Primary execution chain',
-    tone: 'emerald' as const,
-  },
-  {
-    label: 'Mode',
-    value: 'Live RPC',
-    detail: 'Direct on-chain reads',
-  },
-  {
-    label: 'Scope',
-    value: 'Core v1',
-    detail: 'Mainnet deployment diagnostics',
-  },
-  {
-    label: 'Cache',
-    value: 'No build cache',
-    detail: 'force-dynamic + revalidate=0',
-  },
-];
+const MODULES = [
+  { title: 'Etica chain · RPC', Component: ChainModule },
+  { title: 'EticaSwap', Component: DexModule },
+  { title: 'Staking · Farms', Component: StakingModule },
+  { title: 'USDC bridge · Hyperlane', Component: BridgeModule },
+  { title: 'EticaLabs', Component: LabsModule },
+  { title: 'Explorer indexer', Component: IndexerModule },
+] as const;
 
 export default function StatusPage() {
   return (
     <div className="space-y-6">
       <PageHero
         tone="emerald"
-        eyebrow="Mainnet System Terminal"
-        title="EticaHub health, live from chain."
-        description="Live wallet-less diagnostics for EticaHub v1 contracts, reserves, pools, liquidity routes, revenue flow, and runtime health across the Etica execution layer."
+        size="md"
+        eyebrow="System status · Etica 61803"
+        title="Every EticaHub system, live."
+        description="Chain, swap, staking, bridge, Labs, indexer and the keepers that run them. Read straight from chain and the agents on every load; nothing is cached at build time."
         actions={
           <>
-            <Link href="/explorer" className="btn-tone px-3.5 py-1.5 text-xs">
-              Explorer
-            </Link>
-            <Link href="/explorer/contracts" className="btn-ghost px-3.5 py-1.5 text-xs">
+            <Link href="/explorer/contracts" className="btn-tone px-3.5 py-1.5 text-xs">
               Contracts
             </Link>
+            <Link href="/api/v1/health" className="btn-ghost px-3.5 py-1.5 text-xs">
+              Health JSON
+            </Link>
             <Link href="/bridge" className="btn-primary px-3.5 py-1.5 text-xs">
-              Bridge status
+              Bridge
             </Link>
           </>
-        }
-        aside={
-          <TelemetrySection
-            title="System telemetry"
-            badge={<SourceBadge tone="emerald">live diagnostics</SourceBadge>}
-            metrics={STATUS_STATS}
-            description="Status diagnostics are intentionally force-dynamic to prevent stale build-time telemetry. Revenue, reserve, and liquidity diagnostics are rendered live in the modules below."
-          />
         }
       />
 
       <StatusAutoRefresh />
 
-      <section className="grid gap-6 lg:grid-cols-[0.7fr_1fr] lg:items-start">
-        <aside className="space-y-4">
-          <div className="surface p-5">
-            <div className="text-[11px] uppercase tracking-eyebrow text-white/45">Diagnostics</div>
-            <div className="mt-4 space-y-3">
-              <InfoCard
-                title="Fresh RPC reads"
-                body="The status page is force-dynamic and revalidate=0, so Vercel does not freeze diagnostic values at build time."
-              />
-              <InfoCard
-                title="Revenue flow"
-                body="Revenue and liquidity flow panels track the core EticaHub v1 accounting path."
-              />
-              <InfoCard
-                title="Contract surface"
-                body="Use Explorer Contracts when a status row needs deeper address, code, or verification inspection."
-              />
-            </div>
-          </div>
-          <Suspense fallback={<PanelSkeleton label="Loading uptime history…" />}>
-            <UptimeHistory />
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {MODULES.map(({ title, Component }) => (
+          <Suspense key={title} fallback={<ModuleSkeleton title={title} />}>
+            <Component />
           </Suspense>
-        </aside>
+        ))}
+      </section>
 
-        <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="surface p-3">
-              <StatusRevenueCard />
-            </div>
-            <div className="surface p-3">
-              <StatusLiquidityFlowCard />
-            </div>
-          </div>
+      <section className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
+        <Suspense fallback={<ModuleSkeleton title="Automation · GitHub Actions" />}>
+          <AutomationModule />
+        </Suspense>
+        <Suspense fallback={<ModuleSkeleton title="Uptime history" />}>
+          <UptimeHistory />
+        </Suspense>
+      </section>
 
-          <div className="rounded-2xl border border-white/[0.07] bg-[#07120f] p-3">
-            <Suspense fallback={<PanelSkeleton label="Reading contracts from chain…" />}>
-              <StatusPanel />
-            </Suspense>
-          </div>
+      <section className="grid gap-4 md:grid-cols-2">
+        <div className="surface p-3">
+          <StatusRevenueCard />
+        </div>
+        <div className="surface p-3">
+          <StatusLiquidityFlowCard />
         </div>
       </section>
-    </div>
-  );
-}
 
-function PanelSkeleton({ label }: { label: string }) {
-  return (
-    <div className="animate-pulse space-y-3 surface p-5">
-      <div className="h-3 w-40 rounded bg-white/10" />
-      <div className="h-3 w-full rounded bg-white/[0.035]" />
-      <div className="h-3 w-5/6 rounded bg-white/[0.035]" />
-      <div className="text-[11px] text-white/40">{label}</div>
-    </div>
-  );
-}
-
-function InfoCard({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="surface-2 p-4">
-      <div className="text-sm font-semibold text-white">{title}</div>
-      <p className="mt-2 text-xs leading-5 text-white/55">{body}</p>
+      <details className="surface group p-4">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-eyebrow text-white/45">
+              Contract diagnostics
+            </div>
+            <p className="mt-1 text-xs text-white/55">
+              Addresses, supplies, factory parameters, reactor state and pool reserves for every
+              core v1 contract.
+            </p>
+          </div>
+          <span className="text-xs text-brand-glow/80 group-open:hidden">Expand</span>
+          <span className="hidden text-xs text-brand-glow/80 group-open:inline">Collapse</span>
+        </summary>
+        <div className="mt-4 rounded-2xl border border-white/[0.07] bg-[#07120f] p-3">
+          <Suspense fallback={<ModuleSkeleton title="Reading contracts from chain…" />}>
+            <StatusPanel />
+          </Suspense>
+        </div>
+      </details>
     </div>
   );
 }
