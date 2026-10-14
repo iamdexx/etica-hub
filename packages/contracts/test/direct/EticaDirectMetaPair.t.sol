@@ -10,6 +10,7 @@ import {IEticaSwapPair} from "../../src/swap/interfaces/IEticaSwapPair.sol";
 import {StakedETX} from "../../src/etx/StakedETX.sol";
 import {EticaDirectFactory} from "../../src/direct/EticaDirectFactory.sol";
 import {EticaDirectMetaPair} from "../../src/direct/EticaDirectMetaPair.sol";
+import {EticaDirectMetaPairDeployer} from "../../src/direct/EticaDirectMetaPairDeployer.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {
     DirectSwapHarvesterAdapter,
@@ -65,6 +66,9 @@ contract EticaDirectMetaPairTest is Test {
             address(etx), 1_000_000 ether, 0, 0, TREASURY, block.timestamp
         );
         factory.setFeeTo(FEE_SINK);
+        vm.expectRevert(bytes("EDirect: NO_DEPLOYER"));
+        factory.createMetaPair(address(wegaz), address(usdce), address(hubRouter));
+        factory.setMetaPairDeployer(address(new EticaDirectMetaPairDeployer()));
         meta = EticaDirectMetaPair(
             factory.createMetaPair(address(wegaz), address(usdce), address(hubRouter))
         );
@@ -128,9 +132,19 @@ contract EticaDirectMetaPairTest is Test {
         assertTrue(factory.isMetaPair(address(meta)));
         assertEq(factory.getPair(address(usdce), address(wegaz)), address(meta));
         assertEq(meta.hubPair0() == address(hubUsdce) || meta.hubPair0() == address(hubWegaz), true);
-        vm.prank(NOBODY);
+        vm.startPrank(NOBODY);
         vm.expectRevert(bytes("EDirect: NOT_CREATOR"));
         factory.createMetaPair(address(usdce), address(stEtx), address(hubRouter));
+        vm.expectRevert(bytes("EDirect: FORBIDDEN"));
+        factory.setMetaPairDeployer(NOBODY);
+        // A window deployed outside the factory is inert: init is factory-only.
+        EticaDirectMetaPair rogue = EticaDirectMetaPair(
+            EticaDirectMetaPairDeployer(factory.metaPairDeployer()).deploy(address(factory))
+        );
+        vm.expectRevert(bytes("ESwap: FORBIDDEN"));
+        rogue.initialize(address(usdce), address(wegaz), address(hubRouter));
+        assertFalse(factory.isPair(address(rogue)));
+        vm.stopPrank();
         // ETX itself is the hub, never a window leg; legs need a hub pool.
         vm.startPrank(TREASURY);
         vm.expectRevert(bytes("EDirect: ETX_IS_HUB"));

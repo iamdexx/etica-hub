@@ -99,8 +99,8 @@ contract EticaDirectMetaPair is EticaDirectERC20 {
     event Sync(uint112 reserve0, uint112 reserve1);
     event FeeForwarded(address indexed token, address indexed to, uint256 amount);
 
-    constructor() {
-        factory = msg.sender;
+    constructor(address _factory) {
+        factory = _factory;
     }
 
     /// @notice Called once by the factory at deploy time.

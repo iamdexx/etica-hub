@@ -2,7 +2,14 @@
 pragma solidity ^0.8.26;
 
 import {EticaDirectPair} from "./EticaDirectPair.sol";
-import {EticaDirectMetaPair} from "./EticaDirectMetaPair.sol";
+
+interface IEticaDirectMetaPairDeployer {
+    function deploy(address factory) external returns (address pair);
+}
+
+interface IEticaDirectMetaPairInit {
+    function initialize(address token0, address token1, address hubRouter) external;
+}
 import {IEticaDirectFactory} from "./IEticaDirectFactory.sol";
 import {IERC20Minimal} from "../swap/interfaces/IERC20Minimal.sol";
 
@@ -35,6 +42,8 @@ contract EticaDirectFactory is IEticaDirectFactory {
     /// @notice Pairs that are hub windows ({EticaDirectMetaPair}) rather than
     ///         constant-product pools.
     mapping(address => bool) public isMetaPair;
+    /// @notice {EticaDirectMetaPairDeployer} used by {createMetaPair}.
+    address public metaPairDeployer;
     mapping(address => bool) public trustedCreators;
     mapping(address => bool) public whitelist;
 
@@ -104,8 +113,9 @@ contract EticaDirectFactory is IEticaDirectFactory {
         require(token0 != address(0), "EDirect: ZERO_ADDRESS");
         require(getPair[token0][token1] == address(0), "EDirect: PAIR_EXISTS");
 
-        pair = address(new EticaDirectMetaPair());
-        EticaDirectMetaPair(pair).initialize(token0, token1, hubRouter);
+        require(metaPairDeployer != address(0), "EDirect: NO_DEPLOYER");
+        pair = IEticaDirectMetaPairDeployer(metaPairDeployer).deploy(address(this));
+        IEticaDirectMetaPairInit(pair).initialize(token0, token1, hubRouter);
 
         getPair[token0][token1] = pair;
         getPair[token1][token0] = pair;
@@ -114,6 +124,11 @@ contract EticaDirectFactory is IEticaDirectFactory {
         allPairs.push(pair);
         emit PairCreated(token0, token1, pair, allPairs.length);
         emit MetaPairCreated(token0, token1, pair, hubRouter);
+    }
+
+    function setMetaPairDeployer(address deployer) external onlySetter {
+        metaPairDeployer = deployer;
+        emit MetaPairDeployerSet(deployer);
     }
 
     function setFeeTo(address _feeTo) external onlySetter {

@@ -8,6 +8,7 @@ pragma solidity ^0.8.0;
 interface IEticaDirectFactory {
     event PairCreated(address indexed token0, address indexed token1, address pair, uint256);
     event TrustedCreatorSet(address indexed creator, bool trusted);
+    event MetaPairDeployerSet(address deployer);
     event MetaPairCreated(
         address indexed token0, address indexed token1, address pair, address hubRouter
     );
@@ -24,6 +25,7 @@ interface IEticaDirectFactory {
     function whitelist(address account) external view returns (bool);
     function isPair(address pair) external view returns (bool);
     function isMetaPair(address pair) external view returns (bool);
+    function metaPairDeployer() external view returns (address);
 
     function getPair(address tokenA, address tokenB) external view returns (address pair);
     function allPairs(uint256) external view returns (address pair);
