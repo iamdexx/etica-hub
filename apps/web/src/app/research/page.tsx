@@ -98,7 +98,7 @@ export default async function ResearchPage({
     <div className="space-y-6">
       <PageHero
         tone="sky"
-        eyebrow="Research Proposal Terminal · chain {chainId}"
+        eyebrow={`Research Proposal Terminal · chain ${chainId}`}
         title="Research Hub with proposal intelligence."
         description="Live governance proposals rendered from Etica core + IPFS with proposal status, proposer identity, disease context, and search controls integrated into one research workflow."
         actions={

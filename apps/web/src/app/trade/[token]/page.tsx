@@ -58,7 +58,7 @@ export default async function TradeTokenPage({ params }: PageProps) {
     <div className="space-y-6">
       <PageHero
         tone="amber"
-        eyebrow="Trading Terminal · {token}"
+        eyebrow={`Trading Terminal · ${token}`}
         title={<>{token} execution desk.</>}
         description={
           <>
