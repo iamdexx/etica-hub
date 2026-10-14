@@ -188,12 +188,16 @@ export const DEPLOYMENTS: Record<
      */
     eticaResearchMarketplace: Address;
     /**
-     * EticaDirectFactory — second EticaSwap venue hosting curated direct pairs
-     * (EGAZ/USDC.e, ETI/USDC.e) that bypass the ETX hub. Mint, burn and swap
-     * recipients must hold `minStEtx` stETX; pairs are V2-compatible so
-     * aggregators index them like any EticaSwap pair. Zero until deployed.
+     * EticaDirectFactory — second EticaSwap venue hosting curated windows
+     * (EGAZ/USDC.e, ETI/USDC.e) whose liquidity is hub LP and whose swaps settle
+     * through ETX on the hub. Traders must hold `minStEtx` stETX; windows are
+     * V2-compatible so aggregators index them like any EticaSwap pair. Zero until deployed.
      */
     directFactory: Address;
+    /** EticaDirectMetaPairDeployer — holds the window creation code for `createMetaPair`. Zero until deployed. */
+    directMetaPairDeployer: Address;
+    /** UnanimousMultisig (2-of-2) that becomes `feeToSetter` + harvester owner after launch. Zero until deployed. */
+    directAdmin: Address;
     /** EticaDirectRouter — EticaSwapRouter + the stETX gate on every `to`. Zero until deployed. */
     directRouter: Address;
     /**
@@ -227,6 +231,8 @@ export const DEPLOYMENTS: Record<
     directFactory: '0x0000000000000000000000000000000000000000',
     directRouter: '0x0000000000000000000000000000000000000000',
     directHarvesterAdapter: '0x0000000000000000000000000000000000000000',
+    directMetaPairDeployer: '0x0000000000000000000000000000000000000000',
+    directAdmin: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -251,6 +257,8 @@ export const DEPLOYMENTS: Record<
     directFactory: '0x0000000000000000000000000000000000000000',
     directRouter: '0x0000000000000000000000000000000000000000',
     directHarvesterAdapter: '0x0000000000000000000000000000000000000000',
+    directMetaPairDeployer: '0x0000000000000000000000000000000000000000',
+    directAdmin: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -276,6 +284,8 @@ export const DEPLOYMENTS: Record<
     directFactory: '0x0000000000000000000000000000000000000000',
     directRouter: '0x0000000000000000000000000000000000000000',
     directHarvesterAdapter: '0x0000000000000000000000000000000000000000',
+    directMetaPairDeployer: '0x0000000000000000000000000000000000000000',
+    directAdmin: '0x0000000000000000000000000000000000000000',
   },
 };
 

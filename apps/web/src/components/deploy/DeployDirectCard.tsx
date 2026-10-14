@@ -1,0 +1,1315 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import {
+  BaseError,
+  UserRejectedRequestError,
+  encodeDeployData,
+  formatUnits,
+  getAddress,
+  parseUnits,
+  type Abi,
+  type Address,
+  type Hex,
+} from 'viem';
+import {
+  useAccount,
+  useChainId,
+  useConnect,
+  useDisconnect,
+  usePublicClient,
+  useSwitchChain,
+  useWalletClient,
+} from 'wagmi';
+import { eticaMainnet } from '@etica-hub/shared/chains';
+import {
+  DEPLOYMENTS,
+  EXTERNAL_ADDRESSES,
+  TREASURY_ADDRESS,
+  USDC_WARP_ROUTE,
+} from '@etica-hub/shared/addresses';
+import {
+  directFactoryArtifact,
+  directHarvesterAdapterArtifact,
+  directMetaPairArtifact,
+  directMetaPairDeployerArtifact,
+  directRouterArtifact,
+  unanimousMultisigArtifact,
+} from '@/lib/direct-deploy-artifacts';
+
+/**
+ * Stepwise deployer for the EticaSwap Direct venue (hub windows). Every step
+ * is one wallet signature; deployed addresses are kept in localStorage so a
+ * reload resumes, and configuration steps are re-derived from chain.
+ *
+ * Operator (treasury):
+ *   factory → window deployer → router → harvester → setMetaPairDeployer →
+ *   whitelist router / harvester / seeder → setFeeTo(harvester) → setFeeTiers →
+ *   harvester.setTreasuryToken(USDC.e) → createMetaPair ×2 → setGuardian →
+ *   deploy 2-of-2 multisig → setFeeToSetter(multisig) → harvester.transferOwnership(multisig)
+ * Seeder (whitelisted wallet):
+ *   wrap EGAZ → send USDC.e + WEGAZ to the EGAZ window → mint → send USDC.e + ETI
+ *   to the ETI window → mint. The window turns the tokens into hub LP it can
+ *   never withdraw; shares go to the dead address.
+ */
+
+const ZERO = '0x0000000000000000000000000000000000000000' as const;
+const DEAD = '0x000000000000000000000000000000000000dEaD' as const;
+const STORAGE_KEY = 'eticahub.deploy-direct.v2';
+const LAUNCH_MIN_STETX = parseUnits('40000', 18);
+/** Second multisig signer; also the default seeder. */
+const SECOND_SIGNER: Address = '0x98d057B8fD9eA2256CbaeDc2d33A5e59af9c2051';
+const LAUNCH_TIERS: readonly [bigint[], number[]] = [
+  [
+    parseUnits('40000', 18),
+    parseUnits('100000', 18),
+    parseUnits('250000', 18),
+    parseUnits('500000', 18),
+  ],
+  [300, 150, 50, 10],
+];
+
+type Role = 'operator' | 'seeder';
+type StepKey =
+  | 'deployFactory'
+  | 'deployDeployer'
+  | 'deployRouter'
+  | 'deployHarvester'
+  | 'setDeployer'
+  | 'whitelistRouter'
+  | 'whitelistHarvester'
+  | 'whitelistSeeder'
+  | 'setFeeTo'
+  | 'setFeeTiers'
+  | 'setTreasuryToken'
+  | 'createWindowWegaz'
+  | 'createWindowEti'
+  | 'setGuardian'
+  | 'deployMultisig'
+  | 'setFeeToSetter'
+  | 'transferHarvester'
+  | 'wrapEgaz'
+  | 'sendUsdceWegaz'
+  | 'sendWegaz'
+  | 'mintWegaz'
+  | 'sendUsdceEti'
+  | 'sendEti'
+  | 'mintEti';
+
+const SETUP_STEPS: StepKey[] = [
+  'deployFactory',
+  'deployDeployer',
+  'deployRouter',
+  'deployHarvester',
+  'setDeployer',
+  'whitelistRouter',
+  'whitelistHarvester',
+  'whitelistSeeder',
+  'setFeeTo',
+  'setFeeTiers',
+  'setTreasuryToken',
+  'createWindowWegaz',
+  'createWindowEti',
+  'setGuardian',
+];
+const HANDOFF_STEPS: StepKey[] = ['deployMultisig', 'setFeeToSetter', 'transferHarvester'];
+const OPERATOR_STEPS: StepKey[] = [...SETUP_STEPS, ...HANDOFF_STEPS];
+const SEED_STEPS: StepKey[] = [
+  'wrapEgaz',
+  'sendUsdceWegaz',
+  'sendWegaz',
+  'mintWegaz',
+  'sendUsdceEti',
+  'sendEti',
+  'mintEti',
+];
+const STEP_ORDER: StepKey[] = [...OPERATOR_STEPS, ...SEED_STEPS];
+
+const ERC20_ABI = [
+  {
+    type: 'function',
+    name: 'transfer',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  { type: 'function', name: 'deposit', stateMutability: 'payable', inputs: [], outputs: [] },
+] as const satisfies Abi;
+
+const HUB_FACTORY_ABI = [
+  {
+    type: 'function',
+    name: 'getPair',
+    stateMutability: 'view',
+    inputs: [{ type: 'address' }, { type: 'address' }],
+    outputs: [{ type: 'address' }],
+  },
+] as const;
+const HUB_PAIR_ABI = [
+  {
+    type: 'function',
+    name: 'token0',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'getReserves',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint112' }, { type: 'uint112' }, { type: 'uint32' }],
+  },
+] as const;
+const OWNABLE_ABI = [
+  {
+    type: 'function',
+    name: 'owner',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'transferOwnership',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'newOwner', type: 'address' }],
+    outputs: [],
+  },
+] as const;
+
+type StepStatus = 'idle' | 'signing' | 'pending' | 'confirmed' | 'error';
+type StepState = { status: StepStatus; txHash?: Hex; error?: string };
+const initial: StepState = { status: 'idle' };
+
+const STEP_LABELS: Record<StepKey, { label: string; description: string }> = {
+  deployFactory: {
+    label: 'Deploy EticaDirectFactory',
+    description:
+      'feeToSetter = owner below (hand-off to the 2-of-2 is the last step), stETX gate, minStEtx = 40,000.',
+  },
+  deployDeployer: {
+    label: 'Deploy EticaDirectMetaPairDeployer',
+    description: 'Holds the window creation code (keeps the factory under the 24 KB limit).',
+  },
+  deployRouter: {
+    label: 'Deploy EticaDirectRouter',
+    description: 'V2-style router bound to the new factory and WEGAZ (quotes, feeBpsFor).',
+  },
+  deployHarvester: {
+    label: 'Deploy DirectSwapHarvesterAdapter',
+    description:
+      'feeTo of the factory: collects window fees, splits 10/10/40/40 (stETX / farms / POL back into the windows / treasury in USDC.e).',
+  },
+  setDeployer: {
+    label: 'factory.setMetaPairDeployer',
+    description: 'Lets createMetaPair open windows.',
+  },
+  whitelistRouter: {
+    label: 'Whitelist router',
+    description: 'Router may act as swap recipient for intermediate hops.',
+  },
+  whitelistHarvester: {
+    label: 'Whitelist harvester',
+    description: 'Harvester deposits the 40% POL slice into the windows (mint is whitelist-only).',
+  },
+  whitelistSeeder: {
+    label: 'Whitelist seeder',
+    description:
+      'The wallet below may deposit into the windows. Nobody else can; nobody can ever withdraw.',
+  },
+  setFeeTo: {
+    label: 'factory.setFeeTo(harvester)',
+    description: 'Window fees accrue to the harvester from the first swap.',
+  },
+  setFeeTiers: {
+    label: 'factory.setFeeTiers',
+    description: '40k → 3.00%, 100k → 1.50%, 250k → 0.50%, 500k+ → 0.10% (base 3.00%).',
+  },
+  setTreasuryToken: {
+    label: 'harvester.setTreasuryToken(USDC.e)',
+    description: 'The treasury’s 40% is paid in USDC.e instead of ETX.',
+  },
+  createWindowWegaz: {
+    label: 'createMetaPair(WEGAZ, USDC.e)',
+    description:
+      'Opens the EGAZ/USDC.e window over the WEGAZ/ETX + USDC.e/ETX hub pools (emits V2 PairCreated).',
+  },
+  createWindowEti: {
+    label: 'createMetaPair(ETI, USDC.e)',
+    description: 'Opens the ETI/USDC.e window over the ETI/ETX + USDC.e/ETX hub pools.',
+  },
+  setGuardian: {
+    label: 'factory.setGuardian',
+    description:
+      'Pause-only key for the direct-watcher (can stop swaps, nothing else). Leave blank to skip.',
+  },
+  deployMultisig: {
+    label: 'Deploy 2-of-2 UnanimousMultisig',
+    description:
+      'Owners: the owner above + the second signer. Every admin change needs both; one “no” means no change.',
+  },
+  setFeeToSetter: {
+    label: 'factory.setFeeToSetter(multisig)',
+    description:
+      'From here on tiers, whitelist, guardian, unpause and retire/replace need both signatures.',
+  },
+  transferHarvester: {
+    label: 'harvester.transferOwnership(multisig)',
+    description: 'Split, sinks, treasury token and rescue move to the multisig too.',
+  },
+  wrapEgaz: {
+    label: 'Wrap EGAZ → WEGAZ',
+    description: 'WEGAZ.deposit with the EGAZ for the EGAZ window.',
+  },
+  sendUsdceWegaz: {
+    label: 'Send USDC.e to the EGAZ/USDC.e window',
+    description: 'Plain transfer; the window holds it only until mint.',
+  },
+  sendWegaz: { label: 'Send WEGAZ to the EGAZ/USDC.e window', description: 'Plain transfer.' },
+  mintWegaz: {
+    label: 'EGAZ/USDC.e window: mint',
+    description:
+      'Turns the two balances into WEGAZ/ETX + USDC.e/ETX hub LP, locked forever; shares → dead.',
+  },
+  sendUsdceEti: { label: 'Send USDC.e to the ETI/USDC.e window', description: 'Plain transfer.' },
+  sendEti: { label: 'Send ETI to the ETI/USDC.e window', description: 'Plain transfer.' },
+  mintEti: {
+    label: 'ETI/USDC.e window: mint',
+    description:
+      'Turns the two balances into ETI/ETX + USDC.e/ETX hub LP, locked forever; shares → dead.',
+  },
+};
+
+type Deployed = {
+  factory?: Address;
+  deployer?: Address;
+  router?: Address;
+  harvester?: Address;
+  multisig?: Address;
+};
+type Windows = { wegaz?: Address; eti?: Address };
+
+function shortError(err: unknown): string {
+  if (err instanceof UserRejectedRequestError) return 'Rejected in wallet.';
+  if (err instanceof BaseError) return err.shortMessage ?? err.message;
+  if (err instanceof Error) return err.message;
+  return 'Unknown error';
+}
+
+function parseAddr(s: string): Address | null {
+  try {
+    const a = getAddress(s.trim());
+    return a === ZERO ? null : a;
+  } catch {
+    return null;
+  }
+}
+
+function loadDeployed(): Deployed {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Deployed) : {};
+  } catch {
+    return {};
+  }
+}
+
+const same = (a?: Address | null, b?: Address | null) =>
+  Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+
+export function DeployDirectCard({ role }: { role: Role }) {
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
+  const { connectors, connect, status: connectStatus } = useConnect();
+  const { disconnect } = useDisconnect();
+  const { switchChain, isPending: switching } = useSwitchChain();
+
+  const onMainnet = chainId === eticaMainnet.id;
+  const d = DEPLOYMENTS[eticaMainnet.id];
+  const tokens = {
+    etx: d.etx,
+    wegaz: d.wegaz,
+    eti: EXTERNAL_ADDRESSES[eticaMainnet.id].eti,
+    usdce: USDC_WARP_ROUTE.syntheticToken,
+    stEtx: d.stakedETX,
+    farms: d.etxFarms,
+    hubRouter: d.swapRouter,
+    hubFactory: d.swapFactory,
+  };
+
+  const [ownerInput, setOwnerInput] = useState<string>(TREASURY_ADDRESS);
+  const [seederInput, setSeederInput] = useState<string>(SECOND_SIGNER);
+  const [signerInput, setSignerInput] = useState<string>(SECOND_SIGNER);
+  const [guardianInput, setGuardianInput] = useState<string>('');
+  const [usdPerSide, setUsdPerSide] = useState<string>('10');
+  const [factoryInput, setFactoryInput] = useState<string>('');
+  const [windows, setWindows] = useState<Windows>({});
+  const [balances, setBalances] = useState<{
+    usdce: bigint;
+    eti: bigint;
+    egaz: bigint;
+    wegaz: bigint;
+    allowed: boolean;
+  } | null>(null);
+  const [deployed, setDeployed] = useState<Deployed>({});
+  const [steps, setSteps] = useState<Record<StepKey, StepState>>(
+    () => Object.fromEntries(STEP_ORDER.map((k) => [k, initial])) as Record<StepKey, StepState>,
+  );
+  const [quote, setQuote] = useState<{ egaz: bigint; eti: bigint } | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const f = q.get('factory');
+    if (f) setFactoryInput(f);
+  }, []);
+
+  useEffect(() => {
+    const stored = loadDeployed();
+    const pick = (live: Address, saved?: Address) => (live !== ZERO ? live : saved);
+    setDeployed({
+      factory: pick(d.directFactory, stored.factory),
+      deployer: pick(d.directMetaPairDeployer, stored.deployer),
+      router: pick(d.directRouter, stored.router),
+      harvester: pick(d.directHarvesterAdapter, stored.harvester),
+      multisig: pick(d.directAdmin, stored.multisig),
+    });
+  }, [
+    d.directFactory,
+    d.directMetaPairDeployer,
+    d.directRouter,
+    d.directHarvesterAdapter,
+    d.directAdmin,
+  ]);
+
+  function remember(next: Deployed) {
+    setDeployed(next);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      /* storage unavailable: addresses still shown on screen */
+    }
+  }
+
+  const owner = useMemo(() => parseAddr(ownerInput), [ownerInput]);
+  const seeder = useMemo(() => parseAddr(seederInput), [seederInput]);
+  const signer = useMemo(() => parseAddr(signerInput), [signerInput]);
+  const guardian = useMemo(() => parseAddr(guardianInput), [guardianInput]);
+  const factoryAddr = useMemo(
+    () => deployed.factory ?? parseAddr(factoryInput),
+    [deployed.factory, factoryInput],
+  );
+
+  const usdcePerSide = useMemo(() => {
+    try {
+      const v = parseUnits(usdPerSide.trim() || '0', USDC_WARP_ROUTE.decimals);
+      return v > 0n ? v : null;
+    } catch {
+      return null;
+    }
+  }, [usdPerSide]);
+
+  // Windows resolve from the factory registry so the seeder (another browser)
+  // and the resume logic share one source of truth.
+  useEffect(() => {
+    if (!publicClient || !onMainnet || !factoryAddr) {
+      setWindows({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [p0, p1] = (await Promise.all([
+          publicClient.readContract({
+            address: factoryAddr,
+            abi: directFactoryArtifact.abi,
+            functionName: 'getPair',
+            args: [tokens.wegaz, tokens.usdce],
+          }),
+          publicClient.readContract({
+            address: factoryAddr,
+            abi: directFactoryArtifact.abi,
+            functionName: 'getPair',
+            args: [tokens.eti, tokens.usdce],
+          }),
+        ])) as [Address, Address];
+        if (!cancelled)
+          setWindows({ wegaz: p0 === ZERO ? undefined : p0, eti: p1 === ZERO ? undefined : p1 });
+      } catch {
+        if (!cancelled) setWindows({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    publicClient,
+    onMainnet,
+    factoryAddr,
+    tokens.wegaz,
+    tokens.eti,
+    tokens.usdce,
+    steps.createWindowWegaz.status,
+    steps.createWindowEti.status,
+  ]);
+
+  useEffect(() => {
+    if (!publicClient || !onMainnet || !address) {
+      setBalances(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const bal = (token: Address) =>
+          publicClient.readContract({
+            address: token,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [address],
+          });
+        const [usdce, eti, wegaz, egaz, allowed] = await Promise.all([
+          bal(tokens.usdce),
+          bal(tokens.eti),
+          bal(tokens.wegaz),
+          publicClient.getBalance({ address }),
+          factoryAddr
+            ? (publicClient.readContract({
+                address: factoryAddr,
+                abi: directFactoryArtifact.abi,
+                functionName: 'whitelist',
+                args: [address],
+              }) as Promise<boolean>)
+            : Promise.resolve(false),
+        ]);
+        if (!cancelled) setBalances({ usdce, eti, egaz, wegaz, allowed });
+      } catch {
+        if (!cancelled) setBalances(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    publicClient,
+    onMainnet,
+    address,
+    factoryAddr,
+    tokens.usdce,
+    tokens.eti,
+    tokens.wegaz,
+    steps.wrapEgaz.status,
+    steps.sendUsdceWegaz.status,
+    steps.sendWegaz.status,
+    steps.sendUsdceEti.status,
+    steps.sendEti.status,
+    steps.whitelistSeeder.status,
+  ]);
+
+  // Hub spot price from the public pools' reserves (USDC.e/ETX × ETX/WEGAZ|ETI).
+  // Each window leg is deposited independently, so this only keeps the two
+  // sides of a window roughly equal in value; nothing is at stake if it drifts.
+  useEffect(() => {
+    if (!publicClient || !onMainnet || !usdcePerSide) {
+      setQuote(null);
+      return;
+    }
+    let cancelled = false;
+    const reservesOf = async (a: Address, b: Address): Promise<[bigint, bigint]> => {
+      const pair = (await publicClient.readContract({
+        address: tokens.hubFactory,
+        abi: HUB_FACTORY_ABI,
+        functionName: 'getPair',
+        args: [a, b],
+      })) as Address;
+      if (pair === ZERO) throw new Error('hub pair missing');
+      const [token0, [r0, r1]] = await Promise.all([
+        publicClient.readContract({ address: pair, abi: HUB_PAIR_ABI, functionName: 'token0' }),
+        publicClient.readContract({
+          address: pair,
+          abi: HUB_PAIR_ABI,
+          functionName: 'getReserves',
+        }),
+      ]);
+      if (r0 === 0n || r1 === 0n) throw new Error('hub pair empty');
+      return token0.toLowerCase() === a.toLowerCase() ? [r0, r1] : [r1, r0];
+    };
+    (async () => {
+      try {
+        const [[rUsdce, rEtxA], [rEtxB, rWegaz], [rEtxC, rEti]] = await Promise.all([
+          reservesOf(tokens.usdce, tokens.etx),
+          reservesOf(tokens.etx, tokens.wegaz),
+          reservesOf(tokens.etx, tokens.eti),
+        ]);
+        if (cancelled) return;
+        const etxValue = usdcePerSide * rEtxA; // scaled by rUsdce
+        setQuote({
+          egaz: (etxValue * rWegaz) / (rUsdce * rEtxB),
+          eti: (etxValue * rEti) / (rUsdce * rEtxC),
+        });
+        setQuoteError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setQuote(null);
+        setQuoteError(shortError(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    publicClient,
+    onMainnet,
+    usdcePerSide,
+    tokens.hubFactory,
+    tokens.usdce,
+    tokens.etx,
+    tokens.wegaz,
+    tokens.eti,
+  ]);
+
+  // Operator setup steps re-derive from chain so a reload resumes instead of
+  // replaying txs that would revert.
+  const {
+    factory: knownFactory,
+    deployer: knownDeployer,
+    router: knownRouter,
+    harvester: knownHarvester,
+    multisig: knownMultisig,
+  } = deployed;
+  useEffect(() => {
+    if (role !== 'operator' || !publicClient || !onMainnet || !knownFactory) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const fac = { address: knownFactory, abi: directFactoryArtifact.abi } as const;
+        const read = (functionName: string, args: readonly unknown[] = []) =>
+          publicClient.readContract({ ...fac, functionName, args });
+        const harv = knownHarvester
+          ? ({ address: knownHarvester, abi: directHarvesterAdapterArtifact.abi } as const)
+          : null;
+        const [
+          metaDeployer,
+          wlRouter,
+          wlHarv,
+          wlSeeder,
+          feeTo,
+          tierCount,
+          pWegaz,
+          pEti,
+          g,
+          setter,
+          tTok,
+          hOwner,
+        ] = (await Promise.all([
+          read('metaPairDeployer'),
+          knownRouter ? read('whitelist', [knownRouter]) : false,
+          knownHarvester ? read('whitelist', [knownHarvester]) : false,
+          seeder ? read('whitelist', [seeder]) : false,
+          read('feeTo'),
+          read('feeTierCount'),
+          read('getPair', [tokens.wegaz, tokens.usdce]),
+          read('getPair', [tokens.eti, tokens.usdce]),
+          read('guardian'),
+          read('feeToSetter'),
+          harv ? publicClient.readContract({ ...harv, functionName: 'treasuryToken' }) : ZERO,
+          harv
+            ? publicClient.readContract({ ...harv, abi: OWNABLE_ABI, functionName: 'owner' })
+            : ZERO,
+        ])) as [
+          Address,
+          boolean,
+          boolean,
+          boolean,
+          Address,
+          bigint,
+          Address,
+          Address,
+          Address,
+          Address,
+          Address,
+          Address,
+        ];
+        if (cancelled) return;
+        const done: Partial<Record<StepKey, boolean>> = {
+          setDeployer: same(metaDeployer, knownDeployer),
+          whitelistRouter: wlRouter,
+          whitelistHarvester: wlHarv,
+          whitelistSeeder: wlSeeder,
+          setFeeTo: same(feeTo, knownHarvester),
+          setFeeTiers: tierCount >= BigInt(LAUNCH_TIERS[0].length),
+          setTreasuryToken: same(tTok, tokens.usdce),
+          createWindowWegaz: pWegaz !== ZERO,
+          createWindowEti: pEti !== ZERO,
+          setGuardian: g !== ZERO,
+          setFeeToSetter: same(setter, knownMultisig),
+          transferHarvester: same(hOwner, knownMultisig),
+        };
+        setSteps((s) => {
+          let next = s;
+          for (const [k, ok] of Object.entries(done) as [StepKey, boolean][]) {
+            if (ok && s[k].status !== 'confirmed') next = { ...next, [k]: { status: 'confirmed' } };
+          }
+          return next;
+        });
+      } catch {
+        /* keep local state; buttons stay available */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    role,
+    publicClient,
+    onMainnet,
+    knownFactory,
+    knownDeployer,
+    knownRouter,
+    knownHarvester,
+    knownMultisig,
+    seeder,
+    tokens.wegaz,
+    tokens.eti,
+    tokens.usdce,
+  ]);
+
+  // Seeder steps re-derive from the windows: tokens already sitting on a window
+  // count as sent; a window with hub LP counts as fully seeded.
+  const need = useMemo(
+    () =>
+      quote && usdcePerSide ? { usdce: usdcePerSide * 2n, eti: quote.eti, egaz: quote.egaz } : null,
+    [quote, usdcePerSide],
+  );
+  useEffect(() => {
+    if (role !== 'seeder' || !publicClient || !onMainnet || !quote || !usdcePerSide) return;
+    const { wegaz: wA, eti: wB } = windows;
+    if (!wA || !wB) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const bal = (token: Address, who: Address) =>
+          publicClient.readContract({
+            address: token,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [who],
+          });
+        const lp = (w: Address) =>
+          publicClient.readContract({
+            address: w,
+            abi: directMetaPairArtifact.abi,
+            functionName: 'hubLiquidity',
+          }) as Promise<[bigint, bigint]>;
+        const [uA, gA, uB, eB, [lpA0, lpA1], [lpB0, lpB1], myWegaz] = await Promise.all([
+          bal(tokens.usdce, wA),
+          bal(tokens.wegaz, wA),
+          bal(tokens.usdce, wB),
+          bal(tokens.eti, wB),
+          lp(wA),
+          lp(wB),
+          address ? bal(tokens.wegaz, address) : Promise.resolve(0n),
+        ]);
+        if (cancelled) return;
+        const seededA = lpA0 > 0n && lpA1 > 0n;
+        const seededB = lpB0 > 0n && lpB1 > 0n;
+        const done: Partial<Record<StepKey, boolean>> = {
+          wrapEgaz: seededA || myWegaz >= quote.egaz || gA >= quote.egaz,
+          sendUsdceWegaz: seededA || uA >= usdcePerSide,
+          sendWegaz: seededA || gA >= quote.egaz,
+          mintWegaz: seededA,
+          sendUsdceEti: seededB || uB >= usdcePerSide,
+          sendEti: seededB || eB >= quote.eti,
+          mintEti: seededB,
+        };
+        setSteps((s) => {
+          let next = s;
+          for (const [k, ok] of Object.entries(done) as [StepKey, boolean][]) {
+            const st = s[k].status;
+            if (st === 'signing' || st === 'pending') continue;
+            if (ok && st !== 'confirmed') next = { ...next, [k]: { status: 'confirmed' } };
+          }
+          return next;
+        });
+      } catch {
+        /* leave local state */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    role,
+    publicClient,
+    onMainnet,
+    address,
+    windows,
+    quote,
+    usdcePerSide,
+    tokens.usdce,
+    tokens.wegaz,
+    tokens.eti,
+    steps.wrapEgaz.status,
+    steps.sendUsdceWegaz.status,
+    steps.sendWegaz.status,
+    steps.mintWegaz.status,
+    steps.sendUsdceEti.status,
+    steps.sendEti.status,
+    steps.mintEti.status,
+  ]);
+
+  async function send(key: StepKey, fn: () => Promise<Hex>): Promise<Address | undefined> {
+    if (!publicClient) return undefined;
+    setSteps((s) => ({ ...s, [key]: { status: 'signing' } }));
+    let txHash: Hex;
+    try {
+      txHash = await fn();
+    } catch (err) {
+      setSteps((s) => ({ ...s, [key]: { status: 'error', error: shortError(err) } }));
+      return undefined;
+    }
+    setSteps((s) => ({ ...s, [key]: { status: 'pending', txHash } }));
+    try {
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.status !== 'success') {
+        setSteps((s) => ({
+          ...s,
+          [key]: { status: 'error', txHash, error: 'Transaction reverted on-chain' },
+        }));
+        return undefined;
+      }
+      setSteps((s) => ({ ...s, [key]: { status: 'confirmed', txHash } }));
+      return (receipt.contractAddress ?? undefined) as Address | undefined;
+    } catch (err) {
+      setSteps((s) => ({ ...s, [key]: { status: 'error', txHash, error: shortError(err) } }));
+      return undefined;
+    }
+  }
+
+  async function runStep(key: StepKey) {
+    if (!walletClient || !address || !onMainnet) return;
+    const wc = walletClient;
+    const account = address;
+    const { factory, deployer, router, harvester, multisig } = deployed;
+
+    const deploy = (artifact: { abi: Abi; bytecode: Hex }, args: readonly unknown[]) =>
+      wc.sendTransaction({
+        account,
+        data: encodeDeployData({ abi: artifact.abi, bytecode: artifact.bytecode, args }),
+      });
+    const write = (
+      to: Address,
+      abi: Abi,
+      functionName: string,
+      args: readonly unknown[],
+      value?: bigint,
+    ) => wc.writeContract({ account, address: to, abi, functionName, args, value });
+    const fac = (functionName: string, args: readonly unknown[]) =>
+      factory
+        ? write(factory, directFactoryArtifact.abi, functionName, args)
+        : Promise.reject(new Error('no factory'));
+
+    switch (key) {
+      case 'deployFactory': {
+        if (!owner) return;
+        const a = await send(key, () =>
+          deploy(directFactoryArtifact, [owner, tokens.stEtx, LAUNCH_MIN_STETX]),
+        );
+        if (a) remember({ ...deployed, factory: a });
+        return;
+      }
+      case 'deployDeployer': {
+        const a = await send(key, () => deploy(directMetaPairDeployerArtifact, []));
+        if (a) remember({ ...deployed, deployer: a });
+        return;
+      }
+      case 'deployRouter': {
+        if (!factory) return;
+        const a = await send(key, () => deploy(directRouterArtifact, [factory, tokens.wegaz]));
+        if (a) remember({ ...deployed, router: a });
+        return;
+      }
+      case 'deployHarvester': {
+        if (!factory || !owner) return;
+        const a = await send(key, () =>
+          deploy(directHarvesterAdapterArtifact, [
+            owner,
+            factory,
+            tokens.hubRouter,
+            tokens.etx,
+            tokens.stEtx,
+            tokens.farms,
+            owner,
+          ]),
+        );
+        if (a) remember({ ...deployed, harvester: a });
+        return;
+      }
+      case 'setDeployer':
+        if (!deployer) return;
+        await send(key, () => fac('setMetaPairDeployer', [deployer]));
+        return;
+      case 'whitelistRouter':
+        if (!router) return;
+        await send(key, () => fac('setWhitelist', [router, true]));
+        return;
+      case 'whitelistHarvester':
+        if (!harvester) return;
+        await send(key, () => fac('setWhitelist', [harvester, true]));
+        return;
+      case 'whitelistSeeder':
+        if (!seeder) return;
+        await send(key, () => fac('setWhitelist', [seeder, true]));
+        return;
+      case 'setFeeTo':
+        if (!harvester) return;
+        await send(key, () => fac('setFeeTo', [harvester]));
+        return;
+      case 'setFeeTiers':
+        await send(key, () => fac('setFeeTiers', [LAUNCH_TIERS[0], LAUNCH_TIERS[1]]));
+        return;
+      case 'setTreasuryToken':
+        if (!harvester) return;
+        await send(key, () =>
+          write(harvester, directHarvesterAdapterArtifact.abi, 'setTreasuryToken', [tokens.usdce]),
+        );
+        return;
+      case 'createWindowWegaz':
+        await send(key, () =>
+          fac('createMetaPair', [tokens.wegaz, tokens.usdce, tokens.hubRouter]),
+        );
+        return;
+      case 'createWindowEti':
+        await send(key, () => fac('createMetaPair', [tokens.eti, tokens.usdce, tokens.hubRouter]));
+        return;
+      case 'setGuardian':
+        if (!guardian) return;
+        await send(key, () => fac('setGuardian', [guardian]));
+        return;
+      case 'deployMultisig': {
+        if (!owner || !signer || same(owner, signer)) return;
+        const a = await send(key, () => deploy(unanimousMultisigArtifact, [[owner, signer]]));
+        if (a) remember({ ...deployed, multisig: a });
+        return;
+      }
+      case 'setFeeToSetter':
+        if (!multisig) return;
+        await send(key, () => fac('setFeeToSetter', [multisig]));
+        return;
+      case 'transferHarvester':
+        if (!harvester || !multisig) return;
+        await send(key, () => write(harvester, OWNABLE_ABI, 'transferOwnership', [multisig]));
+        return;
+      case 'wrapEgaz':
+        if (!quote) return;
+        await send(key, () => write(tokens.wegaz, ERC20_ABI, 'deposit', [], quote.egaz));
+        return;
+      case 'sendUsdceWegaz':
+        if (!windows.wegaz || !usdcePerSide) return;
+        await send(key, () =>
+          write(tokens.usdce, ERC20_ABI, 'transfer', [windows.wegaz, usdcePerSide]),
+        );
+        return;
+      case 'sendWegaz':
+        if (!windows.wegaz || !quote) return;
+        await send(key, () =>
+          write(tokens.wegaz, ERC20_ABI, 'transfer', [windows.wegaz, quote.egaz]),
+        );
+        return;
+      case 'mintWegaz':
+        if (!windows.wegaz) return;
+        await send(key, () =>
+          write(windows.wegaz as Address, directMetaPairArtifact.abi, 'mint', [DEAD]),
+        );
+        return;
+      case 'sendUsdceEti':
+        if (!windows.eti || !usdcePerSide) return;
+        await send(key, () =>
+          write(tokens.usdce, ERC20_ABI, 'transfer', [windows.eti, usdcePerSide]),
+        );
+        return;
+      case 'sendEti':
+        if (!windows.eti || !quote) return;
+        await send(key, () => write(tokens.eti, ERC20_ABI, 'transfer', [windows.eti, quote.eti]));
+        return;
+      case 'mintEti':
+        if (!windows.eti) return;
+        await send(key, () =>
+          write(windows.eti as Address, directMetaPairArtifact.abi, 'mint', [DEAD]),
+        );
+        return;
+    }
+  }
+
+  const deployedFor = (k: StepKey): Address | undefined =>
+    k === 'deployFactory'
+      ? deployed.factory
+      : k === 'deployDeployer'
+        ? deployed.deployer
+        : k === 'deployRouter'
+          ? deployed.router
+          : k === 'deployHarvester'
+            ? deployed.harvester
+            : k === 'deployMultisig'
+              ? deployed.multisig
+              : undefined;
+  const isDone = (k: StepKey) => steps[k].status === 'confirmed' || Boolean(deployedFor(k));
+
+  function ready(key: StepKey): boolean {
+    if (!isConnected || !walletClient || !onMainnet) return false;
+    const st = steps[key].status;
+    if (st !== 'idle' && st !== 'error') return false;
+    if (SEED_STEPS.includes(key)) {
+      if (!windows.wegaz || !windows.eti || !quote || !usdcePerSide || !balances?.allowed)
+        return false;
+      return SEED_STEPS.slice(0, SEED_STEPS.indexOf(key)).every(isDone);
+    }
+    if (!owner) return false;
+    if (deployedFor(key)) return false;
+    if (key === 'whitelistSeeder' && !seeder) return false;
+    if (key === 'setGuardian' && !guardian) return false;
+    if (key === 'deployMultisig' && (!signer || same(owner, signer))) return false;
+    if (HANDOFF_STEPS.includes(key)) {
+      return (
+        SETUP_STEPS.every((k) => k === 'setGuardian' || isDone(k)) &&
+        HANDOFF_STEPS.slice(0, HANDOFF_STEPS.indexOf(key)).every(isDone)
+      );
+    }
+    return SETUP_STEPS.slice(0, SETUP_STEPS.indexOf(key)).every(isDone);
+  }
+
+  const visibleSteps = role === 'operator' ? OPERATOR_STEPS : SEED_STEPS;
+  const fmt = (v: bigint, dec: number, max = 4) =>
+    Number(formatUnits(v, dec)).toLocaleString(undefined, { maximumFractionDigits: max });
+  const short =
+    need && balances
+      ? {
+          usdce: balances.usdce < need.usdce,
+          eti: balances.eti < need.eti,
+          egaz: balances.egaz + balances.wegaz < need.egaz,
+        }
+      : null;
+
+  const injectedConnector = connectors.find((c) => c.id === 'injected') ?? connectors[0];
+  const setupDone = SETUP_STEPS.every((k) => k === 'setGuardian' || isDone(k));
+  const handoffDone = HANDOFF_STEPS.every(isDone);
+  const seeded = SEED_STEPS.every(isDone);
+
+  const input =
+    'mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30';
+
+  return (
+    <div className="space-y-6">
+      {role === 'seeder' && (
+        <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
+          <h2 className="mb-3 text-lg font-semibold">Seed plan</h2>
+          <p className="text-sm text-white/70">
+            Seven signatures from your wallet: wrap EGAZ, then for each window send{' '}
+            <span className="font-mono">{usdPerSide}</span> USDC.e plus the matching WEGAZ / ETI and
+            call <span className="font-mono">mint</span>. The window converts both into hub LP
+            (WEGAZ/ETX, ETI/ETX, USDC.e/ETX) that it can never withdraw; the accounting shares go to
+            the dead address. Amounts are prefilled at the live hub price.
+          </p>
+          <div className="mt-3 grid gap-1 text-xs sm:grid-cols-3">
+            {(
+              [
+                ['USDC.e', need?.usdce, balances?.usdce, USDC_WARP_ROUTE.decimals, short?.usdce],
+                [
+                  'EGAZ',
+                  need?.egaz,
+                  balances ? balances.egaz + balances.wegaz : undefined,
+                  18,
+                  short?.egaz,
+                ],
+                ['ETI', need?.eti, balances?.eti, 18, short?.eti],
+              ] as const
+            ).map(([sym, n, have, dec, isShort]) => (
+              <div
+                key={sym}
+                className={`rounded-md border p-2 ${isShort ? 'border-rose-400/40 bg-rose-500/10' : 'border-white/[0.07]'}`}
+              >
+                <div className="text-white/50">{sym}</div>
+                <div className="font-mono">
+                  need {n !== undefined ? fmt(n, dec) : '…'}
+                  {sym === 'EGAZ' ? ' + gas' : ''}
+                </div>
+                <div className="font-mono text-white/60">
+                  have {have !== undefined ? fmt(have, dec) : address ? '…' : '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+          {quoteError && (
+            <p className="mt-2 text-xs text-amber-300/80">Hub quote failed: {quoteError}</p>
+          )}
+          {factoryAddr && (!windows.wegaz || !windows.eti) && (
+            <p className="mt-2 text-xs text-amber-300/80">
+              The windows are not open yet on this factory; the operator has to finish setup first.
+            </p>
+          )}
+          {factoryAddr && address && balances && !balances.allowed && (
+            <p className="mt-2 text-xs text-amber-300/80">
+              This wallet is not whitelisted on the factory yet (operator step “Whitelist seeder”);
+              mint would revert.
+            </p>
+          )}
+          {!deployed.factory && (
+            <label className="mt-4 block text-sm text-white/70">
+              Direct factory address
+              <input
+                type="text"
+                className={input}
+                value={factoryInput}
+                onChange={(e) => setFactoryInput(e.target.value)}
+                placeholder="0x… (from the operator, or ?factory= in the URL)"
+                spellCheck={false}
+              />
+            </label>
+          )}
+        </section>
+      )}
+
+      {role === 'operator' && (
+        <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
+          <h2 className="mb-4 text-lg font-semibold">Parameters</h2>
+          <label className="block text-sm text-white/70">
+            Launch owner (feeToSetter, harvester owner, treasury sink)
+            <input
+              type="text"
+              className={input}
+              value={ownerInput}
+              onChange={(e) => setOwnerInput(e.target.value)}
+              spellCheck={false}
+            />
+          </label>
+          <p className="mt-1 text-xs text-white/50">
+            Defaults to the treasury. Signs every step; the last three steps hand feeToSetter and
+            the harvester to the 2-of-2 multisig. Receives the 40% treasury slice (USDC.e).
+          </p>
+          <label className="mt-4 block text-sm text-white/70">
+            Second multisig signer
+            <input
+              type="text"
+              className={input}
+              value={signerInput}
+              onChange={(e) => setSignerInput(e.target.value)}
+              spellCheck={false}
+            />
+          </label>
+          <label className="mt-4 block text-sm text-white/70">
+            Seeder wallet (whitelisted to deposit into the windows)
+            <input
+              type="text"
+              className={input}
+              value={seederInput}
+              onChange={(e) => setSeederInput(e.target.value)}
+              spellCheck={false}
+            />
+          </label>
+          <label className="mt-4 block text-sm text-white/70">
+            Guardian (pause-only key for the direct-watcher; optional)
+            <input
+              type="text"
+              className={input}
+              value={guardianInput}
+              onChange={(e) => setGuardianInput(e.target.value)}
+              placeholder="0x… fresh wallet whose key goes into the DIRECT_GUARDIAN_PRIVATE_KEY secret"
+              spellCheck={false}
+            />
+          </label>
+          <dl className="mt-4 grid gap-1 text-xs text-white/50 sm:grid-cols-2">
+            {(
+              [
+                ['stETX (gate)', tokens.stEtx],
+                ['WEGAZ', tokens.wegaz],
+                ['ETI', tokens.eti],
+                ['USDC.e', tokens.usdce],
+                ['ETX', tokens.etx],
+                ['Hub router', tokens.hubRouter],
+                ['Farms sink', tokens.farms],
+              ] as const
+            ).map(([k, v]) => (
+              <div key={k} className="flex gap-2">
+                <dt className="shrink-0">{k}</dt>
+                <dd className="truncate font-mono">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
+        <h2 className="mb-4 text-lg font-semibold">Wallet</h2>
+        {!isConnected ? (
+          <button
+            type="button"
+            className="rounded-md bg-emerald-500/90 px-4 py-2 text-sm font-medium text-black transition hover:bg-emerald-400 disabled:opacity-40"
+            onClick={() => injectedConnector && connect({ connector: injectedConnector })}
+            disabled={connectStatus === 'pending' || !injectedConnector}
+          >
+            {connectStatus === 'pending' ? 'Connecting…' : 'Connect Wallet'}
+          </button>
+        ) : (
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-white/60">Connected:</span>
+              <span className="font-mono break-all">{address}</span>
+              <button
+                type="button"
+                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/[0.035]"
+                onClick={() => disconnect()}
+              >
+                Disconnect
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-white/60">Chain:</span>
+              <span className="font-mono">{chainId}</span>
+              {!onMainnet && (
+                <button
+                  type="button"
+                  className="rounded-md bg-amber-400/90 px-3 py-1 text-xs font-medium text-black hover:bg-amber-300"
+                  onClick={() => switchChain({ chainId: eticaMainnet.id })}
+                  disabled={switching}
+                >
+                  {switching ? 'Switching…' : 'Switch to Etica Mainnet'}
+                </button>
+              )}
+            </div>
+            {role === 'operator' && address && owner && !same(address, owner) && (
+              <p className="text-xs text-amber-300/80">
+                Connected wallet is not the owner above: the setter steps will revert unless signed
+                by the owner.
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
+        <h2 className="mb-4 text-lg font-semibold">Steps</h2>
+        <ol className="space-y-3">
+          {visibleSteps.map((key) => {
+            const st = steps[key];
+            const addr = deployedFor(key);
+            const done = isDone(key);
+            return (
+              <li key={key}>
+                {key === 'deployMultisig' && (
+                  <p className="mb-2 mt-4 text-xs uppercase tracking-wide text-white/40">
+                    Hand-off to the 2-of-2 (after seeding and checking the venue)
+                  </p>
+                )}
+                <div
+                  className={`rounded-md border p-3 ${done ? 'border-emerald-400/30 bg-emerald-500/5' : 'border-white/[0.07]'}`}
+                >
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="font-mono text-xs text-white/40">
+                      {String(visibleSteps.indexOf(key) + 1).padStart(2, '0')}
+                    </span>
+                    <span className="text-sm font-medium">{STEP_LABELS[key].label}</span>
+                    <button
+                      type="button"
+                      className="ml-auto rounded-md bg-emerald-500/90 px-3 py-1 text-xs font-medium text-black transition hover:bg-emerald-400 disabled:opacity-30"
+                      onClick={() => runStep(key)}
+                      disabled={!ready(key)}
+                    >
+                      {st.status === 'signing'
+                        ? 'Sign in wallet…'
+                        : st.status === 'pending'
+                          ? 'Confirming…'
+                          : done
+                            ? 'Done'
+                            : st.status === 'error'
+                              ? 'Retry'
+                              : 'Sign'}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-white/50">{STEP_LABELS[key].description}</p>
+                  {addr && (
+                    <p className="mt-1 text-xs text-emerald-200/80">
+                      <span className="font-mono break-all">{addr}</span>
+                    </p>
+                  )}
+                  {(key === 'createWindowWegaz' || key === 'createWindowEti') &&
+                    (key === 'createWindowWegaz' ? windows.wegaz : windows.eti) && (
+                      <p className="mt-1 text-xs text-emerald-200/80">
+                        <span className="font-mono break-all">
+                          {key === 'createWindowWegaz' ? windows.wegaz : windows.eti}
+                        </span>
+                      </p>
+                    )}
+                  {st.txHash && (
+                    <p className="mt-1 text-xs text-white/40">
+                      Tx: <span className="font-mono break-all">{st.txHash}</span>
+                    </p>
+                  )}
+                  {st.status === 'error' && st.error && (
+                    <p className="mt-2 rounded-md border border-rose-400/30 bg-rose-500/10 p-2 text-xs text-rose-200">
+                      {st.error}
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+
+      {role === 'seeder' && seeded && (
+        <section className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-5 text-sm text-emerald-200">
+          Both windows are backed by hub LP and the shares sit at the dead address. You&apos;re
+          done.
+        </section>
+      )}
+
+      {role === 'operator' && deployed.factory && deployed.router && deployed.harvester && (
+        <section className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-5 text-sm">
+          <h2 className="mb-2 text-lg font-semibold text-emerald-200">
+            {handoffDone
+              ? 'Venue live, admin on the 2-of-2'
+              : setupDone
+                ? 'Venue configured'
+                : 'Contracts deployed'}
+          </h2>
+          <p className="text-emerald-200/80">
+            Paste into <span className="font-mono">packages/shared/src/addresses.ts</span> under{' '}
+            <span className="font-mono">DEPLOYMENTS[61803]</span>:
+          </p>
+          <pre className="mt-2 overflow-x-auto rounded-md bg-black/30 p-3 font-mono text-xs text-emerald-100">
+            {`directFactory: '${deployed.factory}',\ndirectMetaPairDeployer: '${deployed.deployer ?? ZERO}',\ndirectRouter: '${deployed.router}',\ndirectHarvesterAdapter: '${deployed.harvester}',\ndirectAdmin: '${deployed.multisig ?? ZERO}',`}
+          </pre>
+          <p className="mt-2 text-xs text-emerald-200/70">
+            Seeder link (send to the whitelisted wallet):{' '}
+            <a
+              className="font-mono underline"
+              href={`/deploy/direct/seed?factory=${deployed.factory}`}
+            >
+              /deploy/direct/seed?factory={deployed.factory}
+            </a>
+          </p>
+          <p className="mt-2 text-xs text-emerald-200/70">
+            Then: fill <span className="font-mono">apps/direct-watcher/expected.json</span> with
+            these addresses, add the guardian key + Telegram secrets, enable the direct-watcher and
+            direct-harvest workflows, verify source on the explorer, and ask GeckoTerminal to index
+            the windows.
+          </p>
+        </section>
+      )}
+    </div>
+  );
+}

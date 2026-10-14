@@ -32,6 +32,34 @@ The venue fee is not flat: `EticaDirectFactory.feeBpsFor(trader)` returns the fe
 
 The pair prices a direct `swap(to)` at the recipient's tier. The router prices every swap at its `msg.sender` (the wallet signing the trade, which must itself pass the gate) via `swapFor(..., trader)` — whitelisted callers only — so EGAZ unwrap hops and multi-hop intermediates are charged to the signer, never to the router, a pair or a recipient who did not consent. Quotes: the two-argument V2 `getAmountsOut`/`getAmountsIn` price for `msg.sender` (`eth_call` `from`) exactly as the swap will charge; `getAmountsOut(amountIn, path, trader)` quotes for another wallet.
 
+## Deploying (`/deploy/direct`)
+
+Two pages. **`/deploy/direct`** (operator, treasury wallet) deploys and configures the venue, one
+signature per step: factory (gate 40,000 stETX, `feeToSetter` = treasury) → `EticaDirectMetaPairDeployer`
+→ router → harvester adapter → `setMetaPairDeployer` → whitelist router / harvester / seeder →
+`setFeeTo(harvester)` → `setFeeTiers` (40k 3.00%, 100k 1.50%, 250k 0.50%, 500k+ 0.10%) →
+`harvester.setTreasuryToken(USDC.e)` → `createMetaPair(WEGAZ, USDC.e, hubRouter)` and
+`createMetaPair(ETI, USDC.e, hubRouter)` → `setGuardian` (optional, the watcher's pause-only key).
+A final hand-off group deploys the 2-of-2 `UnanimousMultisig` (treasury + second signer) and runs
+`setFeeToSetter(multisig)` + `harvester.transferOwnership(multisig)`; do it after seeding and
+checking the venue, since every later admin change then needs both signatures.
+
+**`/deploy/direct/seed?factory=0x…`** (seeder, the whitelisted wallet) signs seven prefilled txs:
+`WEGAZ.deposit`, then per window a plain `transfer` of 10 USDC.e and of the EGAZ / ETI worth $10 at
+the hub *spot* price (reserves of USDC.e/ETX × ETX/WEGAZ|ETI) into the window followed by
+`mint(0x…dEaD)`. The window turns each leg into token/ETX hub LP it can never withdraw; the shares at
+the dead address are accounting only. Between a transfer and its mint the tokens sit on the window;
+the only thing anyone else can do with them is `skim` to the fee sink (the harvester, owner-rescuable),
+so send and mint back to back. Setup state (deployer, whitelists, feeTo, tiers, treasury token,
+windows, guardian, setter, harvester owner, window balances / hub LP) is re-read from chain, so a
+reload or a second browser resumes where things actually are. Afterwards paste the five addresses into
+`packages/shared/src/addresses.ts` (`directFactory`, `directMetaPairDeployer`, `directRouter`,
+`directHarvesterAdapter`, `directAdmin`), fill `apps/direct-watcher/expected.json`, and add the
+keeper with `harvester.setKeeper(keeper, true)` (through the multisig once handed off).
+
+Artifacts come from `node packages/contracts/script/extract-direct-artifacts.mjs` (after
+`forge build`), which writes `apps/web/src/lib/direct-deploy-artifacts.json`.
+
 ## Hub metapairs (windows over the hub)
 
 A plain direct pair holds its own EGAZ and USDC.e, which is a spoke-to-spoke bypass of the hub. `EticaDirectMetaPair` removes that: it is a pair-shaped contract for `token0`/`token1` (opened with `factory.createMetaPair(tokenA, tokenB, hubRouter)` after `setMetaPairDeployer(EticaDirectMetaPairDeployer)` — the creation code lives in a separate stateless deployer to keep the factory under the EIP-170 size cap; same registry and `PairCreated` event as `createPair`) whose only holdings are LP of the two **public V2 hub pools** `token0`/ETX and `token1`/ETX.
