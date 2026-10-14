@@ -10,12 +10,13 @@ export default function DeployDirectPage() {
       <header className="mb-6 space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Deploy EticaSwap Direct</h1>
         <p className="text-sm text-white/60">
-          Browser-side deployer for the stETX-gated Direct venue: factory, window deployer, router
-          and fee harvester, then the EGAZ/USDC.e and ETI/USDC.e windows (hub metapairs whose
-          liquidity is V2 hub LP and whose swaps settle through ETX). Signs with your connected
-          treasury wallet, one step at a time; no private key ever leaves the browser. The last
-          three steps hand admin to the 2-of-2 multisig. Seeding is a separate page,{' '}
-          <span className="font-mono">/deploy/direct/seed</span>, for the whitelisted wallet.
+          Treasury page. Every button below is one transaction signed by the connected treasury
+          wallet, top to bottom: deploy the four contracts (factory, window deployer, router, fee
+          harvester), then configure them and open the EGAZ/USDC.e and ETI/USDC.e windows. Nobody
+          else signs anything here. Seeding is the seeder&apos;s own page ({' '}
+          <span className="font-mono">/deploy/direct/seed</span>, link printed at the end) and
+          handing admin to the 2-of-2 is <span className="font-mono">/deploy/direct/handoff</span>,
+          for later.
         </p>
         <p className="text-sm text-white/60">
           Only wallets holding the stETX threshold (40,000 at launch) can trade here, at 3% → 0.1%
