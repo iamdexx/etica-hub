@@ -773,4 +773,48 @@ contract EticaDirectMetaPairTest is Test {
         adapter.harvest(plans, 0);
         assertEq(usdce.balanceOf(address(adapter)), 0);
     }
+
+    function test_unpauserResumesAloneButCannotAdminister() public {
+        address guardian = address(0x6A2D);
+        address unpauser = address(0x0E);
+        vm.startPrank(TREASURY);
+        factory.setGuardian(guardian);
+        factory.setUnpauser(unpauser, true);
+        vm.stopPrank();
+
+        vm.prank(guardian);
+        factory.pauseSwaps();
+        assertTrue(factory.swapsPaused());
+        vm.prank(unpauser);
+        factory.unpauseSwaps();
+        assertFalse(factory.swapsPaused());
+
+        // a setter pause is also lifted by a single unpauser (1-of-N resume)
+        vm.prank(TREASURY);
+        factory.pauseSwaps();
+        vm.prank(unpauser);
+        factory.unpauseSwaps();
+        assertFalse(factory.swapsPaused());
+
+        // unpausers cannot pause, name guardians or unpausers
+        vm.startPrank(unpauser);
+        vm.expectRevert(bytes("EDirect: NOT_GUARDIAN"));
+        factory.pauseSwaps();
+        vm.expectRevert(bytes("EDirect: FORBIDDEN"));
+        factory.setGuardian(unpauser);
+        vm.expectRevert(bytes("EDirect: FORBIDDEN"));
+        factory.setUnpauser(unpauser, true);
+        vm.stopPrank();
+
+        vm.prank(TREASURY);
+        factory.setUnpauser(unpauser, false);
+        vm.prank(guardian);
+        factory.pauseSwaps();
+        vm.expectRevert(bytes("EDirect: FORBIDDEN"));
+        vm.prank(unpauser);
+        factory.unpauseSwaps();
+        vm.expectRevert(bytes("EDirect: FORBIDDEN"));
+        vm.prank(NOBODY);
+        factory.unpauseSwaps();
+    }
 }
