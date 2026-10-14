@@ -380,7 +380,7 @@ export function AdminReactorCard() {
   return (
     <div className="space-y-6">
       {/* Wallet */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Wallet</h2>
         {!isConnected && (
           <button
@@ -440,7 +440,7 @@ export function AdminReactorCard() {
       </section>
 
       {/* Current state */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 text-sm">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 text-sm">
         <h2 className="mb-3 text-lg font-semibold">Current reactor + fee controller state</h2>
         <dl className="grid grid-cols-1 gap-y-2 md:grid-cols-[220px_1fr] md:gap-x-4">
           <dt className="text-white/50">Reactor</dt>
@@ -504,7 +504,7 @@ export function AdminReactorCard() {
       {feeControllerDeployed && (
         <>
           {/* setFeeBps */}
-          <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+          <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
             <h2 className="mb-3 text-lg font-semibold">setFeeBps</h2>
             <p className="mb-3 text-sm text-white/60">
               Sets the ETX protocol fee in basis points (1 bps = 0.01%). Charged on the ETX leg of
@@ -518,7 +518,7 @@ export function AdminReactorCard() {
                 value={bpsInput}
                 onChange={(e) => setBpsInput(e.target.value)}
                 spellCheck={false}
-                className="w-48 rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+                className="w-48 rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
                 placeholder="0"
               />
               <span className="text-sm text-white/60">bps</span>
@@ -551,7 +551,7 @@ export function AdminReactorCard() {
           </section>
 
           {/* setTreasury */}
-          <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+          <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
             <h2 className="mb-3 text-lg font-semibold">setTreasury</h2>
             <p className="mb-3 text-sm text-white/60">
               Rotates the recipient of the ETX protocol fee. Zero address is rejected on-chain.
@@ -561,7 +561,7 @@ export function AdminReactorCard() {
               value={treasuryInput}
               onChange={(e) => setTreasuryInput(e.target.value)}
               spellCheck={false}
-              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+              className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
               placeholder="0x…"
             />
             {!treasuryValid && (
@@ -590,7 +590,7 @@ export function AdminReactorCard() {
           </section>
 
           {/* setOwner on controller */}
-          <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+          <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
             <h2 className="mb-3 text-lg font-semibold">setOwner (fee controller)</h2>
             <p className="mb-3 text-sm text-amber-300/80">
               Danger: rotates the fee controller&apos;s admin key. The new address becomes the
@@ -604,7 +604,7 @@ export function AdminReactorCard() {
               value={ownerInput}
               onChange={(e) => setOwnerInput(e.target.value)}
               spellCheck={false}
-              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+              className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
               placeholder="0x… new owner"
             />
             {!ownerValid && ownerInput.trim() !== '' && (
@@ -635,7 +635,7 @@ export function AdminReactorCard() {
       )}
 
       {reactorDeployed && (
-        <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+        <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
           <h2 className="mb-3 text-lg font-semibold">setProtocolFeeController (reactor)</h2>
           <p className="mb-3 text-sm text-white/60">
             Replaces the entire fee-controller contract wired into the reactor. Use this if you
@@ -647,7 +647,7 @@ export function AdminReactorCard() {
             value={controllerInput}
             onChange={(e) => setControllerInput(e.target.value)}
             spellCheck={false}
-            className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+            className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
             placeholder="0x… new fee controller"
           />
           {!controllerValid && controllerInput.trim() !== '' && (

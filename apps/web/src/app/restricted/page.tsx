@@ -64,25 +64,25 @@ export default function RestrictedPage({
         </p>
         <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-white/70">
           <li>
-            <code className="rounded bg-white/5 px-1.5 py-0.5">/stake</code> —
+            <code className="rounded bg-white/[0.035] px-1.5 py-0.5">/stake</code> —
             the stETX liquid-staking vault.
           </li>
           <li>
-            <code className="rounded bg-white/5 px-1.5 py-0.5">/farms</code> —
+            <code className="rounded bg-white/[0.035] px-1.5 py-0.5">/farms</code> —
             LP-staking pools.
           </li>
           <li>
             stETX as a swap token on{' '}
-            <code className="rounded bg-white/5 px-1.5 py-0.5">/swap</code>.
+            <code className="rounded bg-white/[0.035] px-1.5 py-0.5">/swap</code>.
           </li>
           <li>
             The stETX/ETX stableswap LP card and stETX pairs on{' '}
-            <code className="rounded bg-white/5 px-1.5 py-0.5">/pool</code>.
+            <code className="rounded bg-white/[0.035] px-1.5 py-0.5">/pool</code>.
           </li>
         </ul>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+      <div className="surface p-6">
         <h2 className="text-base font-semibold text-white">
           What is available
         </h2>

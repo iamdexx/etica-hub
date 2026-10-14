@@ -324,7 +324,7 @@ export function SeedPoolsCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">What this does</h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-white/70">
           <li>Approves ETI + ETX allowances to the router.</li>
@@ -344,7 +344,7 @@ export function SeedPoolsCard() {
         </ol>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Prerequisites</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-white/70">
           <li>
@@ -360,7 +360,7 @@ export function SeedPoolsCard() {
         </ul>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Wallet</h2>
         {!isConnected && (
           <button
@@ -399,7 +399,7 @@ export function SeedPoolsCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 space-y-4">
         <h2 className="text-lg font-semibold">Contract addresses</h2>
         <AddressField
           label="Router (EticaSwapRouter)"
@@ -428,7 +428,7 @@ export function SeedPoolsCard() {
         </p>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-4">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 space-y-4">
         <h2 className="text-lg font-semibold">Pool amounts</h2>
         <p className="text-xs text-white/60">
           Amounts are in whole tokens (18 decimals). Defaults below target a $1,000 FDV on 100M
@@ -472,7 +472,7 @@ export function SeedPoolsCard() {
           const state = steps[step.key];
           const busy = state.status === 'signing' || state.status === 'pending';
           return (
-            <div key={step.key} className="rounded-xl border border-white/10 bg-white/5 p-5">
+            <div key={step.key} className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="font-semibold">{step.label}</h3>
@@ -546,7 +546,7 @@ function AddressField(props: {
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         spellCheck={false}
-        className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+        className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
         placeholder={props.placeholder}
       />
       {props.value && !props.valid && (
@@ -571,7 +571,7 @@ function AmountField(props: {
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         spellCheck={false}
-        className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+        className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
       />
       {props.hint && <div className="mt-1 text-xs text-white/50">{props.hint}</div>}
     </div>

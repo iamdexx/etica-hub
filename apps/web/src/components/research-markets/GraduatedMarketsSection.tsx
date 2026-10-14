@@ -138,7 +138,7 @@ export function GraduatedMarketsSection({
         </div>
         <Link
           href="/research-markets"
-          className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10"
+          className="rounded-md border border-white/[0.07] bg-white/[0.035] px-3 py-1.5 text-xs text-white/70 hover:bg-white/10"
         >
           View all markets →
         </Link>

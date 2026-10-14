@@ -71,7 +71,7 @@ export function FarmsView() {
   if (!deployed) {
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 text-sm text-white/70">
+        <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5 text-sm text-white/70">
           <div className="mb-1 text-base font-semibold text-white">
             ETXFarms not deployed yet
           </div>
@@ -110,7 +110,7 @@ export function FarmsView() {
   if (poolCount === 0) {
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 text-sm text-white/70">
+        <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5 text-sm text-white/70">
           <div className="mb-1 text-base font-semibold text-white">No farms configured yet</div>
           <p>
             ETXFarms is deployed but the owner has not registered any pools. Expected pools at
@@ -171,7 +171,7 @@ function FarmsSummary({ etxFarms }: { etxFarms: Address }) {
   const fallback = (fallbackQuery.data as Address | undefined) ?? ZERO;
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs text-white/60">
+    <div className="surface-2 p-4 text-xs text-white/60">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <div>
           <span className="text-white/40">Contract:</span>{' '}
@@ -192,24 +192,24 @@ function FarmsSummary({ etxFarms }: { etxFarms: Address }) {
 
 function FarmPoolSkeleton() {
   return (
-    <div className="animate-pulse rounded-xl border border-white/10 bg-white/[0.02] p-5">
+    <div className="animate-pulse rounded-xl border border-white/[0.07] bg-white/[0.02] p-5">
       <div className="mb-4 flex items-center justify-between">
         <div className="h-5 w-32 rounded bg-white/10" />
         <div className="h-4 w-16 rounded bg-white/10" />
       </div>
       <div className="space-y-2">
-        <div className="h-3 w-full rounded bg-white/5" />
-        <div className="h-3 w-5/6 rounded bg-white/5" />
-        <div className="h-3 w-2/3 rounded bg-white/5" />
+        <div className="h-3 w-full rounded bg-white/[0.035]" />
+        <div className="h-3 w-5/6 rounded bg-white/[0.035]" />
+        <div className="h-3 w-2/3 rounded bg-white/[0.035]" />
       </div>
-      <div className="mt-4 h-9 w-full rounded bg-white/5" />
+      <div className="mt-4 h-9 w-full rounded bg-white/[0.035]" />
     </div>
   );
 }
 
 function FarmsHowItWorks() {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-white/50">
+    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 text-xs text-white/50">
       <div className="font-medium text-white/70">How ETXFarms works</div>
       <ul className="mt-1 list-disc space-y-1 pl-5">
         <li>

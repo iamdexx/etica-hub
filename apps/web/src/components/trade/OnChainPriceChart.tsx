@@ -309,7 +309,7 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
   const changeSuffix = windowKey === 'all' ? 'all-time' : `vs ${windowLabel} ago`;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+    <div className="surface p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-white/50">
@@ -319,7 +319,7 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
             <button
               type="button"
               onClick={() => setInverted((v) => !v)}
-              className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] tracking-normal text-white/70 hover:bg-white/10 hover:text-white"
+              className="rounded-full border border-white/[0.07] bg-white/[0.035] px-2 py-0.5 text-[10px] tracking-normal text-white/70 hover:bg-white/10 hover:text-white"
               title="Flip the price quote between base and quote tokens"
               aria-label="Invert price quote"
             >
@@ -337,7 +337,7 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+          <div className="flex gap-1 rounded-full border border-white/[0.07] bg-white/[0.035] p-1">
             {TIME_WINDOWS.map((k) => (
               <button
                 key={k}
@@ -346,14 +346,14 @@ export function OnChainPriceChart({ baseSymbol, quoteSymbol }: OnChainPriceChart
                 className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
                   windowKey === k
                     ? 'bg-brand-accent text-brand-ink'
-                    : 'text-white/70 hover:bg-white/5 hover:text-white'
+                    : 'text-white/70 hover:bg-white/[0.035] hover:text-white'
                 }`}
               >
                 {TIME_WINDOW_LABELS[k]}
               </button>
             ))}
           </div>
-          <div className="hidden rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-wider text-white/50 sm:block">
+          <div className="hidden rounded-full border border-white/[0.07] bg-white/[0.035] px-2.5 py-1 text-[10px] uppercase tracking-wider text-white/50 sm:block">
             {visibleCount} pt{visibleCount === 1 ? '' : 's'}
           </div>
         </div>

@@ -132,8 +132,8 @@ export function BrandCandleChartCard({
         : null;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-white/10 bg-[#06110e] shadow-2xl shadow-emerald-950/10">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.025] px-4 py-3">
+    <section className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#06110e] shadow-2xl shadow-emerald-950/10">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] bg-white/[0.025] px-4 py-3">
         <div className="min-w-0">
           <div className="text-[11px] uppercase tracking-wider text-emerald-300/70">{eyebrow}</div>
           <h2 className="mt-1 text-sm font-semibold text-white">{title}</h2>
@@ -141,7 +141,7 @@ export function BrandCandleChartCard({
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           {showLegend && display.base ? (
-            <div className="flex items-baseline gap-2 rounded-md border border-white/10 bg-white/5 px-2 py-1 font-mono">
+            <div className="flex items-baseline gap-2 rounded-md border border-white/[0.07] bg-white/[0.035] px-2 py-1 font-mono">
               <span className="text-white/55">
                 {display.base}/{display.quote}
               </span>
@@ -159,7 +159,7 @@ export function BrandCandleChartCard({
               ) : null}
             </div>
           ) : null}
-          <div className="flex rounded-md border border-white/10 bg-black/30 p-1">
+          <div className="flex rounded-md border border-white/[0.07] bg-black/20 p-1">
             {INTERVALS.map((opt) => (
               <button
                 key={opt.key}
@@ -169,7 +169,7 @@ export function BrandCandleChartCard({
                 className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider transition-colors ${
                   opt.key === interval
                     ? 'bg-brand-accent text-brand-ink'
-                    : 'text-white/55 hover:bg-white/5 hover:text-white'
+                    : 'text-white/55 hover:bg-white/[0.035] hover:text-white'
                 }`}
               >
                 {opt.label}
@@ -182,7 +182,7 @@ export function BrandCandleChartCard({
       <div className="px-2 pb-2 pt-2 sm:px-3">
         <BrandCandleChart candles={candles} overlay={overlay} />
       </div>
-      {footer ? <div className="border-t border-white/10">{footer}</div> : null}
+      {footer ? <div className="border-t border-white/[0.07]">{footer}</div> : null}
     </section>
   );
 }

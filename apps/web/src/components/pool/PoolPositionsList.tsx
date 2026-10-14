@@ -345,7 +345,7 @@ export function PoolPositionsList({
 
   if (!isConnected) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm text-white/60">
+      <div className="surface p-5 text-sm text-white/60">
         Connect your wallet to see your liquidity positions.
       </div>
     );
@@ -355,7 +355,7 @@ export function PoolPositionsList({
     <div className="space-y-3">
       <h2 className="text-sm font-medium text-white/80">Your positions</h2>
       {positions.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm text-white/60">
+        <div className="surface p-5 text-sm text-white/60">
           No LP positions yet. Add liquidity above to start earning 0.25% of every swap on your pool.
         </div>
       ) : (
@@ -575,7 +575,7 @@ function PositionRow({
   const isWorking = isPending || receipt.isLoading;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
+    <div className="surface p-4 space-y-3">
       <div
         className="flex cursor-pointer items-center justify-between"
         onClick={() => setOpen((o) => !o)}
@@ -645,13 +645,13 @@ function PositionRow({
               <button
                 key={p}
                 onClick={() => setPct(p)}
-                className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs hover:bg-white/10"
+                className="rounded-md border border-white/[0.07] bg-white/[0.035] px-2 py-1 text-xs hover:bg-white/10"
               >
                 {p}%
               </button>
             ))}
           </div>
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-white/70 space-y-1">
+          <div className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-xs text-white/70 space-y-1">
             <div className="flex justify-between">
               <span className="text-white/50">You receive</span>
               <span>

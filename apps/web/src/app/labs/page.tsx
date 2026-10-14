@@ -488,18 +488,25 @@ export default function LabsPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8 px-4 py-8 md:px-6">
+    <div className="space-y-10">
       {/* ── Hero ── */}
-      <section className="rounded-3xl border border-emerald-400/20 bg-[#04110d] p-6 shadow-2xl shadow-emerald-950/20">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-emerald-300">
+      <section className="relative">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-24 -top-24 h-72 w-[34rem] rounded-full bg-brand-accent/15 blur-3xl"
+        />
+        <div
+          className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between"
+          data-stagger
+        >
+          <div className="max-w-3xl space-y-5">
+            <div className="inline-flex items-center gap-2 rounded-full border border-brand-accent/30 bg-brand-accent/10 px-3 py-1 text-[11px] font-medium uppercase tracking-eyebrow text-brand-glow">
               Etica Labs &middot; AI Molecular Intelligence
             </div>
-            <h1 className="text-4xl font-semibold tracking-tight text-white md:text-5xl">
+            <h1 className="display text-4xl sm:text-5xl md:text-6xl">
               Design, fold, analyze &amp; share peptide structures.
             </h1>
-            <p className="text-base text-white/70 md:text-lg">
+            <p className="lede">
               Natural-language design, multi-engine structure prediction with automatic failover,
               AI-powered structural analysis, and real-time WebGL rendering.
             </p>
@@ -522,8 +529,12 @@ export default function LabsPage() {
           className="group rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-5 transition hover:border-emerald-400/40 hover:bg-emerald-400/10"
         >
           <div className="mb-2 text-2xl">🧬</div>
-          <h3 className="text-sm font-semibold text-white group-hover:text-emerald-200">Marketplace</h3>
-          <p className="mt-1 text-xs text-white/40">Buy & sell research NFTs. Royalties auto-split to discoverers.</p>
+          <h3 className="text-sm font-semibold text-white group-hover:text-emerald-200">
+            Marketplace
+          </h3>
+          <p className="mt-1 text-xs text-white/40">
+            Buy & sell research NFTs. Royalties auto-split to discoverers.
+          </p>
         </Link>
         <Link
           href="/labs/feed"
@@ -533,16 +544,24 @@ export default function LabsPage() {
             <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" />
             <span className="text-[10px] uppercase tracking-wider text-sky-300">Live</span>
           </div>
-          <h3 className="text-sm font-semibold text-white group-hover:text-sky-200">Research Feed</h3>
-          <p className="mt-1 text-xs text-white/40">Watch the AI agent work in real time. Fold, analyze, expand.</p>
+          <h3 className="text-sm font-semibold text-white group-hover:text-sky-200">
+            Research Feed
+          </h3>
+          <p className="mt-1 text-xs text-white/40">
+            Watch the AI agent work in real time. Fold, analyze, expand.
+          </p>
         </Link>
         <Link
           href="/labs/goals"
           className="group rounded-2xl border border-violet-400/20 bg-violet-400/5 p-5 transition hover:border-violet-400/40 hover:bg-violet-400/10"
         >
           <div className="mb-2 text-2xl">🎯</div>
-          <h3 className="text-sm font-semibold text-white group-hover:text-violet-200">Research Goals</h3>
-          <p className="mt-1 text-xs text-white/40">Browse the tree of branching research directions.</p>
+          <h3 className="text-sm font-semibold text-white group-hover:text-violet-200">
+            Research Goals
+          </h3>
+          <p className="mt-1 text-xs text-white/40">
+            Browse the tree of branching research directions.
+          </p>
         </Link>
         <Link
           href="/labs/archive"
@@ -550,15 +569,21 @@ export default function LabsPage() {
         >
           <div className="mb-2 text-2xl">📚</div>
           <h3 className="text-sm font-semibold text-white group-hover:text-cyan-200">Archive</h3>
-          <p className="mt-1 text-xs text-white/40">Search every discovery by disease, target, keyword & source.</p>
+          <p className="mt-1 text-xs text-white/40">
+            Search every discovery by disease, target, keyword & source.
+          </p>
         </Link>
         <Link
           href="/labs/moderation"
           className="group rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5 transition hover:border-amber-400/40 hover:bg-amber-400/10"
         >
           <div className="mb-2 text-2xl">⚖️</div>
-          <h3 className="text-sm font-semibold text-white group-hover:text-amber-200">Peer Review</h3>
-          <p className="mt-1 text-xs text-white/40">Community moderation — stake on quality research.</p>
+          <h3 className="text-sm font-semibold text-white group-hover:text-amber-200">
+            Peer Review
+          </h3>
+          <p className="mt-1 text-xs text-white/40">
+            Community moderation — stake on quality research.
+          </p>
         </Link>
       </section>
 
@@ -567,7 +592,7 @@ export default function LabsPage() {
 
       <section className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
         {/* ── Left column: prompt + controls ── */}
-        <div className="min-w-0 space-y-5 rounded-3xl border border-white/10 bg-[#050b09] p-5">
+        <div className="min-w-0 space-y-5 rounded-3xl border border-white/[0.07] bg-[#050b09] p-5">
           <div>
             <div className="text-sm font-medium text-white">Prompt</div>
             <div className="mt-1 text-sm text-white/55">
@@ -578,7 +603,7 @@ export default function LabsPage() {
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value.slice(0, MAX_PROMPT_CHARS))}
-            className="min-h-[160px] w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white outline-none ring-0 transition focus:border-emerald-400/40"
+            className="min-h-[160px] w-full rounded-2xl border border-white/[0.07] bg-black/20 p-4 text-sm text-white outline-none ring-0 transition focus:border-emerald-400/40"
             placeholder="Design a 40 amino acid peptide beginning with MVL..."
           />
 
@@ -647,7 +672,7 @@ export default function LabsPage() {
                       {references.map((r, i) => (
                         <li
                           key={`${r.source}-${r.id}`}
-                          className="min-w-0 rounded-xl border border-white/10 bg-black/20 p-2.5"
+                          className="min-w-0 rounded-xl border border-white/[0.07] bg-black/20 p-2.5"
                         >
                           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
                             <span className="font-mono text-emerald-200/90">[{i + 1}]</span>
@@ -687,7 +712,7 @@ export default function LabsPage() {
                   {plan.candidates.map((c, i) => (
                     <div
                       key={i}
-                      className="min-w-0 rounded-xl border border-white/10 bg-black/30 p-3"
+                      className="min-w-0 rounded-xl border border-white/[0.07] bg-black/20 p-3"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs font-medium text-white/80">
@@ -740,7 +765,9 @@ export default function LabsPage() {
                   key={eng.id}
                   id={eng.id}
                   label={eng.label}
-                  description={eng.isConfigured ? eng.description : `Requires ${eng.requiredEnv.join(', ')}`}
+                  description={
+                    eng.isConfigured ? eng.description : `Requires ${eng.requiredEnv.join(', ')}`
+                  }
                   active={selectedEngine === eng.id}
                   configured={eng.isConfigured}
                   onClick={() => setSelectedEngine(eng.id)}
@@ -759,12 +786,17 @@ export default function LabsPage() {
           </button>
 
           {/* ── Pipeline info ── */}
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
+          <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4 text-sm text-white/70">
             <div className="font-medium text-white">Pipeline</div>
             <ol className="mt-3 space-y-2 text-white/60">
               <li>1. Prompt &rarr; Nvidia Nemotron research plan (optional)</li>
               <li>2. Plan / Prompt &rarr; Nvidia sequence extraction</li>
-              <li>3. Sequence &rarr; {selectedEngine === 'auto' ? 'Multi-engine cascade' : engines.find((e) => e.id === selectedEngine)?.label ?? selectedEngine}</li>
+              <li>
+                3. Sequence &rarr;{' '}
+                {selectedEngine === 'auto'
+                  ? 'Multi-engine cascade'
+                  : (engines.find((e) => e.id === selectedEngine)?.label ?? selectedEngine)}
+              </li>
               <li>4. PDB &rarr; 3Dmol.js render</li>
               <li>5. Sequence &rarr; AI structural analysis</li>
             </ol>
@@ -772,7 +804,7 @@ export default function LabsPage() {
 
           {/* ── Fold attempts trace ── */}
           {attempts.length > 0 && (
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-black/20 p-4">
               <div className="text-xs font-medium uppercase tracking-wider text-white/50">
                 Engine trace
               </div>
@@ -806,7 +838,7 @@ export default function LabsPage() {
         </div>
 
         {/* ── Right column: viewer + analysis + tools ── */}
-        <div className="min-w-0 space-y-5 rounded-3xl border border-white/10 bg-[#050b09] p-5">
+        <div className="min-w-0 space-y-5 rounded-3xl border border-white/[0.07] bg-[#050b09] p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
               <div className="text-sm font-medium text-white">Molecular Viewer</div>
@@ -823,7 +855,9 @@ export default function LabsPage() {
               <div ref={viewerRef} className="absolute inset-0" />
               {!pdb && (
                 <div className="pointer-events-none absolute inset-0 flex items-center bg-[#020806] justify-center text-center text-sm text-white/40">
-                  {loading ? 'Preparing protein structure\u2026' : 'Your folded molecule will render here.'}
+                  {loading
+                    ? 'Preparing protein structure\u2026'
+                    : 'Your folded molecule will render here.'}
                 </div>
               )}
             </div>
@@ -845,14 +879,14 @@ export default function LabsPage() {
               <button
                 type="button"
                 onClick={handleExport}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.035] px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10"
               >
                 <DownloadIcon /> Export PDB
               </button>
               <button
                 type="button"
                 onClick={handleShare}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.035] px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10"
               >
                 <ShareIcon /> {copied ? 'Copied!' : 'Share link'}
               </button>
@@ -867,7 +901,7 @@ export default function LabsPage() {
               <button
                 type="button"
                 onClick={handleResetViewer}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white/80 transition hover:bg-white/10"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.035] px-4 py-2 text-xs font-medium text-white/80 transition hover:bg-white/10"
               >
                 <CloseIcon /> Start over
               </button>
@@ -888,15 +922,19 @@ export default function LabsPage() {
 
           {/* ── Sequence + System status ── */}
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-xs uppercase tracking-wider text-white/40">Extracted sequence</div>
+            <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4">
+              <div className="text-[11px] uppercase tracking-eyebrow text-white/45">
+                Extracted sequence
+              </div>
               <div className="mt-3 break-all font-mono text-xs text-emerald-200">
                 {sequence || 'No sequence generated yet.'}
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-xs uppercase tracking-wider text-white/40">System status</div>
+            <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4">
+              <div className="text-[11px] uppercase tracking-eyebrow text-white/45">
+                System status
+              </div>
               <div className="mt-3 space-y-2 text-sm text-white/70">
                 <div>Nvidia Nemotron: operational</div>
                 <div>
@@ -912,7 +950,7 @@ export default function LabsPage() {
 
           {/* ── Mutate panel ── */}
           {sequence && stage === 'rendered' && (
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4">
               <div className="mb-3 text-xs font-medium uppercase tracking-wider text-white/50">
                 Point mutation
               </div>
@@ -924,8 +962,10 @@ export default function LabsPage() {
                     min={0}
                     max={sequence.length - 1}
                     value={mutateIdx ?? ''}
-                    onChange={(e) => setMutateIdx(e.target.value === '' ? null : Number(e.target.value))}
-                    className="block w-20 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                    onChange={(e) =>
+                      setMutateIdx(e.target.value === '' ? null : Number(e.target.value))
+                    }
+                    className="block w-20 rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                   />
                 </label>
                 <label className="space-y-1">
@@ -935,7 +975,7 @@ export default function LabsPage() {
                     maxLength={1}
                     value={mutateAA}
                     onChange={(e) => setMutateAA(e.target.value.toUpperCase())}
-                    className="block w-14 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-center text-sm text-white outline-none focus:border-emerald-400/40"
+                    className="block w-14 rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 text-center text-sm text-white outline-none focus:border-emerald-400/40"
                     placeholder="A"
                   />
                 </label>
@@ -943,13 +983,15 @@ export default function LabsPage() {
                   type="button"
                   onClick={handleMutate}
                   disabled={mutateIdx === null || !mutateAA || loading}
-                  className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10 disabled:opacity-40"
+                  className="rounded-lg border border-white/15 bg-white/[0.035] px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10 disabled:opacity-40"
                 >
                   Mutate &amp; re-fold
                 </button>
                 {mutateIdx !== null && mutateIdx >= 0 && mutateIdx < sequence.length && (
                   <span className="text-xs text-white/40">
-                    Current: <span className="font-mono text-emerald-300">{sequence[mutateIdx]}</span> at position {mutateIdx}
+                    Current:{' '}
+                    <span className="font-mono text-emerald-300">{sequence[mutateIdx]}</span> at
+                    position {mutateIdx}
                   </span>
                 )}
               </div>
@@ -961,7 +1003,8 @@ export default function LabsPage() {
               <div className="break-words">{error}</div>
               {attempts.length > 0 && (
                 <div className="text-xs text-rose-200/70">
-                  Tried {attempts.length} engine{attempts.length === 1 ? '' : 's'}; see the trace on the left for details.
+                  Tried {attempts.length} engine{attempts.length === 1 ? '' : 's'}; see the trace on
+                  the left for details.
                 </div>
               )}
             </div>
@@ -1002,7 +1045,7 @@ function EnginePill({
         active
           ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-200'
           : configured || id === 'auto'
-            ? 'border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+            ? 'border-white/15 bg-white/[0.035] text-white/70 hover:bg-white/10 hover:text-white'
             : 'cursor-not-allowed border-white/8 bg-white/[0.02] text-white/30',
       ].join(' ')}
     >
@@ -1014,15 +1057,7 @@ function EnginePill({
   );
 }
 
-function PlanField({
-  label,
-  value,
-  compact,
-}: {
-  label: string;
-  value: string;
-  compact?: boolean;
-}) {
+function PlanField({ label, value, compact }: { label: string; value: string; compact?: boolean }) {
   if (!value) return null;
   return (
     <div className={compact ? '' : 'space-y-1'}>
@@ -1036,7 +1071,7 @@ function PlanField({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+    <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4">
       <div className="text-[11px] uppercase tracking-wider text-white/40">{label}</div>
       <div className="mt-1 text-lg font-semibold text-white">{value}</div>
     </div>
@@ -1064,7 +1099,16 @@ function StatusBadge({ stage }: { stage: 'idle' | 'sequence' | 'folding' | 'rend
 
 function DownloadIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
@@ -1074,7 +1118,16 @@ function DownloadIcon() {
 
 function ShareIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="18" cy="5" r="3" />
       <circle cx="6" cy="12" r="3" />
       <circle cx="18" cy="19" r="3" />
@@ -1086,7 +1139,16 @@ function ShareIcon() {
 
 function SparkleIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3Z" />
     </svg>
   );
@@ -1094,7 +1156,16 @@ function SparkleIcon() {
 
 function CloseIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
     </svg>

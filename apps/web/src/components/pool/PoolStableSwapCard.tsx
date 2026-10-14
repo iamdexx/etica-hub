@@ -435,7 +435,7 @@ export function PoolStableSwapCard() {
         </div>
       </div>
 
-      <div className="mt-4 inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5 text-xs">
+      <div className="mt-4 inline-flex rounded-lg border border-white/[0.07] bg-white/[0.02] p-0.5 text-xs">
         <button
           type="button"
           onClick={() => setMode('add')}
@@ -536,7 +536,7 @@ export function PoolStableSwapCard() {
 
       <div className="mt-4 space-y-2">
         {!isConnected && (
-          <div className="rounded-md bg-white/5 px-3 py-2 text-xs text-white/60">
+          <div className="rounded-md bg-white/[0.035] px-3 py-2 text-xs text-white/60">
             Connect your wallet to add or remove liquidity.
           </div>
         )}
@@ -665,7 +665,7 @@ function AmountInput(props: {
 }) {
   const { label, value, onChange, balance, balanceLabel = 'Balance' } = props;
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
+    <div className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
       <div className="flex items-baseline justify-between text-[11px] text-white/50">
         <span>{label}</span>
         <button

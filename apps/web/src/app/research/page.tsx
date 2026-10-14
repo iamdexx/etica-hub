@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { PageHero } from '@/components/PageHero';
 import { PROPOSAL_STATUS_LABEL, ProposalStatus } from '@etica-hub/shared';
 import {
   listRecentProposals,
@@ -95,39 +96,40 @@ export default async function ResearchPage({
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-2xl border border-sky-400/20 bg-[#061018] shadow-2xl shadow-sky-950/20">
-        <div className="grid gap-5 border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.01))] p-5 lg:grid-cols-[1fr_0.9fr] lg:p-6">
-          <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-[11px] uppercase tracking-wider text-sky-200">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-300" />
-              Research Proposal Terminal · chain {chainId}
-            </div>
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">Research Hub with proposal intelligence.</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                Live governance proposals rendered from Etica core + IPFS with proposal status, proposer identity, disease context, and search controls integrated into one research workflow.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs">
-              <Link href="/explorer" className="rounded-md border border-sky-400/25 bg-sky-400/10 px-3 py-2 text-sky-100 hover:bg-sky-400/15">Open explorer</Link>
-              <Link href="/explorer/tokens" className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white/75 hover:bg-white/10">ETI token</Link>
-              <Link href="/whitepaper" className="rounded-md bg-brand-accent px-3 py-2 font-medium text-brand-ink hover:opacity-90">Whitepaper</Link>
-            </div>
-          </div>
-
+      <PageHero
+        tone="sky"
+        eyebrow={`Research Proposal Terminal · chain ${chainId}`}
+        title="Research Hub with proposal intelligence."
+        description="Live governance proposals rendered from Etica core + IPFS with proposal status, proposer identity, disease context, and search controls integrated into one research workflow."
+        actions={
+          <>
+            <Link href="/explorer" className="btn-tone px-3.5 py-1.5 text-xs">
+              Open explorer
+            </Link>
+            <Link href="/explorer/tokens" className="btn-ghost px-3.5 py-1.5 text-xs">
+              ETI token
+            </Link>
+            <Link href="/whitepaper" className="btn-primary px-3.5 py-1.5 text-xs">
+              Whitepaper
+            </Link>
+          </>
+        }
+        aside={
           <TelemetrySection
             title="Research telemetry"
             badge={<SourceBadge tone="sky">live governance feed</SourceBadge>}
             metrics={telemetry}
             description="Proposal counts and statuses are loaded from the live governance feed. Decorative fake activity charts were intentionally removed in favor of direct proposal telemetry."
           />
-        </div>
-      </section>
+        }
+      />
 
       <section className="grid gap-6 lg:grid-cols-[0.72fr_1fr] lg:items-start">
         <aside className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-[#07120f] p-5">
-            <div className="text-xs uppercase tracking-wider text-white/40">Research controls</div>
+          <div className="surface p-5">
+            <div className="text-[11px] uppercase tracking-eyebrow text-white/45">
+              Research controls
+            </div>
             <form className="mt-4 space-y-4" role="search">
               <div className="flex flex-wrap gap-2">
                 {STATUS_FILTERS.map((f) => {
@@ -149,7 +151,7 @@ export default async function ResearchPage({
                       className={`rounded-full border px-3 py-1 text-xs transition ${
                         active
                           ? 'border-sky-300/40 bg-sky-300/10 text-sky-100'
-                          : 'border-white/10 text-white/60 hover:border-white/20 hover:text-white'
+                          : 'border-white/[0.07] text-white/60 hover:border-white/20 hover:text-white'
                       }`}
                     >
                       {f.label}
@@ -163,7 +165,7 @@ export default async function ResearchPage({
                 name="q"
                 defaultValue={q ?? ''}
                 placeholder="Search title, disease, or proposer..."
-                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-sky-300/50 focus:outline-none"
+                className="w-full rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-sky-300/50 focus:outline-none"
               />
 
               {statusFilter !== 'all' && (
@@ -176,23 +178,26 @@ export default async function ResearchPage({
             </form>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 text-xs leading-5 text-white/50">
+          <div className="surface px-4 py-3 text-xs leading-5 text-white/50">
             <div className="font-medium text-white/70">Proposal workflow</div>
-            <p className="mt-1">Open proposals to inspect IPFS content, voter status, proposer identity, and tipping paths without leaving the Research Hub.</p>
+            <p className="mt-1">
+              Open proposals to inspect IPFS content, voter status, proposer identity, and tipping
+              paths without leaving the Research Hub.
+            </p>
           </div>
         </aside>
 
-        <div className="rounded-2xl border border-sky-400/20 bg-white/[0.03] p-3 shadow-xl shadow-sky-950/20">
+        <div className="surface p-3">
           {error ? (
             <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-6 text-sm text-red-200">
               Couldn&apos;t reach the Etica RPC to load proposals. {error}
             </div>
           ) : proposals.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-8 text-center text-sm text-white/50">
+            <div className="rounded-2xl border border-dashed border-white/[0.07] bg-white/[0.035] p-8 text-center text-sm text-white/50">
               No proposals on this chain yet.
             </div>
           ) : filtered.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-8 text-center text-sm text-white/50">
+            <div className="rounded-2xl border border-dashed border-white/[0.07] bg-white/[0.035] p-8 text-center text-sm text-white/50">
               No proposals match your filters.
             </div>
           ) : (
@@ -201,7 +206,7 @@ export default async function ResearchPage({
                 <li key={p.hash}>
                   <Link
                     href={`/research/${p.hash}`}
-                    className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-black/25 p-4 transition hover:border-sky-300/30 hover:bg-sky-300/[0.04]"
+                    className="flex flex-col gap-1 surface p-4 transition hover:border-sky-300/30 hover:bg-sky-300/[0.04]"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-sm font-medium">
@@ -213,7 +218,9 @@ export default async function ResearchPage({
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/50">
                       <span>
                         Disease:{' '}
-                        <span className="text-white/70">{p.diseaseName || `#${p.chunkId.toString()}`}</span>
+                        <span className="text-white/70">
+                          {p.diseaseName || `#${p.chunkId.toString()}`}
+                        </span>
                       </span>
                       <span>
                         Proposer: <span className="text-white/70">{shortAddress(p.proposer)}</span>
@@ -246,7 +253,9 @@ function StatusPill({ status, label }: { status: ProposalStatus; label: string }
         : 'border-amber-400/30 bg-amber-400/10 text-amber-200';
 
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${color}`}>
+    <span
+      className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${color}`}
+    >
       {label}
     </span>
   );

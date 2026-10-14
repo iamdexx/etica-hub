@@ -81,7 +81,7 @@ export function StakeStats({ stakedETX }: StakeStatsProps) {
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+    <div className="surface-2 p-3">
       <div className="text-[11px] uppercase tracking-wider text-white/50">{label}</div>
       <div className="mt-1 truncate text-base font-semibold text-white" title={value}>
         {value}

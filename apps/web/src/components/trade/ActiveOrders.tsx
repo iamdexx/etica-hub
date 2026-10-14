@@ -98,7 +98,7 @@ export function ActiveOrders({ swapperOverride }: { swapperOverride?: Address } 
 
   if (!useRegistry && !orderbookUrl) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/60">
+      <div className="surface p-4 text-xs text-white/60">
         Order store not configured. Deploy the on-chain <code className="text-white/80">OrderRegistry</code>{' '}
         or set <code className="text-white/80">NEXT_PUBLIC_ORDERBOOK_URL</code>.
       </div>
@@ -106,7 +106,7 @@ export function ActiveOrders({ swapperOverride }: { swapperOverride?: Address } 
   }
   if (!swapper) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/60">
+      <div className="surface p-4 text-xs text-white/60">
         Connect a wallet to see your open orders.
       </div>
     );
@@ -119,7 +119,7 @@ export function ActiveOrders({ swapperOverride }: { swapperOverride?: Address } 
   const canCancel = permit2 !== '0x0000000000000000000000000000000000000000';
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5">
+    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.035]">
       <header className="flex items-baseline justify-between border-b border-white/5 px-4 py-3">
         <h2 className="text-sm font-medium text-white/90">Open orders</h2>
         <span className="text-[11px] uppercase tracking-wider text-white/40">
@@ -350,7 +350,7 @@ function OrderRow({
           type="button"
           onClick={onCancel}
           disabled={!canCancel || isSubmitting || marking}
-          className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-white/70 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-full border border-white/[0.07] bg-white/[0.035] px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-white/70 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {isSubmitting ? 'Cancelling…' : marking ? 'Finalizing…' : 'Cancel'}
         </button>

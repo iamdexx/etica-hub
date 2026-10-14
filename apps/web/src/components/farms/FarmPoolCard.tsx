@@ -260,7 +260,7 @@ export function FarmPoolCard({
     totalAlloc > 0n ? Number((allocPoint * 10000n) / totalAlloc) / 100 : 0;
 
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+    <section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5">
       <header className="mb-4 flex items-baseline justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm uppercase tracking-wide text-white/40">Pool #{pid}</div>
@@ -277,7 +277,7 @@ export function FarmPoolCard({
       </header>
 
       <div className="mb-3 grid grid-cols-2 gap-3 text-xs">
-        <div className="min-w-0 rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="min-w-0 rounded-lg border border-white/[0.07] bg-black/20 p-3">
           <div className="text-white/40">Your stake</div>
           <div
             className="mt-1 truncate font-mono text-sm text-white"
@@ -286,7 +286,7 @@ export function FarmPoolCard({
             {formatTokenBalance(stakedAmount)} LP
           </div>
         </div>
-        <div className="min-w-0 rounded-lg border border-white/10 bg-black/20 p-3">
+        <div className="min-w-0 rounded-lg border border-white/[0.07] bg-black/20 p-3">
           <div className="text-white/40">Pending</div>
           <div
             className="mt-1 truncate font-mono text-sm text-emerald-300"
@@ -297,7 +297,7 @@ export function FarmPoolCard({
         </div>
       </div>
 
-      <div className="mb-3 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm">
+      <div className="mb-3 flex items-center gap-2 rounded-full border border-white/[0.07] bg-white/[0.035] p-1 text-sm">
         <TabButton active={tab === 'stake'} onClick={() => setTab('stake')}>
           Stake
         </TabButton>
@@ -315,7 +315,7 @@ export function FarmPoolCard({
           onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
           placeholder="0.0"
           spellCheck={false}
-          className="flex-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm focus:border-brand-accent focus:outline-none"
+          className="flex-1 rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm focus:border-brand-accent focus:outline-none"
         />
         <button
           type="button"
@@ -323,7 +323,7 @@ export function FarmPoolCard({
             setAmount(formatUnits(tab === 'stake' ? lpBalance : stakedAmount, 18))
           }
           disabled={!isConnected}
-          className="rounded-lg border border-white/10 bg-white/5 px-3 text-xs text-white/70 transition hover:bg-white/10 disabled:opacity-40"
+          className="rounded-lg border border-white/[0.07] bg-white/[0.035] px-3 text-xs text-white/70 transition hover:bg-white/10 disabled:opacity-40"
         >
           Max
         </button>
@@ -389,7 +389,7 @@ export function FarmPoolCard({
           </div>
         )}
         {lastHash && receiptQuery.isLoading && (
-          <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
+          <div className="rounded-md border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-xs text-white/60">
             Waiting for confirmation…
           </div>
         )}

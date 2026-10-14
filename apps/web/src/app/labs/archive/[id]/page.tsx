@@ -100,7 +100,7 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
       <header className="space-y-3">
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           {r.disease && (
-            <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 uppercase tracking-wider text-white/60">
+            <span className="rounded border border-white/[0.07] bg-white/[0.04] px-2 py-0.5 uppercase tracking-wider text-white/60">
               {r.disease}
             </span>
           )}
@@ -239,7 +239,7 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
         </Card>
       )}
 
-      <footer className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4 text-xs text-white/50">
+      <footer className="flex flex-wrap items-center gap-3 border-t border-white/[0.07] pt-4 text-xs text-white/50">
         <span>
           {r.iterations} iteration{r.iterations === 1 ? '' : 's'} · {r.candidates.length} candidate
           {r.candidates.length === 1 ? '' : 's'}
@@ -282,7 +282,7 @@ const CHECK_STYLE = {
 
 function Card({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <section className="surface-2 p-4">
       <h2 className="mb-2 text-[11px] uppercase tracking-wider text-white/45">{label}</h2>
       <div className="text-sm text-white/80">{children}</div>
     </section>

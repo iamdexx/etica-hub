@@ -213,7 +213,7 @@ export function MintResButton({
   // Render: contract not deployed yet
   if (notDeployed) {
     return (
-      <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[11px] text-white/55">
+      <div className="mt-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-[11px] text-white/55">
         EticaResearchNFT is not deployed on chain 61803 yet — minting unlocks once
         the deployer lands.
       </div>
@@ -382,7 +382,7 @@ function MintConfirm({
           type="button"
           disabled={busy}
           onClick={onCancel}
-          className="rounded border border-white/10 px-2.5 py-1 text-[11px] uppercase tracking-wider text-white/70 transition-colors hover:border-white/30 hover:text-white disabled:opacity-50"
+          className="rounded border border-white/[0.07] px-2.5 py-1 text-[11px] uppercase tracking-wider text-white/70 transition-colors hover:border-white/30 hover:text-white disabled:opacity-50"
         >
           cancel
         </button>

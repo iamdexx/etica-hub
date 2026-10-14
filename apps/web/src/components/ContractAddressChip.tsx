@@ -41,7 +41,7 @@ export function ContractAddressChip({
 
   return (
     <div
-      className={`inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/70 ${className}`}
+      className={`inline-flex items-center gap-2 rounded-full border border-white/[0.07] bg-white/[0.03] px-3 py-1 text-xs text-white/70 ${className}`}
     >
       <span className="text-white/45">{label}</span>
       <a

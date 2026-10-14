@@ -5,7 +5,7 @@
 import type { ModerationStatus } from '@/lib/labs/moderation';
 
 const STYLES: Record<ModerationStatus, { cls: string; label: string }> = {
-  visible: { cls: 'border-white/10 bg-white/[0.04] text-white/65', label: 'visible' },
+  visible: { cls: 'border-white/[0.07] bg-white/[0.04] text-white/65', label: 'visible' },
   hidden: { cls: 'border-amber-400/30 bg-amber-400/10 text-amber-200', label: 'community-hidden' },
   'operator-hidden': {
     cls: 'border-rose-400/30 bg-rose-400/10 text-rose-200',

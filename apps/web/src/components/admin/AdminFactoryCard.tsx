@@ -309,7 +309,7 @@ export function AdminFactoryCard() {
   return (
     <div className="space-y-6">
       {/* Wallet */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Wallet</h2>
         {!isConnected && (
           <button
@@ -356,7 +356,7 @@ export function AdminFactoryCard() {
       </section>
 
       {/* Current state */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 text-sm">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 text-sm">
         <h2 className="mb-3 text-lg font-semibold">Current factory state</h2>
         <dl className="grid grid-cols-1 gap-y-2 md:grid-cols-[200px_1fr] md:gap-x-4">
           <dt className="text-white/50">Factory</dt>
@@ -401,7 +401,7 @@ export function AdminFactoryCard() {
       </section>
 
       {/* setFeeTo */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">setFeeTo</h2>
         <p className="mb-3 text-sm text-white/60">
           Sets the treasury recipient for the 10,000 ETX pool-creation fee and the 0.05% protocol
@@ -413,7 +413,7 @@ export function AdminFactoryCard() {
           value={feeToInput}
           onChange={(e) => setFeeToInput(e.target.value)}
           spellCheck={false}
-          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+          className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
           placeholder="0x…"
         />
         {!feeToValid && (
@@ -436,7 +436,7 @@ export function AdminFactoryCard() {
       </section>
 
       {/* setTrustedCreator */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">setTrustedCreator</h2>
         <p className="mb-3 text-sm text-white/60">
           Grants or revokes an address&apos;s permission to create pairs that don&apos;t include
@@ -449,7 +449,7 @@ export function AdminFactoryCard() {
             value={tcInput}
             onChange={(e) => setTcInput(e.target.value)}
             spellCheck={false}
-            className="flex-1 rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+            className="flex-1 rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
             placeholder="creator address 0x…"
           />
           <label className="flex items-center gap-2 text-sm text-white/80">
@@ -482,7 +482,7 @@ export function AdminFactoryCard() {
       </section>
 
       {/* setPairCreationFee */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">setPairCreationFee</h2>
         <p className="mb-3 text-sm text-white/60">
           Changes the ETX amount charged on <code>createPair</code>. Enter the value in ETX (not
@@ -494,7 +494,7 @@ export function AdminFactoryCard() {
             value={feeInput}
             onChange={(e) => setFeeInput(e.target.value)}
             spellCheck={false}
-            className="w-48 rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+            className="w-48 rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
             placeholder="10000"
           />
           <span className="text-sm text-white/60">ETX</span>
@@ -519,7 +519,7 @@ export function AdminFactoryCard() {
       </section>
 
       {/* setFeeToSetter */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">setFeeToSetter</h2>
         <p className="mb-3 text-sm text-amber-300/80">
           Danger: rotates the admin key. The new address becomes the only wallet allowed to call
@@ -531,7 +531,7 @@ export function AdminFactoryCard() {
           value={ftsInput}
           onChange={(e) => setFtsInput(e.target.value)}
           spellCheck={false}
-          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+          className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
           placeholder="new feeToSetter 0x…"
         />
         {!ftsValid && ftsInput.trim() !== '' && (

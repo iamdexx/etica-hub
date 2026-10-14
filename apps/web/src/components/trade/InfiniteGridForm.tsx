@@ -377,7 +377,7 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="surface p-4">
         <label className="mb-3 block">
           <span className="mb-1 block text-xs uppercase tracking-wider text-white/60">
             Reference price (ETX per {baseSymbol})
@@ -388,7 +388,7 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
             value={refPriceStr}
             onChange={(e) => setRefPriceStr(e.target.value)}
             placeholder="current market"
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+            className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
           />
           <span className="mt-1 block text-[11px] text-white/50">
             Levels are placed geometrically around this price at the step % you choose.
@@ -406,7 +406,7 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
               value={stepPctStr}
               onChange={(e) => setStepPctStr(e.target.value)}
               placeholder="e.g. 2"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             />
           </label>
           <label className="block">
@@ -419,7 +419,7 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
               value={basePerLevelStr}
               onChange={(e) => setBasePerLevelStr(e.target.value)}
               placeholder="0.00"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             />
           </label>
         </div>
@@ -435,7 +435,7 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
               max={50}
               value={buyLevelsStr}
               onChange={(e) => setBuyLevelsStr(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             />
           </label>
           <label className="block">
@@ -448,13 +448,13 @@ export function InfiniteGridForm({ baseSymbol }: InfiniteGridFormProps) {
               max={50}
               value={sellLevelsStr}
               onChange={(e) => setSellLevelsStr(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-brand-accent"
+              className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2 text-sm outline-none focus:border-brand-accent"
             />
           </label>
         </div>
 
         {plan ? (
-          <p className="mb-3 rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-white/70">
+          <p className="mb-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 text-xs text-white/70">
             {planBuyLevels.length} buy level{planBuyLevels.length === 1 ? '' : 's'} ·{' '}
             {planSellLevels.length} sell level{planSellLevels.length === 1 ? '' : 's'} spanning{' '}
             {formatPrice(bottomPrice)} – {formatPrice(topPrice)}. Commits up to{' '}

@@ -95,8 +95,8 @@ export default async function PairsPage() {
         <span>Pairs</span>
       </nav>
 
-      <section className="overflow-hidden rounded-xl border border-white/10 bg-[#07120f]">
-        <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(52,211,153,0.16),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.01))] p-6">
+      <section className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#07120f]">
+        <div className="border-b border-white/[0.07] bg-[radial-gradient(circle_at_top,rgba(52,211,153,0.16),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.01))] p-6">
           <div className="text-[11px] uppercase tracking-wider text-emerald-300/75">EticaHub Scan · Markets</div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white md:text-4xl">Pairs</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">
@@ -105,7 +105,7 @@ export default async function PairsPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-[1fr_0.7fr_0.7fr] gap-3 border-b border-white/10 px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[0.8fr_0.6fr_0.6fr_1.2fr_0.5fr]">
+        <div className="grid grid-cols-[1fr_0.7fr_0.7fr] gap-3 border-b border-white/[0.07] px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[0.8fr_0.6fr_0.6fr_1.2fr_0.5fr]">
           <div>Pair</div>
           <div>Base</div>
           <div>Quote</div>
@@ -139,7 +139,7 @@ export default async function PairsPage() {
           baseSymbol={primary.row.base}
           quoteSymbol={primary.row.quote}
           footer={
-            <div className="grid border-t border-white/10 md:grid-cols-3">
+            <div className="grid border-t border-white/[0.07] md:grid-cols-3">
               <DepthCard label="Buy depth" value="$42.8k" tone="green" />
               <DepthCard label="Sell depth" value="$31.4k" tone="red" />
               <DepthCard label="Spread" value="0.42%" tone="neutral" />
@@ -154,7 +154,7 @@ export default async function PairsPage() {
 function DepthCard({ label, value, tone }: { label: string; value: string; tone: 'green' | 'red' | 'neutral' }) {
   const color = tone === 'green' ? 'text-emerald-300' : tone === 'red' ? 'text-rose-300' : 'text-white';
   return (
-    <div className="border-white/10 px-4 py-3 md:border-r last:md:border-r-0">
+    <div className="border-white/[0.07] px-4 py-3 md:border-r last:md:border-r-0">
       <div className="text-[11px] uppercase tracking-wider text-white/40">{label}</div>
       <div className={`mt-1 text-lg font-semibold ${color}`}>{value}</div>
     </div>

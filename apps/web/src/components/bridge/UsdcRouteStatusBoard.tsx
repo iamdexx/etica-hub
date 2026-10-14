@@ -155,7 +155,7 @@ export function UsdcRouteStatusBoard() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+      <div className="surface p-5">
         <div className="flex items-center justify-between">
           <div className="text-xs uppercase tracking-widest text-white/40">Collateral</div>
           {backing ? (
@@ -173,7 +173,7 @@ export function UsdcRouteStatusBoard() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+      <div className="surface p-5">
         <div className="text-xs uppercase tracking-widest text-white/40">USDC.e / ETX pool</div>
         {etica.status === 'ready' && etica.data.pool ? (
           <>

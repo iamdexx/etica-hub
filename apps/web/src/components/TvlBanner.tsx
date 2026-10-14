@@ -106,7 +106,7 @@ export function TvlBanner(props: { className?: string }) {
           <span className="text-xs text-white/40">loading…</span>
         </div>
         <div className="mt-2 h-9 w-40 animate-pulse rounded bg-white/10" />
-        <div className="mt-2 h-4 w-28 animate-pulse rounded bg-white/5" />
+        <div className="mt-2 h-4 w-28 animate-pulse rounded bg-white/[0.035]" />
       </div>
     );
   }

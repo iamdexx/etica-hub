@@ -23,11 +23,19 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: absoluteUrl('/labs/diseases') },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: absoluteUrl('/labs/diseases'), type: 'website' },
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: absoluteUrl('/labs/diseases'),
+    type: 'website',
+  },
 };
 
 export default async function DiseasesPage(): Promise<JSX.Element> {
-  const [diseases, stats] = await Promise.all([listDiseases(), getArchiveStats().catch(() => null)]);
+  const [diseases, stats] = await Promise.all([
+    listDiseases(),
+    getArchiveStats().catch(() => null),
+  ]);
 
   const itemList = {
     '@context': 'https://schema.org',
@@ -44,15 +52,23 @@ export default async function DiseasesPage(): Promise<JSX.Element> {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <JsonLd data={itemList} />
-      <JsonLd data={breadcrumbJsonLd([['EticaHub', '/'], ['Labs', '/labs'], ['Diseases', '/labs/diseases']])} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          ['EticaHub', '/'],
+          ['Labs', '/labs'],
+          ['Diseases', '/labs/diseases'],
+        ])}
+      />
 
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold text-white/95">Research by disease</h1>
-        <p className="text-sm text-white/60">{DESCRIPTION}</p>
+      <header className="space-y-4" data-stagger>
+        <div className="eyebrow">Research index</div>
+        <h1 className="display text-3xl sm:text-4xl md:text-5xl">Research by disease</h1>
+        <p className="lede max-w-2xl">{DESCRIPTION}</p>
         {stats && (
           <p className="text-xs text-white/40">
-            {stats.totalResearch.toLocaleString()} archived runs · {stats.totalProteins.toLocaleString()} designed
-            proteins · {stats.totalFolds.toLocaleString()} folded structures
+            {stats.totalResearch.toLocaleString()} archived runs ·{' '}
+            {stats.totalProteins.toLocaleString()} designed proteins ·{' '}
+            {stats.totalFolds.toLocaleString()} folded structures
           </p>
         )}
       </header>
@@ -65,7 +81,7 @@ export default async function DiseasesPage(): Promise<JSX.Element> {
             <li key={d.slug}>
               <Link
                 href={diseasePath(d.slug)}
-                className="block rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-emerald-300/30 hover:bg-white/[0.05]"
+                className="block surface-2 p-4 transition-colors hover:border-emerald-300/30 hover:bg-white/[0.05]"
               >
                 <div className="font-medium text-white/90">{d.name}</div>
                 <div className="text-xs text-white/45">

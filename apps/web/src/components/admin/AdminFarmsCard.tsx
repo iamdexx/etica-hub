@@ -254,7 +254,7 @@ export function AdminFarmsCard() {
   return (
     <div className="space-y-6">
       {/* Wallet */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Wallet</h2>
         {!isConnected && (
           <button
@@ -300,7 +300,7 @@ export function AdminFarmsCard() {
       </section>
 
       {/* Current state */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5 text-sm">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5 text-sm">
         <h2 className="mb-3 text-lg font-semibold">Current farms state</h2>
         {farms === ZERO_ADDRESS ? (
           <p className="text-amber-300">
@@ -333,7 +333,7 @@ export function AdminFarmsCard() {
       </section>
 
       {/* addPool */}
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-2 text-lg font-semibold">Register launch pools (addPool × 3)</h2>
         <p className="mb-4 text-sm text-white/60">
           Register the three LP pairs with weighted emissions. <strong>60 / 25 / 15</strong> split
@@ -345,7 +345,7 @@ export function AdminFarmsCard() {
           {pools.map((row, i) => {
             const alreadyAdded = row.existingPid !== null;
             return (
-              <div key={row.label} className="rounded-lg border border-white/10 bg-black/20 p-4">
+              <div key={row.label} className="rounded-lg border border-white/[0.07] bg-black/20 p-4">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
                   <div>
                     <span className="font-medium">{row.label} LP</span>{' '}

@@ -312,7 +312,7 @@ export function DeployResearchMarketsCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">What this deploys</h2>
         <p className="text-sm text-white/70">
           The <span className="font-mono">EticaResearchMarkets</span> singleton — a custom
@@ -328,7 +328,7 @@ export function DeployResearchMarketsCard() {
         </p>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Key properties</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-white/70">
           <li>
@@ -370,14 +370,14 @@ export function DeployResearchMarketsCard() {
         </ul>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Constructor — addresses</h2>
         <div className="space-y-4">
           <label className="block text-sm text-white/70">
             ETX token
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
               value={etxInput}
               onChange={(e) => {
                 etxEditedRef.current = true;
@@ -391,7 +391,7 @@ export function DeployResearchMarketsCard() {
             Treasury multisig (receives the treasury slice — default 0% under C-with-lock)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
               value={treasuryInput}
               onChange={(e) => {
                 treasuryEditedRef.current = true;
@@ -405,7 +405,7 @@ export function DeployResearchMarketsCard() {
             ETI LP sink (receives 10% of trade fees — POL burn target, deepens ETI/ETX)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
               value={etiLpSinkInput}
               onChange={(e) => {
                 etiLpSinkEditedRef.current = true;
@@ -423,7 +423,7 @@ export function DeployResearchMarketsCard() {
             Owner (post-deploy admin — sets fee rate, split, thresholds)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
               value={ownerInput}
               onChange={(e) => {
                 ownerEditedRef.current = true;
@@ -436,14 +436,14 @@ export function DeployResearchMarketsCard() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Constructor — economics</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm text-white/70">
             Launch toll (ETX, paid to pool)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
               value={launchTollInput}
               onChange={(e) => setLaunchTollInput(e.target.value)}
             />
@@ -452,7 +452,7 @@ export function DeployResearchMarketsCard() {
             Fee rate (bps, ≤ 500 = 5%)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
               value={feeRateBpsInput}
               onChange={(e) => setFeeRateBpsInput(e.target.value)}
             />
@@ -461,7 +461,7 @@ export function DeployResearchMarketsCard() {
             ETI LP slice (bps of fee)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
               value={etiLpBpsInput}
               onChange={(e) => setEtiLpBpsInput(e.target.value)}
             />
@@ -470,7 +470,7 @@ export function DeployResearchMarketsCard() {
             Treasury slice (bps of fee)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
               value={treasuryBpsInput}
               onChange={(e) => setTreasuryBpsInput(e.target.value)}
             />
@@ -479,14 +479,14 @@ export function DeployResearchMarketsCard() {
             Researcher slice (bps of fee)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
               value={researcherBpsInput}
               onChange={(e) => setResearcherBpsInput(e.target.value)}
             />
           </label>
           <div className="block text-sm text-white/70">
             Pool slice (residual, bps of fee)
-            <div className="mt-1 w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 font-mono text-xs text-white/80">
+            <div className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white/80">
               {splitValid ? poolBps : 'invalid — split sum > 10000'}
             </div>
             <span className="mt-1 block text-xs text-white/40">
@@ -497,14 +497,14 @@ export function DeployResearchMarketsCard() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Constructor — curve & lifecycle</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm text-white/70">
             Graduation threshold (ETX reserve)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
               value={graduationThresholdInput}
               onChange={(e) => setGraduationThresholdInput(e.target.value)}
             />
@@ -517,7 +517,7 @@ export function DeployResearchMarketsCard() {
             Sunset window (seconds, min 7d)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
               value={sunsetWindowInput}
               onChange={(e) => setSunsetWindowInput(e.target.value)}
             />
@@ -526,7 +526,7 @@ export function DeployResearchMarketsCard() {
             Default virtual ETX start (per market)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
               value={vEtxStartInput}
               onChange={(e) => setVEtxStartInput(e.target.value)}
             />
@@ -535,7 +535,7 @@ export function DeployResearchMarketsCard() {
             Default virtual token start (per market)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
               value={vTokenStartInput}
               onChange={(e) => setVTokenStartInput(e.target.value)}
             />
@@ -543,7 +543,7 @@ export function DeployResearchMarketsCard() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Deploy</h2>
 
         {!isConnected ? (

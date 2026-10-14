@@ -307,7 +307,7 @@ export function DeployResearchNftCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">What this deploys</h2>
         <p className="text-sm text-white/70">
           The <span className="font-mono">EticaResearchNFT</span> — an immutable ERC-721 minted
@@ -346,7 +346,7 @@ export function DeployResearchNftCard() {
         ) : null}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Key properties</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-white/70">
           <li>
@@ -387,14 +387,14 @@ export function DeployResearchNftCard() {
         </ul>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Constructor</h2>
         <div className="space-y-4">
           <label className="block text-sm text-white/70">
             Attestor (signs ClaimPayloads; immutable)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
               value={attestorInput}
               onChange={(e) => {
                 attestorEditedRef.current = true;
@@ -413,7 +413,7 @@ export function DeployResearchNftCard() {
             Treasury (1% royalty + post-7d auto-forfeit recipient)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
               value={treasuryInput}
               onChange={(e) => {
                 treasuryEditedRef.current = true;
@@ -427,7 +427,7 @@ export function DeployResearchNftCard() {
             Base URL (embedded in tokenURI for the 3D viewer link)
             <input
               type="text"
-              className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
               value={baseUrlInput}
               onChange={(e) => setBaseUrlInput(e.target.value)}
               placeholder="https://eticahub.com"
@@ -444,7 +444,7 @@ export function DeployResearchNftCard() {
               Base mint fee (EGAZ — paid on every non-treasury mint)
               <input
                 type="text"
-                className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+                className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
                 value={baseMintFeeInput}
                 onChange={(e) => setBaseMintFeeInput(e.target.value)}
               />
@@ -453,7 +453,7 @@ export function DeployResearchNftCard() {
               Max score-indexed fee (EGAZ — cap at score 1.0)
               <input
                 type="text"
-                className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white"
+                className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
                 value={maxScoreMintFeeInput}
                 onChange={(e) => setMaxScoreMintFeeInput(e.target.value)}
               />
@@ -475,13 +475,13 @@ export function DeployResearchNftCard() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Library (advanced)</h2>
         <label className="block text-sm text-white/70">
           Reuse existing EticaResearchNFTMetadata library (optional)
           <input
             type="text"
-            className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+            className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
             value={reuseLibInput}
             onChange={(e) => {
               reuseLibEditedRef.current = true;
@@ -499,7 +499,7 @@ export function DeployResearchNftCard() {
         </label>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Deploy</h2>
 
         {!isConnected ? (

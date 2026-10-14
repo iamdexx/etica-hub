@@ -81,7 +81,7 @@ export function VerifiedContractView({ manifest }: { manifest: VerifiedContract 
           {sourceEntries.map(([path, { content }], i) => (
             <details
               key={path}
-              className="rounded-lg border border-white/5 bg-black/30"
+              className="rounded-lg border border-white/5 bg-black/20"
               open={i === primaryIndex}
             >
               <summary className="cursor-pointer px-3 py-2 font-mono text-[11px] text-white/70 hover:text-white">
@@ -95,7 +95,7 @@ export function VerifiedContractView({ manifest }: { manifest: VerifiedContract 
         </div>
       </div>
 
-      <details className="rounded-lg border border-white/5 bg-black/30">
+      <details className="rounded-lg border border-white/5 bg-black/20">
         <summary className="cursor-pointer px-3 py-2 text-xs uppercase tracking-wider text-white/50 hover:text-white/70">
           Contract ABI · {manifest.abi.length} entr{manifest.abi.length === 1 ? 'y' : 'ies'}
         </summary>

@@ -18,7 +18,7 @@ export function ShareButtons({ url, text }: { url: string; text: string }): JSX.
   }
 
   const cls =
-    'rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/75 hover:bg-white/10';
+    'rounded-md border border-white/[0.07] bg-white/[0.035] px-3 py-1.5 text-xs text-white/75 hover:bg-white/10';
 
   return (
     <div className="flex flex-wrap gap-2">

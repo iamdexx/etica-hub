@@ -210,7 +210,7 @@ export function BrandCandleChart({
   if (!layout) {
     return (
       <div
-        className={`rounded-xl border border-white/10 bg-[#06110e] p-10 text-center text-sm text-white/45 ${className ?? ''}`}
+        className={`rounded-xl border border-white/[0.07] bg-[#06110e] p-10 text-center text-sm text-white/45 ${className ?? ''}`}
         style={style}
       >
         {overlay ?? 'No candle data in this window.'}

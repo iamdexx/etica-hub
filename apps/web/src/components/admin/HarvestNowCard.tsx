@@ -394,7 +394,7 @@ export function HarvestNowCard() {
 
   if (harvester === ZERO_ADDRESS) {
     return (
-      <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+      <section className="mb-6 rounded-2xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-2 text-lg font-semibold">Harvest now</h2>
         <p className="text-sm text-amber-300/80">
           TreasuryHarvester address is unset. Deploy via{' '}
@@ -408,7 +408,7 @@ export function HarvestNowCard() {
   }
 
   return (
-    <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+    <section className="mb-6 rounded-2xl border border-white/[0.07] bg-white/[0.035] p-5">
       <header className="mb-3 flex items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">Harvest now</h2>
         <span className="text-xs text-white/50">
@@ -449,9 +449,9 @@ export function HarvestNowCard() {
             </dd>
           </dl>
 
-          <div className="mb-4 overflow-x-auto rounded-lg border border-white/10">
+          <div className="mb-4 overflow-x-auto rounded-lg border border-white/[0.07]">
             <table className="min-w-full text-left text-xs">
-              <thead className="bg-white/5 text-white/50">
+              <thead className="bg-white/[0.035] text-white/50">
                 <tr>
                   <th className="px-3 py-2">Pool</th>
                   <th className="px-3 py-2">LP to burn</th>

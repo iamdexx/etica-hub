@@ -14,8 +14,8 @@ export function MarketChartShell({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-white/10 bg-[#06110e] shadow-2xl shadow-emerald-950/10">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.025] px-4 py-3">
+    <section className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#06110e] shadow-2xl shadow-emerald-950/10">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] bg-white/[0.025] px-4 py-3">
         <div>
           <div className="text-[11px] uppercase tracking-wider text-emerald-300/70">{eyebrow}</div>
           <h2 className="mt-1 text-sm font-semibold text-white">{title}</h2>
@@ -34,7 +34,7 @@ export function MarketPill({ children, tone = 'neutral' }: { children: ReactNode
       ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
       : tone === 'red'
         ? 'border-rose-400/20 bg-rose-400/10 text-rose-200'
-        : 'border-white/10 bg-white/5 text-white/55';
+        : 'border-white/[0.07] bg-white/[0.035] text-white/55';
 
   return <span className={`rounded-md border px-2 py-1 ${cls}`}>{children}</span>;
 }
@@ -42,7 +42,7 @@ export function MarketPill({ children, tone = 'neutral' }: { children: ReactNode
 export function TimeframePills({ active = '24H' }: { active?: string }) {
   const frames = ['1H', '24H', '7D', '30D'];
   return (
-    <div className="flex rounded-md border border-white/10 bg-black/20 p-1 text-[10px]">
+    <div className="flex rounded-md border border-white/[0.07] bg-black/20 p-1 text-[10px]">
       {frames.map((frame) => (
         <span
           key={frame}

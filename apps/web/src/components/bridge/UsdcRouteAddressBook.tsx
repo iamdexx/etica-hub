@@ -61,7 +61,7 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
 
 export function UsdcRouteAddressBook() {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+    <div className="surface p-5">
       <div className="text-xs uppercase tracking-widest text-white/40">Address book</div>
       <div className="mt-3 space-y-4">
         {SECTIONS.map((s) => (

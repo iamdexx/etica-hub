@@ -119,7 +119,7 @@ export function ResearchMarketTradeView({ market, graduationThreshold }: Props) 
           <span className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
             Bonding-curve venue
           </span>
-          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/55">
+          <span className="rounded-full border border-white/[0.07] bg-white/[0.035] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/55">
             ETX ↔ {market.symbol}
           </span>
         </div>
@@ -146,7 +146,7 @@ function Stat({
   sub?: string;
 }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+    <div className="rounded-lg border border-white/[0.07] bg-black/20 p-3">
       <div className="text-[10px] uppercase tracking-wider text-white/40">
         {label}
       </div>

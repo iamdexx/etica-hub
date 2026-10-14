@@ -95,7 +95,7 @@ export function DeployOrderbookCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">What this deploys</h2>
         <p className="text-sm text-white/70">
           A single permissionless <span className="font-mono">OrderRegistry</span> contract
@@ -114,7 +114,7 @@ export function DeployOrderbookCard() {
         </p>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Prerequisites</h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-white/70">
           <li>MetaMask installed and unlocked.</li>
@@ -130,7 +130,7 @@ export function DeployOrderbookCard() {
         </ol>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Wallet</h2>
         {!isConnected ? (
           <button
@@ -148,7 +148,7 @@ export function DeployOrderbookCard() {
               <span className="font-mono">{address}</span>
               <button
                 type="button"
-                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/5"
+                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/[0.035]"
                 onClick={() => disconnect()}
               >
                 Disconnect
@@ -172,7 +172,7 @@ export function DeployOrderbookCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Deploy OrderRegistry</h2>
         {alreadyDeployed && state.status !== 'confirmed' ? (
           <p className="rounded-md border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">

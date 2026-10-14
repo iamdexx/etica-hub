@@ -127,7 +127,7 @@ function statusClasses(status: LabsJobStatus): string {
     case 'error':
       return 'border-rose-400/30 bg-rose-400/10 text-rose-200';
     default:
-      return 'border-white/15 bg-white/5 text-white/70';
+      return 'border-white/15 bg-white/[0.035] text-white/70';
   }
 }
 
@@ -234,7 +234,7 @@ function Structure3DModal({
         aria-modal="true"
         aria-label={`Interactive 3D structure — ${title}`}
       >
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+        <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-2">
           <span className="text-xs text-white/70">{title} · drag to rotate</span>
           <button
             type="button"
@@ -424,7 +424,7 @@ function CandidateCard({
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <div className="surface-2 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-white/15 bg-white/[0.04] px-2.5 py-0.5 text-xs text-white/80">
@@ -456,7 +456,7 @@ function CandidateCard({
 
       <p className="mt-3 text-sm text-white/80">{candidate.rationale}</p>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-black/30 p-3">
+      <div className="mt-3 rounded-lg border border-white/[0.07] bg-black/20 p-3">
         <div className="flex items-center justify-between text-[11px] text-white/55">
           <span>sequence ({candidate.sequence.length} aa)</span>
           <button
@@ -482,7 +482,7 @@ function CandidateCard({
       )}
 
       {effectivePdb && ribbon ? (
-        <div className="mt-4 overflow-hidden rounded-lg border border-white/10 bg-[#020806]">
+        <div className="mt-4 overflow-hidden rounded-lg border border-white/[0.07] bg-[#020806]">
           <div className="relative h-72 w-full">
             <FoldRibbon svg={ribbon.svg} />
             <button
@@ -519,7 +519,7 @@ function CandidateCard({
       ) : candidate.folded && !archiveTried ? (
         <p className="mt-4 text-[11px] text-white/45">Loading structure…</p>
       ) : candidate.folded ? (
-        <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+        <div className="mt-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
           <p className="text-[11px] text-white/55">
             This candidate had its structure dropped before archiving —
             regenerate it to render the real fold (and mint it as the NFT image).
@@ -656,7 +656,7 @@ function CandidateCard({
               maxLength={400}
               rows={3}
               placeholder="Describe what to explore next on this lead…"
-              className="w-full resize-none rounded border border-white/10 bg-black/30 p-2 text-xs text-white/90 outline-none focus:border-emerald-300/40"
+              className="w-full resize-none rounded border border-white/[0.07] bg-black/20 p-2 text-xs text-white/90 outline-none focus:border-emerald-300/40"
             />
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[10px] text-white/45">
@@ -670,7 +670,7 @@ function CandidateCard({
                     setBranchOpen(false);
                     setBranchError(null);
                   }}
-                  className="rounded border border-white/10 px-2.5 py-1 text-[11px] uppercase tracking-wider text-white/70 transition-colors hover:border-white/30 hover:text-white disabled:opacity-50"
+                  className="rounded border border-white/[0.07] px-2.5 py-1 text-[11px] uppercase tracking-wider text-white/70 transition-colors hover:border-white/30 hover:text-white disabled:opacity-50"
                 >
                   cancel
                 </button>
@@ -879,7 +879,7 @@ export default function LabsFeedDetailPage(): JSX.Element {
       </div>
 
       {!loaded && (
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-8 text-center text-sm text-white/60">
+        <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-8 text-center text-sm text-white/60">
           Loading run…
         </div>
       )}
@@ -925,7 +925,7 @@ export default function LabsFeedDetailPage(): JSX.Element {
           </header>
 
           {job.result?.plan && (
-            <section className="mb-8 rounded-xl border border-white/10 bg-white/[0.03] p-5">
+            <section className="mb-8 rounded-xl border border-white/[0.07] bg-white/[0.03] p-5">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-white/55">
                 Plan
               </h2>

@@ -190,7 +190,7 @@ export function DeployHarvesterCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">What this deploys</h2>
         <p className="text-sm text-white/70">
           The <span className="font-mono">TreasuryHarvester</span> delegation contract — a thin
@@ -209,7 +209,7 @@ export function DeployHarvesterCard() {
         </p>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Key properties</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-white/70">
           <li>
@@ -242,13 +242,13 @@ export function DeployHarvesterCard() {
         </ul>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Constructor</h2>
         <label className="block text-sm text-white/70">
           Owner (treasury multisig)
           <input
             type="text"
-            className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+            className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
             value={ownerInput}
             onChange={(e) => {
               ownerEditedRef.current = true;
@@ -270,7 +270,7 @@ export function DeployHarvesterCard() {
           ETX token address
           <input
             type="text"
-            className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+            className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
             value={etxInput}
             onChange={(e) => {
               etxEditedRef.current = true;
@@ -289,7 +289,7 @@ export function DeployHarvesterCard() {
           EticaSwap factory address
           <input
             type="text"
-            className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+            className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
             value={factoryInput}
             onChange={(e) => {
               factoryEditedRef.current = true;
@@ -305,7 +305,7 @@ export function DeployHarvesterCard() {
         </p>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Wallet</h2>
         {!isConnected ? (
           <button
@@ -323,7 +323,7 @@ export function DeployHarvesterCard() {
               <span className="font-mono break-all">{address}</span>
               <button
                 type="button"
-                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/5"
+                className="ml-auto rounded-md border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/[0.035]"
                 onClick={() => disconnect()}
               >
                 Disconnect
@@ -347,7 +347,7 @@ export function DeployHarvesterCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Deploy TreasuryHarvester</h2>
         <button
           type="button"

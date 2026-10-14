@@ -132,8 +132,8 @@ export default async function TokensPage() {
         <span>Tokens</span>
       </nav>
 
-      <section className="overflow-hidden rounded-xl border border-white/10 bg-[#07120f]">
-        <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(52,211,153,0.16),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.01))] p-6">
+      <section className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#07120f]">
+        <div className="border-b border-white/[0.07] bg-[radial-gradient(circle_at_top,rgba(52,211,153,0.16),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.01))] p-6">
           <div className="text-[11px] uppercase tracking-wider text-emerald-300/75">EticaHub Scan · Assets</div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white md:text-4xl">Tokens</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">
@@ -143,7 +143,7 @@ export default async function TokensPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-[0.8fr_1fr_0.8fr] gap-3 border-b border-white/10 px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[0.7fr_1fr_0.9fr_0.7fr_0.7fr_0.6fr]">
+        <div className="grid grid-cols-[0.8fr_1fr_0.8fr] gap-3 border-b border-white/[0.07] px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[0.7fr_1fr_0.9fr_0.7fr_0.7fr_0.6fr]">
           <div>Asset</div>
           <div>Name</div>
           <div className="hidden md:block">Address</div>
@@ -192,7 +192,7 @@ export default async function TokensPage() {
           })}
         </div>
 
-        <div className="space-y-1 border-t border-white/10 px-4 py-3 text-[11px] leading-5 text-white/45">
+        <div className="space-y-1 border-t border-white/[0.07] px-4 py-3 text-[11px] leading-5 text-white/45">
           <p>
             EGAZ has no supply contract: its total is the block-reward emission floor (2 EGAZ × blocks mined, ETIP-1017),
             which excludes the small extra paid for uncle blocks. Everything else is the live ERC-20 <span className="font-mono">totalSupply()</span>.
@@ -225,7 +225,7 @@ export default async function TokensPage() {
           baseSymbol={primary.symbol}
           quoteSymbol="ETX"
           rightActions={
-            <span className="rounded-md border border-white/10 bg-white/5 px-2 py-1 font-mono text-[10px] text-white/55">
+            <span className="rounded-md border border-white/[0.07] bg-white/[0.035] px-2 py-1 font-mono text-[10px] text-white/55">
               circulating {formatSupply(toUnits(primary.supply.circulating, primary.decimals))}
             </span>
           }

@@ -62,7 +62,7 @@ export default async function TransactionsPage() {
         <span>Transactions</span>
       </nav>
 
-      <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 md:flex-row md:items-end md:justify-between">
+      <section className="flex flex-col gap-4 surface p-6 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="text-xs uppercase tracking-wider text-brand-accent/80">Live public-RPC window</div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">Transactions</h1>
@@ -76,8 +76,8 @@ export default async function TransactionsPage() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
-        <div className="grid grid-cols-[1fr_0.7fr_0.8fr] gap-3 border-b border-white/10 px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[1fr_0.7fr_1fr_1fr_0.8fr_0.7fr]">
+      <section className="overflow-hidden surface">
+        <div className="grid grid-cols-[1fr_0.7fr_0.8fr] gap-3 border-b border-white/[0.07] px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[1fr_0.7fr_1fr_1fr_0.8fr_0.7fr]">
           <div>Txn hash</div>
           <div>Block</div>
           <div className="hidden md:block">From</div>
@@ -133,7 +133,7 @@ export default async function TransactionsPage() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+    <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4">
       <div className="text-[10px] uppercase tracking-wider text-white/40">{label}</div>
       <div className="mt-1 font-mono text-sm text-brand-accent">{value}</div>
     </div>

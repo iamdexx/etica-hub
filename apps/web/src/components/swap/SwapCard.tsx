@@ -418,7 +418,7 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
   const venueText = useStableSwap ? 'stableswap · 0.04% fee · rate-aware' : 'v2 · 0.30% fee · ETX hub';
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl">
+    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.035] p-5 shadow-xl">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-white/70">Swap</h2>
         <span className="text-xs text-white/40">{venueText}</span>
@@ -440,7 +440,7 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
         <div className="flex justify-center">
           <button
             onClick={onFlip}
-            className="rounded-full border border-white/10 bg-white/10 p-2 text-white/70 hover:bg-white/20"
+            className="rounded-full border border-white/[0.07] bg-white/10 p-2 text-white/70 hover:bg-white/20"
             title="Flip direction"
           >
             ↓
@@ -554,7 +554,7 @@ function TokenInput(props: {
   onAmount?: (v: string) => void;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+    <div className="rounded-xl border border-white/[0.07] bg-black/20 p-4">
       <div className="flex items-center justify-between gap-3">
         <input
           value={props.amount}
@@ -569,7 +569,7 @@ function TokenInput(props: {
           <select
             value={props.symbol}
             onChange={(e) => props.onChangeSymbol?.(e.target.value as TokenSymbol)}
-            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm"
+            className="rounded-full border border-white/[0.07] bg-white/[0.035] px-3 py-1.5 text-sm"
             aria-label={`${props.label} token`}
           >
             {props.options.map((t) => (
@@ -579,7 +579,7 @@ function TokenInput(props: {
             ))}
           </select>
         ) : (
-          <span className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+          <span className="flex items-center gap-2 rounded-full border border-white/[0.07] bg-white/[0.035] px-3 py-1.5 text-sm">
             {props.symbol}
           </span>
         )}

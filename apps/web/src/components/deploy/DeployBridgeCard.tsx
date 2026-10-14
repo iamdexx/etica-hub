@@ -76,7 +76,7 @@ function AddressInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         spellCheck={false}
-        className={`w-full rounded-lg border bg-black/30 px-3 py-2 font-mono text-xs text-white/90 outline-none ${
+        className={`w-full rounded-lg border bg-black/20 px-3 py-2 font-mono text-xs text-white/90 outline-none ${
           valid ? 'border-white/15' : 'border-rose-500/60'
         }`}
       />
@@ -95,7 +95,7 @@ function RunRow({ run }: { run: DeployRunWithAddresses }) {
   const a = run.addresses;
   const core = a?.core ?? {};
   return (
-    <li className="rounded-lg border border-white/10 bg-black/20 p-3 text-xs">
+    <li className="rounded-lg border border-white/[0.07] bg-black/20 p-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <a href={run.htmlUrl} target="_blank" rel="noreferrer" className="font-medium text-white/85 underline">
           Run #{run.runNumber}
@@ -248,7 +248,7 @@ export function DeployBridgeCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">How this works</h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-white/70">
           <li>
@@ -268,7 +268,7 @@ export function DeployBridgeCard() {
         </ol>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Keeper wallet</h2>
         {!isConnected && (
           <button
@@ -313,7 +313,7 @@ export function DeployBridgeCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Pre-flight</h2>
           <button
@@ -342,14 +342,14 @@ export function DeployBridgeCard() {
         )}
       </section>
 
-      <section className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="space-y-4 rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="text-lg font-semibold">Deploy parameters</h2>
         <label className="block space-y-1 text-sm">
           <span className="text-white/80">Step</span>
           <select
             value={step}
             onChange={(e) => setStep(e.target.value as BridgeDeployStep)}
-            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90"
+            className="w-full rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-sm text-white/90"
           >
             {BRIDGE_DEPLOY_STEPS.map((s) => (
               <option key={s} value={s}>
@@ -384,7 +384,7 @@ export function DeployBridgeCard() {
         </div>
       </section>
 
-      <section className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="space-y-4 rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="text-lg font-semibold">Authorise</h2>
         <div className="flex flex-wrap gap-3">
           <button
@@ -401,7 +401,7 @@ export function DeployBridgeCard() {
               onChange={(e) => setConfirmInput(e.target.value)}
               placeholder={`type ${DEPLOY_CONFIRM_PHRASE}`}
               spellCheck={false}
-              className="min-w-[14rem] flex-1 rounded-lg border border-white/15 bg-black/30 px-3 py-2 font-mono text-xs text-white/90 outline-none"
+              className="min-w-[14rem] flex-1 rounded-lg border border-white/15 bg-black/20 px-3 py-2 font-mono text-xs text-white/90 outline-none"
             />
             <button
               onClick={() => void authorize(DEPLOY_CONFIRM_PHRASE)}
@@ -426,7 +426,7 @@ export function DeployBridgeCard() {
         {submit.status === 'error' && <div className="text-sm text-rose-300">{submit.error}</div>}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Deploy runs</h2>
           <button

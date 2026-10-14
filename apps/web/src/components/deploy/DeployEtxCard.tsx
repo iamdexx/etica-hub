@@ -95,7 +95,7 @@ export function DeployEtxCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">What this deploys</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-white/70">
           <li>
@@ -115,7 +115,7 @@ export function DeployEtxCard() {
         </ul>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Prerequisites</h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-white/70">
           <li>MetaMask installed and unlocked.</li>
@@ -131,7 +131,7 @@ export function DeployEtxCard() {
         </ol>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Wallet</h2>
         {!isConnected && (
           <button
@@ -170,14 +170,14 @@ export function DeployEtxCard() {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-3 text-lg font-semibold">Distributor (supply recipient)</h2>
         <input
           type="text"
           value={distributorInput}
           onChange={(e) => setDistributorInput(e.target.value)}
           spellCheck={false}
-          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+          className="w-full rounded-lg border border-white/[0.07] bg-black/40 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
           placeholder="0x…"
         />
         {!distributor && (
@@ -189,7 +189,7 @@ export function DeployEtxCard() {
         </p>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/5 p-5">
+      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="font-semibold">Deploy ETXToken</h3>

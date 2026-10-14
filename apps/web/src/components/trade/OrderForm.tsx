@@ -356,7 +356,7 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
         </div>
       ) : null}
 
-      <div className="flex gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+      <div className="flex gap-1 rounded-full border border-white/[0.07] bg-white/[0.035] p-1">
         {(['buy', 'sell'] as const).map((s) => (
           <button
             key={s}
@@ -367,7 +367,7 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
                 ? s === 'buy'
                   ? 'bg-emerald-400 text-brand-ink'
                   : 'bg-rose-400 text-brand-ink'
-                : 'text-white/70 hover:bg-white/5 hover:text-white'
+                : 'text-white/70 hover:bg-white/[0.035] hover:text-white'
             }`}
           >
             {isStop
@@ -388,7 +388,7 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
           onChange={(e) => setAmountStr(e.target.value)}
           placeholder="0.0"
           inputMode="decimal"
-          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-brand-accent/60"
+          className="w-full rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-sm text-white outline-none focus:border-brand-accent/60"
         />
       </label>
 
@@ -403,7 +403,7 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
             onChange={(e) => setTriggerStr(e.target.value)}
             placeholder="0.0"
             inputMode="decimal"
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-brand-accent/60"
+            className="w-full rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-sm text-white outline-none focus:border-brand-accent/60"
           />
         </label>
       ) : null}
@@ -417,7 +417,7 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
           onChange={(e) => setPriceStr(e.target.value)}
           placeholder="0.0"
           inputMode="decimal"
-          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-brand-accent/60"
+          className="w-full rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-sm text-white outline-none focus:border-brand-accent/60"
         />
       </label>
 
@@ -426,7 +426,7 @@ export function OrderForm({ baseSymbol, strategy }: OrderFormProps) {
         <select
           value={expiryHours}
           onChange={(e) => setExpiryHours(Number(e.target.value))}
-          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-brand-accent/60"
+          className="w-full rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-sm text-white outline-none focus:border-brand-accent/60"
         >
           <option value={1}>1 hour</option>
           <option value={6}>6 hours</option>

@@ -413,7 +413,7 @@ export default function MarketPage() {
         </div>
         <Link
           href="/labs"
-          className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white/70 hover:border-white/20 hover:text-white"
+          className="rounded-lg border border-white/[0.07] px-4 py-2 text-sm text-white/70 hover:border-white/20 hover:text-white"
         >
           ← Back to Labs
         </Link>
@@ -468,7 +468,7 @@ export default function MarketPage() {
       {marketplaceAddr && (
         <div className="grid gap-8 lg:grid-cols-3">
           {/* ─── Sell Panel ──────────────────────────────── */}
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+          <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-6">
             <h2 className="mb-4 text-lg font-semibold text-white">List for Sale</h2>
             {!connected ? (
               <p className="text-sm text-white/40">Connect wallet to list your research NFTs.</p>
@@ -505,7 +505,7 @@ export default function MarketPage() {
                                 ? 'border-sky-400/60 bg-sky-500/10'
                                 : isListed
                                   ? 'cursor-not-allowed border-white/5 bg-white/[0.01] opacity-40'
-                                  : 'border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
+                                  : 'border-white/[0.07] bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
                             }`}
                           >
                             <span className="block text-xs font-bold text-emerald-300">
@@ -534,7 +534,7 @@ export default function MarketPage() {
                     value={sellPrice}
                     onChange={(e) => setSellPrice(e.target.value)}
                     placeholder="e.g. 10.0"
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-sky-400/50 focus:outline-none"
+                    className="w-full rounded-lg border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-sky-400/50 focus:outline-none"
                   />
                 </div>
 
@@ -630,7 +630,7 @@ function ListingCard({
   const isTreasury = !!treasury && listing.seller.toLowerCase() === treasury.toLowerCase();
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-white/20">
+    <div className="surface-2 p-4 transition hover:border-white/20">
       {/* Token ID badge */}
       <div className="mb-3 flex items-center justify-between">
         <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300">

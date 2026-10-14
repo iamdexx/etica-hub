@@ -23,7 +23,7 @@ export function GasChart({
 }) {
   if (blocks.length === 0) {
     return (
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 text-sm text-white/50">
+      <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-5 text-sm text-white/50">
         No block data available for the gas window.
       </div>
     );

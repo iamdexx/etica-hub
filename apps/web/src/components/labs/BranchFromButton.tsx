@@ -147,7 +147,7 @@ export function BranchFromButton({
         onChange={(e) => setPrompt(e.target.value.slice(0, MAX_PROMPT_CHARS))}
         rows={2}
         placeholder="e.g. improve binding affinity to the target while preserving stability"
-        className="w-full resize-none rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-white/90 placeholder:text-white/30 focus:border-fuchsia-300/50 focus:outline-none"
+        className="w-full resize-none rounded border border-white/[0.07] bg-black/20 px-2 py-1.5 text-xs text-white/90 placeholder:text-white/30 focus:border-fuchsia-300/50 focus:outline-none"
       />
       <div className="mt-1 flex items-center justify-between">
         <span className="text-[10px] text-white/35">
@@ -176,7 +176,7 @@ export function BranchFromButton({
             setOpen(false);
             setError(null);
           }}
-          className="rounded border border-white/10 px-3 py-1 text-[11px] uppercase tracking-wider text-white/60 transition-colors hover:bg-white/5 disabled:opacity-60"
+          className="rounded border border-white/[0.07] px-3 py-1 text-[11px] uppercase tracking-wider text-white/60 transition-colors hover:bg-white/[0.035] disabled:opacity-60"
         >
           cancel
         </button>

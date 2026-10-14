@@ -82,7 +82,7 @@ export function FlagVouchPanel({ targetType, targetId, onVoted }: FlagVouchPanel
   );
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <div className="surface-2 p-4">
       <p className="text-sm font-medium text-white">Community moderation</p>
       <p className="mt-1 text-xs text-white/55">
         Flag or vouch with your wallet. Weight = stETX balance (≥ 100 minimum, soft-capped
@@ -96,7 +96,7 @@ export function FlagVouchPanel({ targetType, targetId, onVoted }: FlagVouchPanel
           <select
             value={reason}
             onChange={(e) => setReason(e.target.value as FlagReason)}
-            className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white outline-none focus:border-white/30"
+            className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-2 py-1.5 text-sm text-white outline-none focus:border-white/30"
           >
             {FLAG_REASONS.map((r) => (
               <option key={r} value={r}>
@@ -111,7 +111,7 @@ export function FlagVouchPanel({ targetType, targetId, onVoted }: FlagVouchPanel
             value={detail}
             onChange={(e) => setDetail(e.target.value)}
             maxLength={140}
-            className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white outline-none focus:border-white/30"
+            className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-2 py-1.5 text-sm text-white outline-none focus:border-white/30"
           />
         </label>
       </div>

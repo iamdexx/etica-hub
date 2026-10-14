@@ -144,7 +144,7 @@ export function SubscribeCard() {
 
   if (!contractDeployed) {
     return (
-      <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-5 text-sm">
+      <div className="rounded-2xl border border-dashed border-white/[0.07] bg-white/[0.02] p-5 text-sm">
         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-white/60">
           Subscribe
         </h3>
@@ -189,7 +189,7 @@ export function SubscribeCard() {
   }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm">
+    <div className="surface p-5 text-sm">
       <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-white/60">
         Subscribe
       </h3>
@@ -208,7 +208,7 @@ export function SubscribeCard() {
             className={`flex-1 rounded-lg border px-2 py-1 text-xs transition ${
               months === m
                 ? 'border-white/30 bg-white/10 text-white'
-                : 'border-white/10 text-white/60 hover:border-white/20 hover:text-white'
+                : 'border-white/[0.07] text-white/60 hover:border-white/20 hover:text-white'
             }`}
           >
             {m}mo

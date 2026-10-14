@@ -49,7 +49,7 @@ export default async function ContractsPage() {
         <span>Contracts</span>
       </nav>
 
-      <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 md:flex-row md:items-end md:justify-between">
+      <section className="flex flex-col gap-4 surface p-6 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="text-xs uppercase tracking-wider text-brand-accent/80">EticaHub registry</div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">Contracts</h1>
@@ -59,8 +59,8 @@ export default async function ContractsPage() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
-        <div className="grid grid-cols-[1fr_0.8fr_0.8fr] gap-3 border-b border-white/10 px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[1fr_0.8fr_1fr_0.7fr]">
+      <section className="overflow-hidden surface">
+        <div className="grid grid-cols-[1fr_0.8fr_0.8fr] gap-3 border-b border-white/[0.07] px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[1fr_0.8fr_1fr_0.7fr]">
           <div>Contract</div>
           <div>Group</div>
           <div className="hidden md:block">Address</div>
@@ -76,7 +76,7 @@ export default async function ContractsPage() {
                 <div className="mt-1 text-xs text-white/45">{row.description}</div>
               </div>
               <div>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/65">
+                <span className="rounded-full border border-white/[0.07] bg-white/[0.035] px-2 py-1 text-[11px] text-white/65">
                   {row.group}
                 </span>
               </div>

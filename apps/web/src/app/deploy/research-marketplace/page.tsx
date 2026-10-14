@@ -116,7 +116,7 @@ export default function DeployResearchMarketplacePage() {
         </p>
       </header>
 
-      <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.02] p-6">
+      <div className="space-y-6 rounded-xl border border-white/[0.07] bg-white/[0.02] p-6">
         {/* Wallet Connection */}
         {!isConnected ? (
           <div className="space-y-3">
@@ -164,7 +164,7 @@ export default function DeployResearchMarketplacePage() {
         )}
 
         {/* Contract Info */}
-        <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-4">
+        <div className="space-y-2 rounded-lg border border-white/[0.07] bg-white/[0.035] p-4">
           <div className="flex items-center justify-between text-sm">
             <span className="text-white/50">NFT Contract</span>
             <span className="font-mono text-xs text-white/70">
@@ -198,8 +198,8 @@ export default function DeployResearchMarketplacePage() {
               value={abandonedPriceBps}
               onChange={(e) => setAbandonedPriceBps(e.target.value.trim())}
               disabled={deploying}
-              className={`w-28 rounded border bg-black/30 px-2 py-1 text-right font-mono text-xs text-white/80 ${
-                parsedBps === null ? 'border-red-500/50' : 'border-white/10'
+              className={`w-28 rounded border bg-black/20 px-2 py-1 text-right font-mono text-xs text-white/80 ${
+                parsedBps === null ? 'border-red-500/50' : 'border-white/[0.07]'
               }`}
             />
           </div>
@@ -238,7 +238,7 @@ export default function DeployResearchMarketplacePage() {
                 <p className="font-mono text-white/70 break-all">{state.txHash}</p>
               </div>
             </div>
-            <div className="mt-3 rounded border border-white/10 bg-black/20 p-3">
+            <div className="mt-3 rounded border border-white/[0.07] bg-black/20 p-3">
               <p className="text-xs text-white/50 mb-2">
                 Next: update <span className="font-mono">packages/shared/src/addresses.ts</span>:
               </p>

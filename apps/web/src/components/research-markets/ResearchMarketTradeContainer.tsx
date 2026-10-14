@@ -34,7 +34,7 @@ export function ResearchMarketTradeContainer({ token }: Props) {
 
   if (config === null || market === null) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-[#07120f] p-6 text-sm text-white/55">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#07120f] p-6 text-sm text-white/55">
         Loading market…
       </div>
     );
@@ -42,7 +42,7 @@ export function ResearchMarketTradeContainer({ token }: Props) {
 
   if (market.token === '0x0000000000000000000000000000000000000000') {
     return (
-      <div className="rounded-2xl border border-white/10 bg-[#07120f] p-6">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#07120f] p-6">
         <div className="text-sm font-semibold text-white">Market not found</div>
         <p className="mt-2 text-xs text-white/55">
           No research market is registered at this address on the connected
