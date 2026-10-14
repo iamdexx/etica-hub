@@ -19,6 +19,18 @@ Nothing is deployed; all fixes below are in the PR.
 | 10 | Low | Fee tiers (added after the first pass): because the pair can only see `to`, the router passes its own `msg.sender` as `trader` to `swapFor`. Only whitelisted routers may call it and `trader` must pass the gate, so a non-staker cannot borrow a staker's tier and no wallet is billed at another wallet's discount without signing; `setBaseFeeBps` cannot drop below the first tier so more stETX never costs more. Tier reads are balance snapshots, so a wallet can borrow stETX for one tx to buy a cheaper tier — same trust model as the gate (#7). | Accepted; tests `test_fee_*`, `test_swap_pairChargesTraderTier`, `test_swap_routerPricesEgazUnwrapAtTraderTier`, `test_swapFor_onlyWhitelistedCallerAndStakerTrader`. |
 | 9 | Info | LP tokens are freely transferable; a non-staker can hold direct LP but cannot `burn` it (gated). | Accepted. |
 
+## Addendum — hub metapairs (`EticaDirectMetaPair`, `createMetaPair`, adapter in-kind harvest)
+
+Threat model: the window must not be drainable and must not let a trader settle against its reported reserves. 14 tests in `test/direct/EticaDirectMetaPair.t.sol` incl. a fuzzed "hub LP never decreases" invariant.
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| M1 | — | Drain paths: the hub LP has no transfer or burn path (`burn` reverts, no owner, no rescue); `skim` moves only loose `token0`/`token1`/ETX and only to the fee sink; swap output is only ever the hub's return for the trader's own input (`_hubSwap(..., to)`), never a balance of the window. | Verified by design + `testFuzz_hubLpNeverDecreases`, `test_skim_onlyToFeeSink_hubLpUntouched`, `test_burn_alwaysReverts_liquidityLocked`. |
+| M2 | Low | Reported reserves are a read-only mirror of the hub; a sandwicher can move a hub pool for one block so the window reports a skewed cross price. Nothing settles against it, so the only effect is a wrong `Sync` for that block. | Accepted; `sync()` is permissionless so keepers republish. A TWAP sanity check can be added if an indexer needs it. |
+| M3 | Low | `mint` is for POL seeding: half-swaps and `addLiquidity` use zero min-outs inside the window, so a sandwicher can tax a deposit. Depositors are the seeder wallet, the harvester POL slice and the treasury; nothing is withdrawable, so there is no gain beyond that tax. | Accepted; seed in small clips, harvest with the keeper's own tx ordering. |
+| M4 | Info | Hub swap fee is paid twice per window trade (two hops) on top of the tier fee; quotes via `quoteOut` include both. A constant-product quote off `getReserves` would be wrong (window reserves ≠ settlement depth). | Documented; the Direct router does not route through windows. |
+| M5 | Info | Windows report value, not raw balances: the two sides are each half the window's ETX value, so an aggregator summing TVL across the hub pool and the window double-counts. | Documented. |
+
 ## Slither triage
 
 All remaining medium findings are the inherited Uniswap V2 patterns and are protected the same way as in V2 / EticaSwap:
