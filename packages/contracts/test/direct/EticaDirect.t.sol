@@ -462,7 +462,7 @@ contract EticaDirectTest is Test {
         plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(pair), 0, 0, 0, 0);
         uint256 deadBefore = pair.balanceOf(adapter.DEAD());
         vm.prank(TREASURY);
-        (uint256 total, uint256 polLp) = adapter.harvest(plans);
+        (uint256 total, uint256 polLp) = adapter.harvest(plans, 0);
         assertGt(total, 0);
         // 10% stETX, 10% farms, 40% POL burned into the direct pair, 40% treasury.
         assertGt(stEtx.convertToAssets(1e18), navBefore);
@@ -483,13 +483,13 @@ contract EticaDirectTest is Test {
         plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(pair), 0, 0, 0, 0);
         vm.prank(NOBODY);
         vm.expectRevert(DirectSwapHarvesterAdapter.NotKeeper.selector);
-        adapter.harvest(plans);
+        adapter.harvest(plans, 0);
 
         plans[0].pair = address(0xBAD);
         vm.prank(TREASURY);
         vm.expectRevert(
             abi.encodeWithSelector(DirectSwapHarvesterAdapter.NotVenuePair.selector, address(0xBAD))
         );
-        adapter.harvest(plans);
+        adapter.harvest(plans, 0);
     }
 }

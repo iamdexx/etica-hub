@@ -49,3 +49,31 @@ add the keeper with `harvester.setKeeper(keeper, true)`.
 
 Artifacts come from `node packages/contracts/script/extract-direct-artifacts.mjs` (after
 `forge build`), which writes `apps/web/src/lib/direct-deploy-artifacts.json`.
+||||||| 0a70a51
+
+
+## Hub metapairs (windows over the hub)
+
+A plain direct pair holds its own EGAZ and USDC.e, which is a spoke-to-spoke bypass of the hub. `EticaDirectMetaPair` removes that: it is a pair-shaped contract for `token0`/`token1` (opened with `factory.createMetaPair(tokenA, tokenB, hubRouter)` after `setMetaPairDeployer(EticaDirectMetaPairDeployer)` — the creation code lives in a separate stateless deployer to keep the factory under the EIP-170 size cap; same registry and `PairCreated` event as `createPair`) whose only holdings are LP of the two **public V2 hub pools** `token0`/ETX and `token1`/ETX.
+
+- **Deposits deepen the hub.** `mint(to)` takes whatever `token0`, `token1` (and loose ETX) sit on the contract, swaps half of each to ETX on the hub, adds each leg to its hub pool and keeps the hub LP. Rounding dust is donated to the hub pool so the window never holds raw tokens between transactions. Only the venue owner or a whitelisted contract (harvester, seeder) can call `mint`: windows are protocol-owned liquidity, there are no outside LPs. Shares are minted to `to` for accounting only; `burn` always reverts — the hub LP can never leave.
+- **Reserves are real and priced by the hub.** The window is worth `2·(e0+e1)` ETX (each hub LP position is half token, half ETX, equal at spot). `getReserves` reports half of that value in `token0` at the `token0`/ETX spot and half in `token1` at the `token1`/ETX spot, so `r1/r0` is exactly the hub cross price and `r0 + r1` is the window's TVL. `sync()` is permissionless so a keeper can republish after hub trades. Aggregators that sum TVL across pools will count this capital twice (hub pool + window); label it.
+- **Swaps settle on the hub.** `swap(amount0Out xor amount1Out, to, "")` (V2 pre-pay style), `swapFor(..., trader)` (whitelisted routers) and `swapExactIn(tokenIn, amountIn, minOut, to, deadline)` (wallets) all: take the trader's stETX tier fee from the input and forward it **in kind** to `feeTo`, swap the rest on the hub `tokenIn → ETX → tokenOut` with the requested output as min-out, and send the full hub output to `to`. The reported reserves are never an input to settlement, so manipulating them yields nothing. Flash swaps are refused. Quote with `quoteOut(tokenIn, amountIn, trader)` — a constant-product quote off `getReserves` is wrong for a window because trades hit the whole hub, not the window.
+- **Fees** reach `DirectSwapHarvesterAdapter` as raw tokens; `harvest` sells them to ETX and splits 10/10/40/40 as usual; the 40% POL slice is sent back through the window (`mint`) into the hub pools and the 40% treasury slice is paid in `treasuryToken` (USDC.e) when the owner has set one, otherwise in ETX. Legs too small to buy any ETX are skipped and carried to the next run instead of reverting.
+- Windows exclude ETX as a leg (ETX pairs are hub pools already) and require both hub pools to exist. `EticaDirectRouter` does not route through windows yet; use the window's own entry points.
+
+### Audit notes (window pass)
+
+- The raw `swap(amount0Out, amount1Out, to, data)` entry point on both pair kinds gates **the caller** and charges the caller's tier; `to` is only checked as a recipient. Routers price a named trader through `swapFor`.
+- `DirectSwapHarvesterAdapter`: a treasury slice too small to buy any `treasuryToken` is paid in ETX; windows listed in a harvest always receive an equal POL share even when a sibling window sold the shared fee token first.
+
+### Guardian, pause and retire
+
+- `factory.setGuardian(addr)` names a key that can call `pauseSwaps()` and nothing else; `unpauseSwaps()` is `feeToSetter` only. Every swap entry point on pairs and windows checks `factory.swapsOpen(pair)` and reverts `EDirect: PAUSED`. Deposits, `skim`, `sync` and fee harvesting keep working while paused, so a pause can never trap funds.
+- `factory.retirePair(pair)` turns a pair's swaps off for good, clears `getPair` for its tokens so a fixed replacement can be opened with `createPair`/`createMetaPair`, and keeps `isPair`/`isMetaPair` so the harvester still collects fees already forwarded. A retired window's hub LP stays in the public hub pools (deepening them); it just stops being attributed to a venue pair.
+- `apps/direct-watcher` (cron every 5 min) checks hub LP monotonicity, admin settings against `expected.json`, reported price vs the hub cross price, large swaps and loose tokens; alerts to Telegram and auto-pauses on a critical finding when it holds the guardian key. Runbook: after deploy, fill `apps/direct-watcher/expected.json`, set the `DIRECT_FACTORY_ADDRESS` variable and the `DIRECT_GUARDIAN_PRIVATE_KEY` secret (a fresh EOA you then pass to `setGuardian`), and dispatch the workflow once.
+
+### Admin key: 2-of-2 multisig
+
+`packages/contracts/src/governance/UnanimousMultisig.sol` is a minimal N-of-N multisig (owners fixed at construction; `propose` counts as the proposer's confirmation, the last `confirm` executes, any owner can `cancel`, a failed call keeps the proposal open). Launch recipe: deploy the venue from the treasury wallet, then `new UnanimousMultisig([treasury, 0x98d057B8fD9eA2256CbaeDc2d33A5e59af9c2051])`, `factory.setFeeToSetter(multisig)` and `harvester.transferOwnership(multisig)`. From then on tiers, whitelist, deployer, treasury token, `unpauseSwaps` and `retirePair`/`createMetaPair` ("upgrades") need both signatures; one "no" means no change. Caveat: with 2-of-2, losing either key freezes admin for good (no unpause, no tier changes); rotate by deploying a new multisig and handing the roles over through the old one.
+

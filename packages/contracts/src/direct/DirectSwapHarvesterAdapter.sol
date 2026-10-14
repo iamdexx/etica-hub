@@ -20,6 +20,10 @@ interface IHubRouter {
         address to,
         uint256 deadline
     ) external returns (uint256[] memory amounts);
+    function getAmountsOut(uint256 amountIn, address[] calldata path)
+        external
+        view
+        returns (uint256[] memory amounts);
 }
 
 /// @title DirectSwapHarvesterAdapter
@@ -31,7 +35,9 @@ interface IHubRouter {
 ///         {TreasuryHarvester}: 10% stETX / 10% farms / 40% POL / 40% treasury.
 ///         The POL slice is bought back into the venue pair the fee came from
 ///         and the LP is burned to {DEAD}, so the direct pools deepen
-///         permanently with use.
+///         permanently with use. Hub windows ({EticaDirectMetaPair}) forward
+///         their fee here in kind instead of as LP; their POL slice is
+///         deposited back through the window into the hub pools.
 /// @dev    Harvest is keeper-called rather than permissionless because it
 ///         swaps on the hub: the caller supplies a min ETX out per leg and the
 ///         keeper is expected to quote it a block earlier. `rescue` only moves
@@ -48,6 +54,8 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
     address public stakedEtxSink;
     address public farmsSink;
     address public treasury;
+    /// @notice Token the treasury slice is paid in (USDC.e). Zero or ETX pays ETX.
+    address public treasuryToken;
     uint16 public stakedEtxBps;
     uint16 public farmsBps;
     uint16 public polBurnBps;
@@ -79,6 +87,7 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
         address indexed stakedEtxSink, address indexed farmsSink, address indexed treasury
     );
     event KeeperSet(address indexed keeper, bool allowed);
+    event TreasuryTokenSet(address indexed token);
     event Rescued(address indexed token, address indexed to, uint256 amount);
 
     error ZeroAddress();
@@ -118,8 +127,10 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
     ///         is divided equally across the harvested pairs, bought back into
     ///         each one and the LP burned to {DEAD}. Legs that already are ETX
     ///         skip the hub swap; their min-outs are ignored. Sinks left at
-    ///         zero fold their slice into the treasury.
-    function harvest(LegPlan[] calldata plans)
+    ///         zero fold their slice into the treasury. Legs too small to buy
+    ///         any ETX are left for a later run. The treasury slice is sold
+    ///         for {treasuryToken} (min `minTreasuryOut`) when one is set.
+    function harvest(LegPlan[] calldata plans, uint256 minTreasuryOut)
         external
         nonReentrant
         returns (uint256 totalEtx, uint256 polLpBurned)
@@ -131,10 +142,20 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
             LegPlan calldata p = plans[i];
             if (!factory.isPair(p.pair)) revert NotVenuePair(p.pair);
             IEticaSwapPair pair = IEticaSwapPair(p.pair);
-            uint256 lp = pair.balanceOf(address(this));
-            if (lp == 0) continue;
-            IERC20(p.pair).safeTransfer(p.pair, lp);
-            (uint256 amount0, uint256 amount1) = pair.burn(address(this));
+            uint256 amount0;
+            uint256 amount1;
+            if (factory.isMetaPair(p.pair)) {
+                // Windows forward their fee in kind: sell what sits here. Two
+                // windows can share a leg token, so a listed window always
+                // counts for the POL split even if a sibling sold its leg.
+                amount0 = IERC20(pair.token0()).balanceOf(address(this));
+                amount1 = IERC20(pair.token1()).balanceOf(address(this));
+            } else {
+                uint256 lp = pair.balanceOf(address(this));
+                if (lp == 0) continue;
+                IERC20(p.pair).safeTransfer(p.pair, lp);
+                (amount0, amount1) = pair.burn(address(this));
+            }
             _toEtx(pair.token0(), amount0, p.minEtxOut0);
             _toEtx(pair.token1(), amount1, p.minEtxOut1);
             harvested[i] = true;
@@ -175,7 +196,7 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
             treasurySlice += polSlice;
             polSlice = 0;
         }
-        if (treasurySlice != 0) etx.safeTransfer(treasury, treasurySlice);
+        _payTreasury(treasurySlice, minTreasuryOut);
         emit Harvested(
             msg.sender, totalEtx, stakedSlice, farmsSlice, polSlice, treasurySlice, polLpBurned
         );
@@ -190,6 +211,12 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
     {
         if (etxAmount == 0) return 0;
         IEticaSwapPair pair = IEticaSwapPair(p.pair);
+        if (factory.isMetaPair(p.pair)) {
+            // A window takes loose ETX and deposits it into the hub itself;
+            // its shares are not redeemable, so holding them here locks them.
+            etx.safeTransfer(p.pair, etxAmount);
+            return pair.mint(address(this));
+        }
         address token0 = pair.token0();
         address token1 = pair.token1();
         uint256 half = etxAmount / 2;
@@ -214,11 +241,31 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
 
     function _toEtx(address token, uint256 amount, uint256 minEtxOut) internal {
         if (amount == 0 || token == address(etx)) return;
-        IERC20(token).forceApprove(address(hubRouter), amount);
         address[] memory path = new address[](2);
         path[0] = token;
         path[1] = address(etx);
+        if (hubRouter.getAmountsOut(amount, path)[1] == 0) return;
+        IERC20(token).forceApprove(address(hubRouter), amount);
         hubRouter.swapExactTokensForTokens(amount, minEtxOut, path, address(this), block.timestamp);
+    }
+
+    function _payTreasury(uint256 etxAmount, uint256 minOut) internal {
+        if (etxAmount == 0) return;
+        address token = treasuryToken;
+        if (token == address(0) || token == address(etx)) {
+            etx.safeTransfer(treasury, etxAmount);
+            return;
+        }
+        address[] memory path = new address[](2);
+        path[0] = address(etx);
+        path[1] = token;
+        if (hubRouter.getAmountsOut(etxAmount, path)[1] == 0) {
+            // Too small to buy any of the treasury token: pay ETX rather than revert.
+            etx.safeTransfer(treasury, etxAmount);
+            return;
+        }
+        etx.forceApprove(address(hubRouter), etxAmount);
+        hubRouter.swapExactTokensForTokens(etxAmount, minOut, path, treasury, block.timestamp);
     }
 
     function setKeeper(address keeper, bool allowed) external onlyOwner {
@@ -237,6 +284,11 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
         farmsSink = _farmsSink;
         treasury = _treasury;
         emit SinksUpdated(_stakedEtxSink, _farmsSink, _treasury);
+    }
+
+    function setTreasuryToken(address token) external onlyOwner {
+        treasuryToken = token;
+        emit TreasuryTokenSet(token);
     }
 
     function setSplit(uint16 _stakedBps, uint16 _farmsBps, uint16 _polBps, uint16 _treasuryBps)
