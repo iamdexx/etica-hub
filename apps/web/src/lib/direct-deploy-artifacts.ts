@@ -11,3 +11,6 @@ const cast = (a: unknown): Artifact => {
 export const directFactoryArtifact = cast(artifacts.directFactory);
 export const directRouterArtifact = cast(artifacts.directRouter);
 export const directHarvesterAdapterArtifact = cast(artifacts.directHarvesterAdapter);
+export const directMetaPairDeployerArtifact = cast(artifacts.directMetaPairDeployer);
+export const directMetaPairArtifact = cast(artifacts.directMetaPair);
+export const unanimousMultisigArtifact = cast(artifacts.unanimousMultisig);

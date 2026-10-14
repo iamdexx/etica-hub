@@ -23,6 +23,12 @@ const sources = {
     out,
     'DirectSwapHarvesterAdapter.sol/DirectSwapHarvesterAdapter.json',
   ),
+  directMetaPairDeployer: resolve(
+    out,
+    'EticaDirectMetaPairDeployer.sol/EticaDirectMetaPairDeployer.json',
+  ),
+  directMetaPair: resolve(out, 'EticaDirectMetaPair.sol/EticaDirectMetaPair.json'),
+  unanimousMultisig: resolve(out, 'UnanimousMultisig.sol/UnanimousMultisig.json'),
 };
 
 const result = {};
