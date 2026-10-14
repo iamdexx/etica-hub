@@ -197,6 +197,15 @@ contract EticaDirectMetaPair is EticaDirectERC20 {
 
     // ------------------------------------------------------------------ GATE
 
+    /// Deposits are protocol-only: the venue owner or a whitelisted contract
+    /// (harvester, seeder). Nobody else can become a (locked) LP here.
+    function _requireDepositor() private view {
+        IEticaDirectFactory fac = IEticaDirectFactory(factory);
+        require(
+            msg.sender == fac.feeToSetter() || fac.whitelist(msg.sender), "EDirect: NOT_DEPOSITOR"
+        );
+    }
+
     function _requireAllowed(address to) private view {
         IEticaDirectFactory fac = IEticaDirectFactory(factory);
         if (fac.isPair(to) || fac.whitelist(to)) {
@@ -219,7 +228,7 @@ contract EticaDirectMetaPair is EticaDirectERC20 {
     ///         Shares go to `to` for accounting only — they are not
     ///         redeemable, this liquidity is locked in the hub for good.
     function mint(address to) external lock returns (uint256 liquidity) {
-        _requireAllowed(to);
+        _requireDepositor();
         (uint256 before0, uint256 before1) = liveReserves();
         uint256 rootKBefore = Math.sqrt(before0 * before1);
 

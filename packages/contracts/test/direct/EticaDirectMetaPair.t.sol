@@ -22,6 +22,7 @@ contract EticaDirectMetaPairTest is Test {
     address internal constant TREASURY = address(0x7EA5);
     address internal constant STAKER = address(0x57A4E);
     address internal constant NOBODY = address(0x0B0D);
+    address internal constant SEEDER = address(0x5EED);
     address internal constant FEE_SINK = address(0xFEE);
     uint256 internal constant MIN_STETX = 1_000 ether;
 
@@ -69,6 +70,7 @@ contract EticaDirectMetaPairTest is Test {
         vm.expectRevert(bytes("EDirect: NO_DEPLOYER"));
         factory.createMetaPair(address(wegaz), address(usdce), address(hubRouter));
         factory.setMetaPairDeployer(address(new EticaDirectMetaPairDeployer()));
+        factory.setWhitelist(SEEDER, true);
         meta = EticaDirectMetaPair(
             factory.createMetaPair(address(wegaz), address(usdce), address(hubRouter))
         );
@@ -79,6 +81,10 @@ contract EticaDirectMetaPairTest is Test {
         etx.mint(STAKER, 100_000 ether);
         usdce.mint(STAKER, 100_000 ether);
         usdce.mint(NOBODY, 100_000 ether);
+        usdce.mint(SEEDER, 100_000 ether);
+        vm.deal(SEEDER, 100_000 ether);
+        vm.prank(SEEDER);
+        wegaz.deposit{value: 50_000 ether}();
         vm.deal(STAKER, 100_000 ether);
         vm.deal(NOBODY, 100_000 ether);
         vm.startPrank(STAKER);
@@ -96,10 +102,10 @@ contract EticaDirectMetaPairTest is Test {
     }
 
     function _seed(uint256 usdceAmt, uint256 wegazAmt) internal returns (uint256 shares) {
-        vm.startPrank(STAKER);
+        vm.startPrank(SEEDER);
         usdce.transfer(address(meta), usdceAmt);
         wegaz.transfer(address(meta), wegazAmt);
-        shares = meta.mint(STAKER);
+        shares = meta.mint(SEEDER);
         vm.stopPrank();
     }
 
@@ -162,7 +168,7 @@ contract EticaDirectMetaPairTest is Test {
         vm.recordLogs();
         uint256 shares = _seed(10 ether, 5 ether); // $10 + $10 at the 2:1 hub price
         assertGt(shares, 0);
-        assertEq(meta.balanceOf(STAKER), shares);
+        assertEq(meta.balanceOf(SEEDER), shares);
 
         // Nothing raw stays in the window; it holds hub LP instead.
         assertEq(usdce.balanceOf(address(meta)), 0);
@@ -199,21 +205,29 @@ contract EticaDirectMetaPairTest is Test {
         assertTrue(sawMint && sawSync);
     }
 
-    function test_mint_requiresStakerRecipient_andSomethingDeposited() public {
+    /// Windows are protocol-owned: an stETX holder can trade but cannot deposit.
+    function test_mint_onlyOwnerOrWhitelistedDepositor() public {
         vm.prank(NOBODY);
-        vm.expectRevert(bytes("EDirect: NOT_STAKER"));
+        vm.expectRevert(bytes("EDirect: NOT_DEPOSITOR"));
         meta.mint(NOBODY);
-        vm.prank(STAKER);
-        vm.expectRevert(bytes("ESwap: INSUFFICIENT_INPUT_AMOUNT"));
+        vm.startPrank(STAKER);
+        usdce.transfer(address(meta), 10 ether);
+        vm.expectRevert(bytes("EDirect: NOT_DEPOSITOR"));
         meta.mint(STAKER);
+        vm.stopPrank();
+        vm.prank(TREASURY);
+        assertGt(meta.mint(TREASURY), 0); // owner can; the staker's 10 USDC.e is now hub LP
+        vm.prank(SEEDER);
+        vm.expectRevert(bytes("ESwap: INSUFFICIENT_INPUT_AMOUNT"));
+        meta.mint(SEEDER);
     }
 
     function test_mint_looseEtxIsSplitAcrossBothLegs() public {
         _seed(10 ether, 5 ether);
         (uint256 lp0, uint256 lp1) = meta.hubLiquidity();
         etx.mint(address(meta), 100 ether); // e.g. a harvester's POL slice
-        vm.prank(STAKER);
-        meta.mint(STAKER);
+        vm.prank(SEEDER);
+        meta.mint(SEEDER);
         (uint256 lp0b, uint256 lp1b) = meta.hubLiquidity();
         assertGt(lp0b, lp0);
         assertGt(lp1b, lp1);
@@ -373,10 +387,11 @@ contract EticaDirectMetaPairTest is Test {
         } else {
             meta.swapExactIn(address(wegaz), b, 0, STAKER, block.timestamp);
         }
-        // Donate + mint grows it, never shrinks it.
+        // Donate + (seeder) mint grows it, never shrinks it.
         usdce.transfer(address(meta), b);
-        meta.mint(STAKER);
         vm.stopPrank();
+        vm.prank(SEEDER);
+        meta.mint(SEEDER);
         (uint256 lp0b, uint256 lp1b) = meta.hubLiquidity();
         assertGe(lp0b, lp0);
         assertGe(lp1b, lp1);
@@ -397,6 +412,7 @@ contract EticaDirectMetaPairTest is Test {
         vm.startPrank(TREASURY);
         factory.setWhitelist(address(adapter), true);
         factory.setFeeTo(address(adapter));
+        adapter.setTreasuryToken(address(usdce));
         vm.stopPrank();
         _seed(10 ether, 5 ether);
         vm.startPrank(STAKER);
@@ -408,17 +424,26 @@ contract EticaDirectMetaPairTest is Test {
 
         (uint256 lp0, uint256 lp1) = meta.hubLiquidity();
         uint256 navBefore = stEtx.convertToAssets(1e18);
-        uint256 treasuryBefore = etx.balanceOf(TREASURY);
+        uint256 treasuryEtxBefore = etx.balanceOf(TREASURY);
+        uint256 treasuryUsdceBefore = usdce.balanceOf(TREASURY);
         DirectSwapHarvesterAdapter.LegPlan[] memory plans =
             new DirectSwapHarvesterAdapter.LegPlan[](1);
         plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(meta), 0, 0, 0, 0);
         vm.prank(TREASURY);
-        (uint256 total, uint256 polShares) = adapter.harvest(plans);
+        (uint256 total, uint256 polShares) = adapter.harvest(plans, 0);
         assertGt(total, 0);
         assertGt(polShares, 0);
         assertGt(stEtx.convertToAssets(1e18), navBefore);
-        // farms sink unset -> its 10% folds into the treasury: 40% + 10%.
-        assertEq(etx.balanceOf(TREASURY) - treasuryBefore, total - total / 10 - (total * 4) / 10);
+        // Treasury is paid in USDC.e, never ETX. Farms sink unset -> its 10%
+        // folds into the treasury: (40% + 10%) of the ETX sold on the hub.
+        assertEq(etx.balanceOf(TREASURY), treasuryEtxBefore);
+        uint256 treasuryEtx = total - total / 10 - (total * 4) / 10;
+        uint256 paid = usdce.balanceOf(TREASURY) - treasuryUsdceBefore;
+        assertGt(paid, 0);
+        // hub: 1 ETX ~ 0.1 USDC.e, +-3% for the 0.3% fee and the round trip
+        // through the 100k-USDC.e pool.
+        assertLt(paid, (treasuryEtx / 10) * 103 / 100);
+        assertGt(paid, (treasuryEtx / 10) * 97 / 100);
         // POL slice landed in the hub through the window, shares parked on the adapter.
         (uint256 lp0b, uint256 lp1b) = meta.hubLiquidity();
         assertGt(lp0b, lp0);
@@ -427,5 +452,48 @@ contract EticaDirectMetaPairTest is Test {
         assertEq(usdce.balanceOf(address(adapter)), 0);
         assertEq(wegaz.balanceOf(address(adapter)), 0);
         assertEq(etx.balanceOf(address(adapter)), 0);
+    }
+
+    /// A fee leg too small to buy any ETX is carried over, not a revert.
+    function test_harvest_dustLegIsCarriedOverNotReverted() public {
+        DirectSwapHarvesterAdapter adapter = new DirectSwapHarvesterAdapter(
+            TREASURY,
+            IEticaDirectFactory(address(factory)),
+            IHubRouter(address(hubRouter)),
+            IERC20(address(etx)),
+            address(stEtx),
+            address(0),
+            TREASURY
+        );
+        vm.startPrank(TREASURY);
+        factory.setWhitelist(address(adapter), true);
+        factory.setFeeTo(address(adapter));
+        vm.stopPrank();
+        // A second window over a token so cheap per wei that 1 wei of it buys 0 ETX.
+        MockERC20 big = new MockERC20("BIG (mock)", "BIG");
+        big.mint(TREASURY, 1e24 + 1);
+        vm.startPrank(TREASURY);
+        big.approve(address(hubRouter), type(uint256).max);
+        hubRouter.addLiquidity(
+            address(big), address(etx), 1e24, 1 ether, 0, 0, TREASURY, block.timestamp
+        );
+        EticaDirectMetaPair bigMeta = EticaDirectMetaPair(
+            factory.createMetaPair(address(big), address(usdce), address(hubRouter))
+        );
+        big.transfer(address(adapter), 1); // 1 wei of BIG fee: quotes to 0 ETX
+        vm.stopPrank();
+        _seed(10 ether, 5 ether);
+        vm.prank(STAKER);
+        meta.swapExactIn(address(usdce), 1_000 ether, 0, STAKER, block.timestamp);
+
+        DirectSwapHarvesterAdapter.LegPlan[] memory plans =
+            new DirectSwapHarvesterAdapter.LegPlan[](2);
+        plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(bigMeta), 0, 0, 0, 0);
+        plans[1] = DirectSwapHarvesterAdapter.LegPlan(address(meta), 0, 0, 0, 0);
+        vm.prank(TREASURY);
+        (uint256 total,) = adapter.harvest(plans, 0);
+        assertGt(total, 0);
+        assertEq(usdce.balanceOf(address(adapter)), 0);
+        assertEq(big.balanceOf(address(adapter)), 1);
     }
 }
