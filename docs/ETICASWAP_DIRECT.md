@@ -46,3 +46,10 @@ A plain direct pair holds its own EGAZ and USDC.e, which is a spoke-to-spoke byp
 
 - The raw `swap(amount0Out, amount1Out, to, data)` entry point on both pair kinds gates **the caller** and charges the caller's tier; `to` is only checked as a recipient. Routers price a named trader through `swapFor`.
 - `DirectSwapHarvesterAdapter`: a treasury slice too small to buy any `treasuryToken` is paid in ETX; windows listed in a harvest always receive an equal POL share even when a sibling window sold the shared fee token first.
+
+### Guardian, pause and retire
+
+- `factory.setGuardian(addr)` names a key that can call `pauseSwaps()` and nothing else; `unpauseSwaps()` is `feeToSetter` only. Every swap entry point on pairs and windows checks `factory.swapsOpen(pair)` and reverts `EDirect: PAUSED`. Deposits, `skim`, `sync` and fee harvesting keep working while paused, so a pause can never trap funds.
+- `factory.retirePair(pair)` turns a pair's swaps off for good, clears `getPair` for its tokens so a fixed replacement can be opened with `createPair`/`createMetaPair`, and keeps `isPair`/`isMetaPair` so the harvester still collects fees already forwarded. A retired window's hub LP stays in the public hub pools (deepening them); it just stops being attributed to a venue pair.
+- `apps/direct-watcher` (cron every 5 min) checks hub LP monotonicity, admin settings against `expected.json`, reported price vs the hub cross price, large swaps and loose tokens; alerts to Telegram and auto-pauses on a critical finding when it holds the guardian key. Runbook: after deploy, fill `apps/direct-watcher/expected.json`, set the `DIRECT_FACTORY_ADDRESS` variable and the `DIRECT_GUARDIAN_PRIVATE_KEY` secret (a fresh EOA you then pass to `setGuardian`), and dispatch the workflow once.
+

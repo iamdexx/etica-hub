@@ -16,6 +16,10 @@ interface IEticaDirectFactory {
     event MinStEtxSet(uint256 minStEtx);
     event FeeTiersSet(uint256[] minStEtx, uint16[] feeBps);
     event BaseFeeBpsSet(uint16 feeBps);
+    event GuardianSet(address indexed guardian);
+    event SwapsPaused(address indexed by);
+    event SwapsUnpaused(address indexed by);
+    event PairRetired(address indexed token0, address indexed token1, address pair);
 
     function stEtx() external view returns (address);
     function minStEtx() external view returns (uint256);
@@ -26,6 +30,13 @@ interface IEticaDirectFactory {
     function isPair(address pair) external view returns (bool);
     function isMetaPair(address pair) external view returns (bool);
     function metaPairDeployer() external view returns (address);
+    /// @notice Address allowed to pause swaps (never to move funds or unpause).
+    function guardian() external view returns (address);
+    function swapsPaused() external view returns (bool);
+    function retired(address pair) external view returns (bool);
+    /// @notice False while the venue is paused or `pair` has been retired;
+    ///         pairs refuse swaps (but not mint/skim/sync) when false.
+    function swapsOpen(address pair) external view returns (bool);
 
     function getPair(address tokenA, address tokenB) external view returns (address pair);
     function allPairs(uint256) external view returns (address pair);
@@ -54,4 +65,8 @@ interface IEticaDirectFactory {
     function setMinStEtx(uint256 minStEtx) external;
     function setBaseFeeBps(uint16 feeBps) external;
     function setFeeTiers(uint256[] calldata minStEtx, uint16[] calldata feeBps) external;
+    function setGuardian(address guardian) external;
+    function pauseSwaps() external;
+    function unpauseSwaps() external;
+    function retirePair(address pair) external;
 }

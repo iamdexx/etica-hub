@@ -624,4 +624,89 @@ contract EticaDirectMetaPairTest is Test {
         assertGt(metaB.balanceOf(address(adapter)), 0);
         assertEq(usdce.balanceOf(address(adapter)), 0);
     }
+
+    // ---------- guardian: pause-only circuit breaker, retire/replace ----------
+
+    function test_guardian_canOnlyPause_setterUnpauses_mintSkimSyncHarvestStillWork() public {
+        address guardian = address(0x6A2D);
+        vm.expectRevert(bytes("EDirect: FORBIDDEN"));
+        vm.prank(NOBODY);
+        factory.setGuardian(guardian);
+        vm.prank(TREASURY);
+        factory.setGuardian(guardian);
+        vm.expectRevert(bytes("EDirect: NOT_GUARDIAN"));
+        vm.prank(NOBODY);
+        factory.pauseSwaps();
+
+        _seed(10 ether, 5 ether);
+        vm.prank(guardian);
+        factory.pauseSwaps();
+        assertTrue(factory.swapsPaused());
+        assertFalse(factory.swapsOpen(address(meta)));
+
+        vm.startPrank(STAKER);
+        vm.expectRevert(bytes("EDirect: PAUSED"));
+        meta.swapExactIn(address(usdce), 1 ether, 0, STAKER, block.timestamp);
+        usdce.transfer(address(meta), 1 ether);
+        (uint256 out0, uint256 out1) =
+            meta.token0() == address(wegaz) ? (uint256(1), uint256(0)) : (uint256(0), uint256(1));
+        vm.expectRevert(bytes("EDirect: PAUSED"));
+        meta.swap(out0, out1, STAKER, "");
+        vm.stopPrank();
+
+        // deposits, skim and sync are not swaps; the paused window still accounts
+        vm.startPrank(SEEDER);
+        usdce.transfer(address(meta), 1 ether);
+        meta.mint(SEEDER);
+        vm.stopPrank();
+        meta.sync();
+        meta.skim(FEE_SINK);
+
+        vm.expectRevert(bytes("EDirect: FORBIDDEN"));
+        vm.prank(guardian);
+        factory.unpauseSwaps();
+        vm.prank(TREASURY);
+        factory.unpauseSwaps();
+        vm.prank(STAKER);
+        meta.swapExactIn(address(usdce), 1 ether, 0, STAKER, block.timestamp);
+    }
+
+    function test_retirePair_blocksSwaps_allowsReplacement_keepsHarvest() public {
+        DirectSwapHarvesterAdapter adapter = _newAdapter();
+        _seed(10 ether, 5 ether);
+        vm.prank(STAKER);
+        meta.swapExactIn(address(usdce), 100 ether, 0, STAKER, block.timestamp);
+        assertEq(usdce.balanceOf(address(adapter)), 3 ether);
+
+        vm.expectRevert(bytes("EDirect: NOT_PAIR"));
+        vm.prank(TREASURY);
+        factory.retirePair(NOBODY);
+        vm.prank(TREASURY);
+        factory.retirePair(address(meta));
+        assertTrue(factory.retired(address(meta)));
+        assertTrue(factory.isPair(address(meta)));
+        assertEq(factory.getPair(address(wegaz), address(usdce)), address(0));
+
+        vm.prank(STAKER);
+        vm.expectRevert(bytes("EDirect: PAUSED"));
+        meta.swapExactIn(address(usdce), 1 ether, 0, STAKER, block.timestamp);
+        (uint256 lp0, uint256 lp1) = meta.hubLiquidity();
+        assertGt(lp0, 0);
+        assertGt(lp1, 0);
+
+        vm.prank(TREASURY);
+        address replacement =
+            factory.createMetaPair(address(wegaz), address(usdce), address(hubRouter));
+        assertTrue(replacement != address(meta));
+        assertEq(factory.getPair(address(wegaz), address(usdce)), replacement);
+        assertTrue(factory.swapsOpen(replacement));
+
+        // fees already forwarded from the retired window still harvest
+        DirectSwapHarvesterAdapter.LegPlan[] memory plans =
+            new DirectSwapHarvesterAdapter.LegPlan[](1);
+        plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(meta), 0, 0, 0, 0);
+        vm.prank(TREASURY);
+        adapter.harvest(plans, 0);
+        assertEq(usdce.balanceOf(address(adapter)), 0);
+    }
 }

@@ -201,6 +201,7 @@ contract EticaDirectPair is EticaDirectERC20 {
         lock
     {
         IEticaDirectFactory fac = IEticaDirectFactory(factory);
+        require(fac.swapsOpen(address(this)), "EDirect: PAUSED");
         require(fac.isAllowed(msg.sender), "EDirect: NOT_STAKER");
         _requireAllowed(to);
         _swap(amount0Out, amount1Out, to, fac.feeBpsFor(msg.sender), data);
@@ -219,6 +220,7 @@ contract EticaDirectPair is EticaDirectERC20 {
     ) external lock {
         IEticaDirectFactory fac = IEticaDirectFactory(factory);
         require(fac.whitelist(msg.sender), "EDirect: NOT_ROUTER");
+        require(fac.swapsOpen(address(this)), "EDirect: PAUSED");
         require(fac.isAllowed(trader), "EDirect: NOT_STAKER");
         _requireAllowed(to);
         _swap(amount0Out, amount1Out, to, fac.feeBpsFor(trader), data);
