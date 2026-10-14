@@ -12,3 +12,8 @@ EticaSwap Direct is a second, smaller venue that resolves this without weakening
 Why this keeps the fundamentals: using a direct route requires holding stETX, i.e. staked ETX, so direct flow still creates ETX demand, and the venue's fees are paid to ETX stakers. The public DEX, token picker and default routing remain hub-only; the direct venue is an unlock for stakers.
 
 Deployment (not yet done): deploy factory (feeToSetter = treasury, `minStEtx` e.g. 1,000 stETX), router, adapter; `setWhitelist(router)`, `setWhitelist(adapter)`, `setFeeTo(adapter)`; `createPair(WEGAZ, USDC.e)` and `createPair(ETI, USDC.e)`; seed via the router from a staker wallet; register the factory with GeckoTerminal as a V2-style DEX; wire the keeper to call `adapter.harvest` with hub quotes as `minEtxOut`. Addresses live in `packages/shared/src/addresses.ts` (`directFactory`, `directRouter`, `directHarvesterAdapter`).
+
+## Curation rules
+
+- Only open a direct pair when both tokens already have an ETX pool on the public hub: the harvester sells each fee leg to ETX through the hub router (and buys the POL slice back the same way), so a pair with a hub-less token accrues fees that cannot be harvested until that hub pool exists.
+- Pairs are opened by the treasury (`feeToSetter`) or a trusted creator only; `router.addLiquidity*` on an unopened pair reverts `EDirect: NO_PAIR`.

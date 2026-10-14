@@ -137,7 +137,7 @@ contract EticaDirectTest is Test {
         assertTrue(factory.isAllowed(STAKER));
         assertFalse(factory.isAllowed(NOBODY));
         assertTrue(factory.isAllowed(address(router)));
-        assertTrue(factory.isAllowed(address(pair)));
+        assertFalse(factory.isAllowed(address(pair))); // pairs are recipients only via a whitelisted router
     }
 
     function test_setMinStEtx_zeroOpensVenue() public {
@@ -241,6 +241,37 @@ contract EticaDirectTest is Test {
             pair.token0() == address(usdce) ? (uint256(0), expected) : (expected, uint256(0));
         vm.prank(STAKER);
         pair.swap(out0, out1, STAKER, "");
+    }
+
+    function test_addLiquidity_unopenedPairReverts() public {
+        MockERC20 other = new MockERC20("Other", "OTH");
+        other.mint(STAKER, 1 ether);
+        vm.startPrank(STAKER);
+        other.approve(address(router), type(uint256).max);
+        vm.expectRevert(bytes("EDirect: NO_PAIR"));
+        router.addLiquidityEGAZ{value: 1 ether}(
+            address(other), 1 ether, 0, 0, STAKER, block.timestamp
+        );
+        vm.stopPrank();
+    }
+
+    function test_swap_nonStakerCannotParkOutputOnSiblingPair() public {
+        _seedDirectPool();
+        vm.prank(TREASURY);
+        address sibling = factory.createPair(address(etx), address(usdce));
+        usdce.mint(address(pair), 100 ether);
+        (uint256 out0, uint256 out1) = pair.token0() == address(usdce)
+            ? (uint256(0), uint256(1 ether))
+            : (uint256(1 ether), uint256(0));
+        vm.prank(NOBODY);
+        vm.expectRevert(bytes("EDirect: NOT_STAKER"));
+        pair.swap(out0, out1, sibling, "");
+        // skim is gated the same way.
+        vm.prank(NOBODY);
+        vm.expectRevert(bytes("EDirect: NOT_STAKER"));
+        pair.skim(NOBODY);
+        vm.prank(NOBODY);
+        pair.skim(STAKER);
     }
 
     // ---------- fee harvest -> stETX ----------

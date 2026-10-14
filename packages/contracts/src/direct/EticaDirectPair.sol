@@ -104,10 +104,16 @@ contract EticaDirectPair is EticaDirectERC20 {
         emit Sync(reserve0, reserve1);
     }
 
-    /// @dev The venue gate. Pairs and whitelisted routers are always allowed so
-    ///      multi-hop swaps and EGAZ unwrapping through the router keep working.
+    /// @dev The venue gate. Another venue pair is only a valid recipient when
+    ///      a whitelisted router is doing the hop, so a non-staker cannot park
+    ///      output on a sibling pair and `skim` it out.
     function _requireAllowed(address to) private view {
-        require(IEticaDirectFactory(factory).isAllowed(to), "EDirect: NOT_STAKER");
+        IEticaDirectFactory fac = IEticaDirectFactory(factory);
+        if (fac.isPair(to)) {
+            require(fac.whitelist(msg.sender), "EDirect: NOT_STAKER");
+            return;
+        }
+        require(fac.isAllowed(to), "EDirect: NOT_STAKER");
     }
 
     /// @dev Mints fee equivalent to 1/6 of the growth in sqrt(k) to `feeTo`.
@@ -229,6 +235,7 @@ contract EticaDirectPair is EticaDirectERC20 {
 
     /// @notice Force balances to match reserves (sends excess to `to`).
     function skim(address to) external lock {
+        _requireAllowed(to);
         address _token0 = token0;
         address _token1 = token1;
         _safeTransfer(_token0, to, IERC20Minimal(_token0).balanceOf(address(this)) - reserve0);

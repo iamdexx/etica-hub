@@ -50,21 +50,8 @@ contract EticaDirectRouter {
         uint256 amountBMin
     ) internal returns (uint256 amountA, uint256 amountB) {
         IEticaSwapFactory fac = IEticaSwapFactory(factory);
-        if (fac.getPair(tokenA, tokenB) == address(0)) {
-            // Forward the ETX pair-creation fee from the original caller so
-            // `router.addLiquidity` can transparently open a new pair without
-            // a separate `factory.createPair` step. Fee is skipped when the
-            // router itself is a trusted creator, the fee is zero, or `feeTo`
-            // is unset (pre-bootstrap).
-            uint256 fee = fac.pairCreationFee();
-            address recipient = fac.feeTo();
-            if (fee > 0 && recipient != address(0) && !fac.trustedCreators(address(this))) {
-                address etxToken = fac.etx();
-                TransferHelper.safeTransferFrom(etxToken, msg.sender, address(this), fee);
-                TransferHelper.safeApprove(etxToken, factory, fee);
-            }
-            fac.createPair(tokenA, tokenB);
-        }
+        // Pairs on the direct venue are curated: the router never opens one.
+        require(fac.getPair(tokenA, tokenB) != address(0), "EDirect: NO_PAIR");
         (uint256 reserveA, uint256 reserveB) = _reservesOrZero(tokenA, tokenB);
         if (reserveA == 0 && reserveB == 0) {
             (amountA, amountB) = (amountADesired, amountBDesired);

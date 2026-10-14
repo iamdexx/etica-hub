@@ -54,7 +54,7 @@ contract EticaDirectFactory is IEticaDirectFactory {
 
     /// @inheritdoc IEticaDirectFactory
     function isAllowed(address account) public view returns (bool) {
-        if (isPair[account] || whitelist[account]) return true;
+        if (whitelist[account]) return true;
         uint256 threshold = minStEtx;
         if (threshold == 0) return true;
         return IERC20Minimal(stEtx).balanceOf(account) >= threshold;
