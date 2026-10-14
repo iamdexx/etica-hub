@@ -10,7 +10,7 @@ import {IEticaSwapFactory} from "../swap/interfaces/IEticaSwapFactory.sol";
 import {IEticaSwapCallee} from "../swap/interfaces/IEticaSwapCallee.sol";
 
 /// @title EticaSwap Direct pair (stETX-gated constant product)
-/// @notice Constant-product AMM pair (x*y=k), 0.30% swap fee, identical to
+/// @notice Constant-product AMM pair (x*y=k), 1.00% swap fee, identical to
 ///         {EticaSwapPair} except that every `to` recipient of mint, burn and
 ///         swap must pass {IEticaDirectFactory.isAllowed}: hold the stETX
 ///         threshold, or be one of the venue's own pairs / whitelisted routers.
@@ -215,8 +215,8 @@ contract EticaDirectPair is EticaDirectERC20 {
             balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
         require(amount0In > 0 || amount1In > 0, "ESwap: INSUFFICIENT_INPUT_AMOUNT");
         {
-            uint256 balance0Adjusted = balance0 * 1000 - amount0In * 3;
-            uint256 balance1Adjusted = balance1 * 1000 - amount1In * 3;
+            uint256 balance0Adjusted = balance0 * 1000 - amount0In * 10;
+            uint256 balance1Adjusted = balance1 * 1000 - amount1In * 10;
             require(
                 balance0Adjusted * balance1Adjusted >= uint256(_reserve0) * _reserve1 * (1000 ** 2),
                 "ESwap: K"

@@ -204,6 +204,28 @@ contract EticaDirectTest is Test {
         assertTrue(sawSync && sawSwap);
     }
 
+    function test_swap_feeIsOnePercent() public {
+        _seedDirectPool();
+        uint256 amountIn = 100 ether;
+        (uint112 r0, uint112 r1,) = pair.getReserves();
+        (uint256 rIn, uint256 rOut) = pair.token0() == address(usdce) ? (r0, r1) : (r1, r0);
+        uint256 expected = (amountIn * 990 * rOut) / (rIn * 1000 + amountIn * 990);
+        assertEq(router.getAmountOut(amountIn, rIn, rOut), expected);
+
+        // The 0.30% venue's output is too much for a 1.00% pair: K check rejects it.
+        uint256 tooMuch = (amountIn * 997 * rOut) / (rIn * 1000 + amountIn * 997);
+        usdce.mint(address(pair), amountIn);
+        (uint256 out0, uint256 out1) =
+            pair.token0() == address(usdce) ? (uint256(0), tooMuch) : (tooMuch, uint256(0));
+        vm.prank(STAKER);
+        vm.expectRevert(bytes("ESwap: K"));
+        pair.swap(out0, out1, STAKER, "");
+        (out0, out1) =
+            pair.token0() == address(usdce) ? (uint256(0), expected) : (expected, uint256(0));
+        vm.prank(STAKER);
+        pair.swap(out0, out1, STAKER, "");
+    }
+
     // ---------- fee harvest -> stETX ----------
 
     function test_harvest_feesFlowToStakersAndTreasury() public {

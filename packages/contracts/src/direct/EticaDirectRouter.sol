@@ -6,7 +6,7 @@ import {IEticaSwapPair} from "../swap/interfaces/IEticaSwapPair.sol";
 import {IERC20Minimal} from "../swap/interfaces/IERC20Minimal.sol";
 import {IWEGAZ} from "../swap/interfaces/IWEGAZ.sol";
 import {IEticaDirectFactory} from "./IEticaDirectFactory.sol";
-import {EticaSwapLibrary} from "../swap/libraries/EticaSwapLibrary.sol";
+import {EticaDirectLibrary} from "./EticaDirectLibrary.sol";
 import {TransferHelper} from "../swap/libraries/TransferHelper.sol";
 
 /// @title EticaSwap Direct router
@@ -69,12 +69,13 @@ contract EticaDirectRouter {
         if (reserveA == 0 && reserveB == 0) {
             (amountA, amountB) = (amountADesired, amountBDesired);
         } else {
-            uint256 amountBOptimal = EticaSwapLibrary.quote(amountADesired, reserveA, reserveB);
+            uint256 amountBOptimal = EticaDirectLibrary.quote(amountADesired, reserveA, reserveB);
             if (amountBOptimal <= amountBDesired) {
                 require(amountBOptimal >= amountBMin, "ESwap: INSUFFICIENT_B_AMOUNT");
                 (amountA, amountB) = (amountADesired, amountBOptimal);
             } else {
-                uint256 amountAOptimal = EticaSwapLibrary.quote(amountBDesired, reserveB, reserveA);
+                uint256 amountAOptimal =
+                    EticaDirectLibrary.quote(amountBDesired, reserveB, reserveA);
                 assert(amountAOptimal <= amountADesired);
                 require(amountAOptimal >= amountAMin, "ESwap: INSUFFICIENT_A_AMOUNT");
                 (amountA, amountB) = (amountAOptimal, amountBDesired);
@@ -89,7 +90,7 @@ contract EticaDirectRouter {
     {
         address pair = IEticaSwapFactory(factory).getPair(tokenA, tokenB);
         if (pair == address(0)) return (0, 0);
-        (address token0,) = EticaSwapLibrary.sortTokens(tokenA, tokenB);
+        (address token0,) = EticaDirectLibrary.sortTokens(tokenA, tokenB);
         (uint112 r0, uint112 r1,) = IEticaSwapPair(pair).getReserves();
         (reserveA, reserveB) = tokenA == token0 ? (r0, r1) : (r1, r0);
     }
@@ -112,7 +113,7 @@ contract EticaDirectRouter {
         (amountA, amountB) = _addLiquidity(
             tokenA, tokenB, amountADesired, amountBDesired, amountAMin, amountBMin
         );
-        address pair = EticaSwapLibrary.pairFor(factory, tokenA, tokenB);
+        address pair = EticaDirectLibrary.pairFor(factory, tokenA, tokenB);
         TransferHelper.safeTransferFrom(tokenA, msg.sender, pair, amountA);
         TransferHelper.safeTransferFrom(tokenB, msg.sender, pair, amountB);
         liquidity = IEticaSwapPair(pair).mint(to);
@@ -135,7 +136,7 @@ contract EticaDirectRouter {
         (amountToken, amountEGAZ) = _addLiquidity(
             token, WEGAZ_TOKEN, amountTokenDesired, msg.value, amountTokenMin, amountEGAZMin
         );
-        address pair = EticaSwapLibrary.pairFor(factory, token, WEGAZ_TOKEN);
+        address pair = EticaDirectLibrary.pairFor(factory, token, WEGAZ_TOKEN);
         TransferHelper.safeTransferFrom(token, msg.sender, pair, amountToken);
         IWEGAZ(WEGAZ_TOKEN).deposit{value: amountEGAZ}();
         assert(IWEGAZ(WEGAZ_TOKEN).transfer(pair, amountEGAZ));
@@ -156,10 +157,10 @@ contract EticaDirectRouter {
         address to,
         uint256 deadline
     ) public ensure(deadline) gated(to) returns (uint256 amountA, uint256 amountB) {
-        address pair = EticaSwapLibrary.pairFor(factory, tokenA, tokenB);
+        address pair = EticaDirectLibrary.pairFor(factory, tokenA, tokenB);
         IEticaSwapPair(pair).transferFrom(msg.sender, pair, liquidity);
         (uint256 amount0, uint256 amount1) = IEticaSwapPair(pair).burn(to);
-        (address token0,) = EticaSwapLibrary.sortTokens(tokenA, tokenB);
+        (address token0,) = EticaDirectLibrary.sortTokens(tokenA, tokenB);
         (amountA, amountB) = tokenA == token0 ? (amount0, amount1) : (amount1, amount0);
         require(amountA >= amountAMin, "ESwap: INSUFFICIENT_A_AMOUNT");
         require(amountB >= amountBMin, "ESwap: INSUFFICIENT_B_AMOUNT");
@@ -186,13 +187,14 @@ contract EticaDirectRouter {
     function _swap(uint256[] memory amounts, address[] memory path, address _to) internal {
         for (uint256 i; i < path.length - 1; i++) {
             (address input, address output) = (path[i], path[i + 1]);
-            (address token0,) = EticaSwapLibrary.sortTokens(input, output);
+            (address token0,) = EticaDirectLibrary.sortTokens(input, output);
             uint256 amountOut = amounts[i + 1];
             (uint256 amount0Out, uint256 amount1Out) =
                 input == token0 ? (uint256(0), amountOut) : (amountOut, uint256(0));
-            address to =
-                i < path.length - 2 ? EticaSwapLibrary.pairFor(factory, output, path[i + 2]) : _to;
-            IEticaSwapPair(EticaSwapLibrary.pairFor(factory, input, output))
+            address to = i < path.length - 2
+                ? EticaDirectLibrary.pairFor(factory, output, path[i + 2])
+                : _to;
+            IEticaSwapPair(EticaDirectLibrary.pairFor(factory, input, output))
                 .swap(amount0Out, amount1Out, to, new bytes(0));
         }
     }
@@ -204,10 +206,10 @@ contract EticaDirectRouter {
         address to,
         uint256 deadline
     ) external ensure(deadline) gated(to) returns (uint256[] memory amounts) {
-        amounts = EticaSwapLibrary.getAmountsOut(factory, amountIn, path);
+        amounts = EticaDirectLibrary.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
         TransferHelper.safeTransferFrom(
-            path[0], msg.sender, EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0]
+            path[0], msg.sender, EticaDirectLibrary.pairFor(factory, path[0], path[1]), amounts[0]
         );
         _swap(amounts, path, to);
     }
@@ -219,10 +221,10 @@ contract EticaDirectRouter {
         address to,
         uint256 deadline
     ) external ensure(deadline) gated(to) returns (uint256[] memory amounts) {
-        amounts = EticaSwapLibrary.getAmountsIn(factory, amountOut, path);
+        amounts = EticaDirectLibrary.getAmountsIn(factory, amountOut, path);
         require(amounts[0] <= amountInMax, "ESwap: EXCESSIVE_INPUT_AMOUNT");
         TransferHelper.safeTransferFrom(
-            path[0], msg.sender, EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0]
+            path[0], msg.sender, EticaDirectLibrary.pairFor(factory, path[0], path[1]), amounts[0]
         );
         _swap(amounts, path, to);
     }
@@ -234,12 +236,12 @@ contract EticaDirectRouter {
         uint256 deadline
     ) external payable ensure(deadline) gated(to) returns (uint256[] memory amounts) {
         require(path[0] == WEGAZ_TOKEN, "ESwap: INVALID_PATH");
-        amounts = EticaSwapLibrary.getAmountsOut(factory, msg.value, path);
+        amounts = EticaDirectLibrary.getAmountsOut(factory, msg.value, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
         IWEGAZ(WEGAZ_TOKEN).deposit{value: amounts[0]}();
         assert(
             IWEGAZ(WEGAZ_TOKEN)
-                .transfer(EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0])
+                .transfer(EticaDirectLibrary.pairFor(factory, path[0], path[1]), amounts[0])
         );
         _swap(amounts, path, to);
     }
@@ -252,10 +254,10 @@ contract EticaDirectRouter {
         uint256 deadline
     ) external ensure(deadline) gated(to) returns (uint256[] memory amounts) {
         require(path[path.length - 1] == WEGAZ_TOKEN, "ESwap: INVALID_PATH");
-        amounts = EticaSwapLibrary.getAmountsIn(factory, amountOut, path);
+        amounts = EticaDirectLibrary.getAmountsIn(factory, amountOut, path);
         require(amounts[0] <= amountInMax, "ESwap: EXCESSIVE_INPUT_AMOUNT");
         TransferHelper.safeTransferFrom(
-            path[0], msg.sender, EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0]
+            path[0], msg.sender, EticaDirectLibrary.pairFor(factory, path[0], path[1]), amounts[0]
         );
         _swap(amounts, path, address(this));
         IWEGAZ(WEGAZ_TOKEN).withdraw(amounts[amounts.length - 1]);
@@ -270,10 +272,10 @@ contract EticaDirectRouter {
         uint256 deadline
     ) external ensure(deadline) gated(to) returns (uint256[] memory amounts) {
         require(path[path.length - 1] == WEGAZ_TOKEN, "ESwap: INVALID_PATH");
-        amounts = EticaSwapLibrary.getAmountsOut(factory, amountIn, path);
+        amounts = EticaDirectLibrary.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
         TransferHelper.safeTransferFrom(
-            path[0], msg.sender, EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0]
+            path[0], msg.sender, EticaDirectLibrary.pairFor(factory, path[0], path[1]), amounts[0]
         );
         _swap(amounts, path, address(this));
         IWEGAZ(WEGAZ_TOKEN).withdraw(amounts[amounts.length - 1]);
@@ -287,12 +289,12 @@ contract EticaDirectRouter {
         uint256 deadline
     ) external payable ensure(deadline) gated(to) returns (uint256[] memory amounts) {
         require(path[0] == WEGAZ_TOKEN, "ESwap: INVALID_PATH");
-        amounts = EticaSwapLibrary.getAmountsIn(factory, amountOut, path);
+        amounts = EticaDirectLibrary.getAmountsIn(factory, amountOut, path);
         require(amounts[0] <= msg.value, "ESwap: EXCESSIVE_INPUT_AMOUNT");
         IWEGAZ(WEGAZ_TOKEN).deposit{value: amounts[0]}();
         assert(
             IWEGAZ(WEGAZ_TOKEN)
-                .transfer(EticaSwapLibrary.pairFor(factory, path[0], path[1]), amounts[0])
+                .transfer(EticaDirectLibrary.pairFor(factory, path[0], path[1]), amounts[0])
         );
         _swap(amounts, path, to);
         if (msg.value > amounts[0]) {
@@ -307,7 +309,7 @@ contract EticaDirectRouter {
         pure
         returns (uint256)
     {
-        return EticaSwapLibrary.quote(amountA, reserveA, reserveB);
+        return EticaDirectLibrary.quote(amountA, reserveA, reserveB);
     }
 
     function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut)
@@ -315,7 +317,7 @@ contract EticaDirectRouter {
         pure
         returns (uint256)
     {
-        return EticaSwapLibrary.getAmountOut(amountIn, reserveIn, reserveOut);
+        return EticaDirectLibrary.getAmountOut(amountIn, reserveIn, reserveOut);
     }
 
     function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut)
@@ -323,7 +325,7 @@ contract EticaDirectRouter {
         pure
         returns (uint256)
     {
-        return EticaSwapLibrary.getAmountIn(amountOut, reserveIn, reserveOut);
+        return EticaDirectLibrary.getAmountIn(amountOut, reserveIn, reserveOut);
     }
 
     function getAmountsOut(uint256 amountIn, address[] calldata path)
@@ -331,7 +333,7 @@ contract EticaDirectRouter {
         view
         returns (uint256[] memory)
     {
-        return EticaSwapLibrary.getAmountsOut(factory, amountIn, path);
+        return EticaDirectLibrary.getAmountsOut(factory, amountIn, path);
     }
 
     function getAmountsIn(uint256 amountOut, address[] calldata path)
@@ -339,6 +341,6 @@ contract EticaDirectRouter {
         view
         returns (uint256[] memory)
     {
-        return EticaSwapLibrary.getAmountsIn(factory, amountOut, path);
+        return EticaDirectLibrary.getAmountsIn(factory, amountOut, path);
     }
 }

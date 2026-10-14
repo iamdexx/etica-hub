@@ -24,7 +24,7 @@ interface IHubRouter {
 
 /// @title DirectSwapHarvesterAdapter
 /// @notice `feeTo` of {EticaDirectFactory}. Every direct pair mints 1/6 of its
-///         0.30% swap fee as LP to this contract (standard V2 mechanics); the
+///         1.00% swap fee as LP to this contract (standard V2 mechanics); the
 ///         harvest burns that LP, swaps both legs into ETX through the
 ///         hub-and-spoke EticaSwap router (every venue token has an ETX pair
 ///         there by construction) and splits the ETX between stETX holders and
