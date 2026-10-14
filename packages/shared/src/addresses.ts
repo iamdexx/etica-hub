@@ -187,6 +187,21 @@ export const DEPLOYMENTS: Record<
      * no fees beyond royalties. Zero until deploy lands on-chain.
      */
     eticaResearchMarketplace: Address;
+    /**
+     * EticaDirectFactory — second EticaSwap venue hosting curated direct pairs
+     * (EGAZ/USDC.e, ETI/USDC.e) that bypass the ETX hub. Mint, burn and swap
+     * recipients must hold `minStEtx` stETX; pairs are V2-compatible so
+     * aggregators index them like any EticaSwap pair. Zero until deployed.
+     */
+    directFactory: Address;
+    /** EticaDirectRouter — EticaSwapRouter + the stETX gate on every `to`. Zero until deployed. */
+    directRouter: Address;
+    /**
+     * DirectSwapHarvesterAdapter — `feeTo` of the direct factory; burns fee LP,
+     * swaps legs to ETX on the hub router and splits 50/50 stETX / treasury.
+     * Zero until deployed.
+     */
+    directHarvesterAdapter: Address;
   }
 > = {
   61803: {
@@ -209,6 +224,9 @@ export const DEPLOYMENTS: Record<
     eticaResearchNftMetadataLib: '0x66aa725d9d18481bB937F4DF2DA68f82DF964219',
     eticaResearchNft: '0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9',
     eticaResearchMarketplace: '0x176b9dd241483480178e7e3ab63fcf60a249fc16',
+    directFactory: '0x0000000000000000000000000000000000000000',
+    directRouter: '0x0000000000000000000000000000000000000000',
+    directHarvesterAdapter: '0x0000000000000000000000000000000000000000',
   },
   61888: {
     etx: '0x0000000000000000000000000000000000000000',
@@ -230,6 +248,9 @@ export const DEPLOYMENTS: Record<
     eticaResearchNftMetadataLib: '0x0000000000000000000000000000000000000000',
     eticaResearchNft: '0x0000000000000000000000000000000000000000',
     eticaResearchMarketplace: '0x0000000000000000000000000000000000000000',
+    directFactory: '0x0000000000000000000000000000000000000000',
+    directRouter: '0x0000000000000000000000000000000000000000',
+    directHarvesterAdapter: '0x0000000000000000000000000000000000000000',
   },
   31337: {
     // Written by `DeploySwap.s.sol` against the local anvil fork.
@@ -252,6 +273,9 @@ export const DEPLOYMENTS: Record<
     eticaResearchNftMetadataLib: '0x0000000000000000000000000000000000000000',
     eticaResearchNft: '0x0000000000000000000000000000000000000000',
     eticaResearchMarketplace: '0x0000000000000000000000000000000000000000',
+    directFactory: '0x0000000000000000000000000000000000000000',
+    directRouter: '0x0000000000000000000000000000000000000000',
+    directHarvesterAdapter: '0x0000000000000000000000000000000000000000',
   },
 };
 

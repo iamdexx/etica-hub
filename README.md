@@ -8,6 +8,7 @@ DeSci + DeFi application layer for the Etica Protocol (chain id 61803), live at
 | **EticaSwap V2** — AMM DEX for ETI / EGAZ / ERC-20 (factory, router, Permit2, Dutch reactor + order registry) | Live on Etica mainnet |
 | **ETX** token, **stETX** liquid staking (ERC-4626), farms, treasury harvester, fee controller | Live on Etica mainnet |
 | **EticaStableSwap** + harvester adapter | Live on Etica mainnet |
+| **EticaSwap Direct** (stETX-gated direct pairs + harvester adapter) | Contracts + Foundry tests in repo, not yet deployed |
 | **Research Markets** + **RES NFT** (ERC-721 research discoveries) + marketplace | Live on Etica mainnet |
 | **EticaLabs Autopilot** — autonomous AI protein-design / research loop, public archive at `/labs/archive` | Live (GitHub Actions worker + Vercel API) |
 | **Bridge** — ETX ↔ wrapped ETX on Ethereum / BNB via Hyperlane, optimistic veto | Contracts + watcher bots complete; remote deployments not yet configured |
