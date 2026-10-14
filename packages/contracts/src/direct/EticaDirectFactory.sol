@@ -58,6 +58,8 @@ contract EticaDirectFactory is IEticaDirectFactory {
     ///         never traps funds: there is nothing to withdraw from a window,
     ///         and plain pairs keep mint/burn open.
     address public guardian;
+    /// @notice Accounts that may unpause alone (each multisig owner), while every other admin change stays with the setter.
+    mapping(address => bool) public unpausers;
     /// @notice How long a guardian pause lasts before swaps reopen on their own.
     uint256 public guardianPauseDuration = 7 days;
     /// @notice Timestamp a guardian pause lapses; 0 while a setter pause holds.
@@ -184,7 +186,13 @@ contract EticaDirectFactory is IEticaDirectFactory {
         emit SwapsPaused(msg.sender, pauseExpiresAt);
     }
 
-    function unpauseSwaps() external onlySetter {
+    function setUnpauser(address account, bool allowed) external onlySetter {
+        unpausers[account] = allowed;
+        emit UnpauserSet(account, allowed);
+    }
+
+    function unpauseSwaps() external {
+        require(msg.sender == feeToSetter || unpausers[msg.sender], "EDirect: FORBIDDEN");
         paused = false;
         pauseExpiresAt = 0;
         emit SwapsUnpaused(msg.sender);

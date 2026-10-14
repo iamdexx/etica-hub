@@ -45,7 +45,7 @@ import {
  * Operator (treasury):
  *   factory → window deployer → router → harvester → setMetaPairDeployer →
  *   whitelist router / harvester / seeder → setFeeTo(harvester) → setFeeTiers →
- *   harvester.setTreasuryToken(USDC.e) → createMetaPair ×2 → setGuardian →
+ *   harvester.setTreasuryToken(USDC.e) → createMetaPair ×2 → setGuardian → setUnpauser ×2 →
  *   deploy 2-of-2 multisig → setFeeToSetter(multisig) → harvester.transferOwnership(multisig)
  * Seeder (whitelisted wallet):
  *   wrap EGAZ → send USDC.e + WEGAZ to the EGAZ window → mint → send USDC.e + ETI
@@ -85,6 +85,8 @@ type StepKey =
   | 'createWindowWegaz'
   | 'createWindowEti'
   | 'setGuardian'
+  | 'setUnpauserOwner'
+  | 'setUnpauserSigner'
   | 'deployMultisig'
   | 'setFeeToSetter'
   | 'transferHarvester'
@@ -111,6 +113,8 @@ const SETUP_STEPS: StepKey[] = [
   'createWindowWegaz',
   'createWindowEti',
   'setGuardian',
+  'setUnpauserOwner',
+  'setUnpauserSigner',
 ];
 const HANDOFF_STEPS: StepKey[] = ['deployMultisig', 'setFeeToSetter', 'transferHarvester'];
 const OPERATOR_STEPS: StepKey[] = [...SETUP_STEPS, ...HANDOFF_STEPS];
@@ -253,6 +257,15 @@ const STEP_LABELS: Record<StepKey, { label: string; description: string }> = {
     label: 'factory.setGuardian',
     description:
       'Pause-only key for the direct-watcher (can stop swaps, nothing else). Leave blank to skip.',
+  },
+  setUnpauserOwner: {
+    label: 'factory.setUnpauser(owner)',
+    description:
+      'Lets the owner wallet lift a pause on its own (1-of-2 resume); every other change stays 2-of-2.',
+  },
+  setUnpauserSigner: {
+    label: 'factory.setUnpauser(second signer)',
+    description: 'Same for the second signer, so either of you can unfreeze swaps alone.',
   },
   deployMultisig: {
     label: 'Deploy 2-of-2 UnanimousMultisig',
@@ -612,6 +625,8 @@ export function DeployDirectCard({ role }: { role: Role }) {
           pWegaz,
           pEti,
           g,
+          upOwner,
+          upSigner,
           setter,
           tTok,
           hOwner,
@@ -625,6 +640,8 @@ export function DeployDirectCard({ role }: { role: Role }) {
           read('getPair', [tokens.wegaz, tokens.usdce]),
           read('getPair', [tokens.eti, tokens.usdce]),
           read('guardian'),
+          owner ? read('unpausers', [owner]) : false,
+          signer ? read('unpausers', [signer]) : false,
           read('feeToSetter'),
           harv ? publicClient.readContract({ ...harv, functionName: 'treasuryToken' }) : ZERO,
           harv
@@ -640,6 +657,8 @@ export function DeployDirectCard({ role }: { role: Role }) {
           Address,
           Address,
           Address,
+          boolean,
+          boolean,
           Address,
           Address,
           Address,
@@ -656,6 +675,8 @@ export function DeployDirectCard({ role }: { role: Role }) {
           createWindowWegaz: pWegaz !== ZERO,
           createWindowEti: pEti !== ZERO,
           setGuardian: g !== ZERO,
+          setUnpauserOwner: upOwner,
+          setUnpauserSigner: upSigner,
           setFeeToSetter: same(setter, knownMultisig),
           transferHarvester: same(hOwner, knownMultisig),
         };
@@ -686,6 +707,8 @@ export function DeployDirectCard({ role }: { role: Role }) {
     tokens.wegaz,
     tokens.eti,
     tokens.usdce,
+    owner,
+    signer,
   ]);
 
   // Seeder steps re-derive from the windows: tokens already sitting on a window
@@ -900,6 +923,14 @@ export function DeployDirectCard({ role }: { role: Role }) {
         if (!guardian) return;
         await send(key, () => fac('setGuardian', [guardian]));
         return;
+      case 'setUnpauserOwner':
+        if (!owner) return;
+        await send(key, () => fac('setUnpauser', [owner, true]));
+        return;
+      case 'setUnpauserSigner':
+        if (!signer) return;
+        await send(key, () => fac('setUnpauser', [signer, true]));
+        return;
       case 'deployMultisig': {
         if (!owner || !signer || same(owner, signer)) return;
         const a = await send(key, () => deploy(unanimousMultisigArtifact, [[owner, signer]]));
@@ -982,6 +1013,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
     if (deployedFor(key)) return false;
     if (key === 'whitelistSeeder' && !seeder) return false;
     if (key === 'setGuardian' && !guardian) return false;
+    if (key === 'setUnpauserSigner' && !signer) return false;
     if (key === 'deployMultisig' && (!signer || same(owner, signer))) return false;
     if (HANDOFF_STEPS.includes(key)) {
       return (
@@ -989,7 +1021,9 @@ export function DeployDirectCard({ role }: { role: Role }) {
         HANDOFF_STEPS.slice(0, HANDOFF_STEPS.indexOf(key)).every(isDone)
       );
     }
-    return SETUP_STEPS.slice(0, SETUP_STEPS.indexOf(key)).every(isDone);
+    return SETUP_STEPS.slice(0, SETUP_STEPS.indexOf(key)).every(
+      (k) => k === 'setGuardian' || isDone(k),
+    );
   }
 
   const visibleSteps = role === 'operator' ? OPERATOR_STEPS : SEED_STEPS;

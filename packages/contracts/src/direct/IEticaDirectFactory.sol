@@ -18,6 +18,7 @@ interface IEticaDirectFactory {
     event BaseFeeBpsSet(uint16 feeBps);
     event GuardianSet(address indexed guardian);
     event GuardianPauseDurationSet(uint256 duration);
+    event UnpauserSet(address indexed account, bool allowed);
     /// @param expiresAt When a guardian pause lapses; 0 for a setter pause.
     event SwapsPaused(address indexed by, uint256 expiresAt);
     event SwapsUnpaused(address indexed by);
@@ -34,6 +35,8 @@ interface IEticaDirectFactory {
     function metaPairDeployer() external view returns (address);
     /// @notice Address allowed to pause swaps (never to move funds or unpause).
     function guardian() external view returns (address);
+    /// @notice True for accounts allowed to call {unpauseSwaps} without the setter (1-of-N resume).
+    function unpausers(address account) external view returns (bool);
     /// @notice Seconds a guardian pause lasts before swaps reopen by themselves.
     function guardianPauseDuration() external view returns (uint256);
     /// @notice Timestamp the current guardian pause lapses; 0 while a setter
@@ -76,6 +79,7 @@ interface IEticaDirectFactory {
     function setGuardian(address guardian) external;
     function setGuardianPauseDuration(uint256 duration) external;
     function pauseSwaps() external;
+    function setUnpauser(address account, bool allowed) external;
     function unpauseSwaps() external;
     function retirePair(address pair) external;
 }
