@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ConnectButton } from './ConnectButton';
 import { NAV_GROUPS, TELEGRAM_URL, type NavGroup } from '@/lib/nav';
 import { cn } from '@/lib/utils';
@@ -118,6 +119,9 @@ export function SiteHeader() {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => setDrawerOpen(false), [pathname]);
 
@@ -201,71 +205,78 @@ export function SiteHeader() {
         </div>
       </div>
 
-      {drawerOpen ? (
-        <div
-          className="fixed inset-x-0 bottom-0 top-16 z-40 lg:hidden"
-          role="dialog"
-          aria-modal="true"
-        >
-          <button
-            type="button"
-            aria-label="Close menu"
-            onClick={() => setDrawerOpen(false)}
-            className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
-          />
-          <nav
-            aria-label="Primary"
-            className="animate-sheet-in relative max-h-full overflow-y-auto border-b border-white/[0.08] bg-ink-900/95 px-4 pb-6 pt-3 shadow-2xl backdrop-blur-xl sm:px-5"
-          >
-            <div className="mx-auto grid w-full max-w-7xl gap-5 sm:grid-cols-2">
-              {NAV_GROUPS.map((g) => (
-                <div key={g.label}>
-                  <div className="eyebrow px-1 pb-2">{g.label}</div>
-                  <div className="grid gap-1">
-                    {g.links.map((l) => {
-                      const isActive = pathname === l.href || pathname.startsWith(l.href + '/');
-                      return (
-                        <Link
-                          key={l.href}
-                          href={l.href}
-                          onClick={() => setDrawerOpen(false)}
-                          className={cn(
-                            'flex items-center justify-between rounded-xl px-3 py-3 transition-colors',
-                            isActive
-                              ? 'bg-brand-accent/10 text-white'
-                              : 'text-white/80 hover:bg-white/[0.05] hover:text-white',
-                          )}
-                        >
-                          <span>
-                            <span className="block text-[15px] font-medium">{l.label}</span>
-                            <span className="block text-xs text-white/45">{l.desc}</span>
-                          </span>
-                          <span className={cn('text-white/30', isActive && 'text-brand-glow')}>
-                            →
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mx-auto mt-5 flex w-full max-w-7xl items-center gap-2">
-              <a
-                href={TELEGRAM_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-ghost flex-1"
+      {drawerOpen && mounted
+        ? createPortal(
+            <div
+              className="fixed inset-x-0 bottom-0 top-16 z-50 lg:hidden"
+              role="dialog"
+              aria-modal="true"
+            >
+              <button
+                type="button"
+                aria-label="Close menu"
+                onClick={() => setDrawerOpen(false)}
+                className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
+              />
+              <nav
+                aria-label="Primary"
+                className="animate-sheet-in relative max-h-full overflow-y-auto border-b border-white/[0.08] bg-ink-900/95 px-4 pb-6 pt-3 shadow-2xl backdrop-blur-xl sm:px-5"
               >
-                <TelegramIcon className="h-4 w-4" /> Telegram
-              </a>
-              <Link href="/status" onClick={() => setDrawerOpen(false)} className="btn-tone flex-1">
-                <span className="live-dot" /> Status
-              </Link>
-            </div>
-          </nav>
-        </div>
-      ) : null}
+                <div className="mx-auto grid w-full max-w-7xl gap-5 sm:grid-cols-2">
+                  {NAV_GROUPS.map((g) => (
+                    <div key={g.label}>
+                      <div className="eyebrow px-1 pb-2">{g.label}</div>
+                      <div className="grid gap-1">
+                        {g.links.map((l) => {
+                          const isActive = pathname === l.href || pathname.startsWith(l.href + '/');
+                          return (
+                            <Link
+                              key={l.href}
+                              href={l.href}
+                              onClick={() => setDrawerOpen(false)}
+                              className={cn(
+                                'flex items-center justify-between rounded-xl px-3 py-3 transition-colors',
+                                isActive
+                                  ? 'bg-brand-accent/10 text-white'
+                                  : 'text-white/80 hover:bg-white/[0.05] hover:text-white',
+                              )}
+                            >
+                              <span>
+                                <span className="block text-[15px] font-medium">{l.label}</span>
+                                <span className="block text-xs text-white/45">{l.desc}</span>
+                              </span>
+                              <span className={cn('text-white/30', isActive && 'text-brand-glow')}>
+                                →
+                              </span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mx-auto mt-5 flex w-full max-w-7xl items-center gap-2">
+                  <a
+                    href={TELEGRAM_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-ghost flex-1"
+                  >
+                    <TelegramIcon className="h-4 w-4" /> Telegram
+                  </a>
+                  <Link
+                    href="/status"
+                    onClick={() => setDrawerOpen(false)}
+                    className="btn-tone flex-1"
+                  >
+                    <span className="live-dot" /> Status
+                  </Link>
+                </div>
+              </nav>
+            </div>,
+            document.body,
+          )
+        : null}
     </header>
   );
 }
