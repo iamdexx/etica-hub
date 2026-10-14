@@ -31,7 +31,9 @@ interface IHubRouter {
 ///         {TreasuryHarvester}: 10% stETX / 10% farms / 40% POL / 40% treasury.
 ///         The POL slice is bought back into the venue pair the fee came from
 ///         and the LP is burned to {DEAD}, so the direct pools deepen
-///         permanently with use.
+///         permanently with use. Hub windows ({EticaDirectMetaPair}) forward
+///         their fee here in kind instead of as LP; their POL slice is
+///         deposited back through the window into the hub pools.
 /// @dev    Harvest is keeper-called rather than permissionless because it
 ///         swaps on the hub: the caller supplies a min ETX out per leg and the
 ///         keeper is expected to quote it a block earlier. `rescue` only moves
@@ -131,10 +133,19 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
             LegPlan calldata p = plans[i];
             if (!factory.isPair(p.pair)) revert NotVenuePair(p.pair);
             IEticaSwapPair pair = IEticaSwapPair(p.pair);
-            uint256 lp = pair.balanceOf(address(this));
-            if (lp == 0) continue;
-            IERC20(p.pair).safeTransfer(p.pair, lp);
-            (uint256 amount0, uint256 amount1) = pair.burn(address(this));
+            uint256 amount0;
+            uint256 amount1;
+            if (factory.isMetaPair(p.pair)) {
+                // Windows forward their fee in kind: sell what sits here.
+                amount0 = IERC20(pair.token0()).balanceOf(address(this));
+                amount1 = IERC20(pair.token1()).balanceOf(address(this));
+                if (amount0 == 0 && amount1 == 0) continue;
+            } else {
+                uint256 lp = pair.balanceOf(address(this));
+                if (lp == 0) continue;
+                IERC20(p.pair).safeTransfer(p.pair, lp);
+                (amount0, amount1) = pair.burn(address(this));
+            }
             _toEtx(pair.token0(), amount0, p.minEtxOut0);
             _toEtx(pair.token1(), amount1, p.minEtxOut1);
             harvested[i] = true;
@@ -190,6 +201,12 @@ contract DirectSwapHarvesterAdapter is Ownable, ReentrancyGuard {
     {
         if (etxAmount == 0) return 0;
         IEticaSwapPair pair = IEticaSwapPair(p.pair);
+        if (factory.isMetaPair(p.pair)) {
+            // A window takes loose ETX and deposits it into the hub itself;
+            // its shares are not redeemable, so holding them here locks them.
+            etx.safeTransfer(p.pair, etxAmount);
+            return pair.mint(address(this));
+        }
         address token0 = pair.token0();
         address token1 = pair.token1();
         uint256 half = etxAmount / 2;

@@ -11,6 +11,11 @@ import {StakedETX} from "../../src/etx/StakedETX.sol";
 import {EticaDirectFactory} from "../../src/direct/EticaDirectFactory.sol";
 import {EticaDirectMetaPair} from "../../src/direct/EticaDirectMetaPair.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+import {
+    DirectSwapHarvesterAdapter,
+    IHubRouter
+} from "../../src/direct/DirectSwapHarvesterAdapter.sol";
+import {IEticaDirectFactory} from "../../src/direct/IEticaDirectFactory.sol";
 
 contract EticaDirectMetaPairTest is Test {
     address internal constant TREASURY = address(0x7EA5);
@@ -361,5 +366,52 @@ contract EticaDirectMetaPairTest is Test {
         (uint256 lp0b, uint256 lp1b) = meta.hubLiquidity();
         assertGe(lp0b, lp0);
         assertGe(lp1b, lp1);
+    }
+
+    // ---------- fees: in-kind to the harvester, POL back into the hub ----------
+
+    function test_harvest_windowFeesSplitAndPolDepositedIntoHub() public {
+        DirectSwapHarvesterAdapter adapter = new DirectSwapHarvesterAdapter(
+            TREASURY,
+            IEticaDirectFactory(address(factory)),
+            IHubRouter(address(hubRouter)),
+            IERC20(address(etx)),
+            address(stEtx),
+            address(0),
+            TREASURY
+        );
+        vm.startPrank(TREASURY);
+        factory.setWhitelist(address(adapter), true);
+        factory.setFeeTo(address(adapter));
+        vm.stopPrank();
+        _seed(10 ether, 5 ether);
+        vm.startPrank(STAKER);
+        meta.swapExactIn(address(usdce), 1_000 ether, 0, STAKER, block.timestamp);
+        meta.swapExactIn(address(wegaz), 100 ether, 0, STAKER, block.timestamp);
+        vm.stopPrank();
+        assertEq(usdce.balanceOf(address(adapter)), 30 ether);
+        assertEq(wegaz.balanceOf(address(adapter)), 3 ether);
+
+        (uint256 lp0, uint256 lp1) = meta.hubLiquidity();
+        uint256 navBefore = stEtx.convertToAssets(1e18);
+        uint256 treasuryBefore = etx.balanceOf(TREASURY);
+        DirectSwapHarvesterAdapter.LegPlan[] memory plans =
+            new DirectSwapHarvesterAdapter.LegPlan[](1);
+        plans[0] = DirectSwapHarvesterAdapter.LegPlan(address(meta), 0, 0, 0, 0);
+        vm.prank(TREASURY);
+        (uint256 total, uint256 polShares) = adapter.harvest(plans);
+        assertGt(total, 0);
+        assertGt(polShares, 0);
+        assertGt(stEtx.convertToAssets(1e18), navBefore);
+        // farms sink unset -> its 10% folds into the treasury: 40% + 10%.
+        assertEq(etx.balanceOf(TREASURY) - treasuryBefore, total - total / 10 - (total * 4) / 10);
+        // POL slice landed in the hub through the window, shares parked on the adapter.
+        (uint256 lp0b, uint256 lp1b) = meta.hubLiquidity();
+        assertGt(lp0b, lp0);
+        assertGt(lp1b, lp1);
+        assertEq(meta.balanceOf(address(adapter)), polShares);
+        assertEq(usdce.balanceOf(address(adapter)), 0);
+        assertEq(wegaz.balanceOf(address(adapter)), 0);
+        assertEq(etx.balanceOf(address(adapter)), 0);
     }
 }
