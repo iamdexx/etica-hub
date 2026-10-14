@@ -32,6 +32,24 @@ const toHex = (n: bigint) => `0x${n.toString(16)}`;
 const GAS_HEADROOM_NUM = 13n;
 const GAS_HEADROOM_DEN = 10n;
 
+/**
+ * Every public Etica node runs geth's default `--rpc.txfeecap` of 1 EGAZ and
+ * rejects `eth_sendRawTransaction` when `gas * gasPrice` exceeds it. Miners
+ * include 1 gwei transactions, so a cheaper price is only slower, never stuck.
+ */
+export const RPC_TX_FEE_CAP_WEI = 10n ** 18n;
+const FEE_CAP_MARGIN_NUM = 9n;
+const FEE_CAP_MARGIN_DEN = 10n;
+export const MIN_GAS_PRICE_WEI = 10n ** 9n;
+
+/** Lowers `gasPrice` so `gas * gasPrice` stays under the node's fee cap (never below 1 gwei). */
+export function capGasPrice(gas: bigint, gasPrice: bigint): bigint {
+  if (gas <= 0n) return gasPrice;
+  const maxPrice = (RPC_TX_FEE_CAP_WEI * FEE_CAP_MARGIN_NUM) / FEE_CAP_MARGIN_DEN / gas;
+  if (gasPrice <= maxPrice) return gasPrice;
+  return maxPrice > MIN_GAS_PRICE_WEI ? maxPrice : MIN_GAS_PRICE_WEI;
+}
+
 export async function toLegacyTx(request: Request, tx: TxFields): Promise<TxFields> {
   const chainId = Number(await request({ method: 'eth_chainId' }));
   if (!ETICA_CHAIN_IDS.has(chainId)) return tx;
@@ -58,7 +76,12 @@ export async function toLegacyTx(request: Request, tx: TxFields): Promise<TxFiel
       ).then((est) => toHex((BigInt(est) * GAS_HEADROOM_NUM) / GAS_HEADROOM_DEN)),
   ]);
 
-  return { ...rest, type: '0x0', gasPrice, gas };
+  return {
+    ...rest,
+    type: '0x0',
+    gasPrice: toHex(capGasPrice(BigInt(gas), BigInt(gasPrice))),
+    gas,
+  };
 }
 
 /**

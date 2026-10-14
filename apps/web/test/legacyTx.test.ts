@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { toLegacyTx, withLegacyTxs } from '@/lib/legacyTx';
+import { capGasPrice, toLegacyTx, withLegacyTxs } from '@/lib/legacyTx';
 
 const node = (chainId: string) =>
   vi.fn(async ({ method }: { method: string; params?: unknown }) => {
@@ -64,5 +64,37 @@ describe('withLegacyTxs', () => {
     expect(sent.params[0]).toMatchObject({ type: '0x0', gasPrice: '0x746a528800', gas: '0x82' });
     expect(sent.params[0]).not.toHaveProperty('maxFeePerGas');
     expect(request.mock.calls.filter(([a]) => a.method === 'eth_chainId')).toHaveLength(1);
+  });
+});
+
+describe('capGasPrice', () => {
+  const gwei = 10n ** 9n;
+
+  it('keeps the price when the fee is under the 1 EGAZ node cap', () => {
+    expect(capGasPrice(21_000n, 500n * gwei)).toBe(500n * gwei);
+  });
+
+  it('lowers the price so a 5.57M-gas deploy clears the cap', () => {
+    const gas = 5_568_787n;
+    const price = capGasPrice(gas, 500n * gwei);
+    expect(price).toBeLessThan(500n * gwei);
+    expect(gas * price).toBeLessThanOrEqual(10n ** 18n);
+    expect(price).toBeGreaterThanOrEqual(gwei);
+  });
+
+  it('never goes below 1 gwei', () => {
+    expect(capGasPrice(10n ** 18n, 500n * gwei)).toBe(gwei);
+  });
+});
+
+describe('toLegacyTx fee cap', () => {
+  it('caps a caller-provided gasPrice that would exceed the node fee cap', async () => {
+    const gas = 5_568_787n;
+    const tx = await toLegacyTx(node('0xf16b'), {
+      from: '0xa',
+      gas: `0x${gas.toString(16)}`,
+      gasPrice: '0x746a528800',
+    });
+    expect(gas * BigInt(tx.gasPrice as string)).toBeLessThanOrEqual(10n ** 18n);
   });
 });
