@@ -8,6 +8,9 @@ pragma solidity ^0.8.0;
 interface IEticaDirectFactory {
     event PairCreated(address indexed token0, address indexed token1, address pair, uint256);
     event TrustedCreatorSet(address indexed creator, bool trusted);
+    event MetaPairCreated(
+        address indexed token0, address indexed token1, address pair, address hubRouter
+    );
     event WhitelistSet(address indexed account, bool allowed);
     event MinStEtxSet(uint256 minStEtx);
     event FeeTiersSet(uint256[] minStEtx, uint16[] feeBps);
@@ -20,6 +23,7 @@ interface IEticaDirectFactory {
     function trustedCreators(address creator) external view returns (bool);
     function whitelist(address account) external view returns (bool);
     function isPair(address pair) external view returns (bool);
+    function isMetaPair(address pair) external view returns (bool);
 
     function getPair(address tokenA, address tokenB) external view returns (address pair);
     function allPairs(uint256) external view returns (address pair);
@@ -37,6 +41,9 @@ interface IEticaDirectFactory {
     function feeTier(uint256 index) external view returns (uint256 minStEtx, uint16 feeBps);
 
     function createPair(address tokenA, address tokenB) external returns (address pair);
+    function createMetaPair(address tokenA, address tokenB, address hubRouter)
+        external
+        returns (address pair);
 
     function setFeeTo(address) external;
     function setFeeToSetter(address) external;

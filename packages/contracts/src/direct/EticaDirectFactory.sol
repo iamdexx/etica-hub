@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {EticaDirectPair} from "./EticaDirectPair.sol";
+import {EticaDirectMetaPair} from "./EticaDirectMetaPair.sol";
 import {IEticaDirectFactory} from "./IEticaDirectFactory.sol";
 import {IERC20Minimal} from "../swap/interfaces/IERC20Minimal.sol";
 
@@ -31,6 +32,9 @@ contract EticaDirectFactory is IEticaDirectFactory {
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
     mapping(address => bool) public isPair;
+    /// @notice Pairs that are hub windows ({EticaDirectMetaPair}) rather than
+    ///         constant-product pools.
+    mapping(address => bool) public isMetaPair;
     mapping(address => bool) public trustedCreators;
     mapping(address => bool) public whitelist;
 
@@ -83,6 +87,33 @@ contract EticaDirectFactory is IEticaDirectFactory {
         isPair[pair] = true;
         allPairs.push(pair);
         emit PairCreated(token0, token1, pair, allPairs.length);
+    }
+
+    /// @notice Open a hub window for `tokenA`/`tokenB`: a {EticaDirectMetaPair}
+    ///         whose liquidity lives in the `tokenA`/ETX and `tokenB`/ETX pools
+    ///         behind `hubRouter`. Same curation, registry and PairCreated
+    ///         event as {createPair}, so indexers treat it as a plain pair.
+    function createMetaPair(address tokenA, address tokenB, address hubRouter)
+        external
+        returns (address pair)
+    {
+        require(msg.sender == feeToSetter || trustedCreators[msg.sender], "EDirect: NOT_CREATOR");
+        require(tokenA != tokenB, "EDirect: IDENTICAL_ADDRESSES");
+        require(hubRouter != address(0), "EDirect: ZERO_ADDRESS");
+        (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        require(token0 != address(0), "EDirect: ZERO_ADDRESS");
+        require(getPair[token0][token1] == address(0), "EDirect: PAIR_EXISTS");
+
+        pair = address(new EticaDirectMetaPair());
+        EticaDirectMetaPair(pair).initialize(token0, token1, hubRouter);
+
+        getPair[token0][token1] = pair;
+        getPair[token1][token0] = pair;
+        isPair[pair] = true;
+        isMetaPair[pair] = true;
+        allPairs.push(pair);
+        emit PairCreated(token0, token1, pair, allPairs.length);
+        emit MetaPairCreated(token0, token1, pair, hubRouter);
     }
 
     function setFeeTo(address _feeTo) external onlySetter {
