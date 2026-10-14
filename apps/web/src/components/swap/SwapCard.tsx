@@ -29,7 +29,7 @@ import {
   isUsdcWarpRouteLive,
 } from '@etica-hub/shared';
 
-type TokenSymbol = 'EGAZ' | 'ETI' | 'ETX' | 'stETX' | 'USDC.e';
+export type TokenSymbol = 'EGAZ' | 'ETI' | 'ETX' | 'stETX' | 'USDC.e';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -106,7 +106,18 @@ function buildPath(ctx: SwapCtx, from: TokenSymbol, to: TokenSymbol): Address[] 
   return [tokenAddress(ctx, from), ctx.etx, tokenAddress(ctx, to)];
 }
 
-export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } = {}) {
+export function SwapCard({
+  geoRestricted = false,
+  defaultFrom = 'EGAZ',
+  defaultTo = 'ETX',
+  onlyTokens,
+}: {
+  geoRestricted?: boolean;
+  defaultFrom?: TokenSymbol;
+  defaultTo?: TokenSymbol;
+  /** Restrict the pickers to these symbols (e.g. the V3 tab pins stETX/ETX). */
+  onlyTokens?: readonly TokenSymbol[];
+} = {}) {
   const { address, isConnected, chainId: walletChainId } = useAccount();
   const dappChainId = useChainId();
   const ctx = useCtx();
@@ -124,8 +135,8 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
     isConnected && walletChainId !== undefined && walletChainId !== dappChainId;
   const dappChain = supportedChains.find((c) => c.id === dappChainId);
   const dappChainName = dappChain?.name ?? 'Etica Mainnet';
-  const [fromSymbol, setFromSymbol] = useState<TokenSymbol>('EGAZ');
-  const [toSymbol, setToSymbol] = useState<TokenSymbol>('ETX');
+  const [fromSymbol, setFromSymbol] = useState<TokenSymbol>(defaultFrom);
+  const [toSymbol, setToSymbol] = useState<TokenSymbol>(defaultTo);
   const [amountInStr, setAmountInStr] = useState('');
 
   const amountIn = useMemo(() => {
@@ -403,7 +414,9 @@ export function SwapCard({ geoRestricted = false }: { geoRestricted?: boolean } 
   const routeText = useStableSwap
     ? `${fromSymbol} → ${toSymbol} · stableswap`
     : describePath(path, ctx);
-  const pickerOptions = tokenOptions(ctx, geoRestricted);
+  const pickerOptions = tokenOptions(ctx, geoRestricted).filter(
+    (t) => !onlyTokens || onlyTokens.includes(t),
+  );
 
   // Defense in depth: if a stale URL or a prior session left stETX selected
   // while the visitor is now geo-gated, force-reset to the default pair so
