@@ -91,6 +91,7 @@ type StepKey =
   | 'setGuardian'
   | 'setUnpauserOwner'
   | 'setUnpauserSigner'
+  | 'setHarvesterKeeper'
   | 'deployMultisig'
   | 'setFeeToSetter'
   | 'transferHarvester'
@@ -120,7 +121,12 @@ const SETUP_STEPS: StepKey[] = [
   'setUnpauserOwner',
   'setUnpauserSigner',
 ];
-const HANDOFF_STEPS: StepKey[] = ['deployMultisig', 'setFeeToSetter', 'transferHarvester'];
+const HANDOFF_STEPS: StepKey[] = [
+  'deployMultisig',
+  'setFeeToSetter',
+  'transferHarvester',
+  'setHarvesterKeeper',
+];
 const OPERATOR_STEPS: StepKey[] = [...SETUP_STEPS, ...HANDOFF_STEPS];
 const SEED_STEPS: StepKey[] = [
   'wrapEgaz',
@@ -177,6 +183,81 @@ const HUB_PAIR_ABI = [
     stateMutability: 'view',
     inputs: [],
     outputs: [{ type: 'uint112' }, { type: 'uint112' }, { type: 'uint32' }],
+  },
+] as const;
+const KEEPER_ABI = [
+  {
+    type: 'function',
+    name: 'keepers',
+    stateMutability: 'view',
+    inputs: [{ name: '', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'setKeeper',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'keeper', type: 'address' },
+      { name: 'allowed', type: 'bool' },
+    ],
+    outputs: [],
+  },
+] as const;
+const MULTISIG_ABI = [
+  {
+    type: 'function',
+    name: 'proposalCount',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'proposal',
+    stateMutability: 'view',
+    inputs: [{ name: 'id', type: 'uint256' }],
+    outputs: [
+      {
+        type: 'tuple',
+        components: [
+          { name: 'target', type: 'address' },
+          { name: 'value', type: 'uint256' },
+          { name: 'data', type: 'bytes' },
+          { name: 'confirmations', type: 'uint256' },
+          { name: 'executed', type: 'bool' },
+          { name: 'cancelled', type: 'bool' },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'confirmed',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'id', type: 'uint256' },
+      { name: 'owner', type: 'address' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'propose',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'target', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'confirm',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'id', type: 'uint256' }],
+    outputs: [],
   },
 ] as const;
 const OWNABLE_ABI = [
@@ -270,6 +351,11 @@ const STEP_LABELS: Record<StepKey, { label: string; description: string }> = {
   setUnpauserSigner: {
     label: 'factory.setUnpauser(second signer)',
     description: 'Same for the second signer, so either of you can unfreeze swaps alone.',
+  },
+  setHarvesterKeeper: {
+    label: 'harvester.setKeeper(keeper wallet, true) via the 2-of-2',
+    description:
+      'Lets the direct-harvest cron (same key as the watcher) sell accrued fees to ETX and split them. Owner-only: once the harvester belongs to the multisig, the first signer proposes it here and the second signer opens this same page and confirms (which executes it).',
   },
   deployMultisig: {
     label: 'Deploy 2-of-2 UnanimousMultisig',
@@ -725,6 +811,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
           setter,
           tTok,
           hOwner,
+          hKeeper,
         ] = (await Promise.all([
           read('metaPairDeployer'),
           knownRouter ? read('whitelist', [knownRouter]) : false,
@@ -742,6 +829,14 @@ export function DeployDirectCard({ role }: { role: Role }) {
           harv
             ? publicClient.readContract({ ...harv, abi: OWNABLE_ABI, functionName: 'owner' })
             : ZERO,
+          harv
+            ? publicClient.readContract({
+                ...harv,
+                abi: KEEPER_ABI,
+                functionName: 'keepers',
+                args: [BRIDGE_ROLES.keeper],
+              })
+            : false,
         ])) as [
           Address,
           boolean,
@@ -757,6 +852,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
           Address,
           Address,
           Address,
+          boolean,
         ];
         if (cancelled) return;
         if ((!knownDeployer && metaDeployer !== ZERO) || (!knownHarvester && feeTo !== ZERO)) {
@@ -787,9 +883,22 @@ export function DeployDirectCard({ role }: { role: Role }) {
           setGuardian: guardian ? same(g, guardian) : g !== ZERO,
           setUnpauserOwner: upOwner,
           setUnpauserSigner: upSigner,
-          setFeeToSetter: same(setter, knownMultisig),
-          transferHarvester: same(hOwner, knownMultisig),
+          deployMultisig: Boolean(knownMultisig) || (setter !== ZERO && !same(setter, owner)),
+          setFeeToSetter: same(setter, knownMultisig) || (setter !== ZERO && !same(setter, owner)),
+          transferHarvester: hOwner !== ZERO && !same(hOwner, owner),
+          setHarvesterKeeper: hKeeper,
         };
+        if (!knownMultisig && setter !== ZERO && !same(setter, owner)) {
+          setDeployed((prev) => {
+            const next = { ...prev, multisig: prev.multisig ?? setter };
+            try {
+              window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+            } catch {
+              /* storage unavailable */
+            }
+            return next;
+          });
+        }
         setSteps((s) => {
           let next = s;
           for (const [k, ok] of Object.entries(done) as [StepKey, boolean][]) {
@@ -1066,6 +1175,69 @@ export function DeployDirectCard({ role }: { role: Role }) {
         if (!signer) return false;
         await send(key, () => fac('setUnpauser', [signer, true]));
         return okRef.current;
+      case 'setHarvesterKeeper': {
+        if (!harvester || !publicClient) return false;
+        const hOwner = (await publicClient.readContract({
+          address: harvester,
+          abi: OWNABLE_ABI,
+          functionName: 'owner',
+        })) as Address;
+        if (same(hOwner, account)) {
+          await send(key, () =>
+            write(harvester, KEEPER_ABI, 'setKeeper', [BRIDGE_ROLES.keeper, true]),
+          );
+          return okRef.current;
+        }
+        const data = encodeFunctionData({
+          abi: KEEPER_ABI,
+          functionName: 'setKeeper',
+          args: [BRIDGE_ROLES.keeper, true],
+        });
+        const ms = { address: hOwner, abi: MULTISIG_ABI } as const;
+        const count = (await publicClient.readContract({
+          ...ms,
+          functionName: 'proposalCount',
+        })) as bigint;
+        let pending: bigint | null = null;
+        for (let i = count; i > 0n; i--) {
+          const id = i - 1n;
+          const p = (await publicClient.readContract({
+            ...ms,
+            functionName: 'proposal',
+            args: [id],
+          })) as { target: Address; data: Hex; executed: boolean; cancelled: boolean };
+          if (
+            !p.executed &&
+            !p.cancelled &&
+            same(p.target, harvester) &&
+            p.data.toLowerCase() === data.toLowerCase()
+          ) {
+            pending = id;
+            break;
+          }
+        }
+        if (pending === null) {
+          await send(key, () => write(hOwner, MULTISIG_ABI, 'propose', [harvester, 0n, data]));
+          return okRef.current;
+        }
+        const mine = (await publicClient.readContract({
+          ...ms,
+          functionName: 'confirmed',
+          args: [pending, account],
+        })) as boolean;
+        if (mine) {
+          setSteps((s) => ({
+            ...s,
+            [key]: {
+              status: 'error',
+              error: `Proposal #${pending} is waiting for the other signer: open this page from their wallet and click again.`,
+            },
+          }));
+          return false;
+        }
+        await send(key, () => write(hOwner, MULTISIG_ABI, 'confirm', [pending]));
+        return okRef.current;
+      }
       case 'deployMultisig': {
         if (!owner || !signer || same(owner, signer)) return false;
         const a = await send(key, () => deploy(unanimousMultisigArtifact, [[owner, signer]]));
@@ -1541,7 +1713,7 @@ export function DeployDirectCard({ role }: { role: Role }) {
         <section className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-5 text-sm">
           <h2 className="mb-2 text-lg font-semibold text-emerald-200">
             {handoffDone
-              ? 'Venue live, admin on the 2-of-2'
+              ? 'Venue live, admin on the 2-of-2, harvest keeper set'
               : setupDone
                 ? 'Venue configured'
                 : 'Contracts deployed'}

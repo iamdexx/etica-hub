@@ -1,0 +1,63 @@
+name: direct-harvest
+
+# Sells the swap fees that EticaSwap Direct windows forward to the
+# DirectSwapHarvesterAdapter and lets it split them 10/10/40/40
+# (stETX / farms / POL back into the windows / treasury in USDC.e).
+# Signer: the keeper wallet (HARVEST_KEEPER_PRIVATE_KEY), which the
+# harvester owner flagged with setKeeper(keeper, true) on /deploy/direct/handoff.
+# Small and frequent on purpose: less fee value per run means less to
+# sandwich on the hub legs.
+
+on:
+  schedule:
+    - cron: '45 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Plan only, submit nothing'
+        type: boolean
+        default: false
+
+concurrency:
+  group: direct-harvest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: harvest-live
+    env:
+      HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      HARVEST_CHAIN_ID: ${{ vars.HARVEST_CHAIN_ID || '61803' }}
+      # Factory + harvester default to DEPLOYMENTS[61803] in packages/shared.
+      DIRECT_FACTORY_ADDRESS: ${{ vars.DIRECT_FACTORY_ADDRESS }}
+      DIRECT_HARVESTER_ADDRESS: ${{ vars.DIRECT_HARVESTER_ADDRESS }}
+      HARVEST_MAX_SLIPPAGE_BPS: ${{ vars.HARVEST_MAX_SLIPPAGE_BPS || '300' }}
+      DIRECT_HARVEST_MIN_ETX_WEI: ${{ vars.DIRECT_HARVEST_MIN_ETX_WEI || '1000000000000000000' }}
+      HARVEST_DRY_RUN: ${{ inputs.dry_run && 'true' || '' }}
+      HARVEST_PRIVATE_KEY: ${{ secrets.HARVEST_KEEPER_PRIVATE_KEY }}
+    steps:
+      - name: Guard against missing keeper key
+        if: ${{ env.HARVEST_PRIVATE_KEY == '' && env.HARVEST_DRY_RUN == '' }}
+        run: |
+          echo "::error ::HARVEST_KEEPER_PRIVATE_KEY secret is unset on the 'harvest-live' environment."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Harvest Direct fees
+        run: pnpm --filter @etica-hub/keeper run direct-harvest:live
