@@ -118,7 +118,9 @@ body::after {
     @apply font-mono tabular-nums;
   }
   .text-gradient {
-    @apply bg-brand-gradient bg-clip-text text-transparent;
+    @apply inline-block bg-brand-gradient bg-clip-text text-transparent;
+    padding-bottom: 0.18em;
+    margin-bottom: -0.18em;
   }
 
   .btn {
