@@ -11,6 +11,7 @@ import {
   type Abi,
   type Address,
   type Hex,
+  encodeFunctionData,
 } from 'viem';
 import {
   useAccount,
@@ -882,18 +883,39 @@ export function DeployDirectCard({ role }: { role: Role }) {
     const account = address;
     const { factory, deployer, router, harvester, multisig } = deployedRef.current;
 
-    const deploy = (artifact: { abi: Abi; bytecode: Hex }, args: readonly unknown[]) =>
-      wc.sendTransaction({
-        account,
-        data: encodeDeployData({ abi: artifact.abi, bytecode: artifact.bytecode, args }),
-      });
-    const write = (
+    // Etica reports baseFeePerGas = 0, which trips some wallets' EIP-1559 fee
+    // builder on contract creation ("internal error"); estimate here and send
+    // legacy-priced txs so the wallet only has to sign.
+    const fees = async (tx: { to?: Address; data: Hex; value?: bigint }) => {
+      if (!publicClient) return {};
+      const [gas, gasPrice] = await Promise.all([
+        publicClient.estimateGas({ account, ...tx }),
+        publicClient.getGasPrice(),
+      ]);
+      return { gas: (gas * 13n) / 10n, gasPrice, type: 'legacy' as const };
+    };
+    const deploy = async (artifact: { abi: Abi; bytecode: Hex }, args: readonly unknown[]) => {
+      const data = encodeDeployData({ abi: artifact.abi, bytecode: artifact.bytecode, args });
+      return wc.sendTransaction({ account, data, ...(await fees({ data })) });
+    };
+    const write = async (
       to: Address,
       abi: Abi,
       functionName: string,
       args: readonly unknown[],
       value?: bigint,
-    ) => wc.writeContract({ account, address: to, abi, functionName, args, value });
+    ) => {
+      const data = encodeFunctionData({ abi, functionName, args });
+      return wc.writeContract({
+        account,
+        address: to,
+        abi,
+        functionName,
+        args,
+        value,
+        ...(await fees({ to, data, value })),
+      });
+    };
     const fac = (functionName: string, args: readonly unknown[]) =>
       factory
         ? write(factory, directFactoryArtifact.abi, functionName, args)
