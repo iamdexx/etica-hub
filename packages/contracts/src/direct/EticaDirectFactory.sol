@@ -34,6 +34,13 @@ contract EticaDirectFactory is IEticaDirectFactory {
     mapping(address => bool) public trustedCreators;
     mapping(address => bool) public whitelist;
 
+    /// @notice Hard cap on any venue fee (10%).
+    uint16 public constant MAX_FEE_BPS = 1_000;
+    /// @notice Fee for traders below the first tier (default 3.00%).
+    uint16 public baseFeeBps = 300;
+    uint256[] private tierMinStEtx;
+    uint16[] private tierFeeBps;
+
     constructor(address _feeToSetter, address _stEtx, uint256 _minStEtx) {
         require(_feeToSetter != address(0), "EDirect: ZERO_ADDRESS");
         require(_stEtx != address(0), "EDirect: STETX_ZERO_ADDRESS");
@@ -106,6 +113,56 @@ contract EticaDirectFactory is IEticaDirectFactory {
     function setMinStEtx(uint256 _minStEtx) external onlySetter {
         minStEtx = _minStEtx;
         emit MinStEtxSet(_minStEtx);
+    }
+
+    /// @notice Fee charged to traders that meet no tier (whitelisted contracts
+    ///         and, when `minStEtx == 0`, non-stakers). Never below the first
+    ///         tier's fee, so holding more stETX can never cost more.
+    function setBaseFeeBps(uint16 _feeBps) external onlySetter {
+        require(_feeBps <= MAX_FEE_BPS, "EDirect: FEE_TOO_HIGH");
+        require(tierFeeBps.length == 0 || _feeBps >= tierFeeBps[0], "EDirect: FEE_BELOW_TIERS");
+        baseFeeBps = _feeBps;
+        emit BaseFeeBpsSet(_feeBps);
+    }
+
+    /// @notice Replace the stETX fee ladder. Thresholds strictly ascending,
+    ///         fees non-increasing and never above `baseFeeBps`. An empty
+    ///         ladder charges `baseFeeBps` to everyone.
+    function setFeeTiers(uint256[] calldata _minStEtx, uint16[] calldata _feeBps)
+        external
+        onlySetter
+    {
+        require(_minStEtx.length == _feeBps.length, "EDirect: LENGTH_MISMATCH");
+        uint16 prevFee = baseFeeBps;
+        for (uint256 i; i < _minStEtx.length; i++) {
+            require(_minStEtx[i] > 0, "EDirect: ZERO_TIER");
+            if (i > 0) require(_minStEtx[i] > _minStEtx[i - 1], "EDirect: TIERS_NOT_ASCENDING");
+            require(_feeBps[i] <= prevFee, "EDirect: FEE_NOT_DESCENDING");
+            prevFee = _feeBps[i];
+        }
+        tierMinStEtx = _minStEtx;
+        tierFeeBps = _feeBps;
+        emit FeeTiersSet(_minStEtx, _feeBps);
+    }
+
+    function feeTierCount() external view returns (uint256) {
+        return tierMinStEtx.length;
+    }
+
+    function feeTier(uint256 index) external view returns (uint256, uint16) {
+        return (tierMinStEtx[index], tierFeeBps[index]);
+    }
+
+    /// @inheritdoc IEticaDirectFactory
+    function feeBpsFor(address trader) public view returns (uint16 fee) {
+        fee = baseFeeBps;
+        uint256 n = tierMinStEtx.length;
+        if (n == 0) return fee;
+        uint256 bal = IERC20Minimal(stEtx).balanceOf(trader);
+        for (uint256 i; i < n; i++) {
+            if (bal < tierMinStEtx[i]) break;
+            fee = tierFeeBps[i];
+        }
     }
 
     /// @notice Init code hash for pairs — useful for off-chain CREATE2 address prediction.

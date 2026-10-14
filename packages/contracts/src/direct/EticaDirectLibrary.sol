@@ -49,33 +49,33 @@ library EticaDirectLibrary {
         amountB = (amountA * reserveB) / reserveA;
     }
 
-    /// @dev 0.30% fee applied to input.
-    function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut)
+    /// @dev `feeBps` (basis points of the input) is the trader's tier fee.
+    function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut, uint256 feeBps)
         internal
         pure
         returns (uint256 amountOut)
     {
         require(amountIn > 0, "ESwap: INSUFFICIENT_INPUT_AMOUNT");
         require(reserveIn > 0 && reserveOut > 0, "ESwap: INSUFFICIENT_LIQUIDITY");
-        uint256 amountInWithFee = amountIn * 990;
+        uint256 amountInWithFee = amountIn * (10_000 - feeBps);
         uint256 numerator = amountInWithFee * reserveOut;
-        uint256 denominator = reserveIn * 1000 + amountInWithFee;
+        uint256 denominator = reserveIn * 10_000 + amountInWithFee;
         amountOut = numerator / denominator;
     }
 
-    function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut)
+    function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut, uint256 feeBps)
         internal
         pure
         returns (uint256 amountIn)
     {
         require(amountOut > 0, "ESwap: INSUFFICIENT_OUTPUT_AMOUNT");
         require(reserveIn > 0 && reserveOut > 0, "ESwap: INSUFFICIENT_LIQUIDITY");
-        uint256 numerator = reserveIn * amountOut * 1000;
-        uint256 denominator = (reserveOut - amountOut) * 990;
+        uint256 numerator = reserveIn * amountOut * 10_000;
+        uint256 denominator = (reserveOut - amountOut) * (10_000 - feeBps);
         amountIn = (numerator / denominator) + 1;
     }
 
-    function getAmountsOut(address factory, uint256 amountIn, address[] memory path)
+    function getAmountsOut(address factory, uint256 amountIn, address[] memory path, uint256 feeBps)
         internal
         view
         returns (uint256[] memory amounts)
@@ -84,12 +84,11 @@ library EticaDirectLibrary {
         amounts = new uint256[](path.length);
         amounts[0] = amountIn;
         for (uint256 i; i < path.length - 1; i++) {
-            (uint256 reserveIn, uint256 reserveOut) = getReserves(factory, path[i], path[i + 1]);
-            amounts[i + 1] = getAmountOut(amounts[i], reserveIn, reserveOut);
+            amounts[i + 1] = _hopOut(factory, path[i], path[i + 1], amounts[i], feeBps);
         }
     }
 
-    function getAmountsIn(address factory, uint256 amountOut, address[] memory path)
+    function getAmountsIn(address factory, uint256 amountOut, address[] memory path, uint256 feeBps)
         internal
         view
         returns (uint256[] memory amounts)
@@ -98,8 +97,29 @@ library EticaDirectLibrary {
         amounts = new uint256[](path.length);
         amounts[amounts.length - 1] = amountOut;
         for (uint256 i = path.length - 1; i > 0; i--) {
-            (uint256 reserveIn, uint256 reserveOut) = getReserves(factory, path[i - 1], path[i]);
-            amounts[i - 1] = getAmountIn(amounts[i], reserveIn, reserveOut);
+            amounts[i - 1] = _hopIn(factory, path[i - 1], path[i], amounts[i], feeBps);
         }
+    }
+
+    function _hopOut(
+        address factory,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 feeBps
+    ) private view returns (uint256) {
+        (uint256 reserveIn, uint256 reserveOut) = getReserves(factory, tokenIn, tokenOut);
+        return getAmountOut(amountIn, reserveIn, reserveOut, feeBps);
+    }
+
+    function _hopIn(
+        address factory,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountOut,
+        uint256 feeBps
+    ) private view returns (uint256) {
+        (uint256 reserveIn, uint256 reserveOut) = getReserves(factory, tokenIn, tokenOut);
+        return getAmountIn(amountOut, reserveIn, reserveOut, feeBps);
     }
 }
