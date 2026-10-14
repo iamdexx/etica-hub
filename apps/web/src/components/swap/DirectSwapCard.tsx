@@ -15,6 +15,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   BaseError,
   UserRejectedRequestError,
@@ -46,7 +47,6 @@ import { directFactoryArtifact, directMetaPairArtifact } from '@/lib/direct-depl
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const MAX_UINT256 = (1n << 256n) - 1n;
 const SLIPPAGE_BPS = 50n; // 0.50%
-const MAX_WINDOWS = 12;
 
 type Ctx = {
   factory: Address;
@@ -129,7 +129,7 @@ function describeWriteError(err: unknown, fallback: string): string | undefined 
   return fallback;
 }
 
-export function DirectSwapCard() {
+export function DirectSwapCard({ geoRestricted = false }: { geoRestricted?: boolean } = {}) {
   const ctx = useCtx();
   const { address, isConnected, chainId: walletChainId } = useAccount();
   const dappChainId = useChainId();
@@ -148,7 +148,7 @@ export function DirectSwapCard() {
     functionName: 'allPairsLength',
     query: { enabled: Boolean(ctx) },
   });
-  const count = Math.min(Number((pairCount.data as bigint | undefined) ?? 0n), MAX_WINDOWS);
+  const count = Number((pairCount.data as bigint | undefined) ?? 0n);
   const pairAddrs = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
       abi: factoryAbi,
@@ -307,6 +307,9 @@ export function DirectSwapCard() {
   const fromBal = (inBal.data as bigint | undefined) ?? 0n;
   const toBal = (outBal.data as bigint | undefined) ?? 0n;
   const native = nativeBal.data?.value ?? 0n;
+  // The EGAZ leg of a window is WEGAZ: output lands wrapped.
+  const outLabel = metaOut ? (metaOut.native ? 'WEGAZ' : metaOut.symbol) : '';
+  const canUnwrap = Boolean(metaOut?.native && toBal > 0n);
   const shortfall = amountIn > fromBal ? amountIn - fromBal : 0n;
   const canWrap = Boolean(metaIn?.native && shortfall > 0n && native > shortfall);
   const hasEnough = shortfall === 0n;
@@ -364,6 +367,16 @@ export function DirectSwapCard() {
           address!,
           BigInt(Math.floor(Date.now() / 1000) + 20 * 60),
         ],
+      }),
+    );
+
+  const onUnwrap = () =>
+    send('Unwrap', () =>
+      writeContractAsync({
+        abi: abis.wegazAbi,
+        address: ctx!.wegaz,
+        functionName: 'withdraw',
+        args: [toBal],
       }),
     );
 
@@ -512,10 +525,26 @@ export function DirectSwapCard() {
           </div>
           <AmountBox
             label="To"
-            symbol={metaOut.symbol}
+            symbol={outLabel}
             balance={toBal}
             decimals={metaOut.decimals}
             amount={amountOut === 0n ? '' : fmt(amountOut, metaOut.decimals, 8)}
+            hint={
+              metaOut.native
+                ? canUnwrap
+                  ? (
+                      <button
+                        type="button"
+                        onClick={onUnwrap}
+                        disabled={busy}
+                        className="text-emerald-300 hover:text-emerald-200 disabled:opacity-50"
+                      >
+                        Unwrap {fmt(toBal, 18, 4)} WEGAZ → EGAZ
+                      </button>
+                    )
+                  : 'Arrives as WEGAZ (wrapped EGAZ); unwrap here afterwards'
+                : undefined
+            }
           />
         </div>
       ) : (
@@ -526,7 +555,7 @@ export function DirectSwapCard() {
 
       <dl className="mt-3 space-y-1 text-xs text-white/50">
         <Row k="Route">
-          {metaIn && metaOut ? `${metaIn.symbol} → ETX hub → ${metaOut.symbol}` : '—'}
+          {metaIn && metaOut ? `${metaIn.symbol} → ETX hub → ${outLabel}` : '—'}
         </Row>
         <Row k="Your tier">
           {!address
@@ -536,7 +565,7 @@ export function DirectSwapCard() {
               : `${fmt(stetxBal, 18, 0)} stETX · below the ${fmtCompact(minStEtx)} gate`}
         </Row>
         <Row k="Min received">
-          {amountOutMin === 0n || !metaOut ? '—' : `${fmt(amountOutMin, metaOut.decimals, 8)} ${metaOut.symbol}`}
+          {amountOutMin === 0n || !metaOut ? '—' : `${fmt(amountOutMin, metaOut.decimals, 8)} ${outLabel}`}
         </Row>
         <Row k="Slippage">0.50%</Row>
       </dl>
@@ -596,7 +625,7 @@ function AmountBox(props: {
   amount: string;
   onAmount?: (v: string) => void;
   onMax?: () => void;
-  hint?: string;
+  hint?: ReactNode;
 }) {
   const editable = Boolean(props.onAmount);
   return (

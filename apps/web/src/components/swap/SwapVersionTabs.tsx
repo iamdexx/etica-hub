@@ -93,11 +93,11 @@ export function SwapVersionTabs({ geoRestricted = false }: { geoRestricted?: boo
         (geoRestricted ? (
           <div className="rounded-2xl border border-white/[0.07] bg-white/[0.035] p-5 text-sm text-white/55">
             stETX is not offered in your region, so the stableswap venue is hidden. The V2 hub
-            and V5 Direct markets stay open.
+            and the V4 launchpad stay open.
           </div>
         ) : (
           <div className="space-y-3">
-            <SwapCard defaultFrom="stETX" defaultTo="ETX" />
+            <SwapCard defaultFrom="stETX" defaultTo="ETX" onlyTokens={['stETX', 'ETX']} />
             <p className="px-1 text-[11px] text-white/40">
               Need stETX? <Link href="/stake" className="text-emerald-300 hover:text-emerald-200">Stake ETX</Link>
               {' · '}
@@ -108,7 +108,15 @@ export function SwapVersionTabs({ geoRestricted = false }: { geoRestricted?: boo
 
       {active === 'v4' && <LaunchpadLiteCard />}
 
-      {active === 'v5' && <DirectSwapCard />}
+      {active === 'v5' &&
+        (geoRestricted ? (
+          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.035] p-5 text-sm text-white/55">
+            Direct markets are gated by stETX, which is not offered in your region, so V5 is
+            hidden. The V2 hub and the V4 launchpad stay open.
+          </div>
+        ) : (
+          <DirectSwapCard />
+        ))}
     </div>
   );
 }

@@ -110,10 +110,13 @@ export function SwapCard({
   geoRestricted = false,
   defaultFrom = 'EGAZ',
   defaultTo = 'ETX',
+  onlyTokens,
 }: {
   geoRestricted?: boolean;
   defaultFrom?: TokenSymbol;
   defaultTo?: TokenSymbol;
+  /** Restrict the pickers to these symbols (e.g. the V3 tab pins stETX/ETX). */
+  onlyTokens?: readonly TokenSymbol[];
 } = {}) {
   const { address, isConnected, chainId: walletChainId } = useAccount();
   const dappChainId = useChainId();
@@ -411,7 +414,9 @@ export function SwapCard({
   const routeText = useStableSwap
     ? `${fromSymbol} → ${toSymbol} · stableswap`
     : describePath(path, ctx);
-  const pickerOptions = tokenOptions(ctx, geoRestricted);
+  const pickerOptions = tokenOptions(ctx, geoRestricted).filter(
+    (t) => !onlyTokens || onlyTokens.includes(t),
+  );
 
   // Defense in depth: if a stale URL or a prior session left stETX selected
   // while the visitor is now geo-gated, force-reset to the default pair so

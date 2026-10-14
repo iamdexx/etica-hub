@@ -15,7 +15,8 @@ import { useResearchMarkets, graduationProgress } from '@/lib/research-markets';
 
 export function LaunchpadLiteCard() {
   const { byStatus, graduationThreshold, isLoading } = useResearchMarkets();
-  const live = byStatus?.live ?? [];
+  // `pending` is the UI bucket for markets past 80% of graduation; they still trade on the curve.
+  const live = [...(byStatus?.pending ?? []), ...(byStatus?.live ?? [])];
   const [sel, setSel] = useState<Address | null>(null);
   const market = live.find((m) => m.token === sel) ?? live[0] ?? null;
 
