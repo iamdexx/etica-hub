@@ -282,6 +282,11 @@ contract EticaDirectTest is Test {
         factory.setFeeTiers(mins, bps);
         vm.expectRevert(bytes("EDirect: FEE_TOO_HIGH"));
         factory.setBaseFeeBps(1_001);
+        // Base fee can never undercut the first tier (300 bps in setUp).
+        vm.expectRevert(bytes("EDirect: FEE_BELOW_TIERS"));
+        factory.setBaseFeeBps(299);
+        factory.setBaseFeeBps(500);
+        assertEq(factory.feeBpsFor(NOBODY), 500);
         vm.stopPrank();
         vm.prank(NOBODY);
         vm.expectRevert(bytes("EDirect: FORBIDDEN"));
@@ -328,6 +333,37 @@ contract EticaDirectTest is Test {
         vm.prank(STAKER);
         router.swapExactTokensForEGAZ(amountIn, expected, path, STAKER, block.timestamp);
         assertEq(STAKER.balance - before, expected);
+    }
+
+    function test_swap_routerBillsSignerNotRecipient() public {
+        _seedDirectPool();
+        address whale = makeAddr("whale");
+        etx.mint(whale, 100_000 ether);
+        vm.startPrank(whale);
+        etx.approve(address(stEtx), type(uint256).max);
+        stEtx.deposit(MIN_STETX * 13, whale);
+        vm.stopPrank();
+        assertEq(factory.feeBpsFor(whale), 10);
+        assertEq(factory.feeBpsFor(STAKER), 300);
+        address[] memory path = new address[](2);
+        path[0] = address(usdce);
+        path[1] = address(wegaz);
+        // STAKER (3%) sending output to the whale (0.1%) is still charged 3%:
+        // the whale's quote is too optimistic for STAKER's tier.
+        uint256 whaleQuote = router.getAmountsOut(100 ether, path, whale)[1];
+        uint256 stakerQuote = router.getAmountsOut(100 ether, path, STAKER)[1];
+        assertLt(stakerQuote, whaleQuote);
+        vm.prank(STAKER);
+        vm.expectRevert(bytes("ESwap: INSUFFICIENT_OUTPUT_AMOUNT"));
+        router.swapExactTokensForTokens(100 ether, whaleQuote, path, whale, block.timestamp);
+        vm.prank(STAKER);
+        uint256[] memory amounts =
+            router.swapExactTokensForTokens(100 ether, stakerQuote, path, whale, block.timestamp);
+        assertEq(amounts[1], stakerQuote);
+        // A non-staker cannot sign a swap even when the recipient is a staker.
+        vm.prank(NOBODY);
+        vm.expectRevert(bytes("EDirect: NOT_STAKER"));
+        router.swapExactTokensForTokens(100 ether, 0, path, STAKER, block.timestamp);
     }
 
     function test_swapFor_onlyWhitelistedCallerAndStakerTrader() public {

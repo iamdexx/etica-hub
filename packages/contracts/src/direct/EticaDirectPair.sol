@@ -203,10 +203,10 @@ contract EticaDirectPair is EticaDirectERC20 {
         _swap(amount0Out, amount1Out, to, IEticaDirectFactory(factory).feeBpsFor(to), data);
     }
 
-    /// @notice Swap on behalf of `trader`, whose stETX balance sets the fee.
-    ///         Only whitelisted routers may name a trader, so the recipient of
-    ///         an EGAZ unwrap or an intermediate hop still pays the fee of the
-    ///         wallet that initiated the trade.
+    /// @notice Swap priced at `trader`'s stETX tier. Only whitelisted routers
+    ///         may name a trader and they pass their own `msg.sender`, so an
+    ///         EGAZ unwrap or intermediate hop is charged to the wallet that
+    ///         signed the trade, never to the router, a pair or a bystander.
     function swapFor(
         uint256 amount0Out,
         uint256 amount1Out,

@@ -30,4 +30,4 @@ The venue fee is not flat: `EticaDirectFactory.feeBpsFor(trader)` returns the fe
 | 250,000 | 0.50% |
 | 500,000+ | 0.10% |
 
-The pair prices `swap(to)` at the recipient's tier; the router uses `swapFor(..., trader)` (whitelisted callers only) so EGAZ unwrap hops and multi-hop intermediates are priced at the tier of the wallet that initiated the trade, never at the router's or a pair's. Quotes: `router.getAmountsOut(amountIn, path, trader)`; the two-argument V2 form prices for `msg.sender` (`eth_call` `from`).
+The pair prices a direct `swap(to)` at the recipient's tier. The router prices every swap at its `msg.sender` (the wallet signing the trade, which must itself pass the gate) via `swapFor(..., trader)` — whitelisted callers only — so EGAZ unwrap hops and multi-hop intermediates are charged to the signer, never to the router, a pair or a recipient who did not consent. Quotes: the two-argument V2 `getAmountsOut`/`getAmountsIn` price for `msg.sender` (`eth_call` `from`) exactly as the swap will charge; `getAmountsOut(amountIn, path, trader)` quotes for another wallet.

@@ -116,9 +116,11 @@ contract EticaDirectFactory is IEticaDirectFactory {
     }
 
     /// @notice Fee charged to traders that meet no tier (whitelisted contracts
-    ///         and, when `minStEtx == 0`, non-stakers).
+    ///         and, when `minStEtx == 0`, non-stakers). Never below the first
+    ///         tier's fee, so holding more stETX can never cost more.
     function setBaseFeeBps(uint16 _feeBps) external onlySetter {
         require(_feeBps <= MAX_FEE_BPS, "EDirect: FEE_TOO_HIGH");
+        require(tierFeeBps.length == 0 || _feeBps >= tierFeeBps[0], "EDirect: FEE_BELOW_TIERS");
         baseFeeBps = _feeBps;
         emit BaseFeeBpsSet(_feeBps);
     }
