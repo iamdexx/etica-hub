@@ -54,6 +54,22 @@ const ZERO = '0x0000000000000000000000000000000000000000' as const;
 const DEAD = '0x000000000000000000000000000000000000dEaD' as const;
 const STORAGE_KEY = 'eticahub.deploy-direct.v1';
 const LAUNCH_MIN_STETX = parseUnits('40000', 18);
+/** Wallet expected to run the Seeder role; null = any wallet (a warning shows on mismatch). */
+const EXPECTED_SEEDER: Address | null = null;
+const OPERATOR_STEPS: StepKey[] = [
+  'deployFactory',
+  'deployRouter',
+  'deployHarvester',
+  'whitelistRouter',
+  'whitelistHarvester',
+  'whitelistDead',
+  'setFeeTo',
+  'setFeeTiers',
+  'createPairWegaz',
+  'createPairEti',
+];
+const SEED_STEPS: StepKey[] = ['approveUsdce', 'approveEti', 'seedWegaz', 'seedEti'];
+type Role = 'operator' | 'seeder';
 const LAUNCH_TIERS: readonly [bigint[], number[]] = [
   [
     parseUnits('40000', 18),
@@ -246,12 +262,25 @@ export function DeployDirectCard() {
 
   const [ownerInput, setOwnerInput] = useState<string>(TREASURY_ADDRESS);
   const [usdPerSide, setUsdPerSide] = useState<string>('10');
+  const [role, setRole] = useState<Role>('operator');
+  const [routerInput, setRouterInput] = useState<string>('');
+  const [pairsReady, setPairsReady] = useState<boolean>(false);
+  const [balances, setBalances] = useState<{ usdce: bigint; eti: bigint; egaz: bigint } | null>(
+    null,
+  );
   const [deployed, setDeployed] = useState<Deployed>({});
   const [steps, setSteps] = useState<Record<StepKey, StepState>>(
     () => Object.fromEntries(STEP_ORDER.map((k) => [k, initial])) as Record<StepKey, StepState>,
   );
   const [quote, setQuote] = useState<{ egaz: bigint; eti: bigint } | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('role') === 'seeder') setRole('seeder');
+    const r = q.get('router');
+    if (r) setRouterInput(r);
+  }, []);
 
   useEffect(() => {
     const stored = loadDeployed();
@@ -272,6 +301,99 @@ export function DeployDirectCard() {
   }
 
   const owner = useMemo(() => parseAddr(ownerInput), [ownerInput]);
+  const seedRouter = useMemo(
+    () => deployed.router ?? parseAddr(routerInput),
+    [deployed.router, routerInput],
+  );
+
+  // Seeder role may run in a different browser than the operator: resolve the
+  // factory from the router and confirm both curated pairs exist on-chain.
+  useEffect(() => {
+    if (!publicClient || !onMainnet || !seedRouter) {
+      setPairsReady(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const fac = (await publicClient.readContract({
+          address: seedRouter,
+          abi: directRouterArtifact.abi,
+          functionName: 'factory',
+        })) as Address;
+        const [p0, p1] = (await Promise.all([
+          publicClient.readContract({
+            address: fac,
+            abi: directFactoryArtifact.abi,
+            functionName: 'getPair',
+            args: [tokens.wegaz, tokens.usdce],
+          }),
+          publicClient.readContract({
+            address: fac,
+            abi: directFactoryArtifact.abi,
+            functionName: 'getPair',
+            args: [tokens.eti, tokens.usdce],
+          }),
+        ])) as [Address, Address];
+        if (!cancelled) setPairsReady(p0 !== ZERO && p1 !== ZERO);
+      } catch {
+        if (!cancelled) setPairsReady(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    publicClient,
+    onMainnet,
+    seedRouter,
+    tokens.wegaz,
+    tokens.eti,
+    tokens.usdce,
+    steps.createPairWegaz.status,
+    steps.createPairEti.status,
+  ]);
+
+  useEffect(() => {
+    if (!publicClient || !onMainnet || !address) {
+      setBalances(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [usdce, eti, egaz] = await Promise.all([
+          publicClient.readContract({
+            address: tokens.usdce,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [address],
+          }),
+          publicClient.readContract({
+            address: tokens.eti,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [address],
+          }),
+          publicClient.getBalance({ address }),
+        ]);
+        if (!cancelled) setBalances({ usdce, eti, egaz });
+      } catch {
+        if (!cancelled) setBalances(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    publicClient,
+    onMainnet,
+    address,
+    tokens.usdce,
+    tokens.eti,
+    steps.seedWegaz.status,
+    steps.seedEti.status,
+  ]);
   const usdcePerSide = useMemo(() => {
     try {
       const v = parseUnits(usdPerSide.trim() || '0', USDC_WARP_ROUTE.decimals);
@@ -357,7 +479,9 @@ export function DeployDirectCard() {
   }
 
   async function runStep(key: StepKey) {
-    if (!walletClient || !address || !owner || !onMainnet) return;
+    if (!walletClient || !address || !onMainnet) return;
+    if (!owner && !SEED_STEPS.includes(key)) return;
+    const ownerOrDead = owner ?? DEAD;
     const wc = walletClient;
     const account = address;
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 30);
@@ -379,7 +503,7 @@ export function DeployDirectCard() {
     switch (key) {
       case 'deployFactory': {
         const a = await send(key, () =>
-          deploy(directFactoryArtifact, [owner, tokens.stEtx, LAUNCH_MIN_STETX]),
+          deploy(directFactoryArtifact, [ownerOrDead, tokens.stEtx, LAUNCH_MIN_STETX]),
         );
         if (a) remember({ ...deployed, factory: a });
         return;
@@ -394,13 +518,13 @@ export function DeployDirectCard() {
         if (!factory) return;
         const a = await send(key, () =>
           deploy(directHarvesterAdapterArtifact, [
-            owner,
+            ownerOrDead,
             factory,
             tokens.hubRouter,
             tokens.etx,
             tokens.stEtx,
             tokens.farms,
-            owner,
+            ownerOrDead,
           ]),
         );
         if (a) remember({ ...deployed, harvester: a });
@@ -450,20 +574,20 @@ export function DeployDirectCard() {
         );
         return;
       case 'approveUsdce':
-        if (!router || !usdcePerSide) return;
+        if (!seedRouter || !usdcePerSide) return;
         await send(key, () =>
-          write(tokens.usdce, ERC20_ABI, 'approve', [router, usdcePerSide * 2n]),
+          write(tokens.usdce, ERC20_ABI, 'approve', [seedRouter, usdcePerSide * 2n]),
         );
         return;
       case 'approveEti':
-        if (!router || !quote) return;
-        await send(key, () => write(tokens.eti, ERC20_ABI, 'approve', [router, quote.eti]));
+        if (!seedRouter || !quote) return;
+        await send(key, () => write(tokens.eti, ERC20_ABI, 'approve', [seedRouter, quote.eti]));
         return;
       case 'seedWegaz':
-        if (!router || !usdcePerSide || !quote) return;
+        if (!seedRouter || !usdcePerSide || !quote) return;
         await send(key, () =>
           write(
-            router,
+            seedRouter,
             directRouterArtifact.abi,
             'addLiquidityEGAZ',
             [tokens.usdce, usdcePerSide, usdcePerSide, quote.egaz, DEAD, deadline],
@@ -472,9 +596,9 @@ export function DeployDirectCard() {
         );
         return;
       case 'seedEti':
-        if (!router || !usdcePerSide || !quote) return;
+        if (!seedRouter || !usdcePerSide || !quote) return;
         await send(key, () =>
-          write(router, directRouterArtifact.abi, 'addLiquidity', [
+          write(seedRouter, directRouterArtifact.abi, 'addLiquidity', [
             tokens.eti,
             tokens.usdce,
             quote.eti,
@@ -490,13 +614,23 @@ export function DeployDirectCard() {
   }
 
   function ready(key: StepKey): boolean {
-    if (!isConnected || !walletClient || !owner || !onMainnet) return false;
+    if (!isConnected || !walletClient || !onMainnet) return false;
+    const st = steps[key].status;
+    if (st !== 'idle' && st !== 'error') return false;
+    if (SEED_STEPS.includes(key)) {
+      if (!seedRouter || !pairsReady || !quote || !usdcePerSide) return false;
+      const prior = SEED_STEPS.slice(0, SEED_STEPS.indexOf(key));
+      return prior.every((k) => steps[k].status === 'confirmed');
+    }
+    if (!owner) return false;
     const { factory, router, harvester } = deployed;
-    const idx = STEP_ORDER.indexOf(key);
-    const prior = STEP_ORDER.slice(0, idx);
+    if (key === 'deployFactory' && factory) return false;
+    if (key === 'deployRouter' && router) return false;
+    if (key === 'deployHarvester' && harvester) return false;
     // Deploy steps are satisfied by a known address (fresh or pre-wired);
     // every other step must have confirmed in this browser.
-    const priorDone = prior.every((k) =>
+    const prior = OPERATOR_STEPS.slice(0, OPERATOR_STEPS.indexOf(key));
+    return prior.every((k) =>
       k === 'deployFactory'
         ? Boolean(factory)
         : k === 'deployRouter'
@@ -505,19 +639,25 @@ export function DeployDirectCard() {
             ? Boolean(harvester)
             : steps[k].status === 'confirmed',
     );
-    if (!priorDone) return false;
-    if (key === 'deployFactory' && factory) return false;
-    if (key === 'deployRouter' && router) return false;
-    if (key === 'deployHarvester' && harvester) return false;
-    if (
-      ['approveUsdce', 'approveEti', 'seedWegaz', 'seedEti'].includes(key) &&
-      (!quote || !usdcePerSide)
-    ) {
-      return false;
-    }
-    const st = steps[key].status;
-    return st === 'idle' || st === 'error';
   }
+
+  const visibleSteps = role === 'operator' ? OPERATOR_STEPS : SEED_STEPS;
+  const fmt = (v: bigint, dec: number, max = 4) =>
+    Number(formatUnits(v, dec)).toLocaleString(undefined, { maximumFractionDigits: max });
+  const need =
+    quote && usdcePerSide ? { usdce: usdcePerSide * 2n, eti: quote.eti, egaz: quote.egaz } : null;
+  const short =
+    need && balances
+      ? {
+          usdce: balances.usdce < need.usdce,
+          eti: balances.eti < need.eti,
+          egaz: balances.egaz < need.egaz,
+        }
+      : null;
+  const seederMismatch =
+    EXPECTED_SEEDER !== null &&
+    address !== undefined &&
+    address.toLowerCase() !== EXPECTED_SEEDER.toLowerCase();
 
   const injectedConnector = connectors.find((c) => c.id === 'injected') ?? connectors[0];
   const allDone =
@@ -527,84 +667,161 @@ export function DeployDirectCard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
-        <h2 className="mb-4 text-lg font-semibold">Parameters</h2>
-        <label className="block text-sm text-white/70">
-          Owner / feeToSetter / treasury sink
-          <input
-            type="text"
-            className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
-            value={ownerInput}
-            onChange={(e) => setOwnerInput(e.target.value)}
-            placeholder="0x…"
-            spellCheck={false}
-          />
-        </label>
-        <p className="mt-1 text-xs text-white/50">
-          Defaults to the treasury. Controls the gate (
-          <span className="font-mono">setMinStEtx</span>
-          ), the fee ladder, whitelist and <span className="font-mono">feeTo</span>; receives the
-          40% treasury slice of harvests.
-        </p>
-        <label className="mt-4 block text-sm text-white/70">
-          USDC.e per pair side
-          <input
-            type="text"
-            inputMode="decimal"
-            className="mt-1 w-40 rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
-            value={usdPerSide}
-            onChange={(e) => setUsdPerSide(e.target.value)}
-          />
-        </label>
-        <p className="mt-1 text-xs text-white/50">
-          Each pair is seeded with this much USDC.e plus the matching EGAZ / ETI at the current hub
-          price (quoted live from the public router via ETX), so the direct pools open exactly in
-          line with the hub. LP goes to the dead address.
-        </p>
-        <div className="mt-3 grid gap-1 text-xs text-white/70 sm:grid-cols-2">
-          <div>
-            EGAZ side:{' '}
-            <span className="font-mono">
-              {quote
-                ? Number(formatUnits(quote.egaz, 18)).toLocaleString(undefined, {
-                    maximumFractionDigits: 4,
-                  })
-                : '…'}
-            </span>
+      <div className="flex gap-2">
+        {(['operator', 'seeder'] as Role[]).map((r) => (
+          <button
+            key={r}
+            type="button"
+            onClick={() => setRole(r)}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              role === r
+                ? 'bg-emerald-500/90 text-black'
+                : 'border border-white/15 text-white/70 hover:bg-white/[0.035]'
+            }`}
+          >
+            {r === 'operator' ? 'Operator (treasury)' : 'Seeder (liquidity)'}
+          </button>
+        ))}
+      </div>
+
+      {role === 'seeder' && (
+        <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
+          <h2 className="mb-3 text-lg font-semibold">Seed plan</h2>
+          <p className="text-sm text-white/70">
+            Four signatures from your wallet: approve USDC.e, approve ETI, then add{' '}
+            <span className="font-mono">{usdPerSide}</span> USDC.e + the matching EGAZ to the
+            EGAZ/USDC.e pair and <span className="font-mono">{usdPerSide}</span> USDC.e + the
+            matching ETI to the ETI/USDC.e pair. Amounts are prefilled at the live hub price; the LP
+            is minted to the dead address (permanently locked).
+          </p>
+          <div className="mt-3 grid gap-1 text-xs sm:grid-cols-3">
+            {(
+              [
+                ['USDC.e', need?.usdce, balances?.usdce, USDC_WARP_ROUTE.decimals, short?.usdce],
+                ['EGAZ', need?.egaz, balances?.egaz, 18, short?.egaz],
+                ['ETI', need?.eti, balances?.eti, 18, short?.eti],
+              ] as const
+            ).map(([sym, n, have, dec, isShort]) => (
+              <div
+                key={sym}
+                className={`rounded-md border p-2 ${isShort ? 'border-rose-400/40 bg-rose-500/10' : 'border-white/[0.07]'}`}
+              >
+                <div className="text-white/50">{sym}</div>
+                <div className="font-mono">
+                  need {n !== undefined ? fmt(n, dec) : '…'}
+                  {sym === 'EGAZ' ? ' + gas' : ''}
+                </div>
+                <div className="font-mono text-white/60">
+                  have {have !== undefined ? fmt(have, dec) : address ? '…' : '—'}
+                </div>
+              </div>
+            ))}
           </div>
-          <div>
-            ETI side:{' '}
-            <span className="font-mono">
-              {quote
-                ? Number(formatUnits(quote.eti, 18)).toLocaleString(undefined, {
-                    maximumFractionDigits: 4,
-                  })
-                : '…'}
-            </span>
-          </div>
-        </div>
-        {quoteError && (
-          <p className="mt-2 text-xs text-amber-300/80">Hub quote failed: {quoteError}</p>
-        )}
-        <dl className="mt-4 grid gap-1 text-xs text-white/50 sm:grid-cols-2">
-          {(
-            [
-              ['stETX (gate)', tokens.stEtx],
-              ['WEGAZ', tokens.wegaz],
-              ['ETI', tokens.eti],
-              ['USDC.e', tokens.usdce],
-              ['ETX', tokens.etx],
-              ['Hub router', tokens.hubRouter],
-              ['Farms sink', tokens.farms],
-            ] as const
-          ).map(([k, v]) => (
-            <div key={k} className="flex gap-2">
-              <dt className="shrink-0">{k}</dt>
-              <dd className="truncate font-mono">{v}</dd>
+          {quoteError && (
+            <p className="mt-2 text-xs text-amber-300/80">Hub quote failed: {quoteError}</p>
+          )}
+          {seedRouter && !pairsReady && (
+            <p className="mt-2 text-xs text-amber-300/80">
+              Direct pairs are not open yet on this router — the operator has to finish steps 1–10
+              first.
+            </p>
+          )}
+          {!deployed.router && (
+            <label className="mt-4 block text-sm text-white/70">
+              Direct router address
+              <input
+                type="text"
+                className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+                value={routerInput}
+                onChange={(e) => setRouterInput(e.target.value)}
+                placeholder="0x… (from the operator, or ?router= in the URL)"
+                spellCheck={false}
+              />
+            </label>
+          )}
+        </section>
+      )}
+
+      {role === 'operator' && (
+        <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
+          <h2 className="mb-4 text-lg font-semibold">Parameters</h2>
+          <label className="block text-sm text-white/70">
+            Owner / feeToSetter / treasury sink
+            <input
+              type="text"
+              className="mt-1 w-full rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white placeholder:text-white/30"
+              value={ownerInput}
+              onChange={(e) => setOwnerInput(e.target.value)}
+              placeholder="0x…"
+              spellCheck={false}
+            />
+          </label>
+          <p className="mt-1 text-xs text-white/50">
+            Defaults to the treasury. Controls the gate (
+            <span className="font-mono">setMinStEtx</span>
+            ), the fee ladder, whitelist and <span className="font-mono">feeTo</span>; receives the
+            40% treasury slice of harvests.
+          </p>
+          <label className="mt-4 block text-sm text-white/70">
+            USDC.e per pair side
+            <input
+              type="text"
+              inputMode="decimal"
+              className="mt-1 w-40 rounded-md border border-white/[0.07] bg-black/20 px-3 py-2 font-mono text-xs text-white"
+              value={usdPerSide}
+              onChange={(e) => setUsdPerSide(e.target.value)}
+            />
+          </label>
+          <p className="mt-1 text-xs text-white/50">
+            Each pair is seeded with this much USDC.e plus the matching EGAZ / ETI at the current
+            hub price (quoted live from the public router via ETX), so the direct pools open exactly
+            in line with the hub. LP goes to the dead address.
+          </p>
+          <div className="mt-3 grid gap-1 text-xs text-white/70 sm:grid-cols-2">
+            <div>
+              EGAZ side:{' '}
+              <span className="font-mono">
+                {quote
+                  ? Number(formatUnits(quote.egaz, 18)).toLocaleString(undefined, {
+                      maximumFractionDigits: 4,
+                    })
+                  : '…'}
+              </span>
             </div>
-          ))}
-        </dl>
-      </section>
+            <div>
+              ETI side:{' '}
+              <span className="font-mono">
+                {quote
+                  ? Number(formatUnits(quote.eti, 18)).toLocaleString(undefined, {
+                      maximumFractionDigits: 4,
+                    })
+                  : '…'}
+              </span>
+            </div>
+          </div>
+          {quoteError && (
+            <p className="mt-2 text-xs text-amber-300/80">Hub quote failed: {quoteError}</p>
+          )}
+          <dl className="mt-4 grid gap-1 text-xs text-white/50 sm:grid-cols-2">
+            {(
+              [
+                ['stETX (gate)', tokens.stEtx],
+                ['WEGAZ', tokens.wegaz],
+                ['ETI', tokens.eti],
+                ['USDC.e', tokens.usdce],
+                ['ETX', tokens.etx],
+                ['Hub router', tokens.hubRouter],
+                ['Farms sink', tokens.farms],
+              ] as const
+            ).map(([k, v]) => (
+              <div key={k} className="flex gap-2">
+                <dt className="shrink-0">{k}</dt>
+                <dd className="truncate font-mono">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Wallet</h2>
@@ -644,12 +861,21 @@ export function DeployDirectCard() {
                 </button>
               )}
             </div>
-            {address && owner && address.toLowerCase() !== owner.toLowerCase() && (
+            {seederMismatch && (
               <p className="text-xs text-amber-300/80">
-                Connected wallet is not the owner above: the setter steps (whitelist, feeTo, tiers,
-                createPair) will revert unless signed by the owner.
+                This is not the wallet expected to seed the pools (
+                <span className="font-mono">{EXPECTED_SEEDER}</span>).
               </p>
             )}
+            {role === 'operator' &&
+              address &&
+              owner &&
+              address.toLowerCase() !== owner.toLowerCase() && (
+                <p className="text-xs text-amber-300/80">
+                  Connected wallet is not the owner above: the setter steps (whitelist, feeTo,
+                  tiers, createPair) will revert unless signed by the owner.
+                </p>
+              )}
           </div>
         )}
       </section>
@@ -657,7 +883,7 @@ export function DeployDirectCard() {
       <section className="rounded-xl border border-white/[0.07] bg-white/[0.035] p-5">
         <h2 className="mb-4 text-lg font-semibold">Steps</h2>
         <ol className="space-y-3">
-          {STEP_ORDER.map((key, i) => {
+          {visibleSteps.map((key, i) => {
             const st = steps[key];
             const addr =
               key === 'deployFactory'
@@ -675,7 +901,7 @@ export function DeployDirectCard() {
               >
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="font-mono text-xs text-white/40">
-                    {String(i + 1).padStart(2, '0')}
+                    {String(STEP_ORDER.indexOf(key) + 1).padStart(2, '0')}
                   </span>
                   <span className="text-sm font-medium">{STEP_LABELS[key].label}</span>
                   <button
@@ -717,7 +943,13 @@ export function DeployDirectCard() {
         </ol>
       </section>
 
-      {deployed.factory && deployed.router && deployed.harvester && (
+      {role === 'seeder' && SEED_STEPS.every((k) => steps[k].status === 'confirmed') && (
+        <section className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-5 text-sm text-emerald-200">
+          Both direct pairs are seeded and the LP is locked at the dead address. You&apos;re done.
+        </section>
+      )}
+
+      {role === 'operator' && deployed.factory && deployed.router && deployed.harvester && (
         <section className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-5 text-sm">
           <h2 className="mb-2 text-lg font-semibold text-emerald-200">
             {allDone ? 'Venue live' : 'Contracts deployed'}

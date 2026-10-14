@@ -34,12 +34,15 @@ The pair prices a direct `swap(to)` at the recipient's tier. The router prices e
 
 ## Deploying (`/deploy/direct`)
 
-The operator page at `/deploy/direct` deploys the venue from the connected treasury wallet, one
-signature per step: factory (gate 40,000 stETX) → router → harvester adapter → whitelist router /
+The page at `/deploy/direct` has two roles. **Operator** (treasury wallet) deploys and configures
+the venue, one signature per step: factory (gate 40,000 stETX) → router → harvester adapter → whitelist router /
 harvester / dead → `setFeeTo(harvester)` → `setFeeTiers` (40k 3.00%, 100k 1.50%, 250k 0.50%,
-500k+ 0.10%) → `createPair` WEGAZ/USDC.e and ETI/USDC.e → seed both pairs with N USDC.e per side
-plus the EGAZ / ETI the public hub router quotes for it, LP minted to `0x…dEaD`. Progress is kept
-in `localStorage` so a reload resumes the flow. Afterwards paste the three addresses into
+500k+ 0.10%) → `createPair` WEGAZ/USDC.e and ETI/USDC.e. **Seeder** (`?role=seeder&router=0x…`,
+any wallet — the router only gates the LP recipient, which is `0x…dEaD`) signs four prefilled txs:
+approve USDC.e, approve ETI, `addLiquidityEGAZ` and `addLiquidity` with 10 USDC.e per side plus the
+EGAZ / ETI the public hub router quotes for it, LP minted to `0x…dEaD`; the page checks the wallet's
+USDC.e / EGAZ / ETI balances against the plan first. Operator progress is kept in `localStorage`
+so a reload resumes the flow. Afterwards paste the three addresses into
 `packages/shared/src/addresses.ts` (`directFactory`, `directRouter`, `directHarvesterAdapter`) and
 add the keeper with `harvester.setKeeper(keeper, true)`.
 
