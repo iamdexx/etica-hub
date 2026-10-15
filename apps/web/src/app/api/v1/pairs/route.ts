@@ -24,7 +24,11 @@ export const revalidate = API_REVALIDATE_SECONDS;
 export const dynamic = 'force-dynamic';
 
 export async function GET(): Promise<Response> {
-  const [pairs, windows] = await Promise.all([fetchAllPairs(), fetchAllDirectWindows()]);
+  // A Direct factory hiccup must not take the hub pairs down with it.
+  const [pairs, windows] = await Promise.all([
+    fetchAllPairs(),
+    fetchAllDirectWindows().catch((): never[] => []),
+  ]);
   const tokens = apiTokens();
   const byId = new Map(tokens.map((t) => [t.id, t] as const));
 
