@@ -46,7 +46,8 @@ jobs:
         run: |
           git fetch origin direct-watcher-state:direct-watcher-state 2>/dev/null || true
           mkdir -p .watch-state
-          git show direct-watcher-state:direct-watch.json > .watch-state/direct-watch.json 2>/dev/null || true
+          git show direct-watcher-state:direct-watch.json > .watch-state/direct-watch.json 2>/dev/null || rm -f .watch-state/direct-watch.json
+          [ -s .watch-state/direct-watch.json ] || rm -f .watch-state/direct-watch.json
 
       - uses: pnpm/action-setup@v4
 
@@ -65,9 +66,11 @@ jobs:
 
       - name: Persist state
         if: always() && hashFiles('.watch-state/direct-watch.json') != ''
+        # hashFiles() is non-empty for a 0-byte file too, so re-check size below
         run: |
           git config user.name "direct-watcher[bot]"
           git config user.email "direct-watcher@users.noreply.github.com"
+          [ -s .watch-state/direct-watch.json ] || { echo "empty state, not persisting"; exit 0; }
           tmp=$(mktemp -d)
           git worktree add "$tmp" direct-watcher-state 2>/dev/null || git worktree add --orphan -b direct-watcher-state "$tmp"
           cp .watch-state/direct-watch.json "$tmp/direct-watch.json"

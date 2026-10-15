@@ -43,7 +43,14 @@ import { sendTelegramAlert } from './telegram.js';
 
 function readJson<T>(path: string, fallback: T): T {
   if (!existsSync(path)) return fallback;
-  return JSON.parse(readFileSync(path, 'utf8')) as T;
+  const raw = readFileSync(path, 'utf8').trim();
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    console.warn(`[direct-watcher] ignoring unreadable ${path}: ${err instanceof Error ? err.message : String(err)}`);
+    return fallback;
+  }
 }
 
 async function snapshotFactory(

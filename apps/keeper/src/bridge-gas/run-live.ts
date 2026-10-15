@@ -35,7 +35,10 @@ const invokedAsScript =
 if (invokedAsScript) {
   runBridgeGasLive()
     .then((r) => {
-      if (r.error) process.exit(1);
+      const hardFailure = r.legs.some((l) => l.status === 'error') || r.legs.length === 0;
+      if (r.error && hardFailure) process.exit(1);
+      if (r.error)
+        console.warn(`[bridge-gas:live] waiting on funds, nothing to do yet: ${r.error}`);
     })
     .catch((err) => {
       console.error('[bridge-gas:live] fatal:', err);
