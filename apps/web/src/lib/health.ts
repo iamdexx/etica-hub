@@ -26,13 +26,12 @@ export interface HealthReport {
  * Reads the chain head + factory pair count. `ok` is true iff an RPC is
  * reachable, the factory decoded, and the head block is within budget.
  * The head is taken from whichever public endpoint answers with the newest
- * block, so one lagging node can't flag the chain as stale.
+ * block, so one lagging node can't flag the chain as stale, and the factory
+ * is read through that same endpoint so the pair data is as fresh as the head.
  */
 export async function computeHealth(): Promise<HealthReport> {
   const startedAt = Date.now();
-  const client = priceClient();
-
-  let head: { number: bigint; timestamp: bigint } | null = null;
+  let head: { number: bigint; timestamp: bigint; url: string } | null = null;
   let pairs: Awaited<ReturnType<typeof fetchAllPairs>> | null = null;
   const errors: string[] = [];
 
@@ -42,7 +41,7 @@ export async function computeHealth(): Promise<HealthReport> {
         chain: eticaMainnet,
         transport: http(url, { timeout: 5_000, retryCount: 0 }),
       }).getBlock({ blockTag: 'latest' });
-      return { number: block.number, timestamp: block.timestamp };
+      return { number: block.number, timestamp: block.timestamp, url };
     }),
   );
   for (const h of heads) {
@@ -58,6 +57,12 @@ export async function computeHealth(): Promise<HealthReport> {
     errors.push(`rpc: ${reasons.filter(Boolean).join(' | ') || 'no endpoint answered'}`);
   }
 
+  const client = head
+    ? createPublicClient({
+        chain: eticaMainnet,
+        transport: http(head.url, { timeout: 5_000, retryCount: 1 }),
+      })
+    : priceClient();
   try {
     pairs = await fetchAllPairs(client);
   } catch (err) {
