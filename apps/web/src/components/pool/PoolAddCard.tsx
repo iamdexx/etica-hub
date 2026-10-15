@@ -22,11 +22,13 @@ import {
 import {
   DEPLOYMENTS,
   EXTERNAL_ADDRESSES,
+  USDC_WARP_ROUTE,
   abis,
+  eticaMainnet,
   isSupportedChainId,
 } from '@etica-hub/shared';
 
-type KnownSymbol = 'EGAZ' | 'ETI' | 'ETX';
+type KnownSymbol = 'EGAZ' | 'ETI' | 'ETX' | 'USDC.e' | 'stETX';
 type BSymbol = KnownSymbol | 'CUSTOM';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
@@ -42,6 +44,7 @@ type Ctx = {
   eti: Address;
   etx: Address;
   stetx: Address;
+  usdce: Address;
 };
 
 function useCtx(): Ctx | null {
@@ -59,12 +62,24 @@ function useCtx(): Ctx | null {
       eti: e.eti,
       etx: d.etx,
       stetx: d.stakedETX,
+      usdce: chainId === eticaMainnet.id ? USDC_WARP_ROUTE.syntheticToken : ZERO,
     };
   }, [chainId]);
 }
 
 function resolveAddr(ctx: Ctx, sym: KnownSymbol): Address {
-  return sym === 'EGAZ' ? ctx.wegaz : sym === 'ETI' ? ctx.eti : ctx.etx;
+  switch (sym) {
+    case 'EGAZ':
+      return ctx.wegaz;
+    case 'ETI':
+      return ctx.eti;
+    case 'USDC.e':
+      return ctx.usdce;
+    case 'stETX':
+      return ctx.stetx;
+    default:
+      return ctx.etx;
+  }
 }
 
 export function PoolAddCard({
@@ -100,8 +115,10 @@ export function PoolAddCard({
       if (customBIsStEtx) return null;
       return trimmed as Address;
     }
-    return resolveAddr(ctx, bSymbol);
-  }, [ctx, bSymbol, customB, customBIsStEtx]);
+    if (bSymbol === 'stETX' && geoRestricted) return null;
+    const addr = resolveAddr(ctx, bSymbol);
+    return addr === ZERO ? null : addr;
+  }, [ctx, bSymbol, customB, customBIsStEtx, geoRestricted]);
 
   const tokenA: Address | null = ctx ? ctx.etx : null;
   const bIsNative = bSymbol === 'EGAZ';
@@ -486,6 +503,10 @@ export function PoolAddCard({
           >
             <option value="ETI">ETI</option>
             <option value="EGAZ">EGAZ</option>
+            {ctx && ctx.usdce !== ZERO && <option value="USDC.e">USDC.e</option>}
+            {ctx && ctx.stetx !== ZERO && !geoRestricted && (
+              <option value="stETX">stETX</option>
+            )}
             <option value="CUSTOM">Custom ERC20…</option>
           </select>
         </div>
