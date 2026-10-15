@@ -191,11 +191,12 @@ export function PoolAddCard({
     query: { enabled: Boolean(tokenB && !bIsNative) },
   });
   const bDecimals = useMemo<number>(() => {
-    if (bIsNative) return 18;
+    if (bSymbol === 'USDC.e') return USDC_WARP_ROUTE.decimals;
+    if (bSymbol !== 'CUSTOM') return 18;
     const d = bMeta.data?.[0];
     if (!d || d.status !== 'success') return 18;
     return Number(d.result as number);
-  }, [bIsNative, bMeta.data]);
+  }, [bSymbol, bMeta.data]);
   const bSymbolLabel = useMemo<string>(() => {
     if (bSymbol !== 'CUSTOM') return bSymbol;
     const s = bMeta.data?.[1];
