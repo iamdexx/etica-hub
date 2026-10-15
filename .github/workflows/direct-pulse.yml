@@ -1,0 +1,61 @@
+name: direct-pulse
+
+# CoinGecko / GeckoTerminal drop a pair that shows no trade for 24h, and a
+# Direct window only moves when someone swaps it. Once a day the keeper
+# wallet runs a ~250 EGAZ round trip through every window that has been
+# quiet for 20h and ends back in EGAZ (two 3% legs, a few cents).
+# Signer: the keeper wallet (HARVEST_KEEPER_PRIVATE_KEY), whitelisted on the
+# factory through the 2-of-2 so the stETX gate lets it trade.
+
+on:
+  schedule:
+    - cron: '15 14 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Plan only, submit nothing'
+        type: boolean
+        default: false
+
+concurrency:
+  group: direct-pulse
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: harvest-live
+    env:
+      HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      HARVEST_CHAIN_ID: ${{ vars.HARVEST_CHAIN_ID || '61803' }}
+      DIRECT_FACTORY_ADDRESS: ${{ vars.DIRECT_FACTORY_ADDRESS }}
+      DIRECT_PULSE_EGAZ_WEI: ${{ vars.DIRECT_PULSE_EGAZ_WEI || '250000000000000000000' }}
+      DIRECT_PULSE_MAX_QUIET_SECONDS: ${{ vars.DIRECT_PULSE_MAX_QUIET_SECONDS || '72000' }}
+      HARVEST_MAX_SLIPPAGE_BPS: ${{ vars.HARVEST_MAX_SLIPPAGE_BPS || '300' }}
+      HARVEST_DRY_RUN: ${{ inputs.dry_run && 'true' || '' }}
+      HARVEST_PRIVATE_KEY: ${{ secrets.HARVEST_KEEPER_PRIVATE_KEY }}
+    steps:
+      - name: Guard against missing keeper key
+        if: ${{ env.HARVEST_PRIVATE_KEY == '' && env.HARVEST_DRY_RUN == '' }}
+        run: |
+          echo "::error ::HARVEST_KEEPER_PRIVATE_KEY secret is unset on the 'harvest-live' environment."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Pulse quiet Direct windows
+        run: pnpm --filter @etica-hub/keeper run direct-pulse:live

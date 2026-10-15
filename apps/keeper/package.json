@@ -12,6 +12,8 @@
     "harvest:live": "tsx src/harvest/run-live.ts",
     "direct-harvest:dry-run": "tsx src/direct-harvest/dry-run.ts",
     "direct-harvest:live": "tsx src/direct-harvest/run-live.ts",
+    "direct-pulse:dry-run": "tsx src/direct-pulse/dry-run.ts",
+    "direct-pulse:live": "tsx src/direct-pulse/run-live.ts",
     "forfeit:dry-run": "tsx src/forfeit/dry-run.ts",
     "forfeit:live": "tsx src/forfeit/run-live.ts",
     "bridge-gas:dry-run": "tsx src/bridge-gas/dry-run.ts",
