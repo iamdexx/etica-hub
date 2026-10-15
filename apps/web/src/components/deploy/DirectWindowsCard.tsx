@@ -35,6 +35,7 @@ import {
 } from 'wagmi';
 import { eticaMainnet } from '@etica-hub/shared/chains';
 import {
+  BRIDGE_ROLES,
   DEPLOYMENTS,
   EXTERNAL_ADDRESSES,
   USDC_WARP_ROUTE,
@@ -213,7 +214,20 @@ export function DirectWindowsCard({ role }: { role: Role }) {
     query: { enabled: Boolean(ctx && address) },
   });
 
-  // ---- multisig proposals matching each createMetaPair
+  // ---- keeper wallet on the whitelist (lets the direct-pulse cron trade past the stETX gate)
+  const keeperWhitelisted = useReadContract({
+    abi: factoryAbi,
+    address: ctx?.factory,
+    functionName: 'whitelist',
+    args: [BRIDGE_ROLES.keeper],
+    query: { enabled: Boolean(ctx) },
+  });
+  const whitelistKeeperData = useMemo(
+    () => encodeFunctionData({ abi: factoryAbi, functionName: 'setWhitelist', args: [BRIDGE_ROLES.keeper, true] }),
+    [factoryAbi],
+  );
+
+  // ---- multisig proposals matching each createMetaPair (+ the keeper whitelist at index SPECS.length)
   const isMultisigSetter = Boolean(setterAddr && address && !same(setterAddr, address));
   const [proposals, setProposals] = useState<Record<number, { id: bigint; mine: boolean } | null>>({});
   useEffect(() => {
@@ -226,15 +240,18 @@ export function DirectWindowsCard({ role }: { role: Role }) {
           abi: msAbi,
           functionName: 'proposalCount',
         })) as bigint;
-        const wanted = SPECS.map((s) =>
-          encodeFunctionData({
-            abi: factoryAbi,
-            functionName: 'createMetaPair',
-            args: [ctx.tokens[s.a], ctx.tokens[s.b], ctx.hubRouter],
-          }).toLowerCase(),
-        );
+        const wanted = [
+          ...SPECS.map((s) =>
+            encodeFunctionData({
+              abi: factoryAbi,
+              functionName: 'createMetaPair',
+              args: [ctx.tokens[s.a], ctx.tokens[s.b], ctx.hubRouter],
+            }),
+          ),
+          whitelistKeeperData,
+        ].map((d) => d.toLowerCase());
         const found: Record<number, { id: bigint; mine: boolean } | null> = {};
-        for (let i = count; i > 0n && Object.keys(found).length < SPECS.length; i--) {
+        for (let i = count; i > 0n && Object.keys(found).length < wanted.length; i--) {
           const id = i - 1n;
           const p = (await publicClient.readContract({
             address: setterAddr,
@@ -261,7 +278,7 @@ export function DirectWindowsCard({ role }: { role: Role }) {
     return () => {
       cancelled = true;
     };
-  }, [publicClient, ctx, setterAddr, address, role, isMultisigSetter, msAbi, factoryAbi, tick]);
+  }, [publicClient, ctx, setterAddr, address, role, isMultisigSetter, msAbi, factoryAbi, whitelistKeeperData, tick]);
 
   async function send(key: string, fn: () => Promise<Hex>): Promise<boolean> {
     if (!publicClient) return false;
@@ -326,6 +343,37 @@ export function DirectWindowsCard({ role }: { role: Role }) {
           );
     }
     await Promise.all([pairReads.refetch(), setter.refetch()]);
+    setTick((t) => t + 1);
+    return ok;
+  }
+
+  const KEEPER_IDX = SPECS.length;
+  async function whitelistKeeper(): Promise<boolean> {
+    if (!ctx || !setterAddr || !address) return false;
+    const key = 'whitelist-keeper';
+    let ok: boolean;
+    if (!isMultisigSetter) {
+      ok = await send(key, () =>
+        writeContractAsync({ abi: factoryAbi, address: ctx.factory, functionName: 'setWhitelist', args: [BRIDGE_ROLES.keeper, true] }),
+      );
+    } else {
+      const p = proposals[KEEPER_IDX];
+      if (p && p.mine) {
+        setSteps((st) => ({
+          ...st,
+          [key]: { status: 'error', error: `Proposal #${p.id} is waiting for the other signer: they open this page and click once.` },
+        }));
+        return false;
+      }
+      ok = p
+        ? await send(key, () =>
+            writeContractAsync({ abi: msAbi, address: setterAddr, functionName: 'confirm', args: [p.id] }),
+          )
+        : await send(key, () =>
+            writeContractAsync({ abi: msAbi, address: setterAddr, functionName: 'propose', args: [ctx.factory, 0n, whitelistKeeperData] }),
+          );
+    }
+    await keeperWhitelisted.refetch();
     setTick((t) => t + 1);
     return ok;
   }
@@ -439,6 +487,33 @@ export function DirectWindowsCard({ role }: { role: Role }) {
             );
           })}
         </ol>
+        {role === 'admin' && (() => {
+          const done = keeperWhitelisted.data === true;
+          const p = proposals[KEEPER_IDX];
+          const st = steps['whitelist-keeper'];
+          return (
+            <div className={`mt-4 rounded-md border p-3 ${done ? 'border-emerald-400/30 bg-emerald-500/5' : 'border-white/[0.07]'}`}>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="font-mono text-xs text-white/40">+</span>
+                <span className="text-sm font-medium">Daily volume pulse: whitelist the keeper wallet</span>
+                <span className="text-xs text-white/40">
+                  {done ? 'whitelisted' : p ? (p.mine ? `proposal #${p.id} awaiting the other signer` : `proposal #${p.id} awaiting your confirm`) : 'not whitelisted'}
+                </span>
+                {!done && (
+                  <button type="button" className="ml-auto rounded-md bg-emerald-500/90 px-3 py-1 text-xs font-medium text-black transition hover:bg-emerald-400 disabled:opacity-30"
+                    onClick={() => void whitelistKeeper()}
+                    disabled={!onMainnet || running || st?.status === 'signing' || st?.status === 'pending'}>
+                    {st?.status === 'signing' ? 'Sign…' : st?.status === 'pending' ? 'Mining…' : p ? 'Confirm' : isMultisigSetter ? 'Propose' : 'Whitelist'}
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-white/50">
+                Trackers drop a pair with no trade in 24h. The direct-pulse cron runs a ~250 EGAZ round trip through every quiet window once a day from the keeper wallet <span className="font-mono">{BRIDGE_ROLES.keeper}</span>; the whitelist lets that wallet past the 40k stETX gate (it still pays the 3% base fee and can never mint or admin anything).
+              </p>
+              {st?.status === 'error' && <p className="mt-1 text-xs text-rose-300/90">{st.error}</p>}
+            </div>
+          );
+        })()}
         {role === 'admin' && (
           <p className="mt-4 text-xs text-white/50">
             Once a window is open, the seeder backs it from <Link href="/deploy/direct/windows/seed" className="text-emerald-300">{windowsHref}</Link>. The V5 tab on /swap, the watcher and the harvest cron pick new windows up from the factory by themselves.
