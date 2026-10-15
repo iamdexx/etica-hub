@@ -1,6 +1,7 @@
-import { getAddress } from 'viem';
+import { createPublicClient, getAddress, http } from 'viem';
 import { fetchAllPairs, headBlockAgeSeconds, priceClient } from '@/lib/priceApi';
-import { DEPLOYMENTS } from '@etica-hub/shared';
+import { rpcEndpoints } from '@/lib/rpc';
+import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 
 const MAINNET_CHAIN_ID = 61803;
 /** Acceptable upper bound on head-block age before we flip `ok` to false. */
@@ -22,24 +23,46 @@ export interface HealthReport {
 }
 
 /**
- * Reads the chain head + factory pair count. `ok` is true iff the RPC is
+ * Reads the chain head + factory pair count. `ok` is true iff an RPC is
  * reachable, the factory decoded, and the head block is within budget.
+ * The head is taken from whichever public endpoint answers with the newest
+ * block, so one lagging node can't flag the chain as stale, and the factory
+ * is read through that same endpoint so the pair data is as fresh as the head.
  */
 export async function computeHealth(): Promise<HealthReport> {
   const startedAt = Date.now();
-  const client = priceClient();
-
-  let head: { number: bigint; timestamp: bigint } | null = null;
+  let head: { number: bigint; timestamp: bigint; url: string } | null = null;
   let pairs: Awaited<ReturnType<typeof fetchAllPairs>> | null = null;
   const errors: string[] = [];
 
-  try {
-    const block = await client.getBlock({ blockTag: 'latest' });
-    head = { number: block.number, timestamp: block.timestamp };
-  } catch (err) {
-    errors.push(`rpc: ${err instanceof Error ? err.message : String(err)}`);
+  const heads = await Promise.allSettled(
+    rpcEndpoints(eticaMainnet, process.env.ETICA_MAINNET_RPC_URL).map(async (url) => {
+      const block = await createPublicClient({
+        chain: eticaMainnet,
+        transport: http(url, { timeout: 5_000, retryCount: 0 }),
+      }).getBlock({ blockTag: 'latest' });
+      return { number: block.number, timestamp: block.timestamp, url };
+    }),
+  );
+  for (const h of heads) {
+    if (h.status !== 'fulfilled') continue;
+    if (!head || h.value.timestamp > head.timestamp) head = h.value;
+  }
+  if (!head) {
+    const reasons = heads.map((h) =>
+      h.status === 'rejected'
+        ? String(h.reason instanceof Error ? h.reason.message : h.reason)
+        : '',
+    );
+    errors.push(`rpc: ${reasons.filter(Boolean).join(' | ') || 'no endpoint answered'}`);
   }
 
+  const client = head
+    ? createPublicClient({
+        chain: eticaMainnet,
+        transport: http(head.url, { timeout: 5_000, retryCount: 1 }),
+      })
+    : priceClient();
   try {
     pairs = await fetchAllPairs(client);
   } catch (err) {

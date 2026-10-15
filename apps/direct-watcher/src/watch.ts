@@ -41,9 +41,21 @@ import { fetchUpdates, HELP_TEXT, parseCommands, type Command } from './commands
 import { isZeroAddress, loadConfig, type ExpectedSettings, type WatcherConfig } from './config.js';
 import { sendTelegramAlert } from './telegram.js';
 
-function readJson<T>(path: string, fallback: T): T {
+function readJson<T>(path: string, fallback: T, opts: { lenient?: boolean } = {}): T {
   if (!existsSync(path)) return fallback;
-  return JSON.parse(readFileSync(path, 'utf8')) as T;
+  const raw = readFileSync(path, 'utf8').trim();
+  if (!opts.lenient) return JSON.parse(raw) as T;
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    console.warn(
+      `[direct-watcher] ignoring unreadable ${path}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return fallback;
+  }
 }
 
 async function snapshotFactory(
@@ -253,7 +265,7 @@ export async function main(cfg: WatcherConfig = loadConfig()): Promise<number> {
   });
   const client = createPublicClient({ chain, transport: http(cfg.rpcUrl) });
   const expected = readJson<ExpectedSettings>(cfg.expectedPath, {});
-  const prev = readJson<WatcherState | undefined>(cfg.statePath, undefined);
+  const prev = readJson<WatcherState | undefined>(cfg.statePath, undefined, { lenient: true });
 
   const head = await client.getBlockNumber();
   const lookback = BigInt(cfg.scanLookbackBlocks);
