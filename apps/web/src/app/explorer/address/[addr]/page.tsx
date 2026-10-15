@@ -11,6 +11,7 @@ import {
   shortHash,
 } from '@/lib/explorer';
 import { loadVerified } from '@/lib/verified';
+import { readPairInfo, type PairInfo } from '@/lib/pairInfo';
 import { VerifiedContractView } from '@/components/explorer/VerifiedContractView';
 import { ContractInteractionView } from '@/components/explorer/ContractInteractionView';
 import {
@@ -84,7 +85,9 @@ export default async function AddressPage({ params }: AddressPageProps) {
   const verified = isContract ? loadVerified(addr) : null;
   // Probe ERC-20 metadata only for contracts — an EOA has no code to query
   // and the reads would all revert. Returns null for any non-token contract.
-  const tokenMetadata = isContract ? await readTokenMetadata(client, addr) : null;
+  const [tokenMetadata, pairInfo] = isContract
+    ? await Promise.all([readTokenMetadata(client, addr), readPairInfo(client, addr)])
+    : [null, null];
 
   // Bounded recent-tx scan: walk backwards at most RECENT_SCAN_BLOCKS looking
   // for txs involving this address. Cheap for active wallets, degrades
@@ -146,6 +149,14 @@ export default async function AddressPage({ params }: AddressPageProps) {
               ERC-20
             </span>
           ) : null}
+          {pairInfo ? (
+            <span
+              className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-400/15 px-2 py-0.5 align-middle text-[10px] uppercase tracking-wider text-emerald-300"
+              title={pairInfo.direct ? 'EticaSwap Direct (V5) window' : 'EticaSwap V2 pair'}
+            >
+              {pairInfo.direct ? 'Direct window' : 'Pair'}
+            </span>
+          ) : null}
         </h1>
         <p className="break-all font-mono text-xs text-white/50">{addr}</p>
         {tokenMetadata ? (
@@ -159,6 +170,8 @@ export default async function AddressPage({ params }: AddressPageProps) {
           </p>
         ) : null}
       </section>
+
+      {pairInfo ? <PairPanel addr={addr} info={pairInfo} /> : null}
 
       <section className="grid gap-3 surface p-5 text-sm md:grid-cols-2">
         <Field label="EGAZ balance">{formatEgaz(nativeBalance)} EGAZ</Field>
@@ -320,6 +333,61 @@ async function scanRecentTxs(
     }
   }
   return out;
+}
+
+function PairPanel({ addr, info }: { addr: string; info: PairInfo }) {
+  const t0 = info.tokens.get(info.token0.toLowerCase());
+  const t1 = info.tokens.get(info.token1.toLowerCase());
+  const sym0 = t0?.symbol ?? 'token0';
+  const sym1 = t1?.symbol ?? 'token1';
+  const amt = (v: bigint, t?: { decimals: number }) => formatTokenAmount(v, t?.decimals ?? 18);
+  return (
+    <section className="surface space-y-3 p-5 text-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-base font-semibold text-white">
+          {sym0} / {sym1}{' '}
+          <span className="text-xs font-normal text-white/50">
+            {info.direct ? 'EticaSwap Direct (V5) window' : 'EticaSwap V2 pair'}
+          </span>
+        </h2>
+        <div className="flex gap-3 text-xs">
+          <Link href={info.direct ? '/swap?v=v5' : '/swap'} className="text-emerald-300 hover:underline">
+            Trade →
+          </Link>
+          <Link href={`/api/v1/pairs/${addr}`} className="text-emerald-300 hover:underline">
+            JSON →
+          </Link>
+        </div>
+      </div>
+      {info.direct ? (
+        <p className="text-xs leading-5 text-white/55">
+          This window holds no tokens of its own: its liquidity is ETX hub LP and every swap settles on
+          the ETX hub pools, so the token balances below read zero. The reserves here are the
+          hub-backed view that trackers and aggregators should read (standard token0 / token1 /
+          getReserves, Swap and Sync events).
+        </p>
+      ) : null}
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field label={`token0 · ${sym0}`}>
+          <Link href={`/explorer/token/${info.token0}`} className="font-mono hover:underline">
+            {info.token0}
+          </Link>
+        </Field>
+        <Field label={`token1 · ${sym1}`}>
+          <Link href={`/explorer/token/${info.token1}`} className="font-mono hover:underline">
+            {info.token1}
+          </Link>
+        </Field>
+        <Field label={`Reserve ${sym0}`}>
+          {amt(info.reserve0, t0)} {sym0}
+        </Field>
+        <Field label={`Reserve ${sym1}`}>
+          {amt(info.reserve1, t1)} {sym1}
+        </Field>
+        <Field label="LP supply">{formatTokenAmount(info.totalSupply, 18)}</Field>
+      </div>
+    </section>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

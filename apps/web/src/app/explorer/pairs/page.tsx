@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { DEPLOYMENTS, EXTERNAL_ADDRESSES, abis } from '@etica-hub/shared';
 import { BrandCandleChartCard } from '@/components/BrandCandleChartCard';
 import { explorerClient } from '@/lib/explorer';
+import { fetchAllDirectWindows } from '@/lib/priceApi';
+import { formatTokenAmount, resolveTokenInfos } from '@/lib/token';
 
 export const revalidate = 0;
 export const dynamic = 'force-dynamic';
@@ -81,9 +83,42 @@ async function resolvePairAddresses(
   );
 }
 
+type DirectRow = {
+  pair: `0x${string}`;
+  base: string;
+  quote: string;
+  reserve0: string;
+  reserve1: string;
+};
+
+async function directWindows(): Promise<DirectRow[]> {
+  try {
+    const client = explorerClient();
+    const windows = await fetchAllDirectWindows(client);
+    if (windows.length === 0) return [];
+    const infos = await resolveTokenInfos(
+      client,
+      windows.flatMap((w) => [w.token0, w.token1]),
+    );
+    return windows.map((w) => {
+      const t0 = infos.get(w.token0.toLowerCase());
+      const t1 = infos.get(w.token1.toLowerCase());
+      return {
+        pair: w.address,
+        base: t0?.symbol ?? 'token0',
+        quote: t1?.symbol ?? 'token1',
+        reserve0: formatTokenAmount(w.reserve0, t0?.decimals ?? 18),
+        reserve1: formatTokenAmount(w.reserve1, t1?.decimals ?? 18),
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 export default async function PairsPage() {
   const rows = knownPairs();
-  const resolved = await resolvePairAddresses(rows);
+  const [resolved, direct] = await Promise.all([resolvePairAddresses(rows), directWindows()]);
   const tracked = resolved.filter((r) => r.pair !== null);
   const primary = tracked[0];
 
@@ -127,6 +162,54 @@ export default async function PairsPage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#07120f]">
+        <div className="border-b border-white/[0.07] p-6">
+          <div className="text-[11px] uppercase tracking-wider text-emerald-300/75">EticaSwap Direct · V5</div>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Direct windows</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">
+            Dollar and cross markets backed by the ETX hub. A window holds no tokens of its own: its
+            liquidity is hub LP and every swap settles on the hub pools. The reserves below are the
+            hub-backed view (token0 / token1 / getReserves) that trackers read.
+          </p>
+        </div>
+        <div className="grid grid-cols-[1fr_1fr] gap-3 border-b border-white/[0.07] px-4 py-3 text-[11px] uppercase tracking-wider text-white/40 md:grid-cols-[0.8fr_1fr_1fr_1.4fr]">
+          <div>Pair</div>
+          <div>Reserve base</div>
+          <div>Reserve quote</div>
+          <div className="hidden md:block">Window</div>
+        </div>
+        <div className="divide-y divide-white/5">
+          {direct.length === 0 ? (
+            <div className="px-4 py-4 text-sm text-white/45">No Direct windows open yet.</div>
+          ) : (
+            direct.map((w) => (
+              <div
+                key={w.pair}
+                className="grid grid-cols-[1fr_1fr] gap-3 px-4 py-4 text-sm md:grid-cols-[0.8fr_1fr_1fr_1.4fr] md:items-center"
+              >
+                <div className="font-semibold text-brand-accent">
+                  {w.base} / {w.quote}
+                </div>
+                <div className="font-mono text-white/75">
+                  {w.reserve0} {w.base}
+                </div>
+                <div className="font-mono text-white/75">
+                  {w.reserve1} {w.quote}
+                </div>
+                <div className="hidden md:block">
+                  <Link
+                    href={`/explorer/address/${w.pair}`}
+                    className="break-all font-mono text-xs text-emerald-300 hover:underline"
+                  >
+                    {w.pair}
+                  </Link>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
