@@ -35,6 +35,7 @@ import {
   USDC_WARP_ROUTE,
   isUsdcWarpRouteLive,
 } from '@etica-hub/shared';
+import { directFactoryArtifact } from './direct-deploy-artifacts';
 import { fetchIndexedPairSyncs } from './explorerIndex';
 import { failoverTransport } from './rpc';
 
@@ -402,6 +403,80 @@ export async function fetchAllPairs(client: PublicClient = priceClient()): Promi
     }),
   );
   return enriched;
+}
+
+/**
+ * Every EticaSwap Direct (V5) window on the live Direct factory. Windows
+ * expose the same token0/token1/getReserves surface as a V2 pair but hold
+ * ETX hub LP instead of raw tokens; the reserves they report are the hub-
+ * backed view trackers should read. Retired windows are skipped.
+ */
+export async function fetchAllDirectWindows(
+  client: PublicClient = priceClient(),
+): Promise<ApiPairRaw[]> {
+  const { d } = assertMainnetDeployments();
+  if (!d.directFactory || d.directFactory === ZERO_ADDRESS) return [];
+  const abi = directFactoryArtifact.abi;
+  const len = (await client.readContract({
+    abi,
+    address: d.directFactory,
+    functionName: 'allPairsLength',
+  })) as bigint;
+  const n = Number(len);
+  if (n === 0) return [];
+
+  const addresses = await Promise.all(
+    Array.from({ length: n }, (_, i) =>
+      client.readContract({
+        abi,
+        address: d.directFactory,
+        functionName: 'allPairs',
+        args: [BigInt(i)],
+      }) as Promise<Address>,
+    ),
+  );
+  const flags = await Promise.all(
+    addresses.map(async (pair) => {
+      const [meta, retired] = await Promise.all([
+        client.readContract({
+          abi,
+          address: d.directFactory,
+          functionName: 'isMetaPair',
+          args: [pair],
+        }) as Promise<boolean>,
+        client.readContract({
+          abi,
+          address: d.directFactory,
+          functionName: 'retired',
+          args: [pair],
+        }) as Promise<boolean>,
+      ]);
+      return meta && !retired;
+    }),
+  );
+  const windows = await Promise.all(
+    addresses.filter((_, i) => flags[i]).map((pair) => fetchPairByAddress(pair, client)),
+  );
+  return windows.filter((w): w is ApiPairRaw => w !== null);
+}
+
+/** True when `addr` is a Direct metapair window registered on the Direct factory. */
+export async function isDirectWindow(
+  addr: Address,
+  client: PublicClient = priceClient(),
+): Promise<boolean> {
+  const { d } = assertMainnetDeployments();
+  if (!d.directFactory || d.directFactory === ZERO_ADDRESS) return false;
+  try {
+    return (await client.readContract({
+      abi: directFactoryArtifact.abi,
+      address: d.directFactory,
+      functionName: 'isMetaPair',
+      args: [addr],
+    })) as boolean;
+  } catch {
+    return false;
+  }
 }
 
 export async function fetchPairByAddress(

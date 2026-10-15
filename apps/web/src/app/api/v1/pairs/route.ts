@@ -1,15 +1,17 @@
 /**
  * GET /api/v1/pairs
  *
- * Returns every EticaSwap V2 pair registered on the factory with live
- * reserves + a derived spot price quoted in ETX (the hub token). Useful
- * for third-party dashboards that want a single snapshot of the DEX.
+ * Returns every EticaSwap V2 hub pair plus every EticaSwap Direct (V5)
+ * window with live reserves + a derived spot price. Hub pairs are quoted in
+ * ETX (the hub token); Direct windows hold no ETX so they are quoted
+ * token0-in-token1. `venue` tells consumers which is which.
  */
 
 import { getAddress } from 'viem';
 import {
   API_REVALIDATE_SECONDS,
   apiTokens,
+  fetchAllDirectWindows,
   fetchAllPairs,
   jsonResponse,
   spotPriceFromReserves,
@@ -22,11 +24,14 @@ export const revalidate = API_REVALIDATE_SECONDS;
 export const dynamic = 'force-dynamic';
 
 export async function GET(): Promise<Response> {
-  const pairs = await fetchAllPairs();
+  const [pairs, windows] = await Promise.all([fetchAllPairs(), fetchAllDirectWindows()]);
   const tokens = apiTokens();
   const byId = new Map(tokens.map((t) => [t.id, t] as const));
 
-  const items = pairs.map((p) => {
+  const items = [
+    ...pairs.map((p) => ({ p, venue: 'hub' as const })),
+    ...windows.map((p) => ({ p, venue: 'direct' as const })),
+  ].map(({ p, venue }) => {
     const base = tokenByAddress(p.token0);
     const quote = tokenByAddress(p.token1);
     // When a pair references a token we don't know (launchpad-minted, etc.),
@@ -39,7 +44,12 @@ export async function GET(): Promise<Response> {
     const etx = byId.get('etx') ?? null;
     let priceInEtx: number | null = null;
     let baseForPrice: ApiToken | null = null;
-    if (etx && base && quote) {
+    if (venue === 'direct' && base && quote) {
+      // Direct windows never contain ETX; quote token0 in token1 (USDC.e for
+      // the dollar windows) so trackers get a usable spot straight away.
+      priceInEtx = spotPriceFromReserves(p, base, quote);
+      baseForPrice = base;
+    } else if (etx && base && quote) {
       if (base.id === 'etx') {
         // ETX is token0; price = quote amount per 1 ETX.
         priceInEtx = null;
@@ -54,6 +64,8 @@ export async function GET(): Promise<Response> {
 
     return {
       address: getAddress(p.address),
+      venue,
+      backing: venue === 'direct' ? 'etx-hub' : 'own-reserves',
       token0: {
         address: getAddress(p.token0),
         symbol: baseSymbol,
@@ -71,7 +83,7 @@ export async function GET(): Promise<Response> {
       price: baseForPrice && priceInEtx != null
         ? {
             base: baseForPrice.id,
-            quote: 'etx',
+            quote: venue === 'direct' ? quote!.id : 'etx',
             value: priceInEtx,
           }
         : null,
