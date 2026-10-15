@@ -21,6 +21,7 @@ import {
   encodeFunctionData,
   formatUnits,
   parseUnits,
+  type Abi,
   type Address,
   type Hex,
 } from 'viem';
@@ -47,6 +48,7 @@ import {
   directMetaPairArtifact,
   unanimousMultisigArtifact,
 } from '@/lib/direct-deploy-artifacts';
+import { capGasPrice } from '@/lib/legacyTx';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const DEAD: Address = '0x000000000000000000000000000000000000dEaD';
@@ -98,7 +100,12 @@ function useCtx(): Ctx | null {
 function shortError(err: unknown): string {
   if (err instanceof BaseError) {
     if (err.walk((e) => e instanceof UserRejectedRequestError)) return 'Rejected in wallet';
-    return err.shortMessage;
+    const detail = (
+      err.walk((e) => Boolean((e as { details?: string }).details)) as { details?: string } | null
+    )?.details?.trim();
+    return detail && !err.shortMessage.includes(detail)
+      ? `${err.shortMessage} (${detail})`
+      : err.shortMessage;
   }
   return err instanceof Error ? err.message : 'Failed';
 }
@@ -280,6 +287,27 @@ export function DirectWindowsCard({ role }: { role: Role }) {
     };
   }, [publicClient, ctx, setterAddr, address, role, isMultisigSetter, msAbi, factoryAbi, whitelistKeeperData, tick]);
 
+  // Estimate on the app's RPCs and hand the wallet a fully priced legacy tx,
+  // so a stale or failing node configured in the wallet cannot block signing.
+  async function write(to: Address, abi: Abi, functionName: string, args: readonly unknown[]): Promise<Hex> {
+    if (!publicClient || !address) throw new Error('Wallet not ready');
+    const data = encodeFunctionData({ abi, functionName, args });
+    const [gas, gasPrice] = await Promise.all([
+      publicClient.estimateGas({ account: address, to, data }),
+      publicClient.getGasPrice(),
+    ]);
+    const gasLimit = (gas * 13n) / 10n;
+    return writeContractAsync({
+      abi,
+      address: to,
+      functionName,
+      args,
+      gas: gasLimit,
+      gasPrice: capGasPrice(gasLimit, gasPrice),
+      type: 'legacy',
+    });
+  }
+
   async function send(key: string, fn: () => Promise<Hex>): Promise<boolean> {
     if (!publicClient) return false;
     setSteps((s) => ({ ...s, [key]: { status: 'signing' } }));
@@ -315,7 +343,7 @@ export function DirectWindowsCard({ role }: { role: Role }) {
     let ok: boolean;
     if (!isMultisigSetter) {
       ok = await send(key, () =>
-        writeContractAsync({ abi: factoryAbi, address: ctx.factory, functionName: 'createMetaPair', args }),
+        write(ctx.factory, factoryAbi, 'createMetaPair', args),
       );
     } else {
       const p = proposals[i];
@@ -331,15 +359,14 @@ export function DirectWindowsCard({ role }: { role: Role }) {
       }
       ok = p
         ? await send(key, () =>
-            writeContractAsync({ abi: msAbi, address: setterAddr, functionName: 'confirm', args: [p.id] }),
+            write(setterAddr, msAbi, 'confirm', [p.id]),
           )
         : await send(key, () =>
-            writeContractAsync({
-              abi: msAbi,
-              address: setterAddr,
-              functionName: 'propose',
-              args: [ctx.factory, 0n, encodeFunctionData({ abi: factoryAbi, functionName: 'createMetaPair', args })],
-            }),
+            write(setterAddr, msAbi, 'propose', [
+              ctx.factory,
+              0n,
+              encodeFunctionData({ abi: factoryAbi, functionName: 'createMetaPair', args }),
+            ]),
           );
     }
     await Promise.all([pairReads.refetch(), setter.refetch()]);
@@ -354,7 +381,7 @@ export function DirectWindowsCard({ role }: { role: Role }) {
     let ok: boolean;
     if (!isMultisigSetter) {
       ok = await send(key, () =>
-        writeContractAsync({ abi: factoryAbi, address: ctx.factory, functionName: 'setWhitelist', args: [BRIDGE_ROLES.keeper, true] }),
+        write(ctx.factory, factoryAbi, 'setWhitelist', [BRIDGE_ROLES.keeper, true]),
       );
     } else {
       const p = proposals[KEEPER_IDX];
@@ -367,10 +394,10 @@ export function DirectWindowsCard({ role }: { role: Role }) {
       }
       ok = p
         ? await send(key, () =>
-            writeContractAsync({ abi: msAbi, address: setterAddr, functionName: 'confirm', args: [p.id] }),
+            write(setterAddr, msAbi, 'confirm', [p.id]),
           )
         : await send(key, () =>
-            writeContractAsync({ abi: msAbi, address: setterAddr, functionName: 'propose', args: [ctx.factory, 0n, whitelistKeeperData] }),
+            write(setterAddr, msAbi, 'propose', [ctx.factory, 0n, whitelistKeeperData]),
           );
     }
     await keeperWhitelisted.refetch();
@@ -382,11 +409,11 @@ export function DirectWindowsCard({ role }: { role: Role }) {
     const w = windows[i];
     if (!ctx || !w || !etxPerWindow) return false;
     const sent = await send(`send-${i}`, () =>
-      writeContractAsync({ abi: abis.erc20Abi, address: ctx.etx, functionName: 'transfer', args: [w, etxPerWindow] }),
+      write(ctx.etx, abis.erc20Abi, 'transfer', [w, etxPerWindow]),
     );
     if (!sent) return false;
     const minted = await send(`mint-${i}`, () =>
-      writeContractAsync({ abi: metaPairAbi, address: w, functionName: 'mint', args: [DEAD] }),
+      write(w, metaPairAbi, 'mint', [DEAD]),
     );
     await Promise.all([backing.refetch(), etxBal.refetch()]);
     return minted;
