@@ -1,6 +1,6 @@
 import { getAddress, type Address, type PublicClient } from 'viem';
 import { abis } from '@etica-hub/shared';
-import { isDirectWindow } from './priceApi';
+import { fetchDirectWindow, isDirectWindow } from './priceApi';
 import { resolveTokenInfos, type TokenInfo } from './token';
 
 export interface PairInfo {
@@ -33,11 +33,16 @@ export async function readPairInfo(client: PublicClient, addr: Address): Promise
       resolveTokenInfos(client, [token0, token1]),
       isDirectWindow(addr, client),
     ]);
+    let [reserve0, reserve1] = [reserves[0], reserves[1]];
+    if (direct) {
+      const live = await fetchDirectWindow(addr, client);
+      if (live) [reserve0, reserve1] = [live.reserve0, live.reserve1];
+    }
     return {
       token0: getAddress(token0),
       token1: getAddress(token1),
-      reserve0: reserves[0],
-      reserve1: reserves[1],
+      reserve0,
+      reserve1,
       totalSupply,
       tokens,
       direct,

@@ -35,7 +35,7 @@ import {
   USDC_WARP_ROUTE,
   isUsdcWarpRouteLive,
 } from '@etica-hub/shared';
-import { directFactoryArtifact } from './direct-deploy-artifacts';
+import { directFactoryArtifact, directMetaPairArtifact } from './direct-deploy-artifacts';
 import { fetchIndexedPairSyncs } from './explorerIndex';
 import { failoverTransport } from './rpc';
 
@@ -455,9 +455,33 @@ export async function fetchAllDirectWindows(
     }),
   );
   const windows = await Promise.all(
-    addresses.filter((_, i) => flags[i]).map((pair) => fetchPairByAddress(pair, client)),
+    addresses.filter((_, i) => flags[i]).map((pair) => fetchDirectWindow(pair, client)),
   );
   return windows.filter((w): w is ApiPairRaw => w !== null);
+}
+
+/**
+ * A single Direct window with reserves read from `liveReserves()`, which
+ * re-prices the window's hub LP at the current hub spot. The stored
+ * `getReserves()` only refreshes on the window's own activity or `sync()`,
+ * so it lags hub trades.
+ */
+export async function fetchDirectWindow(
+  pair: Address,
+  client: PublicClient = priceClient(),
+): Promise<ApiPairRaw | null> {
+  const base = await fetchPairByAddress(pair, client);
+  if (!base) return null;
+  try {
+    const [r0, r1] = (await client.readContract({
+      abi: directMetaPairArtifact.abi,
+      address: pair,
+      functionName: 'liveReserves',
+    })) as readonly [bigint, bigint];
+    return { ...base, reserve0: r0, reserve1: r1 };
+  } catch {
+    return base;
+  }
 }
 
 /** True when `addr` is a Direct metapair window registered on the Direct factory. */
