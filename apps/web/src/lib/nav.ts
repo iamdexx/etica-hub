@@ -44,6 +44,7 @@ export const NAV_GROUPS: NavGroup[] = [
     links: [
       { href: '/whitepaper', label: 'Whitepaper', desc: 'Protocol specification v2.1' },
       { href: '/api', label: 'API', desc: 'Public endpoints and feeds' },
+      { href: '/tutorials', label: 'Tutorials', desc: 'Step-by-step video guides' },
     ],
   },
 ];
@@ -57,7 +58,7 @@ export const NEXT_UP: Record<string, string[]> = {
   '/pool': ['/farms', '/pools', '/swap'],
   '/stake': ['/farms', '/pool', '/swap'],
   '/farms': ['/stake', '/pool', '/explorer'],
-  '/bridge': ['/swap', '/status', '/explorer'],
+  '/bridge': ['/tutorials', '/swap', '/status'],
   '/labs': ['/labs/archive', '/research', '/research-markets'],
   '/labs/archive': ['/labs', '/research-markets', '/research'],
   '/research': ['/research-markets', '/labs', '/whitepaper'],
@@ -68,6 +69,7 @@ export const NEXT_UP: Record<string, string[]> = {
   '/status': ['/explorer', '/bridge', '/api'],
   '/whitepaper': ['/swap', '/labs', '/research'],
   '/api': ['/status', '/explorer', '/whitepaper'],
+  '/tutorials': ['/bridge', '/swap', '/pool'],
 };
 
 export function nextUpFor(pathname: string): NavLink[] {
