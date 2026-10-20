@@ -120,6 +120,11 @@ export default async function PoolsPage(): Promise<JSX.Element> {
       </div>
 
       <p className="text-xs text-white/45">
+        Direct (V5) windows are the direct Token/Token pairs (EGAZ/USDC.e, ETI/USDC.e); their
+        liquidity is ETX hub LP and the reserves shown are the hub-backed view.
+      </p>
+
+      <p className="text-xs text-white/45">
         <Link href="/pool" className="text-emerald-200/80 hover:text-emerald-200">
           Add liquidity
         </Link>{' '}
