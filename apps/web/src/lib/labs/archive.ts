@@ -14,11 +14,14 @@
  *   labs:archive:index             ZSET    member=id, score=completedAt
  *   labs:archive:goal:{goalId}     ZSET    member=id, score=completedAt
  *   labs:archive:disease:{disease} ZSET    member=id, score=completedAt
- *   labs:archive:pdb:{seqHash}     STRING  raw PDB keyed by sequence hash
+ *   labs:archive:pdb:{seqHash}     STRING  Cα PDB keyed by sequence hash
+ *                                          (brotli + base64, `br1:` prefix;
+ *                                          older values are plain text)
  *   labs:archive:stats             STRING  JSON cumulative counters
  */
 
 import { createHash } from 'node:crypto';
+import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 
 import { labsStore } from './store';
 import { extractCaPdb } from './pdb-render';
@@ -164,18 +167,34 @@ export function sequenceHash(sequence: string): string {
   return createHash('sha256').update(sequence.trim().toUpperCase()).digest('hex').slice(0, 32);
 }
 
+const PDB_CODEC_PREFIX = 'br1:';
+
+/** Lossless storage encoding for a stored PDB. */
+export function encodeStoredPdb(pdb: string): string {
+  return PDB_CODEC_PREFIX + brotliCompressSync(Buffer.from(pdb, 'utf8')).toString('base64');
+}
+
+/** Inverse of {@link encodeStoredPdb}; plain-text values pass through. */
+export function decodeStoredPdb(stored: string): string {
+  if (!stored.startsWith(PDB_CODEC_PREFIX)) return stored;
+  return brotliDecompressSync(
+    Buffer.from(stored.slice(PDB_CODEC_PREFIX.length), 'base64'),
+  ).toString('utf8');
+}
+
 /** Persist a PDB (Cα-only trace) so it can be looked up later by its sequence. */
 export async function storePdbForSequence(sequence: string, pdb: string): Promise<void> {
   if (!sequence || !pdb) return;
   const ca = extractCaPdb(pdb);
   if (!ca) return;
-  await labsStore().set(ARCHIVE_PDB(sequenceHash(sequence)), ca);
+  await labsStore().set(ARCHIVE_PDB(sequenceHash(sequence)), encodeStoredPdb(ca));
 }
 
 /** Fetch a previously stored PDB for a residue sequence, if any. */
 export async function getPdbForSequence(sequence: string): Promise<string | null> {
   if (!sequence) return null;
-  return labsStore().get(ARCHIVE_PDB(sequenceHash(sequence)));
+  const stored = await labsStore().get(ARCHIVE_PDB(sequenceHash(sequence)));
+  return stored ? decodeStoredPdb(stored) : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -212,7 +231,12 @@ export async function archiveResearch(research: ArchivedResearch): Promise<void>
   // Cα-only trace — all the renderer needs, and a fraction of the size.
   if (research.bestPdb && research.bestCandidate?.sequence) {
     const ca = extractCaPdb(research.bestPdb);
-    if (ca) await store.set(ARCHIVE_PDB(sequenceHash(research.bestCandidate.sequence)), ca);
+    if (ca) {
+      await store.set(
+        ARCHIVE_PDB(sequenceHash(research.bestCandidate.sequence)),
+        encodeStoredPdb(ca),
+      );
+    }
   }
 
   // Update cumulative stats
