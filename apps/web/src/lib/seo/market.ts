@@ -49,12 +49,12 @@ export const TOKEN_COPY: Record<TokenId, { tagline: string; about: string }> = {
   egaz: {
     tagline: 'Etica mainnet gas coin',
     about:
-      'EGAZ is the native coin of the Etica blockchain (chain id 61803), used to pay for gas. It can be wrapped 1:1 into WEGAZ to trade on EticaSwap, and the bridge keeper drops 2 EGAZ to first-time USDC.e recipients so they can transact.',
+      'EGAZ is the native coin of the Etica blockchain (chain id 61803), used to pay for gas. EticaSwap pools hold it 1:1 in ERC-20 form behind the scenes, and the bridge keeper drops 2 EGAZ to first-time USDC.e recipients so they can transact.',
   },
   wegaz: {
-    tagline: 'Wrapped Etica gas',
+    tagline: 'EGAZ in pool form',
     about:
-      'WEGAZ is the canonical ERC-20 wrapper for EGAZ, redeemable 1:1. It lets the native gas coin be used in EticaSwap pools, farms and smart-contract integrations.',
+      'The ERC-20 form of EGAZ that EticaSwap pools, farms and contracts hold, 1:1 with the native coin. EticaHub wraps and unwraps it for you; you only ever deal in EGAZ.',
   },
   stetx: {
     tagline: 'Staked ETX (ERC-4626)',

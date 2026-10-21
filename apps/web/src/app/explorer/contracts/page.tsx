@@ -20,7 +20,7 @@ function knownContracts(): ContractRow[] {
   const ext = EXTERNAL_ADDRESSES[MAINNET_CHAIN_ID];
   const rows: Array<ContractRow | null> = [
     d?.etx && d.etx !== ZERO ? { address: d.etx, name: 'ETX Token', group: 'Token', description: 'EticaHub routing and rewards asset' } : null,
-    d?.wegaz && d.wegaz !== ZERO ? { address: d.wegaz, name: 'Wrapped EGAZ', group: 'Token', description: 'Wrapped native gas asset' } : null,
+    d?.wegaz && d.wegaz !== ZERO ? { address: d.wegaz, name: 'EGAZ (pool form)', group: 'Token', description: 'ERC-20 form of the native gas coin held by pools' } : null,
     ext?.eti && ext.eti !== ZERO ? { address: ext.eti, name: 'ETI Token', group: 'Token', description: 'Etica ecosystem token' } : null,
     d?.swapFactory && d.swapFactory !== ZERO ? { address: d.swapFactory, name: 'EticaSwap Factory', group: 'DEX', description: 'Liquidity pair factory' } : null,
     d?.swapRouter && d.swapRouter !== ZERO ? { address: d.swapRouter, name: 'EticaSwap Router', group: 'DEX', description: 'Swap routing contract' } : null,

@@ -330,9 +330,9 @@ const STEP_LABELS: Record<StepKey, { label: string; description: string }> = {
     description: 'The treasury’s 40% is paid in USDC.e instead of ETX.',
   },
   createWindowWegaz: {
-    label: 'createMetaPair(WEGAZ, USDC.e)',
+    label: 'createMetaPair(EGAZ, USDC.e)',
     description:
-      'Opens the EGAZ/USDC.e window over the WEGAZ/ETX + USDC.e/ETX hub pools (emits V2 PairCreated).',
+      'Opens the EGAZ/USDC.e window over the EGAZ/ETX + USDC.e/ETX hub pools (emits V2 PairCreated).',
   },
   createWindowEti: {
     label: 'createMetaPair(ETI, USDC.e)',
@@ -372,18 +372,18 @@ const STEP_LABELS: Record<StepKey, { label: string; description: string }> = {
     description: 'Split, sinks, treasury token and rescue move to the multisig too.',
   },
   wrapEgaz: {
-    label: 'Wrap EGAZ → WEGAZ',
-    description: 'WEGAZ.deposit with the EGAZ for the EGAZ window.',
+    label: 'Wrap EGAZ for the pool',
+    description: 'Deposits the EGAZ for the EGAZ window into its ERC-20 pool form.',
   },
   sendUsdceWegaz: {
     label: 'Send USDC.e to the EGAZ/USDC.e window',
     description: 'Plain transfer; the window holds it only until mint.',
   },
-  sendWegaz: { label: 'Send WEGAZ to the EGAZ/USDC.e window', description: 'Plain transfer.' },
+  sendWegaz: { label: 'Send EGAZ to the EGAZ/USDC.e window', description: 'Plain transfer (pool form).' },
   mintWegaz: {
     label: 'EGAZ/USDC.e window: mint',
     description:
-      'Turns the two balances into WEGAZ/ETX + USDC.e/ETX hub LP, locked forever; shares → dead.',
+      'Turns the two balances into EGAZ/ETX + USDC.e/ETX hub LP, locked forever; shares → dead.',
   },
   sendUsdceEti: { label: 'Send USDC.e to the ETI/USDC.e window', description: 'Plain transfer.' },
   sendEti: { label: 'Send ETI to the ETI/USDC.e window', description: 'Plain transfer.' },
@@ -1372,9 +1372,9 @@ export function DeployDirectCard({ role }: { role: Role }) {
           <h2 className="mb-3 text-lg font-semibold">Seed plan</h2>
           <p className="text-sm text-white/70">
             Seven signatures from your wallet: wrap EGAZ, then for each window send{' '}
-            <span className="font-mono">{usdPerSide}</span> USDC.e plus the matching WEGAZ / ETI and
+            <span className="font-mono">{usdPerSide}</span> USDC.e plus the matching EGAZ / ETI and
             call <span className="font-mono">mint</span>. The window converts both into hub LP
-            (WEGAZ/ETX, ETI/ETX, USDC.e/ETX) that it can never withdraw; the accounting shares go to
+            (EGAZ/ETX, ETI/ETX, USDC.e/ETX) that it can never withdraw; the accounting shares go to
             the dead address. Amounts are prefilled at the live hub price.
           </p>
           <div className="mt-3 grid gap-1 text-xs sm:grid-cols-3">

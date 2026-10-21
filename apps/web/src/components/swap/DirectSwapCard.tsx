@@ -308,7 +308,7 @@ export function DirectSwapCard({ geoRestricted = false }: { geoRestricted?: bool
   const toBal = (outBal.data as bigint | undefined) ?? 0n;
   const native = nativeBal.data?.value ?? 0n;
   // The EGAZ leg of a window is WEGAZ: output lands wrapped.
-  const outLabel = metaOut ? (metaOut.native ? 'WEGAZ' : metaOut.symbol) : '';
+  const outLabel = metaOut?.symbol ?? '';
   const canUnwrap = Boolean(metaOut?.native && toBal > 0n);
   const shortfall = amountIn > fromBal ? amountIn - fromBal : 0n;
   const canWrap = Boolean(metaIn?.native && shortfall > 0n && native > shortfall);
@@ -509,7 +509,7 @@ export function DirectSwapCard({ geoRestricted = false }: { geoRestricted?: bool
             amount={amountInStr}
             onAmount={(v) => setAmountInStr(sanitizeNumber(v, metaIn.decimals))}
             onMax={() => setAmountInStr(formatUnits(fromBal, metaIn.decimals))}
-            hint={metaIn.native ? `WEGAZ · ${fmt(native, 18, 4)} EGAZ unwrapped` : undefined}
+            hint={metaIn.native ? `${fmt(native, 18, 4)} EGAZ in wallet · wrapped for the pool automatically` : undefined}
           />
           <div className="flex justify-center">
             <button
@@ -539,10 +539,10 @@ export function DirectSwapCard({ geoRestricted = false }: { geoRestricted?: bool
                         disabled={busy}
                         className="text-emerald-300 hover:text-emerald-200 disabled:opacity-50"
                       >
-                        Unwrap {fmt(toBal, 18, 4)} WEGAZ → EGAZ
+                        Move {fmt(toBal, 18, 4)} EGAZ from the pool form into your wallet
                       </button>
                     )
-                  : 'Arrives as WEGAZ (wrapped EGAZ); unwrap here afterwards'
+                  : 'Arrives in pool form; one tap afterwards moves it into your wallet as EGAZ'
                 : undefined
             }
           />

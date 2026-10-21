@@ -52,7 +52,7 @@ function knownAssets(): AssetRow[] {
       ? { symbol: 'ETX', name: 'EticaHub Token', address: d.etx, type: 'ERC-20', description: 'EticaHub routing, rewards, and ecosystem asset.' }
       : null,
     d?.wegaz && d.wegaz !== ZERO
-      ? { symbol: 'WEGAZ', name: 'Wrapped EGAZ', address: d.wegaz, type: 'Wrapped ERC-20', description: 'ERC-20 wrapper around native EGAZ so it can trade in EticaSwap pairs; 1:1 redeemable.' }
+      ? { symbol: 'EGAZ', name: 'EGAZ (pool form)', address: d.wegaz, type: 'ERC-20', description: 'The ERC-20 form of native EGAZ that EticaSwap pools hold; 1:1 with EGAZ.' }
       : null,
   ].filter(Boolean) as AssetRow[];
 }

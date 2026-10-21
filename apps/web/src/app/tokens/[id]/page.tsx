@@ -188,7 +188,7 @@ export default async function TokenPage({ params }: Params): Promise<JSX.Element
         )}
         <span className="ml-auto text-white/35">
           Other tokens:{' '}
-          {TOKEN_IDS.filter((x) => x !== id).map((x, i) => (
+          {TOKEN_IDS.filter((x) => x !== id && x !== 'wegaz').map((x, i) => (
             <span key={x}>
               {i > 0 && ' · '}
               <Link href={`/tokens/${x}`} className="hover:text-white/70">

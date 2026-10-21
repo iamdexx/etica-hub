@@ -21,9 +21,9 @@ import { absoluteUrl } from '@/lib/site';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const TITLE = 'Etica tokens — ETX, ETI, EGAZ, WEGAZ, stETX prices';
+const TITLE = 'Etica tokens — ETX, ETI, EGAZ, stETX, USDC.e prices';
 const DESCRIPTION =
-  'Live on-chain prices, contract addresses and liquidity pools for every token on the Etica mainnet (chain 61803): ETX, ETI, EGAZ, WEGAZ and stETX.';
+  'Live on-chain prices, contract addresses and liquidity pools for every token on the Etica mainnet (chain 61803): ETX, ETI, EGAZ, stETX and USDC.e.';
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -44,7 +44,7 @@ export default async function TokensPage(): Promise<JSX.Element> {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
     name: TITLE,
-    itemListElement: snapshot.tokens.map((t, i) => ({
+    itemListElement: snapshot.tokens.filter((t) => t.token.id !== 'wegaz').map((t, i) => ({
       '@type': 'ListItem',
       position: i + 1,
       name: `${t.token.name} (${t.token.symbol})`,
@@ -84,7 +84,7 @@ export default async function TokensPage(): Promise<JSX.Element> {
             </tr>
           </thead>
           <tbody className="text-white/80">
-            {snapshot.tokens.map((t) => (
+            {snapshot.tokens.filter((t) => t.token.id !== 'wegaz').map((t) => (
               <tr key={t.token.id} className="border-t border-white/5">
                 <td className="px-4 py-3">
                   <Link
