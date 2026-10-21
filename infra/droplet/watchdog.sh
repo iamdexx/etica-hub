@@ -7,7 +7,7 @@
 # sat 5 days behind on 2026-10-16 without anyone noticing. This compares the
 # indexed head with the chain head and:
 #   - restarts SynchronizeBlocks when the DB head has not moved since the last
-#     run while the chain has (stall), or lag exceeds RESTART_LAG blocks
+#     run while the chain has (stall); a large but shrinking lag is left alone
 #   - posts a Telegram alert (deduped via state file) when lag > ALERT_LAG,
 #     and once on recovery
 #   - keeps a nightly pg_dump in ./data/backups (BACKUP_KEEP days)
@@ -19,7 +19,6 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 STATE=".watchdog.state"
 ALERT_LAG="${ALERT_LAG:-100}"
-RESTART_LAG="${RESTART_LAG:-500}"
 BACKUP_KEEP="${BACKUP_KEEP:-7}"
 RPCS="${ETICA_RPC_URLS:-${ETICA_RPC_URL:-https://eticamainnet.eticaprotocol.org},https://61803.rpc.thirdweb.com,https://eticamainnet.eticascan.org}"
 
@@ -57,10 +56,9 @@ prev_db=0; prev_alerting=0
 lag=$(( head - db ))
 echo "$(date -u +%FT%TZ) chain=$head db=$db lag=$lag"
 
+# Only a static DB head is a stall; a large but shrinking lag is a catch-up.
 if (( db == prev_db && head > db )); then
   restart_sync "db head static at $db for one interval"
-elif (( lag > RESTART_LAG )); then
-  restart_sync "lag $lag > $RESTART_LAG"
 fi
 
 alerting=0
@@ -75,7 +73,7 @@ echo "$db $alerting" > "$STATE"
 # Nightly backup (first run after 03:00 UTC each day).
 mkdir -p data/backups
 today="data/backups/eticaenginedb-$(date -u +%F).sql.gz"
-if [[ ! -f "$today" && "$(date -u +%H)" -ge 3 ]]; then
+if [[ ! -f "$today" && 10#$(date -u +%H) -ge 3 ]]; then
   docker compose exec -T db pg_dump -U etica -d eticaenginedb | gzip > "$today.tmp" && mv "$today.tmp" "$today" \
     && find data/backups -name '*.sql.gz' -mtime +"$BACKUP_KEEP" -delete \
     || { rm -f "$today.tmp"; alert "nightly pg_dump failed"; }
