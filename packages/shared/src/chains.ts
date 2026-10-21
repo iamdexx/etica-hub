@@ -16,7 +16,6 @@ export const eticaMainnet = defineChain({
         'https://eticamainnet.eticaprotocol.org',
         'https://61803.rpc.thirdweb.com',
         'https://eticamainnet.eticascan.org',
-        'https://rpc2.etica-stats.org',
       ],
     },
   },
