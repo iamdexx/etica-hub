@@ -1,14 +1,16 @@
 /**
  * GET /api/v1/pairs/[address]
  *
- * Detail view for a single EticaSwap V2 pair. Accepts any EIP-55 address
+ * Detail view for a single EticaSwap V2 pair or Direct (V5) window. Accepts any EIP-55 address
  * form; unknown addresses (non-pair contracts, EOAs) return 404.
  */
 
 import { getAddress, isAddress } from 'viem';
 import {
   API_REVALIDATE_SECONDS,
+  fetchDirectWindow,
   fetchPairByAddress,
+  isDirectWindow,
   jsonError,
   jsonResponse,
   spotPriceFromReserves,
@@ -28,7 +30,10 @@ export async function GET(_req: Request, ctx: Context): Promise<Response> {
   if (!isAddress(address, { strict: false })) {
     return jsonError(400, 'invalid address');
   }
-  const pair = await fetchPairByAddress(getAddress(address));
+  const addr = getAddress(address);
+  const pair = (await isDirectWindow(addr))
+    ? await fetchDirectWindow(addr)
+    : await fetchPairByAddress(addr);
   if (!pair) return jsonError(404, 'pair not found');
 
   const token0 = tokenByAddress(pair.token0);
