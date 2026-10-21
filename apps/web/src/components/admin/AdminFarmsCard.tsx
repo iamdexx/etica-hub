@@ -39,7 +39,7 @@ function ShortAddr({ value }: { value: Address | undefined | null }) {
   if (value === ZERO_ADDRESS) return <span className="font-mono text-amber-300">0x0 (unset)</span>;
   return (
     <a
-      href={`https://eticascan.org/address/${value}`}
+      href={`/explorer/address/${value}`}
       target="_blank"
       rel="noreferrer"
       className="font-mono text-emerald-400 hover:underline"
@@ -53,7 +53,7 @@ function TxLink({ hash }: { hash: Hex | undefined }) {
   if (!hash) return null;
   return (
     <a
-      href={`https://eticascan.org/tx/${hash}`}
+      href={`/explorer/tx/${hash}`}
       target="_blank"
       rel="noreferrer"
       className="font-mono text-emerald-400 hover:underline"

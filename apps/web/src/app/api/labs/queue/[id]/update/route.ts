@@ -27,9 +27,11 @@ import {
 import {
   archiveResearch,
   saveArchivedResearch,
+  getPdbForSequence,
   storePdbForSequence,
   type ArchivedResearch,
 } from '@/lib/labs/archive';
+import { isPublished } from '@/lib/labs/publication';
 import { announceDiscovery } from '@/lib/labs/announce';
 import { cleanProse, resolveDisease } from '@/lib/labs/editorial';
 import { pickBestCandidate, runGrade, verifyRun } from '@/lib/labs/verification';
@@ -77,19 +79,28 @@ function json(data: unknown, init?: ResponseInit): Response {
  * archive keeps a compact Cα-only PDB keyed by sequence hash (deduped, ~2–16KB
  * each). Best-effort: never blocks the job update on an archive write.
  */
-async function persistCandidatePdbs(rawResult: unknown, result: LabsJobResult): Promise<void> {
-  if (!rawResult || typeof rawResult !== 'object') return;
+function rawPdbsByIndex(rawResult: unknown): Map<number, string> {
+  const out = new Map<number, string>();
+  if (!rawResult || typeof rawResult !== 'object') return out;
   const rawPdb = (rawResult as { pdbBySequenceIndex?: unknown }).pdbBySequenceIndex;
-  if (!rawPdb || typeof rawPdb !== 'object') return;
-  const seqByIndex = new Map<number, string>();
-  for (const c of result.candidates) seqByIndex.set(c.index, c.sequence);
+  if (!rawPdb || typeof rawPdb !== 'object') return out;
   for (const [k, v] of Object.entries(rawPdb as Record<string, unknown>)) {
     const idx = Number(k);
     if (!Number.isFinite(idx) || typeof v !== 'string' || !v) continue;
-    const seq = seqByIndex.get(idx);
-    if (!seq) continue;
+    out.set(idx, v);
+  }
+  return out;
+}
+
+async function persistCandidatePdbs(
+  pdbs: ReadonlyMap<number, string>,
+  result: LabsJobResult,
+): Promise<void> {
+  for (const c of result.candidates) {
+    const pdb = pdbs.get(c.index);
+    if (!pdb) continue;
     try {
-      await storePdbForSequence(seq, v);
+      await storePdbForSequence(c.sequence, pdb);
     } catch {
       /* best-effort — archive write must never fail the job update */
     }
@@ -145,6 +156,10 @@ function sanitizeResult(raw: unknown): LabsJobResult | undefined {
       score:
         typeof cr.score === 'number' && Number.isFinite(cr.score)
           ? Math.max(0, Math.min(1, cr.score))
+          : undefined,
+      dockingConfidence:
+        typeof cr.dockingConfidence === 'number' && Number.isFinite(cr.dockingConfidence)
+          ? cr.dockingConfidence
           : undefined,
       error: typeof cr.error === 'string' ? cr.error.slice(0, 400) : undefined,
       structurePending: cr.structurePending === true ? true : undefined,
@@ -215,6 +230,7 @@ export async function POST(
       ? Math.max(0, Math.floor(body.iterationsDelta))
       : 0;
   const result = sanitizeResult(body.result) ?? existing.result;
+  const inlinePdbs = rawPdbsByIndex(body.result);
 
   const now = Date.now();
   const next: LabsJob = {
@@ -240,7 +256,7 @@ export async function POST(
   // inline result only keeps one). Best-effort, after the job is durably saved.
   if (result?.candidates?.length) {
     try {
-      await persistCandidatePdbs(body.result, result);
+      await persistCandidatePdbs(inlinePdbs, result);
     } catch (err) {
       console.error('[labs] persistCandidatePdbs failed (non-fatal):', err);
     }
@@ -285,10 +301,14 @@ export async function POST(
       // publishes: the model's own score happily crowns a repetitive rod
       // that folds to 90 pLDDT, which is confidence in a shape, not in a
       // binder.
-      const verifications = verifyRun(
-        result.candidates,
-        (c) => result.pdbBySequenceIndex?.[c.index] ?? null,
-      );
+      // The sanitized result never keeps PDBs inline, so grade against the
+      // structures the worker sent with this update, falling back to the
+      // per-sequence archive (fold retries land there after the fact).
+      const pdbs = new Map<number, string | null>();
+      for (const c of result.candidates) {
+        pdbs.set(c.index, inlinePdbs.get(c.index) ?? (await getPdbForSequence(c.sequence)));
+      }
+      const verifications = verifyRun(result.candidates, (c) => pdbs.get(c.index));
       const bestCandidate = pickBestCandidate(result.candidates, verifications);
       const archived: ArchivedResearch = {
         id: `${id}-archive`,
@@ -309,6 +329,7 @@ export async function POST(
           analysis: bestCandidate.analysis,
           folded: bestCandidate.folded,
           engine: bestCandidate.engine,
+          dockingConfidence: bestCandidate.dockingConfidence,
           verification: verifications.get(bestCandidate.index),
         },
         candidates: result.candidates.map((c) => ({
@@ -319,12 +340,13 @@ export async function POST(
           analysis: c.analysis,
           folded: c.folded,
           engine: c.engine,
+          dockingConfidence: c.dockingConfidence,
           verification: verifications.get(c.index),
         })),
         verificationGrade: runGrade(bestCandidate, verifications),
         iterations: next.iterations,
         summary: result.summary ?? '',
-        bestPdb: result.pdbBySequenceIndex?.[bestCandidate.index],
+        bestPdb: pdbs.get(bestCandidate.index) ?? undefined,
         references: result.plan.references.map((r) => `${r.source}:${r.id} ${r.title}`),
         minted: false,
         submitterWallet: next.submitterWallet,
@@ -343,7 +365,9 @@ export async function POST(
             archived.parentGoalId = goal.parentGoalId;
             archived.parentCandidateIndex = goal.parentCandidateIndex;
           }
-        } catch { /* non-fatal */ }
+        } catch {
+          /* non-fatal */
+        }
       }
 
       await archiveResearch(archived);
@@ -362,11 +386,8 @@ export async function POST(
       }
 
       try {
-        // Only broadcast work that survives verification — a repetitive
-        // rod posted as a "discovery" costs more credibility than the
-        // post earns.
-        const out =
-          archived.verificationGrade === 'rejected' ? null : await announceDiscovery(archived);
+        // Only published records (verified + grounded) are broadcast.
+        const out = isPublished(archived) ? await announceDiscovery(archived) : null;
         if (out) console.log(`[labs] announced ${archived.id}: tg=${out.telegram} x=${out.x}`);
       } catch (err) {
         console.error('[labs] announce failed (non-fatal):', err);

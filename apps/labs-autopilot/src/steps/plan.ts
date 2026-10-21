@@ -309,7 +309,7 @@ async function fetchKEGG(query: string, limit: number): Promise<Reference[]> {
     return text
       .trim()
       .split('\n')
-      .slice(0, limit)
+        .slice(0, limit)
       .map((line) => {
         const [pathId, ...rest] = line.split('\t');
         const title = rest.join(' ').trim();

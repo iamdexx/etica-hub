@@ -221,7 +221,7 @@ export function DeployEtxCard() {
           <div className="mt-3 text-xs text-white/60">
             Tx:{' '}
             <a
-              href={`https://eticascan.org/tx/${state.txHash}`}
+              href={`/explorer/tx/${state.txHash}`}
               target="_blank"
               rel="noreferrer"
               className="font-mono text-emerald-400 hover:underline"

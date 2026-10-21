@@ -538,7 +538,7 @@ export function HarvestNowCard() {
         <p className="mt-3 text-xs text-white/60">
           Pending:{' '}
           <a
-            href={`https://eticascan.org/tx/${tx.txHash}`}
+            href={`/explorer/tx/${tx.txHash}`}
             target="_blank"
             rel="noreferrer"
             className="font-mono text-emerald-400 hover:underline"
@@ -551,7 +551,7 @@ export function HarvestNowCard() {
         <p className="mt-3 text-xs text-emerald-400">
           Confirmed:{' '}
           <a
-            href={`https://eticascan.org/tx/${tx.txHash}`}
+            href={`/explorer/tx/${tx.txHash}`}
             target="_blank"
             rel="noreferrer"
             className="font-mono hover:underline"

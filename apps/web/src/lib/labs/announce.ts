@@ -77,18 +77,20 @@ export function discoveryFacts(r: ArchivedResearch) {
 export function telegramCaption(r: ArchivedResearch): string {
   const f = discoveryFacts(r);
   const lines = [
-    `🧬 <b>New Labs discovery</b>${f.disease ? ` · ${escapeHtml(f.disease)}` : ''}`,
+    `🧬 <b>New Labs candidate (computational)</b>${f.disease ? ` · ${escapeHtml(f.disease)}` : ''}`,
     '',
     `<b>${escapeHtml(trunc(f.title, 160))}</b>`,
   ];
-  if (r.hypothesis) lines.push('', escapeHtml(trunc(r.hypothesis, 300)));
+  if (r.hypothesis)
+    lines.push('', 'AI hypothesis (not validated): ' + escapeHtml(trunc(r.hypothesis, 300)));
   lines.push(
     '',
     `Best candidate: <b>${f.score}</b> · ${f.residues} aa` +
       (f.engine ? ` · folded by ${escapeHtml(f.engine)}` : ''),
     `${f.folded}/${f.candidates} candidates folded · ${f.iterations} iteration${f.iterations === 1 ? '' : 's'}`,
     '',
-    `<a href="${f.url}">View structure &amp; mint →</a>`,
+    'No experimental or clinical evidence recorded.',
+    `<a href="${f.url}">View computational evidence →</a>`,
   );
   return lines.join('\n');
 }
@@ -99,7 +101,7 @@ const X_URL_LEN = 23;
 
 export function tweetText(r: ArchivedResearch): string {
   const f = discoveryFacts(r);
-  const head = `🧬 New autonomous Labs discovery${f.disease ? ` for ${trunc(f.disease, 60)}` : ''}`;
+  const head = `🧬 New computational Labs candidate${f.disease ? ` for ${trunc(f.disease, 60)}` : ''}`;
   const stats = `${f.score} best candidate · ${f.residues} aa · ${f.folded}/${f.candidates} folded`;
   const tags = '#DeSci #ProteinDesign $ETX';
   const separators = 6; // \n\n, \n, \n\n, \n
@@ -290,7 +292,12 @@ export async function announceDiscovery(
  * from the autopilot dispatch tick; bounded so a long outage can't stall it.
  */
 export async function retryPendingAnnouncements(
-  opts: { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch } = {},
+  opts: {
+    env?: NodeJS.ProcessEnv;
+    fetchImpl?: typeof fetch;
+    /** Records failing this are dropped from the pending set instead of posted. */
+    eligible?: (r: ArchivedResearch) => boolean;
+  } = {},
 ): Promise<{ retried: number; sent: number }> {
   const env = opts.env ?? process.env;
   if (!announcementsEnabled(env)) return { retried: 0, sent: 0 };
@@ -299,11 +306,11 @@ export async function retryPendingAnnouncements(
   let sent = 0;
   for (const id of ids) {
     const record = await getArchivedResearch(id);
-    if (!record) {
+    if (!record || (opts.eligible && !opts.eligible(record))) {
       await store.srem(PENDING_SET, id);
       continue;
     }
-    const out = await announceDiscovery(record, { ...opts, env });
+    const out = await announceDiscovery(record, { env, fetchImpl: opts.fetchImpl });
     if (out && out.telegram !== 'failed' && out.x !== 'failed') sent += 1;
   }
   return { retried: ids.length, sent };
