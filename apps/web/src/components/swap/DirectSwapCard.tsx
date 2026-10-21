@@ -509,7 +509,7 @@ export function DirectSwapCard({ geoRestricted = false }: { geoRestricted?: bool
             amount={amountInStr}
             onAmount={(v) => setAmountInStr(sanitizeNumber(v, metaIn.decimals))}
             onMax={() => setAmountInStr(formatUnits(fromBal, metaIn.decimals))}
-            hint={metaIn.native ? `${fmt(native, 18, 4)} EGAZ in wallet · wrapped for the pool automatically` : undefined}
+            hint={metaIn.native ? `${fmt(native, 18, 4)} EGAZ in wallet · the Wrap button below moves it into pool form first` : undefined}
           />
           <div className="flex justify-center">
             <button

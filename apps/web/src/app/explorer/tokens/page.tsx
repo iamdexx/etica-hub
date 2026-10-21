@@ -19,6 +19,8 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 type AssetRow = {
   symbol: string;
   name: string;
+  /** Keep the registry label even when the contract reports another symbol/name. */
+  pinLabel?: boolean;
   /** `null` for the native coin — it has no contract. */
   address: `0x${string}` | null;
   type: string;
@@ -52,7 +54,7 @@ function knownAssets(): AssetRow[] {
       ? { symbol: 'ETX', name: 'EticaHub Token', address: d.etx, type: 'ERC-20', description: 'EticaHub routing, rewards, and ecosystem asset.' }
       : null,
     d?.wegaz && d.wegaz !== ZERO
-      ? { symbol: 'EGAZ', name: 'EGAZ (pool form)', address: d.wegaz, type: 'ERC-20', description: 'The ERC-20 form of native EGAZ that EticaSwap pools hold; 1:1 with EGAZ.' }
+      ? { symbol: 'EGAZ', name: 'EGAZ (pool form)', pinLabel: true, address: d.wegaz, type: 'ERC-20', description: 'The ERC-20 form of native EGAZ that EticaSwap pools hold; 1:1 with EGAZ.' }
       : null,
   ].filter(Boolean) as AssetRow[];
 }
@@ -77,8 +79,8 @@ async function resolveRow(
   ]);
   return {
     ...row,
-    symbol: String(symbol || row.symbol),
-    name: String(name || row.name),
+    symbol: row.pinLabel ? row.symbol : String(symbol || row.symbol),
+    name: row.pinLabel ? row.name : String(name || row.name),
     decimals: Number(decimals || 18),
     supply,
     deployed: typeof code === 'string' && code !== '0x',
