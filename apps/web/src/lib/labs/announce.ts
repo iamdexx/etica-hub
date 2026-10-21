@@ -28,7 +28,6 @@ import { scoreOutOf100 } from '@/lib/seo/labs';
 import { type ArchivedResearch, getArchivedResearch } from './archive';
 import { labsStore } from './store';
 
-
 type Channel = 'telegram' | 'x';
 const ANNOUNCED_SET = (channel: Channel) => `labs:archive:announced:${channel}`;
 /** Record ids with at least one channel still unsent; drained by `retryPendingAnnouncements`. */
@@ -82,7 +81,8 @@ export function telegramCaption(r: ArchivedResearch): string {
     '',
     `<b>${escapeHtml(trunc(f.title, 160))}</b>`,
   ];
-  if (r.hypothesis) lines.push('', 'AI hypothesis (not validated): ' + escapeHtml(trunc(r.hypothesis, 300)));
+  if (r.hypothesis)
+    lines.push('', 'AI hypothesis (not validated): ' + escapeHtml(trunc(r.hypothesis, 300)));
   lines.push(
     '',
     `Best candidate: <b>${f.score}</b> · ${f.residues} aa` +
@@ -292,7 +292,12 @@ export async function announceDiscovery(
  * from the autopilot dispatch tick; bounded so a long outage can't stall it.
  */
 export async function retryPendingAnnouncements(
-  opts: { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch } = {},
+  opts: {
+    env?: NodeJS.ProcessEnv;
+    fetchImpl?: typeof fetch;
+    /** Records failing this are dropped from the pending set instead of posted. */
+    eligible?: (r: ArchivedResearch) => boolean;
+  } = {},
 ): Promise<{ retried: number; sent: number }> {
   const env = opts.env ?? process.env;
   if (!announcementsEnabled(env)) return { retried: 0, sent: 0 };
@@ -301,11 +306,11 @@ export async function retryPendingAnnouncements(
   let sent = 0;
   for (const id of ids) {
     const record = await getArchivedResearch(id);
-    if (!record) {
+    if (!record || (opts.eligible && !opts.eligible(record))) {
       await store.srem(PENDING_SET, id);
       continue;
     }
-    const out = await announceDiscovery(record, { ...opts, env });
+    const out = await announceDiscovery(record, { env, fetchImpl: opts.fetchImpl });
     if (out && out.telegram !== 'failed' && out.x !== 'failed') sent += 1;
   }
   return { retried: ids.length, sent };

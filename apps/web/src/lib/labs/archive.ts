@@ -610,6 +610,8 @@ export function entrySources(entry: ArchivedResearch): string[] {
   return Array.from(out);
 }
 
+const ARCHIVE_LOAD_CONCURRENCY = 25;
+
 export async function searchArchive(opts: ArchiveSearchOptions): Promise<ArchiveSearchResult> {
   const store = labsStore();
   const limit = Math.min(opts.limit ?? 50, 200);
@@ -642,8 +644,13 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
   const diseaseCounts = new Map<string, number>();
   const sourceCounts = new Map<string, number>();
 
-  for (const id of candidateIds) {
-    const raw = await store.get(ARCHIVE_KEY(id));
+  const raws: Array<string | null> = [];
+  for (let i = 0; i < candidateIds.length; i += ARCHIVE_LOAD_CONCURRENCY) {
+    const batch = candidateIds.slice(i, i + ARCHIVE_LOAD_CONCURRENCY);
+    raws.push(...(await Promise.all(batch.map((id) => store.get(ARCHIVE_KEY(id))))));
+  }
+
+  for (const raw of raws) {
     if (!raw) continue;
     const entry: ArchivedResearch = JSON.parse(raw);
 

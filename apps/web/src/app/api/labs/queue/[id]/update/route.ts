@@ -147,6 +147,10 @@ function sanitizeResult(raw: unknown): LabsJobResult | undefined {
         typeof cr.score === 'number' && Number.isFinite(cr.score)
           ? Math.max(0, Math.min(1, cr.score))
           : undefined,
+      dockingConfidence:
+        typeof cr.dockingConfidence === 'number' && Number.isFinite(cr.dockingConfidence)
+          ? cr.dockingConfidence
+          : undefined,
       error: typeof cr.error === 'string' ? cr.error.slice(0, 400) : undefined,
       structurePending: cr.structurePending === true ? true : undefined,
     });
@@ -344,7 +348,9 @@ export async function POST(
             archived.parentGoalId = goal.parentGoalId;
             archived.parentCandidateIndex = goal.parentCandidateIndex;
           }
-        } catch { /* non-fatal */ }
+        } catch {
+          /* non-fatal */
+        }
       }
 
       await archiveResearch(archived);
@@ -364,8 +370,7 @@ export async function POST(
 
       try {
         // Only published records (verified + grounded) are broadcast.
-        const out =
-          isPublished(archived) ? await announceDiscovery(archived) : null;
+        const out = isPublished(archived) ? await announceDiscovery(archived) : null;
         if (out) console.log(`[labs] announced ${archived.id}: tg=${out.telegram} x=${out.x}`);
       } catch (err) {
         console.error('[labs] announce failed (non-fatal):', err);

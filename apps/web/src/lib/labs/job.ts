@@ -65,6 +65,8 @@ export interface LabsCandidateResult {
    * to this candidate. Worker may populate later iterations.
    */
   score?: number;
+  /** Docking model confidence, if the worker ran docking. A prediction, not binding evidence. */
+  dockingConfidence?: number;
   /** Fold attempt error message, if `folded` is false. */
   error?: string;
   /**
