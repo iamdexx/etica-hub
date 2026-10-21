@@ -12,6 +12,7 @@ import { fetchUsdAnchors } from '@/lib/buybot/oracle';
 import { fetchAnchorEtxUsd } from '@/lib/buybot/scan';
 import {
   apiTokens,
+  fetchAllDirectWindows,
   fetchAllPairs,
   priceClient,
   priceVia,
@@ -75,11 +76,14 @@ export interface TokenSnapshot {
   pools: PoolSnapshot[];
 }
 
-export type PoolKind = 'v2' | 'stableswap';
+export type PoolKind = 'v2' | 'stableswap' | 'direct';
 
 export interface PoolSnapshot {
   address: Address;
-  /** V2 constant-product pair, or the standalone stETX/ETX rate-aware stableswap. */
+  /**
+   * V2 constant-product pair, the standalone stETX/ETX rate-aware stableswap, or an
+   * EticaSwap Direct (V5) window whose liquidity is ETX hub LP (reserves = hub-backed view).
+   */
   kind: PoolKind;
   token0: ApiToken;
   token1: ApiToken;
@@ -115,6 +119,7 @@ function poolSnapshot(
   p: ApiPairRaw,
   pairs: ApiPairRaw[],
   etxUsd: number | null,
+  kind: 'v2' | 'direct' = 'v2',
 ): PoolSnapshot | null {
   const t0 = tokenByAddress(p.token0);
   const t1 = tokenByAddress(p.token1);
@@ -127,7 +132,7 @@ function poolSnapshot(
   const tvlEtx = p0 !== null && p1 !== null ? r0 * p0 + r1 * p1 : null;
   return {
     address: getAddress(p.address),
-    kind: 'v2',
+    kind,
     token0: t0,
     token1: t1,
     reserve0: r0,
@@ -245,6 +250,12 @@ export async function loadMarketSnapshot(): Promise<MarketSnapshot> {
     .filter((p): p is PoolSnapshot => p !== null);
   const stable = await loadStableSwapPool(client, etxUsd);
   if (stable) pools.push(stable);
+  // Windows are priced off the hub pairs they wrap, so `pairs` stays the hub-only set here.
+  const windows = await fetchAllDirectWindows(client).catch(() => [] as ApiPairRaw[]);
+  for (const w of windows) {
+    const snap = poolSnapshot(w, pairs, etxUsd, 'direct');
+    if (snap) pools.push(snap);
+  }
 
   const etx = tokenById('etx');
   const eti = tokenById('eti');
@@ -283,7 +294,7 @@ export function poolName(p: PoolSnapshot): string {
 }
 
 export function poolKindLabel(p: PoolSnapshot): string {
-  return p.kind === 'stableswap' ? 'stableswap' : 'V2';
+  return p.kind === 'stableswap' ? 'stableswap' : p.kind === 'direct' ? 'Direct (V5)' : 'V2';
 }
 
 export function poolPath(p: PoolSnapshot): string {

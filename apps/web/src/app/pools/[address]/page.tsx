@@ -57,10 +57,12 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
   if (!p) notFound();
 
   const isV2 = p.kind === 'v2';
-  const volume = isV2
+  const isDirect = p.kind === 'direct';
+  const hasPairSurface = isV2 || isDirect;
+  const volume = hasPairSurface
     ? await loadPairVolume(p.address, VOLUME_WINDOW_24H_SECONDS).catch(() => null)
     : null;
-  const jsonUrl = absoluteUrl(isV2 ? `/api/v1/pairs/${p.address}` : '/api/v1/tvl');
+  const jsonUrl = absoluteUrl(hasPairSurface ? `/api/v1/pairs/${p.address}` : '/api/v1/tvl');
   const name = poolName(p);
   const url = absoluteUrl(poolPath(p));
   const vol0 = volume ? Number(volume.summary.volume0) / 10 ** p.token0.decimals : null;
@@ -116,7 +118,11 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
         <h1 className="text-2xl font-semibold text-white/95">{name}</h1>
         <p className="font-mono text-xs text-white/50">{p.address}</p>
         <p className="text-sm text-white/65">
-          {isV2 ? 'Constant-product pool between' : 'Rate-aware stableswap between'}{' '}
+          {isV2
+            ? 'Constant-product pool between'
+            : isDirect
+              ? 'Direct (V5) window between'
+              : 'Rate-aware stableswap between'}{' '}
           <Link href={tokenPath(p.token0)} className="text-emerald-200/80 hover:text-emerald-200">
             {p.token0.name}
           </Link>{' '}
@@ -127,7 +133,9 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
           .{' '}
           {isV2
             ? 'Liquidity providers earn the swap fee on every trade routed through this pair.'
-            : 'The curve tracks the live stETX redemption rate, so the quoted price is the vault NAV and both legs are valued in ETX-equivalent terms.'}
+            : isDirect
+              ? 'Its liquidity is protocol-owned ETX hub LP and every swap settles through the hub pools behind it, so the reserves shown are the hub-backed view at hub spot.'
+              : 'The curve tracks the live stETX redemption rate, so the quoted price is the vault NAV and both legs are valued in ETX-equivalent terms.'}
         </p>
       </header>
 
@@ -174,7 +182,7 @@ export default async function PoolPage({ params }: Params): Promise<JSX.Element>
             </dl>
           ) : (
             <p className="text-xs text-white/50">
-              {isV2 ? 'Volume scan unavailable.' : 'Not tracked for the stableswap yet.'}
+              {hasPairSurface ? 'Volume scan unavailable.' : 'Not tracked for the stableswap yet.'}
             </p>
           )}
         </Card>
