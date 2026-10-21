@@ -628,7 +628,7 @@ export function PoolStableSwapCard() {
             <div className="text-white/60">
               Pending:{' '}
               <a
-                href={`https://eticascan.org/tx/${activeHash}`}
+                href={`/explorer/tx/${activeHash}`}
                 target="_blank"
                 rel="noreferrer"
                 className="font-mono text-emerald-400 hover:underline"
@@ -641,7 +641,7 @@ export function PoolStableSwapCard() {
             <div className="text-emerald-400">
               Confirmed:{' '}
               <a
-                href={`https://eticascan.org/tx/${activeHash}`}
+                href={`/explorer/tx/${activeHash}`}
                 target="_blank"
                 rel="noreferrer"
                 className="font-mono hover:underline"

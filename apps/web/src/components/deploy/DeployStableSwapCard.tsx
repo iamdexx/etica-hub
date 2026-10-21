@@ -70,7 +70,7 @@ function StateBadge({ state, label }: { state: TxState; label: string }) {
         <>
           {' · tx '}
           <a
-            href={`https://eticascan.org/tx/${state.txHash}`}
+            href={`/explorer/tx/${state.txHash}`}
             target="_blank"
             rel="noreferrer"
             className="font-mono text-emerald-400 hover:underline"
