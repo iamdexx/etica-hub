@@ -19,6 +19,8 @@ function groundingTexts(research: ArchivedResearch): string[] {
     research.hypothesis,
     research.approach,
     research.successCriteria ?? '',
+    research.summary,
+    ...research.candidates.flatMap((c) => [c.rationale, c.analysis ?? '']),
     ...(Array.isArray(research.references) ? research.references : []),
   ].filter(Boolean);
 }
@@ -35,7 +37,10 @@ export async function groundArchivedResearch(
   try {
     const result = await groundRun(groundingTexts(research));
     return {
+      policyVersion: 2,
       checkedAt: Date.now(),
+      uncheckedSymbols: result.uncheckedSymbols ?? [],
+      citations: result.citations ?? [],
       summary: groundingSummary(result),
       targets: result.grounded.map((t) => ({
         symbol: t.symbol,

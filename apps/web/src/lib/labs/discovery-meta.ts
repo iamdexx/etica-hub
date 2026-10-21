@@ -7,7 +7,7 @@ export function discoveryTitle(r: ArchivedResearch): string {
 export function discoveryDescription(r: ArchivedResearch): string {
   const parts = [
     r.disease ? `${r.disease}:` : null,
-    r.hypothesis || r.summary || r.bestCandidate.rationale,
+    'Computational candidate; no experimental or clinical evidence recorded.',
   ].filter(Boolean);
   const text = parts.join(' ').replace(/\s+/g, ' ').trim();
   if (!text) return 'AI-designed protein candidate from EticaHub Labs.';

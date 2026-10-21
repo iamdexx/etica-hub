@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation';
 
 import { ShareButtons } from '@/components/labs/ShareButtons';
 import { getArchivedResearch } from '@/lib/labs/archive';
+import { researchEvidence, publicationDecision } from '@/lib/labs/publication';
 import { labsQueue } from '@/lib/labs/queue';
 import { discoveryDescription, discoveryTitle } from '@/lib/labs/discovery-meta';
 import { scoreLabel } from '@/lib/labs/plain-summary';
@@ -33,6 +34,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return {
     title,
     description,
+    robots: publicationDecision(r).status === 'draft' ? { index: false, follow: true } : undefined,
     alternates: { canonical: url },
     openGraph: {
       title,
@@ -58,6 +60,7 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
 
   const title = discoveryTitle(r);
   const url = absoluteUrl(`/labs/archive/${encodeURIComponent(id)}`);
+  const evidence = researchEvidence(r);
   const best = r.bestCandidate;
   const score = best.score;
   const timelineAvailable = await labsQueue()
@@ -77,7 +80,7 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
     keywords: [r.disease, 'protein design', 'ESMFold', 'DeSci'].filter(Boolean),
     isAccessibleForFree: true,
     license: 'https://creativecommons.org/publicdomain/zero/1.0/',
-    citation: r.references,
+    citation: r.grounding?.citations?.map((c) => c.url) ?? [],
   };
 
   return (
@@ -133,34 +136,106 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
         <ShareButtons url={url} text={`${title} — AI-designed protein on EticaHub Labs`} />
       </header>
 
+      <Card
+        label={
+          evidence.publication.status === 'published'
+            ? 'Computational screening passed'
+            : 'Draft — screening incomplete'
+        }
+      >
+        <p>{evidence.notice}</p>
+        {evidence.publication.reasons.length > 0 && (
+          <ul className="mt-2 list-inside list-disc text-xs text-amber-200">
+            {evidence.publication.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        )}
+        <dl className="mt-3 space-y-1 text-xs text-white/65">
+          <div>
+            Binding:{' '}
+            {evidence.binding.status === 'docking-prediction'
+              ? `docking prediction (${evidence.binding.score}); not a probability or binding measurement`
+              : 'no evidence recorded'}
+          </div>
+          <div>Experimental / clinical evidence: none recorded</div>
+          <div>Novelty against known proteins: not assessed</div>
+          <div>Citation support for the hypothesis: not assessed</div>
+        </dl>
+      </Card>
+      <Card label="Download archived artifacts">
+        <a className="underline" href={`/api/labs/archive/${encodeURIComponent(r.id)}?format=json`}>
+          Full JSON + evidence metadata
+        </a>
+        {' · '}
+        <a
+          className="underline"
+          href={`/api/labs/archive/${encodeURIComponent(r.id)}?format=fasta`}
+        >
+          All sequences (FASTA)
+        </a>
+        <ul className="mt-3 space-y-2 text-xs">
+          {r.candidates.map((c) => (
+            <li key={c.index}>
+              Candidate {c.index} · {c.sequence.length} aa · {c.engine ?? 'engine not recorded'}
+              {' · '}
+              <a
+                className="underline"
+                href={`/api/labs/archive/${encodeURIComponent(r.id)}?format=fasta&candidate=${c.index}`}
+              >
+                FASTA
+              </a>
+              {' · '}
+              <a
+                className="underline"
+                href={`/api/labs/archive/${encodeURIComponent(r.id)}?format=pdb&candidate=${c.index}`}
+              >
+                Stored predicted Cα PDB
+              </a>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-xs text-white/50">
+          PDB downloads return “coordinates not stored” when unavailable; no structure is
+          fabricated.
+        </p>
+      </Card>
       <section className="grid gap-4 sm:grid-cols-2">
-        <Card label="Hypothesis">{r.hypothesis || '—'}</Card>
-        <Card label="Approach">{r.approach || '—'}</Card>
+        <Card label="AI hypothesis — not validated">{r.hypothesis || '—'}</Card>
+        <Card label="Proposed approach">{r.approach || '—'}</Card>
       </section>
 
       {(r.summary || best.rationale) && (
-        <Card label="Findings">{r.summary || best.rationale}</Card>
+        <Card label="AI interpretation — not validated">{r.summary || best.rationale}</Card>
       )}
 
-      <Card label={`Best candidate · ${best.sequence.length} aa${best.folded ? ' · folded' : ''}${best.engine ? ` · ${best.engine}` : ''}`}>
+      <Card
+        label={`Best candidate · ${best.sequence.length} aa${best.folded ? ' · folded' : ''}${best.engine ? ` · ${best.engine}` : ''}`}
+      >
         <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-white/75">
           {best.sequence}
         </pre>
-        {best.analysis && <p className="mt-3 text-xs text-white/60">{best.analysis}</p>}
+        {best.analysis && (
+          <p className="mt-3 text-xs text-white/60">AI analysis (not validated): {best.analysis}</p>
+        )}
       </Card>
 
       {best.verification && (
         <Card label={`Verification · ${GRADE_LABEL[best.verification.grade]}`}>
           <p className="mb-3 text-xs text-white/55">
-            Deterministic checks on the sequence and the predicted Cα trace — no model opinion.
-            They bound how seriously a design can be taken; they cannot show that it binds
-            anything. Re-run them yourself:{' '}
-            <code className="font-mono text-white/70">/api/labs/verify?sequence={best.sequence.slice(0, 12)}…</code>
+            Deterministic checks on the sequence and the predicted Cα trace — no model opinion. They
+            bound how seriously a design can be taken; they cannot show that it binds anything.
+            Re-run them yourself:{' '}
+            <code className="font-mono text-white/70">
+              /api/labs/verify?sequence={best.sequence.slice(0, 12)}…
+            </code>
           </p>
           <ul className="space-y-1 text-xs">
             {best.verification.checks.map((check) => (
               <li key={check.id} className="flex gap-2">
-                <span className={`w-14 shrink-0 uppercase tracking-wider ${CHECK_STYLE[check.status]}`}>
+                <span
+                  className={`w-14 shrink-0 uppercase tracking-wider ${CHECK_STYLE[check.status]}`}
+                >
                   {check.status}
                 </span>
                 <span className="text-white/70">
@@ -173,11 +248,24 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
         </Card>
       )}
 
+      {!!r.grounding?.citations?.length && (
+        <Card label="Resolved PubMed records — existence only">
+          <ul className="space-y-2 text-xs">
+            {r.grounding.citations.map((c) => (
+              <li key={c.id}>
+                <a href={c.url} target="_blank" rel="noreferrer" className="underline">
+                  PMID {c.id}: {c.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       {r.grounding && (
         <Card label="Target grounding">
           <p className="mb-3 text-xs text-white/55">
-            The proteins and papers this run names, resolved against UniProt and PubMed. A
-            resolved target means the protein exists — not that this design binds it.
+            The proteins and papers this run names, resolved against UniProt and PubMed. A resolved
+            target means the protein exists — not that this design binds it.
           </p>
           {r.grounding.targets.length > 0 && (
             <ul className="space-y-1 text-xs">
@@ -227,7 +315,12 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
             {r.references.map((ref) => (
               <li key={ref} className="break-all">
                 {/^https?:\/\//.test(ref) ? (
-                  <a href={ref} target="_blank" rel="noopener noreferrer" className="hover:text-white">
+                  <a
+                    href={ref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-white"
+                  >
                     {ref}
                   </a>
                 ) : (
@@ -245,14 +338,20 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
           {r.candidates.length === 1 ? '' : 's'}
         </span>
         {timelineAvailable ? (
-          <Link href={`/labs/feed/${r.jobId}`} className="text-emerald-200/80 hover:text-emerald-200">
+          <Link
+            href={`/labs/feed/${r.jobId}`}
+            className="text-emerald-200/80 hover:text-emerald-200"
+          >
             Full run timeline →
           </Link>
         ) : (
           <span className="text-white/35">run timeline expired · run {r.jobId}</span>
         )}
         {r.mintTxHash && (
-          <Link href={`/explorer/tx/${r.mintTxHash}`} className="text-amber-200/80 hover:text-amber-200">
+          <Link
+            href={`/explorer/tx/${r.mintTxHash}`}
+            className="text-amber-200/80 hover:text-amber-200"
+          >
             Mint tx →
           </Link>
         )}

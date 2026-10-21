@@ -103,7 +103,15 @@ export interface TargetHit {
   organism: string;
 }
 
+export interface CitationHit {
+  id: string;
+  title: string;
+  url: string;
+}
+
 export interface GroundingResult {
+  uncheckedSymbols?: string[];
+  citations?: CitationHit[];
   /** Symbols extracted from the text that resolved to a UniProt entry. */
   grounded: TargetHit[];
   /** Symbols that look like targets but resolved to nothing. */
@@ -189,15 +197,16 @@ export async function resolveTarget(symbol: string): Promise<TargetHit | null> {
   const query = encodeURIComponent(`gene:${symbol} AND organism_id:9606`);
   const url = `${UNIPROT_SEARCH}?query=${query}&fields=accession,id,protein_name,gene_names,organism_name,reviewed&size=5`;
   const data = await fetchJson<UniProtResponse>(url);
-  const results = data.results ?? [];
+  if (!Array.isArray(data.results)) throw new LookupUnavailableError(url, 'invalid response');
+  const results = data.results;
   if (results.length === 0) return null;
 
-  const exact = results.find((r) =>
+  const exact = results.filter((r) =>
     (r.genes ?? []).some((g) => g.geneName?.value?.toUpperCase() === symbol.toUpperCase()),
   );
-  const reviewed = results.find((r) => r.entryType?.includes('Swiss-Prot'));
-  const hit = exact ?? reviewed ?? results[0]!;
-  if (!hit.primaryAccession) return null;
+  const hit = exact.find((r) => r.entryType?.includes('Swiss-Prot')) ?? exact[0];
+  if (!hit) return null;
+  if (!hit.primaryAccession) throw new LookupUnavailableError(url, 'missing accession');
   return {
     symbol,
     accession: hit.primaryAccession,
@@ -212,7 +221,9 @@ export async function resolveTarget(symbol: string): Promise<TargetHit | null> {
 export function extractPubmedIds(texts: readonly string[]): string[] {
   const out = new Set<string>();
   for (const text of texts) {
-    for (const m of text.matchAll(/(?:pubmed(?:\.ncbi\.nlm\.nih\.gov)?\/|PMID:?\s*)(\d{5,8})/gi)) {
+    for (const m of text.matchAll(
+      /(?:pubmed(?:\.ncbi\.nlm\.nih\.gov)?[/:]\s*|PMID:?\s*)(\d{5,8})/gi,
+    )) {
       out.add(m[1]!);
     }
   }
@@ -226,19 +237,24 @@ interface PubmedSummary {
 /** Split cited PubMed IDs into those that exist and those that do not. */
 export async function checkPubmedIds(
   ids: readonly string[],
-): Promise<{ found: string[]; missing: string[] }> {
-  if (ids.length === 0) return { found: [], missing: [] };
+): Promise<{ found: string[]; missing: string[]; citations: CitationHit[] }> {
+  if (ids.length === 0) return { found: [], missing: [], citations: [] };
   const url = `${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`;
   const data = await fetchJson<PubmedSummary>(url);
-  if (!data.result) return { found: [], missing: [...ids] };
+  if (!data.result) throw new LookupUnavailableError(url, 'invalid response');
   const found: string[] = [];
   const missing: string[] = [];
+  const citations: CitationHit[] = [];
   for (const id of ids) {
     const entry = data.result[id];
-    if (entry && !entry.error && entry.title) found.push(id);
-    else missing.push(id);
+    if (!entry) throw new LookupUnavailableError(url, `missing summary for PMID ${id}`);
+    if (entry.error) missing.push(id);
+    else if (entry.uid === id && entry.title) {
+      found.push(id);
+      citations.push({ id, title: entry.title, url: `https://pubmed.ncbi.nlm.nih.gov/${id}/` });
+    } else throw new LookupUnavailableError(url, `invalid summary for PMID ${id}`);
   }
-  return { found, missing };
+  return { found, missing, citations };
 }
 
 /**
@@ -251,7 +267,9 @@ export async function groundRun(
   texts: readonly string[],
   maxSymbols = 6,
 ): Promise<GroundingResult> {
-  const symbols = extractTargetSymbols(texts.join(' ')).slice(0, maxSymbols);
+  const allSymbols = extractTargetSymbols(texts.join(' '));
+  const symbols = allSymbols.slice(0, maxSymbols);
+  const uncheckedSymbols = allSymbols.slice(maxSymbols);
   const hits = await Promise.all(symbols.map((s) => resolveTarget(s)));
   const grounded: TargetHit[] = [];
   const unresolved: string[] = [];
@@ -259,8 +277,15 @@ export async function groundRun(
     if (hit) grounded.push(hit);
     else unresolved.push(symbols[i]!);
   });
-  const { found, missing } = await checkPubmedIds(extractPubmedIds(texts));
-  return { grounded, unresolved, citationsFound: found, citationsMissing: missing };
+  const { found, missing, citations } = await checkPubmedIds(extractPubmedIds(texts));
+  return {
+    grounded,
+    unresolved,
+    uncheckedSymbols,
+    citations,
+    citationsFound: found,
+    citationsMissing: missing,
+  };
 }
 
 /** One-line human summary for archive records and the UI. */
@@ -277,7 +302,7 @@ export function groundingSummary(result: GroundingResult): string {
     parts.push(`unresolved symbols: ${result.unresolved.join(', ')}`);
   }
   if (result.citationsFound.length > 0) {
-    parts.push(`${result.citationsFound.length} citation(s) verified in PubMed`);
+    parts.push(`${result.citationsFound.length} citation identifier(s) resolved in PubMed`);
   }
   if (result.citationsMissing.length > 0) {
     parts.push(`${result.citationsMissing.length} cited PMID(s) not found`);
