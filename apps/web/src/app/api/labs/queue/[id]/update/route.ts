@@ -314,6 +314,7 @@ export async function POST(
           analysis: bestCandidate.analysis,
           folded: bestCandidate.folded,
           engine: bestCandidate.engine,
+          dockingConfidence: bestCandidate.dockingConfidence,
           verification: verifications.get(bestCandidate.index),
         },
         candidates: result.candidates.map((c) => ({
@@ -324,6 +325,7 @@ export async function POST(
           analysis: c.analysis,
           folded: c.folded,
           engine: c.engine,
+          dockingConfidence: c.dockingConfidence,
           verification: verifications.get(c.index),
         })),
         verificationGrade: runGrade(bestCandidate, verifications),
