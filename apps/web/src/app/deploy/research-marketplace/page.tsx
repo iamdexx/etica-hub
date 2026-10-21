@@ -269,7 +269,7 @@ export default function DeployResearchMarketplacePage() {
           </p>
           <pre className="overflow-x-auto rounded-lg bg-black/50 p-3 text-xs text-emerald-300">
 {`forge create src/labs/EticaResearchMarketplace.sol:EticaResearchMarketplace \\
-  --rpc-url https://rpc2.etica-stats.org \\
+  --rpc-url https://eticamainnet.eticaprotocol.org \\
   --private-key $DEPLOYER_PK \\
   --constructor-args ${nftAddr ?? '0x...'} ${abandonedPriceBps}`}
           </pre>

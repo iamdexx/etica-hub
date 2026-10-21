@@ -14,7 +14,7 @@ import {EtomicSwap} from "../src/atomic-swap/EtomicSwap.sol";
 ///   FEE_RECIPIENT_2=0x... \
 ///   FEE_RECIPIENT_3=0x... \
 ///   forge script script/DeployEtomicSwap.s.sol \
-///     --rpc-url https://rpc2.etica-stats.org \
+///     --rpc-url https://eticamainnet.eticaprotocol.org \
 ///     --broadcast --verify --verifier sourcify
 contract DeployEtomicSwap is Script {
     function run() external {

@@ -47,7 +47,7 @@ Layer 1 — Etica Protocol (the chain itself):
   - The protocol is run for open-source drug development: research without intellectual property, results immediately usable by anyone, researchers paid in ETI for accepted proposals. AQGenesis is one of the active research collectives on Etica (AI + quantum-computing focus on open-source medical research).
   - Etica Protocol smart contract: 0x34c61EA91bAcdA647269d4e310A86b875c09946f.
   - Period system: Etica time is divided into 7-day Periods starting Thursday 00:00 UTC. Each Period has a fixed ETI research-reward budget split between researchers (proposers of accepted proposals) and voters. Proposals get accepted when their bosom-weighted approval rate exceeds ProtocolThreshold (45-99%, recalibrated every 5 weeks toward a 61.80% target acceptance ratio). Disease creation costs 100 ETI burned. Proposal submission costs 10 bosoms (acquired by staking ETI for 28 days, 1 bosom per ETI staked).
-  - Public RPC endpoints: rpc2.etica-stats.org, eticamainnet.eticaprotocol.org, eticamainnet.eticascan.org.
+  - Public RPC endpoints: eticamainnet.eticaprotocol.org, eticamainnet.eticascan.org, rpc2.etica-stats.org.
 
 Layer 2 — EticaHub (a community-built application layer on Etica):
   - Independent third-party project; does NOT speak for Etica Protocol's core team. Has no shared treasury, multisig, branding, or roadmap with Etica Protocol — it consumes Etica's public contracts (ETI, EGAZ, proposal contracts) the same way any dapp would.

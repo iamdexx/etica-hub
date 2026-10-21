@@ -42,7 +42,7 @@ function Footer() {
           <a href="https://github.com/etica/etica-explorer-engine" target="_blank" rel="noopener">
             Etica Explorer Engine
           </a>{" "}
-          | Chain ID: 61803 | RPC: rpc2.etica-stats.org
+          | Chain ID: 61803 | RPC: eticamainnet.eticaprotocol.org
         </p>
       </div>
     </footer>

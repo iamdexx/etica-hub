@@ -54,7 +54,7 @@ jobs:
       # Writes always go through Flashbots Protect. A secret because provider
       # URLs embed API keys.
       BRIDGE_GAS_ETHEREUM_RPC_URL: ${{ secrets.BRIDGE_ETHEREUM_RPC_URL }}
-      BRIDGE_GAS_ETICA_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      BRIDGE_GAS_ETICA_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
       # Filled from infra/hyperlane/registry/deployments/warp_routes/USDC/etica-config.yaml
       # after `deploy.sh warp`; blank = leg skipped.
       BRIDGE_GAS_ETHEREUM_FEE_CONTRACT: ${{ vars.BRIDGE_ETHEREUM_FEE_CONTRACT || '0x383C76362899c4bdd43a6a5a57BAf6f83D2d7527' }}

@@ -52,7 +52,7 @@ jobs:
       BRIDGE_SEED_ETX_USD: ${{ inputs.etx_usd }}
       # Same endpoints as the hourly bridge-gas keeper.
       BRIDGE_SEED_ETHEREUM_RPC_URL: ${{ secrets.BRIDGE_ETHEREUM_RPC_URL }}
-      BRIDGE_SEED_ETICA_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      BRIDGE_SEED_ETICA_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
     steps:
       - name: Guard against missing gas-payer key
         if: ${{ env.HARVEST_PRIVATE_KEY == '' && env.BRIDGE_SEED_DRY_RUN != 'true' }}

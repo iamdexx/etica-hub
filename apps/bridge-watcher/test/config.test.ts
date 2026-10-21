@@ -10,7 +10,7 @@ describe('loadWatcherConfig', () => {
     const cfg = loadWatcherConfig({});
     expect(cfg.remotes).toEqual([]);
     expect(cfg.etica.chainId).toBe(61803);
-    expect(cfg.etica.rpcUrl).toBe('https://rpc2.etica-stats.org');
+    expect(cfg.etica.rpcUrl).toBe('https://eticamainnet.eticaprotocol.org');
     expect(cfg.heartbeatPrivateKey).toBeUndefined();
     expect(cfg.scanLookbackBlocks).toBe(5_000);
   });

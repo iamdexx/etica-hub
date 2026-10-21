@@ -116,8 +116,8 @@ export default function TreasuryDeployerPage() {
             chainName: 'Etica Mainnet',
             nativeCurrency: { name: 'EGAZ', symbol: 'EGAZ', decimals: 18 },
             rpcUrls: [
-              'https://rpc2.etica-stats.org',
               'https://eticamainnet.eticaprotocol.org',
+              'https://rpc2.etica-stats.org',
             ],
             blockExplorerUrls: ['https://eticascan.org'],
           },
