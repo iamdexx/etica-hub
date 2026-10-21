@@ -398,7 +398,7 @@ export function DeployTradingCard() {
                   <span className="text-white/50">tx:</span>{' '}
                   <a
                     className="font-mono text-emerald-400 hover:underline"
-                    href={`https://eticascan.org/tx/${s.txHash}`}
+                    href={`/explorer/tx/${s.txHash}`}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -411,7 +411,7 @@ export function DeployTradingCard() {
                   <span className="text-white/50">address:</span>{' '}
                   <a
                     className="font-mono text-emerald-400 hover:underline"
-                    href={`https://eticascan.org/address/${s.address}`}
+                    href={`/explorer/address/${s.address}`}
                     target="_blank"
                     rel="noreferrer"
                   >

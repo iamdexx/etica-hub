@@ -119,7 +119,7 @@ export default function TreasuryDeployerPage() {
               'https://rpc2.etica-stats.org',
               'https://eticamainnet.eticaprotocol.org',
             ],
-            blockExplorerUrls: ['https://eticascan.org'],
+            blockExplorerUrls: ['https://eticahub.com/explorer'],
           },
         ],
       });

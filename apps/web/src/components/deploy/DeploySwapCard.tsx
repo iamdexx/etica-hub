@@ -335,7 +335,7 @@ export function DeploySwapCard() {
                   <span className="text-white/50">tx:</span>{' '}
                   <a
                     className="font-mono text-emerald-400 hover:underline"
-                    href={`https://eticascan.org/tx/${state.txHash}`}
+                    href={`/explorer/tx/${state.txHash}`}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -348,7 +348,7 @@ export function DeploySwapCard() {
                   <span className="text-white/50">address:</span>{' '}
                   <a
                     className="font-mono text-emerald-400 hover:underline"
-                    href={`https://eticascan.org/address/${state.address}`}
+                    href={`/explorer/address/${state.address}`}
                     target="_blank"
                     rel="noreferrer"
                   >

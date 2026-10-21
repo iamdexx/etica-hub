@@ -14,4 +14,6 @@ if [ ! -f .env ]; then
 fi
 mkdir -p data/postgres data/caddy
 docker compose up -d --build --remove-orphans
+chmod +x watchdog.sh
+( crontab -l 2>/dev/null | grep -v explorer-watchdog; echo "*/5 * * * * cd $DIR/infra/droplet && ./watchdog.sh >> /var/log/explorer-watchdog.log 2>&1" ) | crontab -
 docker compose ps

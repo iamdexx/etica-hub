@@ -54,7 +54,7 @@ export const USDC_LEGS: Record<UsdcDirection, UsdcLeg> = {
     destinationName: 'Ethereum',
     needsApproval: false,
     feeNote: '2 USDC.e flat + 0.5%, capped at 50 USDC.e; releases are limited to 5,000 USDC per 24h',
-    explorerTx: (hash) => `https://eticascan.org/tx/${hash}`,
+    explorerTx: (hash) => `/explorer/tx/${hash}`,
   },
 };
 

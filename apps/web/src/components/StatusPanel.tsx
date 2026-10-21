@@ -587,7 +587,7 @@ function AddressTable(props: { rows: ReadonlyArray<readonly [string, Address]> }
             <dd className="min-w-0 sm:text-right">
               <a
                 className="break-all font-mono text-emerald-300 underline decoration-emerald-300/30 hover:decoration-emerald-300"
-                href={`https://eticascan.org/address/${addr}`}
+                href={`/explorer/address/${addr}`}
                 target="_blank"
                 rel="noreferrer"
               >
