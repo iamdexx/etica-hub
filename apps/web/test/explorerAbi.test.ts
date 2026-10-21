@@ -138,9 +138,9 @@ describe('decodeLog', () => {
 });
 
 describe('tokenMeta + isTokenAmountArg', () => {
-  it('returns decimals for ETX/WEGAZ', () => {
+  it('returns decimals for ETX and the EGAZ pool token', () => {
     expect(tokenMeta(ETX)).toEqual({ symbol: 'ETX', decimals: 18 });
-    expect(tokenMeta(WEGAZ)).toEqual({ symbol: 'WEGAZ', decimals: 18 });
+    expect(tokenMeta(WEGAZ)).toEqual({ symbol: 'EGAZ', decimals: 18 });
   });
 
   it('is case-insensitive for the address key', () => {
