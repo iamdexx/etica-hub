@@ -34,13 +34,6 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     images: ['/brand/og.png'],
   },
-  icons: {
-    icon: [
-      { url: '/brand/eticahub-mark-32.png', sizes: '32x32', type: 'image/png' },
-      { url: '/brand/eticahub-mark-192.png', sizes: '192x192', type: 'image/png' },
-    ],
-    apple: [{ url: '/brand/eticahub-mark-192.png', sizes: '192x192', type: 'image/png' }],
-  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
