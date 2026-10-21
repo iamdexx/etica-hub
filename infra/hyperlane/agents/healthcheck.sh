@@ -28,7 +28,7 @@ problems=()
 
 # Comma-separated lists; `rpc` walks each list until an endpoint answers.
 ETH_RPC="${ETHEREUM_RPC_URLS:-https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io,https://eth.drpc.org,https://ethereum-rpc.publicnode.com}"
-ETI_RPC="${ETICA_RPC_URLS:-https://eticamainnet.eticaprotocol.org,https://rpc2.etica-stats.org}"
+ETI_RPC="${ETICA_RPC_URLS:-https://eticamainnet.eticaprotocol.org,https://eticamainnet.eticascan.org,https://61803.rpc.thirdweb.com}"
 
 rpc() { # rpc <url[,url...]> <method> <params-json>
   local url out

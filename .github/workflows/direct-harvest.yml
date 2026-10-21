@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 15
     environment: harvest-live
     env:
-      HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
       HARVEST_CHAIN_ID: ${{ vars.HARVEST_CHAIN_ID || '61803' }}
       # Factory + harvester default to DEPLOYMENTS[61803] in packages/shared.
       DIRECT_FACTORY_ADDRESS: ${{ vars.DIRECT_FACTORY_ADDRESS }}

@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: harvest-live
     env:
-      FORFEIT_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc2.etica-stats.org' }}
+      FORFEIT_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
       FORFEIT_CHAIN_ID: ${{ vars.HARVEST_CHAIN_ID || '61803' }}
       FORFEIT_NFT_ADDRESS: ${{ vars.FORFEIT_NFT_ADDRESS || '0x4B7673665543bC1ABf13a023Ae2A04e91A4259f9' }}
       FORFEIT_TREASURY_ADDRESS: ${{ vars.HARVEST_TREASURY_ADDRESS || '0xB2B4bC9d02970A55efF64C2D84c622c87967C19D' }}
