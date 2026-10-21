@@ -28,6 +28,7 @@ import { scoreOutOf100 } from '@/lib/seo/labs';
 import { type ArchivedResearch, getArchivedResearch } from './archive';
 import { labsStore } from './store';
 
+
 type Channel = 'telegram' | 'x';
 const ANNOUNCED_SET = (channel: Channel) => `labs:archive:announced:${channel}`;
 /** Record ids with at least one channel still unsent; drained by `retryPendingAnnouncements`. */
@@ -77,18 +78,19 @@ export function discoveryFacts(r: ArchivedResearch) {
 export function telegramCaption(r: ArchivedResearch): string {
   const f = discoveryFacts(r);
   const lines = [
-    `🧬 <b>New Labs discovery</b>${f.disease ? ` · ${escapeHtml(f.disease)}` : ''}`,
+    `🧬 <b>New Labs candidate (computational)</b>${f.disease ? ` · ${escapeHtml(f.disease)}` : ''}`,
     '',
     `<b>${escapeHtml(trunc(f.title, 160))}</b>`,
   ];
-  if (r.hypothesis) lines.push('', escapeHtml(trunc(r.hypothesis, 300)));
+  if (r.hypothesis) lines.push('', 'AI hypothesis (not validated): ' + escapeHtml(trunc(r.hypothesis, 300)));
   lines.push(
     '',
     `Best candidate: <b>${f.score}</b> · ${f.residues} aa` +
       (f.engine ? ` · folded by ${escapeHtml(f.engine)}` : ''),
     `${f.folded}/${f.candidates} candidates folded · ${f.iterations} iteration${f.iterations === 1 ? '' : 's'}`,
     '',
-    `<a href="${f.url}">View structure &amp; mint →</a>`,
+    'No experimental or clinical evidence recorded.',
+    `<a href="${f.url}">View computational evidence →</a>`,
   );
   return lines.join('\n');
 }
@@ -99,7 +101,7 @@ const X_URL_LEN = 23;
 
 export function tweetText(r: ArchivedResearch): string {
   const f = discoveryFacts(r);
-  const head = `🧬 New autonomous Labs discovery${f.disease ? ` for ${trunc(f.disease, 60)}` : ''}`;
+  const head = `🧬 New computational Labs candidate${f.disease ? ` for ${trunc(f.disease, 60)}` : ''}`;
   const stats = `${f.score} best candidate · ${f.residues} aa · ${f.folded}/${f.candidates} folded`;
   const tags = '#DeSci #ProteinDesign $ETX';
   const separators = 6; // \n\n, \n, \n\n, \n

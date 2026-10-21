@@ -30,6 +30,7 @@ import {
   storePdbForSequence,
   type ArchivedResearch,
 } from '@/lib/labs/archive';
+import { isPublished } from '@/lib/labs/publication';
 import { announceDiscovery } from '@/lib/labs/announce';
 import { cleanProse, resolveDisease } from '@/lib/labs/editorial';
 import { pickBestCandidate, runGrade, verifyRun } from '@/lib/labs/verification';
@@ -362,11 +363,9 @@ export async function POST(
       }
 
       try {
-        // Only broadcast work that survives verification — a repetitive
-        // rod posted as a "discovery" costs more credibility than the
-        // post earns.
+        // Only published records (verified + grounded) are broadcast.
         const out =
-          archived.verificationGrade === 'rejected' ? null : await announceDiscovery(archived);
+          isPublished(archived) ? await announceDiscovery(archived) : null;
         if (out) console.log(`[labs] announced ${archived.id}: tg=${out.telegram} x=${out.x}`);
       } catch (err) {
         console.error('[labs] announce failed (non-fatal):', err);

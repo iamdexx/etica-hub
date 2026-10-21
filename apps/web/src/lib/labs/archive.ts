@@ -22,6 +22,7 @@ import { createHash } from 'node:crypto';
 
 import { labsStore } from './store';
 import { extractCaPdb } from './pdb-render';
+import { publicationDecision, type PublicationStatus } from './publication';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -57,6 +58,9 @@ export interface CandidateVerificationRecord {
 
 /** Mirrors `GroundingResult` in @etica-hub/shared/labs/grounding. */
 export interface GroundingRecord {
+  policyVersion?: 2;
+  uncheckedSymbols?: string[];
+  citations?: Array<{ id: string; title: string; url: string }>;
   checkedAt: number;
   summary: string;
   targets: Array<{
@@ -290,10 +294,7 @@ export async function getArchivedResearch(id: string): Promise<ArchivedResearch 
 /**
  * List archived research, newest first.
  */
-export async function listArchive(
-  limit = 50,
-  offset = 0,
-): Promise<ArchivedResearch[]> {
+export async function listArchive(limit = 50, offset = 0): Promise<ArchivedResearch[]> {
   const store = labsStore();
   const ids = await store.zrevrange(ARCHIVE_INDEX, offset, offset + limit - 1);
   const results: ArchivedResearch[] = [];
@@ -384,10 +385,7 @@ export async function listExpiredUnminted(
 /**
  * List archived research for a specific goal.
  */
-export async function listArchiveByGoal(
-  goalId: string,
-  limit = 50,
-): Promise<ArchivedResearch[]> {
+export async function listArchiveByGoal(goalId: string, limit = 50): Promise<ArchivedResearch[]> {
   const store = labsStore();
   const ids = await store.zrevrange(ARCHIVE_GOAL(goalId), 0, limit - 1);
   const results: ArchivedResearch[] = [];
@@ -469,10 +467,7 @@ export async function getArchiveCount(): Promise<number> {
  * Searches across: goalTitle, disease, hypothesis, approach, summary,
  * candidate rationales, candidate analyses, and references.
  */
-export async function searchPriorArt(
-  keywords: string[],
-  limit = 5,
-): Promise<ArchivedResearch[]> {
+export async function searchPriorArt(keywords: string[], limit = 5): Promise<ArchivedResearch[]> {
   const store = labsStore();
   const normalizedKw = keywords.map((k) => k.toLowerCase().trim()).filter((k) => k.length > 2);
   if (normalizedKw.length === 0) return [];
@@ -581,6 +576,10 @@ export interface ArchiveSearchOptions {
   minScore?: number;
   /** Sort field */
   sort?: 'relevance' | 'date' | 'score';
+  /** `published` (default), `draft`, or `all`. */
+  status?: PublicationStatus | 'all';
+  grade?: 'verified' | 'weak' | 'rejected';
+  grounding?: 'checked' | 'unresolved' | 'unchecked';
   /** Pagination */
   limit?: number;
   offset?: number;
@@ -620,16 +619,19 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
   // Determine which index to scan
   let candidateIds: string[];
   if (opts.disease) {
-    candidateIds = await store.zrevrange(ARCHIVE_DISEASE(opts.disease), 0, 500);
+    candidateIds = await store.zrevrange(ARCHIVE_DISEASE(opts.disease), 0, -1);
   } else if (opts.goalId) {
-    candidateIds = await store.zrevrange(ARCHIVE_GOAL(opts.goalId), 0, 500);
+    candidateIds = await store.zrevrange(ARCHIVE_GOAL(opts.goalId), 0, -1);
   } else {
-    candidateIds = await store.zrevrange(ARCHIVE_INDEX, 0, 500);
+    candidateIds = await store.zrevrange(ARCHIVE_INDEX, 0, -1);
   }
 
   // Parse keywords from free-text query
   const keywords = opts.q
-    ? opts.q.toLowerCase().split(/[\s,;.]+/).filter((w) => w.length > 2)
+    ? opts.q
+        .toLowerCase()
+        .split(/[\s,;.]+/)
+        .filter((w) => w.length > 2)
     : [];
 
   const target = opts.target?.trim().toLowerCase();
@@ -647,11 +649,33 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
 
     // Apply filters
     if (opts.mintedOnly && !entry.minted) continue;
+    const status = opts.status ?? 'all';
+    if (status !== 'all' && publicationDecision(entry).status !== status) continue;
+    if (
+      opts.grade &&
+      (entry.verificationGrade ?? entry.bestCandidate.verification?.grade) !== opts.grade
+    )
+      continue;
     if (opts.minScore && (entry.bestCandidate.score ?? 0) < opts.minScore) continue;
+
+    if (opts.grounding) {
+      const state =
+        !entry.grounding || entry.grounding.policyVersion !== 2
+          ? 'unchecked'
+          : entry.grounding.targets.length &&
+              !entry.grounding.unresolvedSymbols.length &&
+              !entry.grounding.uncheckedSymbols?.length &&
+              !entry.grounding.citationsMissing.length &&
+              entry.grounding.citationsFound.length
+            ? 'checked'
+            : 'unresolved';
+      if (state !== opts.grounding) continue;
+    }
 
     // Target filter — match against the most target-bearing fields.
     if (target) {
-      const hay = `${entry.goalTitle ?? ''} ${entry.hypothesis} ${entry.approach} ${entry.prompt}`.toLowerCase();
+      const hay =
+        `${entry.goalTitle ?? ''} ${entry.hypothesis} ${entry.approach} ${entry.prompt} ${entry.grounding?.targets.map((t) => `${t.symbol} ${t.accession}`).join(' ') ?? ''}`.toLowerCase();
       if (!hay.includes(target)) continue;
     }
 
@@ -701,13 +725,11 @@ export async function searchArchive(opts: ArchiveSearchOptions): Promise<Archive
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
 
-  const topScores = scored
-    .slice(0, 10)
-    .map((s) => ({
-      id: s.entry.id,
-      score: s.entry.bestCandidate.score ?? 0,
-      disease: s.entry.disease,
-    }));
+  const topScores = scored.slice(0, 10).map((s) => ({
+    id: s.entry.id,
+    score: s.entry.bestCandidate.score ?? 0,
+    disease: s.entry.disease,
+  }));
 
   return { results: paged, total, facets: { diseases, sources, topScores } };
 }

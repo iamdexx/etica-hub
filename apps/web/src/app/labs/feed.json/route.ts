@@ -2,14 +2,14 @@
  * GET /labs/feed.json — JSON Feed 1.1 of the newest archived Labs discoveries.
  */
 
-import { listArchive } from '@/lib/labs/archive';
+import { searchArchive } from '@/lib/labs/archive';
 import { FEED_LIMIT, jsonFeed } from '@/lib/labs/feed';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(): Promise<Response> {
-  const records = await listArchive(FEED_LIMIT);
+  const { results: records } = await searchArchive({ status: 'published', limit: FEED_LIMIT });
   return Response.json(jsonFeed(records), {
     headers: {
       'content-type': 'application/feed+json; charset=utf-8',

@@ -35,7 +35,8 @@ export function entrySummary(r: ArchivedResearch): string {
   const best = r.bestCandidate;
   const folded = r.candidates.filter((c) => c.folded).length;
   const parts = [
-    r.hypothesis?.trim(),
+    'Computational prediction; no experimental or clinical evidence recorded.',
+    r.hypothesis ? `AI hypothesis (not validated): ${r.hypothesis.trim()}` : '',
     `Best candidate ${scoreOutOf100(best?.score)}, ${best?.sequence?.length ?? 0} aa` +
       (best?.engine ? ` (${best.engine})` : '') +
       `; ${folded}/${r.candidates.length} candidates folded over ${r.iterations} iteration${r.iterations === 1 ? '' : 's'}.`,
@@ -70,8 +71,8 @@ export function atomFeed(records: ArchivedResearch[], updatedAt = Date.now()): s
     '<?xml version="1.0" encoding="utf-8"?>',
     '<feed xmlns="http://www.w3.org/2005/Atom">',
     `  <id>${esc(feedUrl)}</id>`,
-    `  <title>${esc(SITE_NAME)} Labs — research discoveries</title>`,
-    '  <subtitle>Every protein design completed by the autonomous EticaHub Labs pipeline, newest first.</subtitle>',
+    `  <title>${esc(SITE_NAME)} Labs — computational candidates</title>`,
+    '  <subtitle>Screened, identifier-grounded computational candidates; not medical discoveries.</subtitle>',
     `  <link rel="self" type="application/atom+xml" href="${esc(feedUrl)}"/>`,
     `  <link rel="alternate" type="text/html" href="${esc(absoluteUrl('/labs/archive'))}"/>`,
     `  <updated>${iso(latest)}</updated>`,
@@ -85,11 +86,11 @@ export function atomFeed(records: ArchivedResearch[], updatedAt = Date.now()): s
 export function jsonFeed(records: ArchivedResearch[]): Record<string, unknown> {
   return {
     version: 'https://jsonfeed.org/version/1.1',
-    title: `${SITE_NAME} Labs — research discoveries`,
+    title: `${SITE_NAME} Labs — computational candidates`,
     home_page_url: absoluteUrl('/labs/archive'),
     feed_url: absoluteUrl(JSON_FEED_PATH),
     description:
-      'Every protein design completed by the autonomous EticaHub Labs pipeline, newest first.',
+      'Screened, identifier-grounded computational candidates; not medical discoveries.',
     icon: absoluteUrl('/etx-logo-512.png'),
     favicon: absoluteUrl('/etx-logo-200.png'),
     items: records.map((r) => ({

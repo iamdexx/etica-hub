@@ -109,6 +109,7 @@ export default function LabsArchivePage(): JSX.Element {
   const [disease, setDisease] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [mintedOnly, setMintedOnly] = useState(false);
+  const [status, setStatus] = useState<'published' | 'draft' | 'all'>('published');
   // 'auto' defers to the server's smart default (relevance when a keyword
   // query is present, otherwise newest-first).
   const [sort, setSort] = useState<'auto' | 'date' | 'relevance' | 'score'>('auto');
@@ -129,10 +130,11 @@ export default function LabsArchivePage(): JSX.Element {
     if (disease) p.set('disease', disease);
     if (source) p.set('source', source);
     if (mintedOnly) p.set('minted', 'true');
+    if (status !== 'published') p.set('status', status);
     if (sort !== 'auto') p.set('sort', sort);
     p.set('limit', '60');
     return p.toString();
-  }, [q, target, disease, source, mintedOnly, sort]);
+  }, [q, target, disease, source, mintedOnly, status, sort]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -168,8 +170,10 @@ export default function LabsArchivePage(): JSX.Element {
             Research archive
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-white/65">
-            Every completed discovery, permanently recorded. Filter by disease,
-            molecular target, keyword, or the academic source that grounded it.
+            Every completed run, permanently recorded. Published records passed every
+            computational check and their targets and citations resolved in UniProt and
+            PubMed; drafts did not. All are computational predictions, not lab or clinical
+            evidence.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -236,6 +240,20 @@ export default function LabsArchivePage(): JSX.Element {
               className="h-4 w-4 rounded border-white/20 bg-black/20 accent-emerald-400"
             />
             <span className="text-sm text-white/70">Minted only</span>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] uppercase tracking-wider text-white/45">
+              Status
+            </span>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as 'published' | 'draft' | 'all')}
+              className="w-full rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 text-sm text-white focus:border-emerald-400/50 focus:outline-none"
+            >
+              <option value="published">Published (verified + grounded)</option>
+              <option value="draft">Drafts (unverified)</option>
+              <option value="all">All records</option>
+            </select>
           </label>
         </div>
 
@@ -319,7 +337,7 @@ export default function LabsArchivePage(): JSX.Element {
       )}
 
       <div className="mb-4 text-sm text-white/45">
-        {loading ? 'Searching…' : `${data?.total ?? 0} discoveries`}
+        {loading ? 'Searching…' : `${data?.total ?? 0} records`}
       </div>
 
       {!loading && results.length === 0 && !error && (
