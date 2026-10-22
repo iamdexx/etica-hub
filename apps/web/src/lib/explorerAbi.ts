@@ -246,7 +246,7 @@ const TOKEN_DECIMALS_BY_ADDRESS: Record<string, { symbol: string; decimals: numb
     map[d.etx.toLowerCase()] = { symbol: 'ETX', decimals: 18 };
   }
   if (d?.wegaz && d.wegaz !== ZERO_ADDRESS) {
-    map[d.wegaz.toLowerCase()] = { symbol: 'WEGAZ', decimals: 18 };
+    map[d.wegaz.toLowerCase()] = { symbol: 'EGAZ', decimals: 18 };
   }
   if (ext?.eti && ext.eti !== ZERO_ADDRESS) {
     map[ext.eti.toLowerCase()] = { symbol: 'ETI', decimals: 18 };

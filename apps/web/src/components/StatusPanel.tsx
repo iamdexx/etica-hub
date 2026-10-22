@@ -463,8 +463,8 @@ export async function StatusPanel() {
               />
             )}
             <KV
-              k="WEGAZ wrapped supply"
-              v={`${Number(formatUnits(snap.wegazTotalSupply, 18)).toLocaleString()} WEGAZ`}
+              k="EGAZ held in pool form"
+              v={`${Number(formatUnits(snap.wegazTotalSupply, 18)).toLocaleString()} EGAZ`}
             />
           </Section>
 

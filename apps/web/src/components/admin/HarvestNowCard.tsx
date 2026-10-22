@@ -198,7 +198,7 @@ export function HarvestNowCard() {
         // Load POL pools (ETI/ETX, WEGAZ/ETX) — mirrors the keeper plan.
         const candidates: { label: string; nonEtx: Address }[] = [
           { label: 'ETI/ETX', nonEtx: ETI_ADDRESS },
-          { label: 'WEGAZ/ETX', nonEtx: wegaz },
+          { label: 'EGAZ/ETX', nonEtx: wegaz },
         ];
         const snapshots: PoolSnapshot[] = [];
         for (const c of candidates) {

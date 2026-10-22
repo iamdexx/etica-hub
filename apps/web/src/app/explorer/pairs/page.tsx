@@ -37,10 +37,10 @@ function knownPairs(): PairRow[] {
   }
   if (d.wegaz && d.wegaz !== ZERO) {
     rows.push({
-      pair: 'WEGAZ / ETX',
-      base: 'WEGAZ',
+      pair: 'EGAZ / ETX',
+      base: 'EGAZ',
       quote: 'ETX',
-      description: 'Wrapped gas market for EticaHub routing.',
+      description: 'Gas coin market for EticaHub routing (pool holds EGAZ in ERC-20 form).',
       tokenA: d.wegaz,
       tokenB: d.etx,
     });

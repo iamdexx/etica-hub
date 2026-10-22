@@ -24,6 +24,9 @@ import {
   tokenPath,
 } from '@/lib/seo/market';
 import { absoluteUrl, SITE_NAME } from '@/lib/site';
+import { displaySymbol } from '@/lib/buybot/format';
+
+const displayName = (t: { id: string; name: string }) => (t.id === 'wegaz' ? 'EGAZ (pool form)' : t.name);
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,7 +37,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { id } = await params;
   if (!isTokenId(id)) return { title: 'Token not found' };
   const copy = TOKEN_COPY[id];
-  const symbol = id === 'stetx' ? 'stETX' : id.toUpperCase();
+  const symbol = id === 'stetx' ? 'stETX' : id === 'wegaz' ? 'EGAZ (pool form)' : id.toUpperCase();
   const title = `${symbol} price, contract & liquidity on Etica`;
   const description = `${copy.tagline}. ${copy.about}`.slice(0, 200);
   const url = absoluteUrl(`/tokens/${id}`);
@@ -63,8 +66,8 @@ export default async function TokenPage({ params }: Params): Promise<JSX.Element
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'FinancialProduct',
-    name: `${t.token.name} (${t.token.symbol})`,
-    alternateName: t.token.symbol,
+    name: `${displayName(t.token)} (${displaySymbol(t.token.symbol)})`,
+    alternateName: displaySymbol(t.token.symbol),
     description: copy.about,
     url,
     identifier: contract,
@@ -89,7 +92,7 @@ export default async function TokenPage({ params }: Params): Promise<JSX.Element
         data={breadcrumbJsonLd([
           ['EticaHub', '/'],
           ['Tokens', '/tokens'],
-          [t.token.symbol, tokenPath(t.token)],
+          [displaySymbol(t.token.symbol), tokenPath(t.token)],
         ])}
       />
 
@@ -98,13 +101,13 @@ export default async function TokenPage({ params }: Params): Promise<JSX.Element
           Tokens
         </Link>
         {' / '}
-        <span className="text-white/70">{t.token.symbol}</span>
+        <span className="text-white/70">{displaySymbol(t.token.symbol)}</span>
       </nav>
 
       <header className="space-y-2">
         <p className="text-[11px] uppercase tracking-wider text-white/45">{copy.tagline}</p>
         <h1 className="text-2xl font-semibold text-white/95">
-          {t.token.name} <span className="text-white/50">({t.token.symbol})</span>
+          {displayName(t.token)} <span className="text-white/50">({displaySymbol(t.token.symbol)})</span>
         </h1>
         <p className="text-sm text-white/65">{copy.about}</p>
       </header>
@@ -165,7 +168,7 @@ export default async function TokenPage({ params }: Params): Promise<JSX.Element
                   {poolName(p)}
                 </Link>
                 <span className="font-mono text-xs text-white/60">
-                  {fmtNum(p.reserve0)} {p.token0.symbol} · {fmtNum(p.reserve1)} {p.token1.symbol}
+                  {fmtNum(p.reserve0)} {displaySymbol(p.token0.symbol)} · {fmtNum(p.reserve1)} {displaySymbol(p.token1.symbol)}
                 </span>
                 <span className="text-xs text-white/50">TVL {fmtUsd(p.tvlUsd)}</span>
               </li>
@@ -176,7 +179,7 @@ export default async function TokenPage({ params }: Params): Promise<JSX.Element
 
       <footer className="flex flex-wrap gap-3 border-t border-white/[0.07] pt-4 text-xs">
         <Link href="/swap" className="text-emerald-200/80 hover:text-emerald-200">
-          Swap {t.token.symbol} →
+          Swap {displaySymbol(t.token.symbol)} →
         </Link>
         <Link href="/pool" className="text-emerald-200/80 hover:text-emerald-200">
           Add liquidity →
@@ -188,7 +191,7 @@ export default async function TokenPage({ params }: Params): Promise<JSX.Element
         )}
         <span className="ml-auto text-white/35">
           Other tokens:{' '}
-          {TOKEN_IDS.filter((x) => x !== id).map((x, i) => (
+          {TOKEN_IDS.filter((x) => x !== id && x !== 'wegaz').map((x, i) => (
             <span key={x}>
               {i > 0 && ' · '}
               <Link href={`/tokens/${x}`} className="hover:text-white/70">

@@ -314,7 +314,7 @@ export default async function ExplorerHome({ searchParams }: ExplorerHomeProps) 
         <Action
           href="/explorer/tokens"
           title="Tokens"
-          body="EGAZ (native coin), ETI, ETX and WEGAZ with total vs circulating supply."
+          body="EGAZ (native coin), ETI, ETX and stETX with total vs circulating supply."
         />
         <Action
           href="/explorer/pairs"
