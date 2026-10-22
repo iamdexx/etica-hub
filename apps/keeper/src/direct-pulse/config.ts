@@ -24,6 +24,8 @@ export interface DirectPulseConfig {
   maxQuietSeconds: number;
   /** Max slippage per leg, in bps of the quoted amount. */
   maxSlippageBps: number;
+  /** Cap on a trip's size, in bps of the first window's EGAZ-side reserve. */
+  maxReserveBps: number;
   privateKey: Hex | null;
   dryRun: boolean;
 }
@@ -78,6 +80,7 @@ export function loadDirectPulseConfig(env: NodeJS.ProcessEnv = process.env): Dir
     amountWei: amount ? BigInt(amount) : 250n * 10n ** 18n,
     maxQuietSeconds: optInt(env, 'DIRECT_PULSE_MAX_QUIET_SECONDS', 20 * 3600),
     maxSlippageBps: optInt(env, 'HARVEST_MAX_SLIPPAGE_BPS', 300),
+    maxReserveBps: optInt(env, 'DIRECT_PULSE_MAX_RESERVE_BPS', 200),
     privateKey: (key as Hex | null) ?? null,
     dryRun: truthy(opt(env, 'HARVEST_DRY_RUN')),
   };

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Address } from 'viem';
 
 import { loadDirectPulseConfig } from '../src/direct-pulse/config.js';
-import { buildPulsePlan, shortestPath, withSlippage, type PulseWindow } from '../src/direct-pulse/plan.js';
+import { buildPulsePlan, reverseLeg, shortestPath, sizeTrip, withSlippage, type PulseWindow } from '../src/direct-pulse/plan.js';
 
 const USDCE = '0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335' as Address;
 const WEGAZ = '0x232fb2B87CAce92B2438054A7eB79B4081E3E11a' as Address;
@@ -107,5 +107,39 @@ describe('buildPulsePlan', () => {
 describe('withSlippage', () => {
   it('shaves bps', () => {
     expect(withSlippage(10_000n, 300)).toBe(9_700n);
+  });
+
+  it('leaves unseeded windows alone and does not route through them', () => {
+    const empty = { ...w(P(3), WEGAZ, ETI, null), reserves: [0n, 0n] as const };
+    const plan = buildPulsePlan({
+      windows: [w(P(1), USDCE, WEGAZ, null), { ...w(P(2), USDCE, ETI, null), reserves: [10n, 10n] as const }, empty],
+      wegaz: WEGAZ,
+      now: NOW,
+      maxQuietSeconds: DAY,
+    });
+    expect(plan.skipped).toEqual([{ pair: P(3), reason: 'unseeded' }]);
+    expect(plan.trips.map((t) => t.target)).toEqual([P(1), P(2)]);
+    expect(plan.trips[1].out.path).toEqual([WEGAZ, USDCE, ETI]);
+  });
+
+  it('sizes a trip to a slice of the first window EGAZ reserve', () => {
+    const windows = [{ ...w(P(1), USDCE, WEGAZ, null), reserves: [10_000_000n, 5_000n * 10n ** 18n] as const }];
+    const plan = buildPulsePlan({ windows, wegaz: WEGAZ, now: NOW, maxQuietSeconds: DAY });
+    const trip = plan.trips[0];
+    expect(sizeTrip({ trip, windows, wegaz: WEGAZ, amountWei: 250n * 10n ** 18n, maxReserveBps: 200 })).toBe(
+      100n * 10n ** 18n,
+    );
+    expect(sizeTrip({ trip, windows, wegaz: WEGAZ, amountWei: 50n * 10n ** 18n, maxReserveBps: 200 })).toBe(
+      50n * 10n ** 18n,
+    );
+    expect(
+      sizeTrip({ trip, windows: [w(P(1), USDCE, WEGAZ, null)], wegaz: WEGAZ, amountWei: 7n, maxReserveBps: 200 }),
+    ).toBe(7n);
+  });
+
+  it('reverses only the hops a leg completed', () => {
+    const leg = { path: [WEGAZ, USDCE, ETI], pairs: [P(1), P(2)] };
+    expect(reverseLeg(leg, 1)).toEqual({ path: [USDCE, WEGAZ], pairs: [P(1)] });
+    expect(reverseLeg(leg, 2)).toEqual({ path: [ETI, USDCE, WEGAZ], pairs: [P(2), P(1)] });
   });
 });
