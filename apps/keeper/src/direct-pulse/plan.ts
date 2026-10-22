@@ -9,6 +9,8 @@ export interface PulseWindow {
   paused: boolean;
   /** Hub-backed liveReserves() of (token0, token1); both zero until the window is seeded. */
   reserves?: readonly [bigint, bigint];
+  /** EticaDirectMetaPair (quoteOut/swapExactIn); false for a plain V2-style Direct pair. */
+  meta?: boolean;
 }
 
 export function isSeeded(w: PulseWindow): boolean {
@@ -133,6 +135,14 @@ export function buildPulsePlan(input: {
     for (const p of [...best.out.pairs, ...best.back.pairs]) touched.add(low(p));
   }
   return { trips, quiet: quiet.map((w) => w.pair), skipped };
+}
+
+/** The leg that walks the first `hops` hops of `leg` back to its start. */
+export function reverseLeg(leg: PulseLeg, hops: number): PulseLeg {
+  return {
+    path: leg.path.slice(0, hops + 1).reverse(),
+    pairs: leg.pairs.slice(0, hops).reverse(),
+  };
 }
 
 export function withSlippage(amount: bigint, bps: number): bigint {

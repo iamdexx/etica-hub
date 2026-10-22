@@ -16,6 +16,7 @@ import { abis } from '@etica-hub/shared';
 import type { DirectPulseConfig } from './config.js';
 import {
   buildPulsePlan,
+  reverseLeg,
   sizeTrip,
   withSlippage,
   type PulseLeg,
@@ -48,6 +49,8 @@ export interface PulseLegResult {
   txHash?: Hex;
   amountIn: bigint;
   amountOut?: bigint;
+  /** Hops that landed before the leg stopped; equals path.length - 1 on success. */
+  hops: number;
   error?: string;
 }
 
@@ -127,7 +130,7 @@ export async function loadWindows(
       }
       lastSwapAt = ts;
     }
-    out.push({ pair, token0, token1, lastSwapAt, paused: !open, reserves });
+    out.push({ pair, token0, token1, lastSwapAt, paused: !open, reserves, meta: reserves !== undefined });
   }
   void now;
   return out;
@@ -202,45 +205,80 @@ export async function runDirectPulse(
     );
   };
 
-  /** One hop per window: `quoteOut` for the floor, `swapExactIn` on the pair itself. */
+  const router = { address: config.router, abi: abis.routerAbi } as const;
+  const isMeta = (pair: Address) => windows.find((w) => same(w.pair, pair))?.meta !== false;
+
+  /** One tx per hop. Meta pairs quote and fill on themselves; a plain Direct
+   * pair only speaks V2, so it goes through the router one hop at a time. */
+  const sendHop = async (pair: Address, tokenIn: Address, tokenOut: Address, amount: bigint): Promise<Hex> => {
+    const deadline = BigInt(now + 1800);
+    if (isMeta(pair)) {
+      const quotedOut = (await client.readContract({
+        address: pair,
+        abi: META_PAIR_ABI,
+        functionName: 'quoteOut',
+        args: [tokenIn, amount, account.address],
+      })) as bigint;
+      if (quotedOut === 0n) throw new Error(`${pair} quotes 0 out for ${amount} of ${tokenIn}`);
+      await ensureAllowance(tokenIn, pair, amount);
+      return send(
+        pair,
+        encodeFunctionData({
+          abi: META_PAIR_ABI,
+          functionName: 'swapExactIn',
+          args: [tokenIn, amount, withSlippage(quotedOut, config.maxSlippageBps), account.address, deadline],
+        }),
+        0n,
+      );
+    }
+    const quoted = (await client.readContract({
+      ...router,
+      functionName: 'getAmountsOut',
+      args: [amount, [tokenIn, tokenOut]],
+    })) as readonly bigint[];
+    const quotedOut = quoted[quoted.length - 1] as bigint;
+    if (quotedOut === 0n) throw new Error(`${pair} quotes 0 out for ${amount} of ${tokenIn}`);
+    await ensureAllowance(tokenIn, config.router, amount);
+    return send(
+      config.router,
+      encodeFunctionData({
+        abi: abis.routerAbi,
+        functionName: 'swapExactTokensForTokens',
+        args: [amount, withSlippage(quotedOut, config.maxSlippageBps), [tokenIn, tokenOut], account.address, deadline],
+      }),
+      0n,
+    );
+  };
+
   const sendLeg = async (leg: PulseLeg, amountIn: bigint): Promise<PulseLegResult> => {
-    const res: PulseLegResult = { path: leg.path, amountIn };
+    const res: PulseLegResult = { path: leg.path, amountIn, hops: 0 };
+    let amount = amountIn;
     try {
-      let amount = amountIn;
       for (let i = 0; i < leg.pairs.length; i++) {
         const pair = leg.pairs[i] as Address;
         const tokenIn = leg.path[i] as Address;
         const tokenOut = leg.path[i + 1] as Address;
-        const quotedOut = (await client.readContract({
-          address: pair,
-          abi: META_PAIR_ABI,
-          functionName: 'quoteOut',
-          args: [tokenIn, amount, account.address],
-        })) as bigint;
-        if (quotedOut === 0n) throw new Error(`${pair} quotes 0 out for ${amount} of ${tokenIn}`);
-        const minOut = withSlippage(quotedOut, config.maxSlippageBps);
-        await ensureAllowance(tokenIn, pair, amount);
         const before = await balanceOf(tokenOut);
-        const txHash = await send(
-          pair,
-          encodeFunctionData({
-            abi: META_PAIR_ABI,
-            functionName: 'swapExactIn',
-            args: [tokenIn, amount, minOut, account.address, BigInt(now + 1800)],
-          }),
-          0n,
-        );
-        res.txHash = txHash;
+        res.txHash = await sendHop(pair, tokenIn, tokenOut, amount);
         const after = await balanceOf(tokenOut);
-        amount = after > before ? after - before : quotedOut;
-        log.info(`[direct-pulse] ${tokenIn} -> ${tokenOut} via ${pair} ${txHash}`);
+        amount = after > before ? after - before : 0n;
+        res.hops = i + 1;
+        res.amountOut = amount;
+        log.info(`[direct-pulse] ${tokenIn} -> ${tokenOut} via ${pair} ${res.txHash}`);
       }
-      res.amountOut = amount;
     } catch (e) {
       res.error = e instanceof Error ? e.message : String(e);
-      log.error(`[direct-pulse] leg failed: ${res.error}`);
+      log.error(`[direct-pulse] leg failed after ${res.hops} hop(s): ${res.error}`);
     }
     return res;
+  };
+
+  /** A leg that stopped part-way leaves an intermediate token behind; walk it back. */
+  const walkBack = async (leg: PulseLeg, failed: PulseLegResult) => {
+    if (failed.hops === 0 || failed.amountOut === undefined || failed.amountOut === 0n) return;
+    const home = reverseLeg(leg, failed.hops);
+    const bal = await balanceOf(home.path[0] as Address);
+    legs.push(await sendLeg(home, bal < failed.amountOut ? bal : failed.amountOut));
   };
 
   for (const trip of plan.trips) {
@@ -252,7 +290,7 @@ export async function runDirectPulse(
       maxReserveBps: config.maxReserveBps,
     });
     if (size === 0n) {
-      legs.push({ path: trip.out.path, amountIn: 0n, error: `${trip.target} has no EGAZ-side reserve` });
+      legs.push({ path: trip.out.path, amountIn: 0n, hops: 0, error: `${trip.target} has no EGAZ-side reserve` });
       continue;
     }
     try {
@@ -260,25 +298,31 @@ export async function runDirectPulse(
       await send(config.wegaz, encodeFunctionData({ abi: WRAPPED_EGAZ_ABI, functionName: 'deposit' }), size);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      legs.push({ path: trip.out.path, amountIn: size, error: `wrap failed: ${msg}` });
+      legs.push({ path: trip.out.path, amountIn: size, hops: 0, error: `wrap failed: ${msg}` });
       log.error(`[direct-pulse] wrap failed: ${msg}`);
       continue;
     }
     const out = await sendLeg(trip.out, size);
     legs.push(out);
-    if (!out.error && out.amountOut !== undefined) {
+    if (out.error) {
+      await walkBack(trip.out, out);
+    } else if (out.amountOut !== undefined) {
       // Return exactly what the far leg delivered, read from the wallet so
       // rounding on the hub never leaves dust behind.
       const bal = await balanceOf(trip.back.path[0] as Address);
-      legs.push(await sendLeg(trip.back, bal < out.amountOut ? bal : out.amountOut));
+      const back = await sendLeg(trip.back, bal < out.amountOut ? bal : out.amountOut);
+      legs.push(back);
+      if (back.error) await walkBack(trip.back, back);
     }
     const wrapped = await balanceOf(config.wegaz);
     if (wrapped > 0n) {
-      await send(
-        config.wegaz,
-        encodeFunctionData({ abi: WRAPPED_EGAZ_ABI, functionName: 'withdraw', args: [wrapped] }),
-        0n,
-      ).catch((e: unknown) => log.warn(`[direct-pulse] unwrap failed: ${e instanceof Error ? e.message : String(e)}`));
+      try {
+        await send(config.wegaz, encodeFunctionData({ abi: WRAPPED_EGAZ_ABI, functionName: 'withdraw', args: [wrapped] }), 0n);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        legs.push({ path: [config.wegaz], amountIn: wrapped, hops: 0, error: `unwrap failed: ${msg}` });
+        log.error(`[direct-pulse] unwrap failed: ${msg}`);
+      }
     }
   }
   const failed = legs.filter((l) => l.error).length;

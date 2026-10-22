@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Address } from 'viem';
 
 import { loadDirectPulseConfig } from '../src/direct-pulse/config.js';
-import { buildPulsePlan, shortestPath, sizeTrip, withSlippage, type PulseWindow } from '../src/direct-pulse/plan.js';
+import { buildPulsePlan, reverseLeg, shortestPath, sizeTrip, withSlippage, type PulseWindow } from '../src/direct-pulse/plan.js';
 
 const USDCE = '0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335' as Address;
 const WEGAZ = '0x232fb2B87CAce92B2438054A7eB79B4081E3E11a' as Address;
@@ -135,5 +135,11 @@ describe('withSlippage', () => {
     expect(
       sizeTrip({ trip, windows: [w(P(1), USDCE, WEGAZ, null)], wegaz: WEGAZ, amountWei: 7n, maxReserveBps: 200 }),
     ).toBe(7n);
+  });
+
+  it('reverses only the hops a leg completed', () => {
+    const leg = { path: [WEGAZ, USDCE, ETI], pairs: [P(1), P(2)] };
+    expect(reverseLeg(leg, 1)).toEqual({ path: [USDCE, WEGAZ], pairs: [P(1)] });
+    expect(reverseLeg(leg, 2)).toEqual({ path: [ETI, USDCE, WEGAZ], pairs: [P(2), P(1)] });
   });
 });
