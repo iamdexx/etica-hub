@@ -261,6 +261,27 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
           </ul>
         </Card>
       )}
+      {!!r.literatureContext?.citations.length && (
+        <Card label="Retrospective background literature — not candidate evidence">
+          <p className="mb-3 text-xs text-white/55">
+            Retrieved after this run; not used to generate or validate its candidates. PubMed
+            identifier existence only; claim support has not been assessed.
+          </p>
+          <p className="mb-3 break-words text-xs text-white/55">
+            Query: {r.literatureContext.query} · Checked{' '}
+            {new Date(r.literatureContext.checkedAt).toISOString()}
+          </p>
+          <ul className="space-y-2 text-xs">
+            {r.literatureContext.citations.map((c) => (
+              <li key={c.id}>
+                <a href={c.url} target="_blank" rel="noreferrer" className="underline">
+                  PMID {c.id}: {c.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       {r.grounding && (
         <Card label="Target grounding">
           <p className="mb-3 text-xs text-white/55">

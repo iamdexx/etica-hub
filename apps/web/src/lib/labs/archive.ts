@@ -20,6 +20,9 @@
  *   labs:archive:stats             STRING  JSON cumulative counters
  */
 
+import type { PubmedLiterature } from '@etica-hub/shared/labs/grounding';
+import type { Reference } from './research';
+
 import { createHash } from 'node:crypto';
 import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 
@@ -65,6 +68,7 @@ export interface GroundingRecord {
   uncheckedSymbols?: string[];
   citations?: Array<{ id: string; title: string; url: string }>;
   checkedAt: number;
+  citationsCheckedAt?: number;
   summary: string;
   targets: Array<{
     symbol: string;
@@ -102,6 +106,8 @@ export interface ArchivedResearch {
   bestPdb?: string;
   /** Prior work references used in planning */
   references: string[];
+  referenceProvenance?: Reference[];
+  literatureContext?: PubmedLiterature & { relation: 'background-only' };
   /** Grade of the published best candidate; mirrors
    * `bestCandidate.verification.grade` for cheap filtering. */
   verificationGrade?: 'verified' | 'weak' | 'rejected';

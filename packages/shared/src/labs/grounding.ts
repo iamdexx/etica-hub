@@ -13,6 +13,7 @@
  */
 
 const UNIPROT_SEARCH = 'https://rest.uniprot.org/uniprotkb/search';
+const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
 const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
 const TIMEOUT_MS = 15_000;
 
@@ -107,6 +108,9 @@ export interface CitationHit {
   id: string;
   title: string;
   url: string;
+  authors?: string;
+  journal?: string;
+  published?: string;
 }
 
 export interface GroundingResult {
@@ -174,11 +178,22 @@ export class LookupUnavailableError extends Error {
   }
 }
 
+let nextPubmedRequest = 0;
+
 async function fetchJson<T>(url: string): Promise<T> {
+  if (url.startsWith('https://eutils.ncbi.nlm.nih.gov/')) {
+    const start = Math.max(Date.now(), nextPubmedRequest);
+    nextPubmedRequest = start + 350;
+    await new Promise((resolve) => setTimeout(resolve, start - Date.now()));
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      cache: 'no-store',
+      headers: { 'User-Agent': 'EticaHub-Labs/1.0 (https://eticahub.com)' },
+    });
     if (!res.ok) throw new LookupUnavailableError(url, `HTTP ${res.status}`);
     return (await res.json()) as T;
   } catch (err) {
@@ -222,7 +237,7 @@ export function extractPubmedIds(texts: readonly string[]): string[] {
   const out = new Set<string>();
   for (const text of texts) {
     for (const m of text.matchAll(
-      /(?:pubmed(?:\.ncbi\.nlm\.nih\.gov)?[/:]\s*|PMID:?\s*)(\d{5,8})/gi,
+      /\b(?:pubmed(?:\.ncbi\.nlm\.nih\.gov)?[/:]\s*|PMID:?\s*)(\d+)\b/gi,
     )) {
       out.add(m[1]!);
     }
@@ -231,7 +246,18 @@ export function extractPubmedIds(texts: readonly string[]): string[] {
 }
 
 interface PubmedSummary {
-  result?: Record<string, { uid?: string; error?: string; title?: string }>;
+  result?: Record<
+    string,
+    {
+      uid?: string;
+      error?: string;
+      title?: string;
+      authors?: Array<{ name?: string }>;
+      fulljournalname?: string;
+      source?: string;
+      pubdate?: string;
+    }
+  >;
 }
 
 /** Split cited PubMed IDs into those that exist and those that do not. */
@@ -239,22 +265,89 @@ export async function checkPubmedIds(
   ids: readonly string[],
 ): Promise<{ found: string[]; missing: string[]; citations: CitationHit[] }> {
   if (ids.length === 0) return { found: [], missing: [], citations: [] };
-  const url = `${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`;
+  ids = [...new Set(ids)];
+  const invalid = ids.filter((id) => !/^[1-9]\d{0,8}$/.test(id));
+  const valid = ids.filter((id) => !invalid.includes(id));
+  if (!valid.length) return { found: [], missing: invalid, citations: [] };
+  const url = `${PUBMED_SUMMARY}?db=pubmed&retmode=json&tool=EticaHub-Labs&id=${valid.join(',')}`;
   const data = await fetchJson<PubmedSummary>(url);
   if (!data.result) throw new LookupUnavailableError(url, 'invalid response');
   const found: string[] = [];
-  const missing: string[] = [];
+  const missing: string[] = [...invalid];
   const citations: CitationHit[] = [];
-  for (const id of ids) {
+  for (const id of valid) {
     const entry = data.result[id];
     if (!entry) throw new LookupUnavailableError(url, `missing summary for PMID ${id}`);
-    if (entry.error) missing.push(id);
-    else if (entry.uid === id && entry.title) {
+    if (entry.error === 'cannot get document summary') missing.push(id);
+    else if (entry.error) throw new LookupUnavailableError(url, entry.error);
+    else if (entry.uid === id && typeof entry.title === 'string' && entry.title.trim()) {
       found.push(id);
-      citations.push({ id, title: entry.title, url: `https://pubmed.ncbi.nlm.nih.gov/${id}/` });
+      citations.push({
+        id,
+        title: entry.title.trim(),
+        url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`,
+        authors: entry.authors
+          ?.map((a) => a.name)
+          .filter(Boolean)
+          .join(', '),
+        journal: entry.fulljournalname ?? entry.source,
+        published: entry.pubdate,
+      });
     } else throw new LookupUnavailableError(url, `invalid summary for PMID ${id}`);
   }
   return { found, missing, citations };
+}
+
+export interface PubmedLiterature {
+  query: string;
+  checkedAt: number;
+  citations: CitationHit[];
+}
+
+export async function searchPubmed(
+  query: string,
+  limit = 4,
+  offset = 0,
+): Promise<PubmedLiterature> {
+  const params = new URLSearchParams({
+    db: 'pubmed',
+    retmode: 'json',
+    tool: 'EticaHub-Labs',
+    sort: 'relevance',
+    retmax: String(Math.min(10, Math.max(0, Math.trunc(limit)))),
+    retstart: String(Math.max(0, Math.trunc(offset))),
+    term: query,
+  });
+  const url = `${PUBMED_SEARCH}?${params}`;
+  const data = await fetchJson<{ esearchresult?: { idlist?: unknown }; error?: string }>(url);
+  const ids = data.esearchresult?.idlist;
+  if (
+    data.error ||
+    !Array.isArray(ids) ||
+    ids.some((id) => typeof id !== 'string' || !/^[1-9]\d{0,8}$/.test(id))
+  ) {
+    throw new LookupUnavailableError(url, 'invalid search response');
+  }
+  const { citations } = await checkPubmedIds(ids as string[]);
+  return { query, checkedAt: Date.now(), citations };
+}
+
+export function pubmedTargetQuery(symbols: readonly string[], disease?: string): string {
+  const targets = symbols.filter((s) => /^[A-Z][A-Z0-9]{1,9}$/.test(s));
+  if (!targets.length) return '';
+  const targetQuery = `(${[...new Set(targets)].map((s) => `${s}[Title/Abstract]`).join(' OR ')})`;
+  const condition = disease?.replace(/[^a-zA-Z0-9 -]/g, ' ').trim();
+  return condition ? `${targetQuery} AND (${condition})` : targetQuery;
+}
+
+export async function findPubmedLiterature(prompt: string, limit = 4): Promise<PubmedLiterature> {
+  if (limit <= 0) return { query: '', checkedAt: Date.now(), citations: [] };
+  const symbols = extractTargetSymbols(prompt).slice(0, 3);
+  const targets = await Promise.all(symbols.map(resolveTarget));
+  const query = pubmedTargetQuery(
+    targets.filter((t): t is TargetHit => !!t && t.reviewed).map((t) => t.symbol),
+  );
+  return searchPubmed(query || prompt, limit);
 }
 
 /**
