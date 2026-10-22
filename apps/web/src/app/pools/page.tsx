@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { JsonLd } from '@/components/JsonLd';
+import { PairVolume24h } from '@/components/PairVolume24h';
 import { breadcrumbJsonLd } from '@/lib/seo/jsonld';
 import {
   fmtNum,
@@ -82,6 +83,7 @@ export default async function PoolsPage(): Promise<JSX.Element> {
               <th className="px-4 py-3">Reserves</th>
               <th className="px-4 py-3">Price</th>
               <th className="px-4 py-3">TVL</th>
+              <th className="px-4 py-3">24h volume</th>
             </tr>
           </thead>
           <tbody className="text-white/80">
@@ -113,6 +115,13 @@ export default async function PoolsPage(): Promise<JSX.Element> {
                   1 {p.token0.symbol} = {fmtNum(p.price0In1, 6)} {p.token1.symbol}
                 </td>
                 <td className="px-4 py-3 font-mono">{fmtUsd(p.tvlUsd)}</td>
+                <td className="px-4 py-3 font-mono text-xs">
+                  {p.kind === 'v2' || p.kind === 'direct' ? (
+                    <PairVolume24h pair={p.address} />
+                  ) : (
+                    <span className="text-white/40">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -121,7 +130,8 @@ export default async function PoolsPage(): Promise<JSX.Element> {
 
       <p className="text-xs text-white/45">
         Direct (V5) windows are the direct Token/Token pairs (EGAZ/USDC.e, ETI/USDC.e); their
-        liquidity is ETX hub LP and the reserves shown are the hub-backed view.
+        liquidity is ETX hub LP and the reserves shown are the hub-backed view. 24h volume is
+        the sum of swaps in the last 24 hours, per side, read from the chain.
       </p>
 
       <p className="text-xs text-white/45">
