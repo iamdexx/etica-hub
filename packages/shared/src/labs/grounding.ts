@@ -178,6 +178,11 @@ export class LookupUnavailableError extends Error {
   }
 }
 
+/** Journal articles carry `title`; NCBI Bookshelf records (doctype book) only `booktitle`. */
+function summaryTitle(entry: { title?: string; booktitle?: string }): string {
+  return (entry.title?.trim() || entry.booktitle?.trim()) ?? '';
+}
+
 let nextPubmedRequest = 0;
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -252,6 +257,7 @@ interface PubmedSummary {
       uid?: string;
       error?: string;
       title?: string;
+      booktitle?: string;
       authors?: Array<{ name?: string }>;
       fulljournalname?: string;
       source?: string;
@@ -280,11 +286,11 @@ export async function checkPubmedIds(
     if (!entry) throw new LookupUnavailableError(url, `missing summary for PMID ${id}`);
     if (entry.error === 'cannot get document summary') missing.push(id);
     else if (entry.error) throw new LookupUnavailableError(url, entry.error);
-    else if (entry.uid === id && typeof entry.title === 'string' && entry.title.trim()) {
+    else if (entry.uid === id && summaryTitle(entry)) {
       found.push(id);
       citations.push({
         id,
-        title: entry.title.trim(),
+        title: summaryTitle(entry),
         url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`,
         authors: entry.authors
           ?.map((a) => a.name)

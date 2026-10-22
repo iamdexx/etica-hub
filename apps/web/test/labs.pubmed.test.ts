@@ -107,6 +107,22 @@ describe('PubMed provenance', () => {
     ]);
   });
 
+  it('resolves NCBI Bookshelf records that only carry booktitle', async () => {
+    responses({
+      result: {
+        '35377573': {
+          uid: '35377573',
+          title: '',
+          booktitle: 'IMPACT programme',
+          pubdate: '2022 Mar',
+        },
+      },
+    });
+    const r = await checkPubmedIds(['35377573']);
+    expect(r.found).toEqual(['35377573']);
+    expect(r.citations[0]?.title).toBe('IMPACT programme');
+  });
+
   it.each([
     { result: { '12345': { uid: '54321', title: 'Wrong UID' } } },
     { result: { '12345': { uid: '12345', title: ' ' } } },
