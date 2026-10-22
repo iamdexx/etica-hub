@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1.6
+# apps/explorer-api: full-chain indexer (blocks/txs/logs/token transfers/balances
+# into the hub.* schema of the engine's Postgres) + Etherscan-compatible /api.
+# Build context is the repo root.
+FROM node:20-alpine
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY apps/explorer-api/package.json ./apps/explorer-api/
+COPY packages/shared/package.json ./packages/shared/
+RUN pnpm install --frozen-lockfile --filter @etica-hub/explorer-api...
+COPY packages/shared ./packages/shared
+COPY apps/explorer-api ./apps/explorer-api
+RUN pnpm --filter @etica-hub/shared build 2>/dev/null || true
+RUN pnpm --filter @etica-hub/explorer-api build
+ENV NODE_ENV=production API_PORT=6634
+EXPOSE 6634
+CMD ["node", "apps/explorer-api/dist/index.js"]

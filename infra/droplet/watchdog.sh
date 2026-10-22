@@ -90,3 +90,25 @@ elif (( prev_alerting == 1 )); then
 fi
 echo "$db $alerting" > "$STATE"
 
+
+# apps/explorer-api (hub.* full-chain index): restart when its head is static
+# while the chain moves; alert when it is more than ALERT_LAG behind.
+hub=$(curl -s --max-time 8 http://127.0.0.1:80/hub/health | python3 -c 'import sys,json;print(json.load(sys.stdin)["head"] or 0)' 2>/dev/null) || hub=""
+if [[ -n "$hub" ]]; then
+  prev_hub=0; [[ -f .watchdog.hub ]] && read -r prev_hub < .watchdog.hub
+  hub_lag=$(( head - hub ))
+  echo "$(date -u +%FT%TZ) hub=$hub hub_lag=$hub_lag"
+  if (( hub == prev_hub && head > hub )); then
+    echo "$(date -u +%FT%TZ) restarting explorer-api (head static at $hub)"
+    docker compose restart explorer-api >/dev/null 2>&1
+  fi
+  hub_alerting=0; [[ -f .watchdog.hub.alert ]] && hub_alerting=1
+  if (( hub_lag > ALERT_LAG && hub == prev_hub )); then
+    (( hub_alerting == 0 )) && alert "explorer-api stalled $hub_lag blocks behind (hub $hub, chain $head)" && touch .watchdog.hub.alert
+  elif (( hub_lag <= ALERT_LAG && hub_alerting == 1 )); then
+    alert "explorer-api recovered: $hub_lag blocks behind" && rm -f .watchdog.hub.alert
+  fi
+  echo "$hub" > .watchdog.hub
+else
+  echo "$(date -u +%FT%TZ) explorer-api health not answering"
+fi

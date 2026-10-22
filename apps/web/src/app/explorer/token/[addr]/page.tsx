@@ -1,13 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getAddress, isAddress } from 'viem';
-import {
-  addressLabel,
-  explorerClient,
-  formatAgo,
-  shortAddress,
-  shortHash,
-} from '@/lib/explorer';
+import { addressLabel, explorerClient, formatAgo, shortAddress, shortHash } from '@/lib/explorer';
 import {
   formatTokenAmount,
   loadTokenRecentTransfers,
@@ -15,6 +9,7 @@ import {
   uniqueAddressesFromTransfers,
   type TokenTransfer,
 } from '@/lib/token';
+import { hubTokenHolders } from '@/lib/explorerHub';
 import { loadVerified } from '@/lib/verified';
 import { VerifiedContractView } from '@/components/explorer/VerifiedContractView';
 
@@ -35,10 +30,11 @@ export default async function TokenPage({ params }: TokenPageProps) {
   // else (EOA, non-token contract, call-revert) falls through to the
   // generic address page so the user still gets useful output rather than
   // a hard 404.
-  const [code, metadata, head] = await Promise.all([
+  const [code, metadata, head, holders] = await Promise.all([
     client.getCode({ address: addr }).catch(() => undefined),
     readTokenMetadata(client, addr),
     client.getBlockNumber(),
+    hubTokenHolders(addr.toLowerCase(), 25),
   ]);
 
   const isContract = typeof code === 'string' && code !== '0x';
@@ -60,9 +56,9 @@ export default async function TokenPage({ params }: TokenPageProps) {
             Not a recognizable ERC-20 token
           </h1>
           <p className="text-sm text-white/60">
-            <span className="break-all font-mono text-white/80">{addr}</span> either has
-            no contract code, or its contract does not implement the ERC-20 metadata
-            interface. Use the generic address view instead.
+            <span className="break-all font-mono text-white/80">{addr}</span> either has no contract
+            code, or its contract does not implement the ERC-20 metadata interface. Use the generic
+            address view instead.
           </p>
           <Link
             href={`/explorer/address/${addr}`}
@@ -101,9 +97,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
       <section className="space-y-2">
         <h1 className="break-all text-2xl font-semibold tracking-tight md:text-3xl">
           <span className="text-brand-accent">{metadata.name}</span>
-          <span className="ml-2 text-sm font-normal text-white/60">
-            ({metadata.symbol})
-          </span>
+          <span className="ml-2 text-sm font-normal text-white/60">({metadata.symbol})</span>
           {verified ? (
             <span
               className="ml-3 inline-flex items-center gap-1 rounded-full bg-emerald-400/15 px-2 py-0.5 align-middle text-[10px] uppercase tracking-wider text-emerald-300"
@@ -141,15 +135,59 @@ export default async function TokenPage({ params }: TokenPageProps) {
 
       {verified ? <VerifiedContractView manifest={verified} /> : null}
 
+      {holders ? (
+        <section className="surface p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Top holders</h2>
+            <span className="text-xs text-white/40">
+              {holders.count != null ? `${holders.count.toLocaleString()} holders · ` : ''}
+              from indexed transfers
+            </span>
+          </div>
+          {holders.holders.length === 0 ? (
+            <p className="text-sm text-white/50">No holders indexed yet.</p>
+          ) : (
+            <ol className="space-y-1 text-xs">
+              {holders.holders.map((h, i) => {
+                const pct =
+                  metadata.totalSupply > 0n
+                    ? Number((h.quantity * 10000n) / metadata.totalSupply) / 100
+                    : null;
+                return (
+                  <li
+                    key={h.address}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/[0.01] px-3 py-2"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="w-5 text-white/40">{i + 1}</span>
+                      <Link
+                        href={`/explorer/address/${h.address}`}
+                        className="font-mono text-brand-accent hover:underline"
+                      >
+                        {addressLabel(h.address) ?? shortAddress(h.address, 6)}
+                      </Link>
+                    </span>
+                    <span className="text-white/70">
+                      {formatTokenAmount(h.quantity, metadata.decimals)} {metadata.symbol}
+                      {pct != null ? (
+                        <span className="ml-2 text-white/40">{pct.toFixed(2)}%</span>
+                      ) : null}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </section>
+      ) : null}
+
       <section className="surface p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Recent transfers</h2>
           <span className="text-xs text-white/40">newest first</span>
         </div>
         {transfers.length === 0 ? (
-          <p className="text-sm text-white/50">
-            No Transfer events found for this token yet.
-          </p>
+          <p className="text-sm text-white/50">No Transfer events found for this token yet.</p>
         ) : (
           <ul className="space-y-2">
             {transfers.map((t) => (
