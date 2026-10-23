@@ -344,10 +344,28 @@ export interface ApiPairRaw {
  */
 export async function fetchAllPairs(client: PublicClient = priceClient()): Promise<ApiPairRaw[]> {
   const { d } = assertMainnetDeployments();
-  if (d.swapFactory === ZERO_ADDRESS) return [];
+  return fetchFactoryPairs(d.swapFactory, client);
+}
+
+/**
+ * Every pair on the standalone V2 factory (`v2Factory`): plain Uniswap V2
+ * pools with no hub link (USDC.e/EGAZ, USDC.e/ETI), holding real token
+ * balances. Empty until the factory is deployed.
+ */
+export async function fetchAllV2Pairs(client: PublicClient = priceClient()): Promise<ApiPairRaw[]> {
+  const { d } = assertMainnetDeployments();
+  return fetchFactoryPairs(d.v2Factory, client);
+}
+
+/** All pairs registered on a Uniswap V2–compatible factory, with live reserves. */
+export async function fetchFactoryPairs(
+  factory: Address,
+  client: PublicClient = priceClient(),
+): Promise<ApiPairRaw[]> {
+  if (factory === ZERO_ADDRESS) return [];
   const len = (await client.readContract({
     abi: abis.factoryAbi,
-    address: d.swapFactory,
+    address: factory,
     functionName: 'allPairsLength',
   })) as bigint;
   const n = Number(len);
@@ -358,7 +376,7 @@ export async function fetchAllPairs(client: PublicClient = priceClient()): Promi
     Array.from({ length: n }, (_, i) =>
       client.readContract({
         abi: abis.factoryAbi,
-        address: d.swapFactory,
+        address: factory,
         functionName: 'allPairs',
         args: [BigInt(i)],
       }) as Promise<Address>,
