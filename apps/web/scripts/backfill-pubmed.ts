@@ -59,13 +59,18 @@ async function run() {
         grounding.targets.filter((t) => t.reviewed).map((t) => t.symbol),
         record.disease,
       );
+      let backgroundError: string | undefined;
       if (query) {
         let literature = searches.get(query);
         if (!literature) {
-          literature = await searchPubmed(query, 3);
-          searches.set(query, literature);
+          try {
+            literature = await searchPubmed(query, 3);
+            searches.set(query, literature);
+          } catch (error) {
+            backgroundError = String(error);
+          }
         }
-        updated.literatureContext = { ...literature, relation: 'background-only' };
+        if (literature) updated.literatureContext = { ...literature, relation: 'background-only' };
       }
       const decision = publicationDecision(updated);
       let outcome = 'dry-run';
@@ -77,7 +82,7 @@ async function run() {
         if ((await redis.eval(cas, 1, key, raw, JSON.stringify(updated))) !== 1) {
           throw new Error('Concurrent edit; record unchanged');
         }
-        outcome = 'saved';
+        outcome = backgroundError ? 'saved-partial' : 'saved';
       }
       appendFileSync(
         journal,
@@ -88,6 +93,7 @@ async function run() {
           citations: grounding.citationsFound.length,
           missing: grounding.citationsMissing,
           background: updated.literatureContext?.citations.length ?? 0,
+          backgroundError,
         })}\n`,
         { mode: 0o600, flush: true },
       );

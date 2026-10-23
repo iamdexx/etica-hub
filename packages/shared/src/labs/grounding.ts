@@ -349,9 +349,12 @@ export function pubmedTargetQuery(symbols: readonly string[], disease?: string):
 export async function findPubmedLiterature(prompt: string, limit = 4): Promise<PubmedLiterature> {
   if (limit <= 0) return { query: '', checkedAt: Date.now(), citations: [] };
   const symbols = extractTargetSymbols(prompt).slice(0, 3);
-  const targets = await Promise.all(symbols.map(resolveTarget));
+  const targets = await Promise.allSettled(symbols.map(resolveTarget));
   const query = pubmedTargetQuery(
-    targets.filter((t): t is TargetHit => !!t && t.reviewed).map((t) => t.symbol),
+    targets
+      .map((t) => (t.status === 'fulfilled' ? t.value : null))
+      .filter((t): t is TargetHit => !!t && t.reviewed)
+      .map((t) => t.symbol),
   );
   return searchPubmed(query || prompt, limit);
 }
