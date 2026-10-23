@@ -1,6 +1,12 @@
 import type { Pool, PoolClient } from 'pg';
-import type { Block, PublicClient, TransactionReceipt } from 'viem';
-import { decodeTransfer, isBurn, isMint } from './decode.js';
+import {
+  formatTransactionReceipt,
+  type Block,
+  type PublicClient,
+  type RpcTransactionReceipt,
+  type TransactionReceipt,
+} from 'viem';
+import { decodeTransfer, isBurn, isMint, ZERO } from './decode.js';
 
 export interface SyncOptions {
   startBlock: number;
@@ -26,10 +32,12 @@ export async function indexRange(
   const receipts = await Promise.all(
     blocks.map((b) =>
       b.transactions.length
-        ? ((client.request as (args: { method: string; params: unknown[] }) => Promise<unknown>)({
-            method: 'eth_getBlockReceipts',
-            params: [`0x${b.number!.toString(16)}`],
-          }) as Promise<TransactionReceipt[] | null>)
+        ? (
+            (client.request as (args: { method: string; params: unknown[] }) => Promise<unknown>)({
+              method: 'eth_getBlockReceipts',
+              params: [`0x${b.number!.toString(16)}`],
+            }) as Promise<RpcTransactionReceipt[] | null>
+          ).then((rs) => (rs ? rs.map((r) => formatTransactionReceipt(r)) : null))
         : Promise.resolve([]),
     ),
   );
@@ -48,7 +56,7 @@ export async function indexRange(
       await rewind(pool, from - 1);
       return indexRange(pool, client, from - 1, to, opts);
     }
-    await q(c, 'delete from hub.blocks where number >= $1', [from]);
+    await deleteFrom(c, from);
     for (let i = 0; i < blocks.length; i++) await writeBlock(c, blocks[i]!, receipts[i] ?? []);
     await q(
       c,
@@ -66,8 +74,50 @@ export async function indexRange(
 }
 
 async function rewind(pool: Pool, keepBelow: number): Promise<void> {
-  await pool.query('delete from hub.blocks where number >= $1', [keepBelow]);
-  await pool.query('update hub.cursor set head = $1 where id = 1 and head >= $1', [keepBelow - 1]);
+  const c = await pool.connect();
+  try {
+    await q(c, 'begin');
+    await deleteFrom(c, keepBelow);
+    await q(c, 'update hub.cursor set head = $1 where id = 1 and head >= $1', [keepBelow - 1]);
+    await q(c, 'commit');
+  } catch (e) {
+    await q(c, 'rollback').catch(() => undefined);
+    throw e;
+  } finally {
+    c.release();
+  }
+}
+
+/** Drop blocks >= from and back their deltas out of the balance/stat aggregates. */
+async function deleteFrom(c: PoolClient, from: number): Promise<void> {
+  await q(
+    c,
+    `update hub.token_balances b set balance = b.balance - d.delta, updated_block = least(b.updated_block, $1 - 1)
+    from (
+      select token, holder, sum(delta) as delta from (
+        select token, "from" as holder, -value as delta from hub.token_transfers
+          where block >= $1 and token_id is null and "from" <> $2
+        union all
+        select token, "to" as holder, value as delta from hub.token_transfers
+          where block >= $1 and token_id is null and "to" <> $2
+      ) x group by token, holder
+    ) d where b.token = d.token and b.holder = d.holder`,
+    [from, ZERO],
+  );
+  await q(
+    c,
+    `update hub.address_stats s set tx_count = s.tx_count - d.n, last_block = least(s.last_block, $1 - 1)
+    from (
+      select a, count(*) as n from (
+        select "from" as a from hub.txs where block >= $1
+        union all select "to" from hub.txs where block >= $1 and "to" is not null
+        union all select created from hub.txs where block >= $1 and created is not null
+      ) x group by a
+    ) d where s.address = d.a`,
+    [from],
+  );
+  await q(c, 'delete from hub.address_stats where tx_count <= 0 or first_block >= $1', [from]);
+  await q(c, 'delete from hub.blocks where number >= $1', [from]);
 }
 
 async function writeBlock(
@@ -130,7 +180,7 @@ async function writeBlock(
         tx.type,
       ],
     );
-    for (const a of [from, to, created])
+    for (const a of new Set([from, to, created]))
       if (a) touched.set(a, { count: (touched.get(a)?.count ?? 0) + 1 });
     for (const log of r.logs) {
       await q(

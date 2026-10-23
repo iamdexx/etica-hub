@@ -103,13 +103,13 @@ export default async function AddressPage({ params }: AddressPageProps) {
     hubAddressTxs(addrLower, 1, 25),
     loadAddressTokenTransfers(client, addr, head),
   ]);
-  const recent = indexed
+  const recent = indexed?.txs.length
     ? indexed.txs.map((tx) => ({
         ...tx,
         counterparty: tx.from.toLowerCase() === addrLower ? (tx.to ?? tx.contractAddress) : tx.from,
       }))
     : await scanRecentTxs(client, addr, head);
-  const historyNote = indexed
+  const historyNote = indexed?.txs.length
     ? indexed.total != null
       ? `${indexed.total.toLocaleString()} total · newest 25`
       : 'full history · newest 25'

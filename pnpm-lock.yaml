@@ -110,9 +110,6 @@ importers:
 
   apps/explorer-api:
     dependencies:
-      '@etica-hub/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@fastify/cors':
         specifier: ^10.0.1
         version: 10.1.0

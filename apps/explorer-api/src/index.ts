@@ -1,11 +1,20 @@
 import pg from 'pg';
-import { createPublicClient, fallback, http } from 'viem';
-import { eticaMainnet } from '@etica-hub/shared';
+import { createPublicClient, defineChain, fallback, http } from 'viem';
 import { buildApi } from './api.js';
 import { ensureSchema } from './schema.js';
 import { syncForever } from './sync.js';
 
 const env = process.env;
+const DEFAULT_RPCS = [
+  'https://eticamainnet.eticaprotocol.org',
+  'https://eticamainnet.eticascan.org',
+];
+const eticaMainnet = defineChain({
+  id: 61803,
+  name: 'Etica Mainnet',
+  nativeCurrency: { name: 'EGAZ', symbol: 'EGAZ', decimals: 18 },
+  rpcUrls: { default: { http: DEFAULT_RPCS } },
+});
 const pool = new pg.Pool({
   host: env.PG_HOST ?? 'db',
   port: Number(env.PG_PORT ?? 5432),

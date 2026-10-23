@@ -148,6 +148,7 @@ export function buildApi(pool: Pool) {
           const topics = [qs.topic0, qs.topic1, qs.topic2, qs.topic3].map((t) =>
             t && /^0x[0-9a-fA-F]{64}$/.test(t) ? t.toLowerCase() : null,
           );
+          if (!a && !topics[0]) return err('Error! address or topic0 is required');
           const r = await pool.query(
             `select * from hub.logs where ($1::text is null or address = $1) and ($2::text is null or topic0 = $2) and ($3::text is null or topic1 = $3)
              and ($4::text is null or topic2 = $4) and ($5::text is null or topic3 = $5) and block between $6 and $7
