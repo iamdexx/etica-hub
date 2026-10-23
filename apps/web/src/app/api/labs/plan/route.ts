@@ -220,6 +220,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     const instructions = [
       'You are a protein-engineering planner. Output ONLY a single minified JSON object — no prose, no reasoning, no markdown, no code fences. Begin your reply with { and write nothing before it.',
       'The object has keys: "hypothesis" (1 short sentence), "approach" (1-2 short sentences), "successCriteria" (1 sentence), "risks" (1 sentence), and "candidates" (an array of exactly 3 objects, each {"sequence","rationale"}). "sequence" = one-letter amino acids only from ACDEFGHIKLMNPQRSTVWY, 40-120 residues. "rationale" = under 15 words and may cite a [N] reference.',
+      'Cite only supplied references by [N]; never invent PMIDs, titles or experimental results. Retrieved papers are background, not proof that a designed candidate binds, works or is safe.',
       'Design NOVEL sequences; never copy known or patented drug sequences. If references are provided, build on them and cite the [N] index.',
       'End your reply with } and write nothing after it.',
     ].join(' ');
