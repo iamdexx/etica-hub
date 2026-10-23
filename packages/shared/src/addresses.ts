@@ -201,6 +201,15 @@ export const DEPLOYMENTS: Record<
     /** EticaDirectRouter — EticaSwapRouter + the stETX gate on every `to`. Zero until deployed. */
     directRouter: Address;
     /**
+     * EticaV2Factory — standalone, plain Uniswap V2 factory with no hub link
+     * (any pair, open `createPair`). Hosts the literal USDC.e/EGAZ and
+     * USDC.e/ETI pools that aggregators index as token-holding pairs; parity
+     * with the hub is left to routing and arbitrage. Zero until deployed.
+     */
+    v2Factory: Address;
+    /** EticaSwapRouter instance bound to `v2Factory`. Zero until deployed. */
+    v2Router: Address;
+    /**
      * DirectSwapHarvesterAdapter — `feeTo` of the direct factory; burns fee LP,
      * swaps legs to ETX on the hub router and splits 10/10/40/40 (stETX / farms / POL burned into the direct pair / treasury).
      * Zero until deployed.
@@ -230,6 +239,8 @@ export const DEPLOYMENTS: Record<
     eticaResearchMarketplace: '0x176b9dd241483480178e7e3ab63fcf60a249fc16',
     directFactory: '0x79Fe1715387Cd90541C6e1997185A6f0532F6D90',
     directRouter: '0xa3f84D02b96Ab59B75D67c03B3397B682EE1740B',
+    v2Factory: '0xbC09D5c67cF130F242dcC0B1dc303b068fb5c4F5',
+    v2Router: '0x92588D96D84CE4A1Ae48c997c6C12d7b0E9eA6ab',
     directHarvesterAdapter: '0x5bf07FcE67B52612aBB27DB2AaD6531a542C32C2',
     directMetaPairDeployer: '0x64914b3c034a9872f2B2D8B49938BdB466e7A423',
     directAdmin: '0x37027eaB73579c41F52E920926f5E15e05915E22',
@@ -256,6 +267,8 @@ export const DEPLOYMENTS: Record<
     eticaResearchMarketplace: '0x0000000000000000000000000000000000000000',
     directFactory: '0x0000000000000000000000000000000000000000',
     directRouter: '0x0000000000000000000000000000000000000000',
+    v2Factory: '0x0000000000000000000000000000000000000000',
+    v2Router: '0x0000000000000000000000000000000000000000',
     directHarvesterAdapter: '0x0000000000000000000000000000000000000000',
     directMetaPairDeployer: '0x0000000000000000000000000000000000000000',
     directAdmin: '0x0000000000000000000000000000000000000000',
@@ -283,6 +296,8 @@ export const DEPLOYMENTS: Record<
     eticaResearchMarketplace: '0x0000000000000000000000000000000000000000',
     directFactory: '0x0000000000000000000000000000000000000000',
     directRouter: '0x0000000000000000000000000000000000000000',
+    v2Factory: '0x0000000000000000000000000000000000000000',
+    v2Router: '0x0000000000000000000000000000000000000000',
     directHarvesterAdapter: '0x0000000000000000000000000000000000000000',
     directMetaPairDeployer: '0x0000000000000000000000000000000000000000',
     directAdmin: '0x0000000000000000000000000000000000000000',

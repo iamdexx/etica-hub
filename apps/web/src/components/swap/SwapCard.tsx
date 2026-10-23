@@ -53,6 +53,10 @@ type SwapCtx = {
   // USDC.e (bridged USDC, 6 decimals). Zero off Etica mainnet or before the
   // warp route is live; the token picker hides the option in that case.
   usdce: Address;
+  // Router of the standalone V2 factory (plain USDC.e/EGAZ and USDC.e/ETI
+  // pairs, no hub link). Zero until deployed. Used only as an alternative
+  // quote: the swap takes whichever venue returns more.
+  v2Router: Address;
 };
 
 function useCtx(): SwapCtx | null {
@@ -75,6 +79,7 @@ function useCtx(): SwapCtx | null {
         chainId === eticaMainnet.id && isUsdcWarpRouteLive()
           ? USDC_WARP_ROUTE.syntheticToken
           : ZERO,
+      v2Router: d.v2Router,
     };
   }, [chainId]);
 }
@@ -104,6 +109,17 @@ function buildPath(ctx: SwapCtx, from: TokenSymbol, to: TokenSymbol): Address[] 
   if (from === 'ETX' || to === 'ETX') return [tokenAddress(ctx, from), tokenAddress(ctx, to)];
   // Otherwise hub through ETX.
   return [tokenAddress(ctx, from), ctx.etx, tokenAddress(ctx, to)];
+}
+
+/**
+ * Single-hop path on the standalone V2 factory, which only has USDC.e-quoted
+ * pairs for EGAZ and ETI. Null for every other combination.
+ */
+function buildStandalonePath(ctx: SwapCtx, from: TokenSymbol, to: TokenSymbol): Address[] | null {
+  if (ctx.v2Router === ZERO || ctx.usdce === ZERO || from === to) return null;
+  const other = from === 'USDC.e' ? to : to === 'USDC.e' ? from : null;
+  if (other !== 'EGAZ' && other !== 'ETI') return null;
+  return [tokenAddress(ctx, from), tokenAddress(ctx, to)];
 }
 
 export function SwapCard({
@@ -174,12 +190,17 @@ export function SwapCard({
     return fromSymbol === 'ETX' ? { i: 0n, j: 1n } : { i: 1n, j: 0n };
   }, [useStableSwap, fromSymbol]);
 
-  // For stableswap routes, approval target is the pool itself; for V2 it's the router.
-  const spenderForApproval = useMemo<Address | null>(() => {
-    if (!ctx) return null;
-    if (useStableSwap) return ctx.stableSwapPool;
-    return ctx.router;
-  }, [ctx, useStableSwap]);
+  const standalonePath = useMemo<Address[] | null>(
+    () => (ctx && !useStableSwap ? buildStandalonePath(ctx, fromSymbol, toSymbol) : null),
+    [ctx, useStableSwap, fromSymbol, toSymbol],
+  );
+  const standaloneQuote = useReadContract({
+    abi: abis.routerAbi,
+    address: ctx?.v2Router,
+    functionName: 'getAmountsOut',
+    args: standalonePath && amountIn > 0n ? [amountIn, standalonePath] : undefined,
+    query: { enabled: Boolean(ctx && standalonePath && amountIn > 0n) },
+  });
 
   // Balances
   const nativeBal = useBalance({
@@ -228,19 +249,6 @@ export function SwapCard({
     return (etxBal.data as bigint | undefined) ?? 0n;
   }
 
-  // Allowance of input token -> approval spender (router for V2 routes,
-  // stableswap pool for direct stETX/ETX routes). Only applies when input
-  // is an ERC20 (i.e. not native EGAZ).
-  const allowance = useReadContract({
-    abi: abis.erc20Abi,
-    address: inputTokenAddr ?? undefined,
-    functionName: 'allowance',
-    args:
-      address && ctx && inputTokenAddr && spenderForApproval
-        ? [address, spenderForApproval]
-        : undefined,
-    query: { enabled: Boolean(address && ctx && inputTokenAddr && spenderForApproval) },
-  });
 
   const path = useMemo<Address[] | null>(
     () => (ctx ? buildPath(ctx, fromSymbol, toSymbol) : null),
@@ -263,14 +271,48 @@ export function SwapCard({
     query: { enabled: Boolean(useStableSwap && ssIndices && amountIn > 0n) },
   });
 
+  const hubAmountOut = useMemo<bigint>(() => {
+    const data = v2Quote.data as bigint[] | undefined;
+    if (!data || data.length < 2) return 0n;
+    return data[data.length - 1];
+  }, [v2Quote.data]);
+  const standaloneAmountOut = useMemo<bigint>(() => {
+    const data = standaloneQuote.data as bigint[] | undefined;
+    if (!data || data.length < 2) return 0n;
+    return data[data.length - 1];
+  }, [standaloneQuote.data]);
+  // Best execution between the hub route and the standalone pair.
+  const useStandalone = !useStableSwap && standalonePath !== null && standaloneAmountOut > hubAmountOut;
+  const activeRouter = ctx ? (useStandalone ? ctx.v2Router : ctx.router) : null;
+  const activePath = useStandalone ? standalonePath : path;
+
+  // For stableswap routes, approval target is the pool itself; for V2 it's the router.
+  const spenderForApproval = useMemo<Address | null>(() => {
+    if (!ctx) return null;
+    if (useStableSwap) return ctx.stableSwapPool;
+    return activeRouter;
+  }, [ctx, useStableSwap, activeRouter]);
+
   const amountOut = useMemo<bigint>(() => {
     if (useStableSwap) {
       return (ssQuote.data as bigint | undefined) ?? 0n;
     }
-    const data = v2Quote.data as bigint[] | undefined;
-    if (!data || data.length < 2) return 0n;
-    return data[data.length - 1];
-  }, [useStableSwap, ssQuote.data, v2Quote.data]);
+    return useStandalone ? standaloneAmountOut : hubAmountOut;
+  }, [useStableSwap, ssQuote.data, useStandalone, standaloneAmountOut, hubAmountOut]);
+
+  // Allowance of input token -> approval spender (router for V2 routes,
+  // stableswap pool for direct stETX/ETX routes). Only applies when input
+  // is an ERC20 (i.e. not native EGAZ).
+  const allowance = useReadContract({
+    abi: abis.erc20Abi,
+    address: inputTokenAddr ?? undefined,
+    functionName: 'allowance',
+    args:
+      address && ctx && inputTokenAddr && spenderForApproval
+        ? [address, spenderForApproval]
+        : undefined,
+    query: { enabled: Boolean(address && ctx && inputTokenAddr && spenderForApproval) },
+  });
 
   const amountOutMin = useMemo<bigint>(() => {
     if (amountOut === 0n) return 0n;
@@ -328,29 +370,29 @@ export function SwapCard({
           functionName: 'swap',
           args: [ssIndices.i, ssIndices.j, amountIn, amountOutMin, address],
         });
-      } else if (path) {
+      } else if (activePath && activeRouter) {
         const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
         if (fromIsNative) {
           hash = await writeContractAsync({
             abi: abis.routerAbi,
-            address: ctx.router,
+            address: activeRouter,
             functionName: 'swapExactEGAZForTokens',
-            args: [amountOutMin, path, address, deadline],
+            args: [amountOutMin, activePath, address, deadline],
             value: amountIn,
           });
         } else if (toIsNative) {
           hash = await writeContractAsync({
             abi: abis.routerAbi,
-            address: ctx.router,
+            address: activeRouter,
             functionName: 'swapExactTokensForEGAZ',
-            args: [amountIn, amountOutMin, path, address, deadline],
+            args: [amountIn, amountOutMin, activePath, address, deadline],
           });
         } else {
           hash = await writeContractAsync({
             abi: abis.routerAbi,
-            address: ctx.router,
+            address: activeRouter,
             functionName: 'swapExactTokensForTokens',
-            args: [amountIn, amountOutMin, path, address, deadline],
+            args: [amountIn, amountOutMin, activePath, address, deadline],
           });
         }
       } else {
@@ -373,6 +415,7 @@ export function SwapCard({
       usdceBal.refetch(),
       allowance.refetch(),
       v2Quote.refetch(),
+      standaloneQuote.refetch(),
       ssQuote.refetch(),
     ]).catch(() => {
       // best-effort
@@ -410,10 +453,17 @@ export function SwapCard({
     resetWrite();
   }
 
-  const priceImpactText = usePriceImpact(ctx, useStableSwap ? null : path, amountIn, amountOut);
+  // Price impact reads hub-factory reserves along the path; the standalone
+  // pair lives on another factory, so impact is not shown for that route.
+  const priceImpactText = usePriceImpact(
+    ctx,
+    useStableSwap || useStandalone ? null : path,
+    amountIn,
+    amountOut,
+  );
   const routeText = useStableSwap
     ? `${fromSymbol} → ${toSymbol} · stableswap`
-    : describePath(path, ctx);
+    : describePath(activePath, ctx);
   const pickerOptions = tokenOptions(ctx, geoRestricted).filter(
     (t) => !onlyTokens || onlyTokens.includes(t),
   );

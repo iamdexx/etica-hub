@@ -4,6 +4,7 @@ import { GeistMono } from 'geist/font/mono';
 import { Providers } from './providers';
 import { SiteFooter } from '@/components/SiteFooter';
 import { SiteHeader } from '@/components/SiteHeader';
+import { SiteChrome } from '@/components/SiteChrome';
 import { NextUp } from '@/components/NextUp';
 import { JsonLd } from '@/components/JsonLd';
 import { organizationJsonLd, websiteJsonLd } from '@/lib/seo/jsonld';
@@ -43,12 +44,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <JsonLd data={organizationJsonLd()} />
         <JsonLd data={websiteJsonLd()} />
         <Providers>
-          <SiteHeader />
-          <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-5 md:px-6 md:py-10 lg:px-8">
+          <SiteChrome
+            header={<SiteHeader />}
+            footer={
+              <>
+                <NextUp />
+                <SiteFooter />
+              </>
+            }
+          >
             {children}
-          </main>
-          <NextUp />
-          <SiteFooter />
+          </SiteChrome>
         </Providers>
       </body>
     </html>
