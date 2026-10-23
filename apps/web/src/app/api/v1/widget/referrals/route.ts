@@ -32,9 +32,9 @@ const terms = {
 export async function GET(req: Request): Promise<Response> {
   const ref = new URL(req.url).searchParams.get('ref');
   if (!ref) return jsonError(400, 'ref required');
-  const kv = referralStore();
-  if (!kv) return jsonError(503, 'ledger unavailable');
-  const totals = await getReferralTotals(kv, ref);
+  const store = referralStore();
+  if (!store) return jsonError(503, 'ledger unavailable');
+  const totals = await getReferralTotals(store, ref);
   if (!totals) return jsonError(400, 'invalid ref');
   return jsonResponse({ terms, totals });
 }
@@ -47,9 +47,9 @@ export async function POST(req: Request): Promise<Response> {
     return jsonError(400, 'invalid json');
   }
   if (typeof body.tx !== 'string' || typeof body.ref !== 'string') return jsonError(400, 'tx and ref required');
-  const kv = referralStore();
-  if (!kv) return jsonError(503, 'ledger unavailable');
-  const result = await creditWidgetSwap(kv, body.tx, body.ref);
+  const store = referralStore();
+  if (!store) return jsonError(503, 'ledger unavailable');
+  const result = await creditWidgetSwap(store, body.tx, body.ref);
   if (!result) return jsonError(400, 'invalid tx or ref');
   return jsonResponse({ terms, ...result });
 }

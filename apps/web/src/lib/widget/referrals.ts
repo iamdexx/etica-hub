@@ -1,11 +1,14 @@
 /**
  * Widget referral ledger.
  *
- * Third-party sites embed `/embed/v2-pool?ref=0xTheirWallet`. After a swap
- * confirms, the widget posts the tx hash; we re-read the receipt on-chain,
- * keep only `Swap` events emitted by pairs of the standalone V2 factory, and
- * credit the host with the fee that trade generated. Nothing is trusted from
- * the client beyond the hash and the ref address.
+ * Third-party sites embed `/embed/v2-pool?ref=0xTheirWallet`. The widget
+ * appends the host wallet as a 20-byte calldata suffix to every swap it sends
+ * to the standalone router (Solidity ignores trailing calldata), then posts the
+ * tx hash here. We re-read the transaction and receipt on-chain and credit the
+ * host only when: the tx went to `v2Router`, its calldata ends with that host's
+ * address, it succeeded, and it emitted `Swap` from a pair the standalone
+ * factory registered (`getPair(token0, token1) == emitter`). Nothing posted by
+ * the client is trusted beyond the hash and the ref address.
  *
  * Economics (same pair contract as the hub): 0.30% swap fee, 0.25% to LPs,
  * 0.05% to the protocol (`feeTo`). The host's commission is a share of the
@@ -14,6 +17,7 @@
 
 import { getAddress, isAddress, parseEventLogs, type Address, type Hex, type PublicClient } from 'viem';
 import { DEPLOYMENTS, USDC_WARP_ROUTE, abis, eticaMainnet } from '@etica-hub/shared';
+import { aiBotKvFor, memoryAiBotKv, type AiBotKv } from '@/lib/aibot/kv';
 import { memoryKv, restKv, tcpKv, type KvStore } from '@/lib/buybot/state';
 import { priceClient } from '@/lib/priceApi';
 
@@ -24,10 +28,9 @@ export const PROTOCOL_FEE_SHARE = 1 / 6;
 export const REFERRAL_SHARE_OF_PROTOCOL_FEE = 0.5;
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
-const pairFactoryAbi = [
-  { type: 'function', name: 'factory', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-] as const;
-const TX_DEDUPE_TTL_SECONDS = 400 * 24 * 60 * 60;
+/** Claim window while the counters are being written; made permanent afterwards. */
+const CLAIM_TTL_SECONDS = 10 * 60;
+const COUNTER_TTL_SECONDS = 20 * 365 * 24 * 60 * 60;
 
 export interface ReferralTotals {
   ref: Address;
@@ -43,57 +46,106 @@ export interface ReferralTotals {
   lastTx: Hex | null;
 }
 
+export type CreditStatus = 'credited' | 'duplicate' | 'no-swap' | 'not-found' | 'failed-tx' | 'not-widget-tx';
+
 export interface CreditResult {
-  status: 'credited' | 'duplicate' | 'no-swap' | 'not-found' | 'failed-tx';
+  status: CreditStatus;
   swaps: number;
   volumeUsd: number;
   totals: ReferralTotals | null;
 }
 
-let memory: KvStore | null = null;
+export interface ReferralStore {
+  kv: KvStore;
+  counters: AiBotKv;
+}
 
-export function referralStore(): KvStore | null {
-  const redisUrl = process.env.REDIS_URL;
-  if (redisUrl) return tcpKv(redisUrl);
-  const restUrl = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
-  const restToken = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (restUrl && restToken) return restKv(restUrl, restToken);
+let memory: ReferralStore | null = null;
+
+export function referralStore(): ReferralStore | null {
+  const redisUrl = process.env.REDIS_URL ?? null;
+  const kvRestUrl = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL ?? null;
+  const kvRestToken = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN ?? null;
+  const counters = aiBotKvFor({ kvRestUrl, kvRestToken, redisUrl });
+  if (counters) {
+    const kv = kvRestUrl && kvRestToken ? restKv(kvRestUrl, kvRestToken) : tcpKv(redisUrl!);
+    return { kv, counters };
+  }
   if (process.env.VERCEL_ENV === 'production') return null;
-  memory ??= memoryKv();
+  memory ??= memoryReferralStore();
   return memory;
 }
 
-const totalsKey = (ref: Address) => `widget:ref:${ref.toLowerCase()}`;
+export function memoryReferralStore(): ReferralStore {
+  return { kv: memoryKv(), counters: memoryAiBotKv() };
+}
+
+const key = (ref: Address, field: string) => `widget:ref:${ref.toLowerCase()}:${field}`;
 const txKey = (tx: Hex) => `widget:ref:tx:${tx.toLowerCase()}`;
 
 export function emptyTotals(ref: Address): ReferralTotals {
   return { ref, swaps: 0, volumeUsd: 0, feesUsd: 0, commissionUsd: 0, firstTxAt: null, lastTxAt: null, lastTx: null };
 }
 
-export async function getReferralTotals(kv: KvStore, refRaw: string): Promise<ReferralTotals | null> {
+export async function getReferralTotals(store: ReferralStore, refRaw: string): Promise<ReferralTotals | null> {
   if (!isAddress(refRaw, { strict: false })) return null;
   const ref = getAddress(refRaw);
-  const raw = await kv.get(totalsKey(ref));
-  if (!raw) return emptyTotals(ref);
-  try {
-    return { ...emptyTotals(ref), ...(JSON.parse(raw) as Partial<ReferralTotals>), ref };
-  } catch {
-    return emptyTotals(ref);
+  const [swaps, volumeUsd, feesUsd, metaRaw] = await Promise.all([
+    store.counters.getNumber(key(ref, 'swaps')),
+    store.counters.getNumber(key(ref, 'volume')),
+    store.counters.getNumber(key(ref, 'fees')),
+    store.kv.get(key(ref, 'meta')),
+  ]);
+  let meta: Partial<Pick<ReferralTotals, 'firstTxAt' | 'lastTxAt' | 'lastTx'>> = {};
+  if (metaRaw) {
+    try {
+      meta = JSON.parse(metaRaw) as typeof meta;
+    } catch {
+      meta = {};
+    }
   }
+  return {
+    ...emptyTotals(ref),
+    ...meta,
+    ref,
+    swaps,
+    volumeUsd,
+    feesUsd,
+    commissionUsd: feesUsd * PROTOCOL_FEE_SHARE * REFERRAL_SHARE_OF_PROTOCOL_FEE,
+  };
 }
 
-/** USDC.e volume of the swaps in `tx` that hit a standalone-V2 pair. */
+/** Calldata suffix the widget appends to router swaps so the host is provable on-chain. */
+export function referralSuffix(ref: Address): Hex {
+  return `0x${getAddress(ref).slice(2).toLowerCase()}`;
+}
+
+/**
+ * USDC.e volume of the swaps in `tx` that hit a standalone-V2 pair, provided
+ * the tx is a widget swap tagged with `ref`.
+ */
 export async function widgetSwapVolumeUsd(
   tx: Hex,
+  ref: Address,
   client: PublicClient = priceClient(),
-): Promise<{ status: 'ok' | 'not-found' | 'failed-tx'; swaps: number; volumeUsd: number }> {
+): Promise<{ status: 'ok' | 'not-found' | 'failed-tx' | 'not-widget-tx'; swaps: number; volumeUsd: number }> {
   const d = DEPLOYMENTS[eticaMainnet.id];
-  if (d.v2Factory === ZERO) return { status: 'ok', swaps: 0, volumeUsd: 0 };
+  if (d.v2Factory === ZERO || d.v2Router === ZERO) return { status: 'ok', swaps: 0, volumeUsd: 0 };
   let receipt;
+  let txn;
   try {
-    receipt = await client.getTransactionReceipt({ hash: tx });
+    [receipt, txn] = await Promise.all([client.getTransactionReceipt({ hash: tx }), client.getTransaction({ hash: tx })]);
   } catch {
     return { status: 'not-found', swaps: 0, volumeUsd: 0 };
+  }
+  const suffix = referralSuffix(ref).slice(2);
+  if (
+    !txn.to ||
+    txn.to.toLowerCase() !== d.v2Router.toLowerCase() ||
+    txn.input.length <= 10 + suffix.length ||
+    !txn.input.toLowerCase().endsWith(suffix)
+  ) {
+    return { status: 'not-widget-tx', swaps: 0, volumeUsd: 0 };
   }
   if (receipt.status !== 'success') return { status: 'failed-tx', swaps: 0, volumeUsd: 0 };
 
@@ -106,14 +158,19 @@ export async function widgetSwapVolumeUsd(
     const pair = getAddress(log.address);
     let meta = verified.get(pair);
     if (!meta) {
-      const [factory, token0, token1] = await Promise.all([
-        client.readContract({ abi: pairFactoryAbi, address: pair, functionName: 'factory' }) as Promise<Address>,
+      const [token0, token1] = await Promise.all([
         client.readContract({ abi: abis.pairAbi, address: pair, functionName: 'token0' }) as Promise<Address>,
         client.readContract({ abi: abis.pairAbi, address: pair, functionName: 'token1' }) as Promise<Address>,
       ]);
+      const registered = (await client.readContract({
+        abi: abis.factoryAbi,
+        address: d.v2Factory,
+        functionName: 'getPair',
+        args: [token0, token1],
+      })) as Address;
       const usdcIs0 = token0.toLowerCase() === usdc;
       const usdcIs1 = token1.toLowerCase() === usdc;
-      meta = { isOurs: factory.toLowerCase() === d.v2Factory.toLowerCase() && (usdcIs0 || usdcIs1), usdcIs0 };
+      meta = { isOurs: registered.toLowerCase() === pair.toLowerCase() && (usdcIs0 || usdcIs1), usdcIs0 };
       verified.set(pair, meta);
     }
     if (!meta.isOurs) continue;
@@ -127,7 +184,7 @@ export async function widgetSwapVolumeUsd(
 }
 
 export async function creditWidgetSwap(
-  kv: KvStore,
+  store: ReferralStore,
   txRaw: string,
   refRaw: string,
   client: PublicClient = priceClient(),
@@ -136,26 +193,33 @@ export async function creditWidgetSwap(
   const tx = txRaw.toLowerCase() as Hex;
   const ref = getAddress(refRaw);
 
-  const vol = await widgetSwapVolumeUsd(tx, client);
+  const vol = await widgetSwapVolumeUsd(tx, ref, client);
   if (vol.status !== 'ok') return { status: vol.status, swaps: 0, volumeUsd: 0, totals: null };
   if (vol.swaps === 0) return { status: 'no-swap', swaps: 0, volumeUsd: 0, totals: null };
 
-  const fresh = await kv.setIfAbsent(txKey(tx), ref, TX_DEDUPE_TTL_SECONDS);
-  const totals = (await getReferralTotals(kv, ref)) ?? emptyTotals(ref);
-  if (!fresh) return { status: 'duplicate', swaps: vol.swaps, volumeUsd: vol.volumeUsd, totals };
-
+  // Short-lived claim first: if the counter writes below fail, it lapses and the
+  // swap can be re-posted; once they land the claim is made permanent.
+  const fresh = await store.kv.setIfAbsent(txKey(tx), ref, CLAIM_TTL_SECONDS);
+  if (!fresh) {
+    return { status: 'duplicate', swaps: vol.swaps, volumeUsd: vol.volumeUsd, totals: await getReferralTotals(store, ref) };
+  }
   const feesUsd = vol.volumeUsd * (SWAP_FEE_BPS / 10_000);
+  await Promise.all([
+    store.counters.incrCounter(key(ref, 'swaps'), COUNTER_TTL_SECONDS),
+    store.counters.incrFloat(key(ref, 'volume'), vol.volumeUsd, COUNTER_TTL_SECONDS),
+    store.counters.incrFloat(key(ref, 'fees'), feesUsd, COUNTER_TTL_SECONDS),
+  ]);
+  await store.kv.set(txKey(tx), ref);
   const now = new Date().toISOString();
-  const next: ReferralTotals = {
-    ref,
-    swaps: totals.swaps + vol.swaps,
-    volumeUsd: totals.volumeUsd + vol.volumeUsd,
-    feesUsd: totals.feesUsd + feesUsd,
-    commissionUsd: totals.commissionUsd + feesUsd * PROTOCOL_FEE_SHARE * REFERRAL_SHARE_OF_PROTOCOL_FEE,
-    firstTxAt: totals.firstTxAt ?? now,
-    lastTxAt: now,
-    lastTx: tx,
-  };
-  await kv.set(totalsKey(ref), JSON.stringify(next));
-  return { status: 'credited', swaps: vol.swaps, volumeUsd: vol.volumeUsd, totals: next };
+  const prevMeta = await store.kv.get(key(ref, 'meta')).catch(() => null);
+  let firstTxAt: string | null = null;
+  if (prevMeta) {
+    try {
+      firstTxAt = (JSON.parse(prevMeta) as { firstTxAt?: string | null }).firstTxAt ?? null;
+    } catch {
+      firstTxAt = null;
+    }
+  }
+  await store.kv.set(key(ref, 'meta'), JSON.stringify({ firstTxAt: firstTxAt ?? now, lastTxAt: now, lastTx: tx })).catch(() => {});
+  return { status: 'credited', swaps: vol.swaps, volumeUsd: vol.volumeUsd, totals: await getReferralTotals(store, ref) };
 }

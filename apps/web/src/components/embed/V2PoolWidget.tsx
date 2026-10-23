@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   BaseError,
   UserRejectedRequestError,
+  encodeFunctionData,
   formatUnits,
+  getAddress,
+  isAddress,
   parseUnits,
   type Address,
   type Hex,
@@ -15,6 +18,7 @@ import {
   useChainId,
   useReadContract,
   useReadContracts,
+  useSendTransaction,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
@@ -73,6 +77,9 @@ export function V2PoolWidget({
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const onEtica = chainId === eticaMainnet.id;
+  // Host wallet, appended to swap calldata so the referral API can prove it on-chain.
+  const ref: Address | null = referrer && isAddress(referrer, { strict: false }) ? getAddress(referrer) : null;
+  const refSuffix = ref ? ref.slice(2).toLowerCase() : '';
 
   const [tab, setTab] = useState<Tab>('swap');
 
@@ -157,7 +164,7 @@ export function V2PoolWidget({
     functionName: 'getAmountsOut',
     args: swapIn > 0n ? [swapIn, path] : undefined,
     chainId: eticaMainnet.id,
-    query: { enabled: deployed && seeded && swapIn > 0n },
+    query: { enabled: deployed && seeded && swapIn > 0n, refetchInterval: 15_000 },
   });
   const swapOut = useMemo(() => {
     const data = quote.data as readonly bigint[] | undefined;
@@ -220,7 +227,9 @@ export function V2PoolWidget({
   const addSpokeNeedsApproval = !spoke.native && addSpoke > 0n && spokeAllowance < addSpoke;
 
   // ---- Writes ----
-  const { writeContractAsync, data: txHash, isPending, reset: resetWrite } = useWriteContract();
+  const { writeContractAsync, data: txHash, isPending: isWritePending, reset: resetWrite } = useWriteContract();
+  const { sendTransactionAsync, isPending: isSendPending, reset: resetSend } = useSendTransaction();
+  const isPending = isWritePending || isSendPending;
   const [pendingHash, setPendingHash] = useState<Hex | undefined>();
   const [pendingKind, setPendingKind] = useState<'swap' | 'add' | 'approve' | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -230,14 +239,14 @@ export function V2PoolWidget({
 
   useEffect(() => {
     if (!receipt.isSuccess || !activeHash) return;
-    void Promise.all([nativeBal.refetch(), erc20Reads.refetch(), pairReads.refetch(), pairQ.refetch()]).catch(() => {});
-    if (pendingKind === 'swap' && referrer) {
+    void Promise.all([nativeBal.refetch(), erc20Reads.refetch(), pairReads.refetch(), pairQ.refetch(), quote.refetch()]).catch(() => {});
+    if (pendingKind === 'swap' && ref) {
       // Credit the host site: the API re-reads the receipt on-chain, so a bad
       // or replayed hash is simply ignored.
       void fetch('/api/v1/widget/referrals', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tx: activeHash, ref: referrer }),
+        body: JSON.stringify({ tx: activeHash, ref }),
       }).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,6 +257,7 @@ export function V2PoolWidget({
     setPendingHash(undefined);
     setPendingKind(kind);
     resetWrite();
+    resetSend();
     try {
       setPendingHash(await fn());
     } catch (err) {
@@ -274,30 +284,17 @@ export function V2PoolWidget({
     void run(
       'swap',
       () => {
-        if (swapInIsNative) {
-          return writeContractAsync({
-            abi: abis.routerAbi,
-            address: router,
-            functionName: 'swapExactEGAZForTokens',
-            args: [swapOutMin, path, address, deadline()],
-            value: swapIn,
-            chainId: eticaMainnet.id,
-          });
-        }
-        if (sellUsdc && spoke.native) {
-          return writeContractAsync({
-            abi: abis.routerAbi,
-            address: router,
-            functionName: 'swapExactTokensForEGAZ',
-            args: [swapIn, swapOutMin, path, address, deadline()],
-            chainId: eticaMainnet.id,
-          });
-        }
-        return writeContractAsync({
-          abi: abis.routerAbi,
-          address: router,
-          functionName: 'swapExactTokensForTokens',
-          args: [swapIn, swapOutMin, path, address, deadline()],
+        const dl = deadline();
+        const call = swapInIsNative
+          ? encodeFunctionData({ abi: abis.routerAbi, functionName: 'swapExactEGAZForTokens', args: [swapOutMin, path, address, dl] })
+          : sellUsdc && spoke.native
+            ? encodeFunctionData({ abi: abis.routerAbi, functionName: 'swapExactTokensForEGAZ', args: [swapIn, swapOutMin, path, address, dl] })
+            : encodeFunctionData({ abi: abis.routerAbi, functionName: 'swapExactTokensForTokens', args: [swapIn, swapOutMin, path, address, dl] });
+        // Trailing calldata is ignored by the router; it tags the swap with the host wallet.
+        return sendTransactionAsync({
+          to: router,
+          data: `${call}${refSuffix}` as Hex,
+          value: swapInIsNative ? swapIn : undefined,
           chainId: eticaMainnet.id,
         });
       },

@@ -34,10 +34,13 @@ Pair init code hash: `factory.pairCodeHash()`; `createPair` is open to anyone
 `https://eticahub.com/embed/v2-pool?pair=egaz|eti&ref=0xHostWallet&theme=dark|light`
 
 Bare page (no site chrome) meant for an `<iframe>`; swap and add-liquidity
-against the pair with the visitor's own wallet. Every confirmed swap made
-through a widget carrying `ref=` is posted to `/api/v1/widget/referrals`,
-which re-reads the receipt on-chain and credits the host with the USDC.e
-volume and the 0.30% fee it generated. The host's commission is
+against the pair with the visitor's own wallet. Swaps sent from a widget
+carrying `ref=` get the host wallet appended as 20 bytes of trailing calldata
+(ignored by the router), and the tx hash is posted to
+`/api/v1/widget/referrals`, which re-reads the transaction and receipt
+on-chain (to == standalone router, calldata tagged with that ref, `Swap` from a
+pair the factory registered) and credits the host with the USDC.e volume and
+the 0.30% fee it generated. Counters are atomic increments, deduped per tx. The host's commission is
 `REFERRAL_SHARE_OF_PROTOCOL_FEE` of the protocol's 1/6 fee share (0.025% of
 volume at the default 50%), read back from
 `GET /api/v1/widget/referrals?ref=0x…`; payouts are made from treasury fee
