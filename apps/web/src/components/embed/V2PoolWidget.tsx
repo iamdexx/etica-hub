@@ -59,7 +59,7 @@ function usePairDef(key: WidgetPairKey): PairDef {
 }
 
 export function V2PoolWidget({
-  pair: pairKey,
+  pair: initialPair,
   referrer,
   theme,
 }: {
@@ -69,6 +69,7 @@ export function V2PoolWidget({
 }) {
   const d = DEPLOYMENTS[eticaMainnet.id];
   const usdc = USDC_WARP_ROUTE.syntheticToken;
+  const [pairKey, setPairKey] = useState<WidgetPairKey>(initialPair);
   const spoke = usePairDef(pairKey);
   const router = d.v2Router;
   const factory = d.v2Factory;
@@ -380,7 +381,27 @@ export function V2PoolWidget({
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className={`text-[11px] uppercase tracking-wider ${muted}`}>EticaSwap pool · Etica mainnet</div>
-            <div className="text-lg font-semibold">{spoke.symbol}/USDC.e</div>
+            <div className="mt-1 flex gap-1">
+              {(['egaz', 'eti'] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    if (k === pairKey) return;
+                    setPairKey(k);
+                    setSwapInStr('');
+                    setAddUsdcStr('');
+                    setAddSpokeStr('');
+                    setError(undefined);
+                  }}
+                  className={`rounded-lg px-2.5 py-1 text-sm font-semibold transition ${
+                    pairKey === k ? (light ? 'bg-neutral-900 text-white' : 'bg-white/15 text-white') : muted
+                  }`}
+                >
+                  {k === 'egaz' ? 'EGAZ' : 'ETI'}/USDC.e
+                </button>
+              ))}
+            </div>
           </div>
           <ConnectButton />
         </div>

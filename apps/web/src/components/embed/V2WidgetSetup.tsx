@@ -69,7 +69,7 @@ export function V2WidgetSetup({ siteUrl }: { siteUrl: string }) {
 
           <div className="grid grid-cols-2 gap-3 text-xs text-white/60">
             <label className="space-y-1">
-              <span>Pool</span>
+              <span>Default pool (visitors can switch inside the widget)</span>
               <select className={field} value={pair} onChange={(e) => setPair(e.target.value as PairKey)}>
                 <option value="egaz">EGAZ / USDC.e</option>
                 <option value="eti">ETI / USDC.e</option>
