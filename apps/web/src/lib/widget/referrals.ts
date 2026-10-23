@@ -28,8 +28,12 @@ export const PROTOCOL_FEE_SHARE = 1 / 6;
 export const REFERRAL_SHARE_OF_PROTOCOL_FEE = 0.5;
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
-/** Claim window while the counters are being written; made permanent afterwards. */
-const CLAIM_TTL_SECONDS = 10 * 60;
+/**
+ * Claim window while the volume counter is written; made permanent afterwards.
+ * Long on purpose: the only retry we expect is the widget's own single post,
+ * and a lapsed claim after a successful increment would double-count.
+ */
+const CLAIM_TTL_SECONDS = 24 * 60 * 60;
 const COUNTER_TTL_SECONDS = 20 * 365 * 24 * 60 * 60;
 
 export interface ReferralTotals {
@@ -90,12 +94,13 @@ export function emptyTotals(ref: Address): ReferralTotals {
 export async function getReferralTotals(store: ReferralStore, refRaw: string): Promise<ReferralTotals | null> {
   if (!isAddress(refRaw, { strict: false })) return null;
   const ref = getAddress(refRaw);
-  const [swaps, volumeUsd, feesUsd, metaRaw] = await Promise.all([
+  // Volume is the single source of truth; fees and commission are derived from it.
+  const [swaps, volumeUsd, metaRaw] = await Promise.all([
     store.counters.getNumber(key(ref, 'swaps')),
     store.counters.getNumber(key(ref, 'volume')),
-    store.counters.getNumber(key(ref, 'fees')),
     store.kv.get(key(ref, 'meta')),
   ]);
+  const feesUsd = volumeUsd * (SWAP_FEE_BPS / 10_000);
   let meta: Partial<Pick<ReferralTotals, 'firstTxAt' | 'lastTxAt' | 'lastTx'>> = {};
   if (metaRaw) {
     try {
@@ -197,19 +202,16 @@ export async function creditWidgetSwap(
   if (vol.status !== 'ok') return { status: vol.status, swaps: 0, volumeUsd: 0, totals: null };
   if (vol.swaps === 0) return { status: 'no-swap', swaps: 0, volumeUsd: 0, totals: null };
 
-  // Short-lived claim first: if the counter writes below fail, it lapses and the
-  // swap can be re-posted; once they land the claim is made permanent.
+  // Claim first (lapses if the single money write below fails, so the swap can
+  // be re-posted), then exactly one atomic increment of the volume counter,
+  // then the claim is made permanent. The swap count is informational only.
   const fresh = await store.kv.setIfAbsent(txKey(tx), ref, CLAIM_TTL_SECONDS);
   if (!fresh) {
     return { status: 'duplicate', swaps: vol.swaps, volumeUsd: vol.volumeUsd, totals: await getReferralTotals(store, ref) };
   }
-  const feesUsd = vol.volumeUsd * (SWAP_FEE_BPS / 10_000);
-  await Promise.all([
-    store.counters.incrCounter(key(ref, 'swaps'), COUNTER_TTL_SECONDS),
-    store.counters.incrFloat(key(ref, 'volume'), vol.volumeUsd, COUNTER_TTL_SECONDS),
-    store.counters.incrFloat(key(ref, 'fees'), feesUsd, COUNTER_TTL_SECONDS),
-  ]);
+  await store.counters.incrFloat(key(ref, 'volume'), vol.volumeUsd, COUNTER_TTL_SECONDS);
   await store.kv.set(txKey(tx), ref);
+  await store.counters.incrCounter(key(ref, 'swaps'), COUNTER_TTL_SECONDS).catch(() => 0);
   const now = new Date().toISOString();
   const prevMeta = await store.kv.get(key(ref, 'meta')).catch(() => null);
   let firstTxAt: string | null = null;
