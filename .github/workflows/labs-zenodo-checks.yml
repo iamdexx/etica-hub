@@ -1,0 +1,34 @@
+name: Labs Zenodo tooling
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/scripts/zenodo/**'
+      - '.github/workflows/labs-zenodo-checks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/scripts/zenodo/**'
+      - '.github/workflows/labs-zenodo-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install report and check dependencies
+        run: pip install -r apps/web/scripts/zenodo/requirements.txt ruff==0.11.13 mypy==1.15.0
+      - name: Lint and format
+        run: |
+          ruff check apps/web/scripts/zenodo
+          ruff format --check apps/web/scripts/zenodo
+      - name: Typecheck
+        run: mypy --ignore-missing-imports --check-untyped-defs apps/web/scripts/zenodo/package.py apps/web/scripts/zenodo/publish.py
+      - name: Unit tests (no credentials or external publication)
+        run: python -m unittest discover -s apps/web/scripts/zenodo -v
