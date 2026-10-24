@@ -14,7 +14,12 @@ import { getArchivedResearch } from '@/lib/labs/archive';
 import { researchEvidence, publicationDecision } from '@/lib/labs/publication';
 import { labsQueue } from '@/lib/labs/queue';
 import { discoveryDescription, discoveryTitle } from '@/lib/labs/discovery-meta';
-import { scoreLabel } from '@/lib/labs/plain-summary';
+import {
+  LABS_DATA_LICENSE,
+  researchCredit,
+  researchCreditMetadata,
+  unmetDisulfideObjective,
+} from '@/lib/labs/research-credit';
 import { absoluteUrl, SITE_NAME } from '@/lib/site';
 
 export const runtime = 'nodejs';
@@ -63,6 +68,8 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
   const evidence = researchEvidence(r);
   const best = r.bestCandidate;
   const score = best.score;
+  const credit = await researchCredit(r);
+  const unmetObjective = unmetDisulfideObjective(r);
   const timelineAvailable = await labsQueue()
     .get(r.jobId)
     .then((j) => j !== null)
@@ -76,10 +83,9 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
     url,
     identifier: r.id,
     dateCreated: new Date(r.completedAt).toISOString(),
-    creator: { '@type': 'Organization', name: 'EticaHub Labs', url: absoluteUrl('/labs') },
+    ...researchCreditMetadata(credit),
     keywords: [r.disease, 'protein design', 'ESMFold', 'DeSci'].filter(Boolean),
     isAccessibleForFree: true,
-    license: 'https://creativecommons.org/publicdomain/zero/1.0/',
     citation: r.grounding?.citations?.map((c) => c.url) ?? [],
   };
 
@@ -87,7 +93,7 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
     <article className="mx-auto max-w-3xl space-y-6">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
       />
 
       <nav className="text-xs text-white/45">
@@ -107,9 +113,9 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
               {r.disease}
             </span>
           )}
-          {score !== undefined && (
+          {typeof score === 'number' && Number.isFinite(score) && (
             <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-emerald-200">
-              {scoreLabel(score)} · score {score.toFixed(2)}
+              Stored score {score.toFixed(2)}
             </span>
           )}
           {best.verification && (
@@ -133,6 +139,27 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
         {r.prompt && r.prompt !== r.goalTitle && (
           <p className="text-sm text-white/60">{r.prompt}</p>
         )}
+        <dl className="grid gap-2 border-y border-white/[0.07] py-4 text-xs sm:grid-cols-2">
+          <div>
+            <dt className="text-white/45">Creator</dt>
+            <dd className="mt-1 break-all text-white/80">
+              {credit.name}
+              {credit.kind === 'eticahub' && ' · EticaHub Labs'}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-white/45">Dataset license</dt>
+            <dd className="mt-1 text-white/80">
+              {credit.kind === 'eticahub' ? (
+                <a className="underline" href={LABS_DATA_LICENSE} target="_blank" rel="noreferrer">
+                  CC-BY-4.0
+                </a>
+              ) : (
+                'Not established — no reuse license assigned here'
+              )}
+            </dd>
+          </div>
+        </dl>
         <ShareButtons url={url} text={`${title} — AI-designed protein on EticaHub Labs`} />
       </header>
 
@@ -144,6 +171,15 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
         }
       >
         <p>{evidence.notice}</p>
+        <p className="mt-2 text-xs text-white/60">
+          Automated grades are internal checks, not peer review or independent scientific
+          validation. Stored scores are not binding probabilities.
+        </p>
+        {unmetObjective && (
+          <p className="mt-3 border-l-2 border-amber-300/60 pl-3 text-amber-100">
+            {unmetObjective}
+          </p>
+        )}
         {evidence.publication.reasons.length > 0 && (
           <ul className="mt-2 list-inside list-disc text-xs text-amber-200">
             {evidence.publication.reasons.map((reason) => (
@@ -162,6 +198,48 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
           <div>Novelty against known proteins: not assessed</div>
           <div>Citation support for the hypothesis: not assessed</div>
         </dl>
+      </Card>
+      <Card label="Candidate comparison — all archived outputs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <caption className="sr-only">
+              Candidate sequence lengths, cysteines, stored scores and automated grades
+            </caption>
+            <thead className="text-white/50">
+              <tr>
+                {['Candidate', 'Residues', 'Cysteines', 'Stored score', 'Automated grade'].map(
+                  (label) => (
+                    <th key={label} scope="col" className="whitespace-nowrap px-2 py-2">
+                      {label}
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {r.candidates.map((c) => (
+                <tr key={c.index} className="border-t border-white/[0.07]">
+                  <th scope="row" className="whitespace-nowrap px-2 py-2 font-normal">
+                    #{c.index}
+                    {c.index === best.index ? ' (selected)' : ''}
+                  </th>
+                  <td className="px-2 py-2">{c.sequence.length}</td>
+                  <td className="px-2 py-2">{c.sequence.match(/C/g)?.length ?? 0}</td>
+                  <td className="px-2 py-2">
+                    {typeof c.score === 'number' && Number.isFinite(c.score)
+                      ? c.score.toFixed(4)
+                      : 'Not recorded'}
+                  </td>
+                  <td className="px-2 py-2">{c.verification?.grade ?? 'Not assessed'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-white/50">
+          Includes weak and rejected candidates. Selection is the pipeline’s choice, not a
+          demonstrated biological advantage.
+        </p>
       </Card>
       <Card label="Download archived artifacts">
         <a className="underline" href={`/api/labs/archive/${encodeURIComponent(r.id)}?format=json`}>
@@ -205,12 +283,16 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
         <Card label="Proposed approach">{r.approach || '—'}</Card>
       </section>
 
+      {r.successCriteria && (
+        <Card label="Proposed success criteria — not measured outcomes">{r.successCriteria}</Card>
+      )}
+
       {(r.summary || best.rationale) && (
         <Card label="AI interpretation — not validated">{r.summary || best.rationale}</Card>
       )}
 
       <Card
-        label={`Best candidate · ${best.sequence.length} aa${best.folded ? ' · folded' : ''}${best.engine ? ` · ${best.engine}` : ''}`}
+        label={`Pipeline-selected candidate · ${best.sequence.length} aa${best.folded ? ' · folded' : ''}${best.engine ? ` · ${best.engine}` : ''}`}
       >
         <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-white/75">
           {best.sequence}
@@ -362,7 +444,7 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
 }
 
 const GRADE_LABEL = {
-  verified: 'verified',
+  verified: 'automated checks passed',
   weak: 'weak evidence',
   rejected: 'failed verification',
 } as const;
