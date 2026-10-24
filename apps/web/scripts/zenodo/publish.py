@@ -12,7 +12,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlparse, quote
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from package import CREATORS, LICENSE, sha, source_url
+from package import CREATORS, LICENSE, provenance, sha, source_url
 
 API = "https://zenodo.org/api"
 
@@ -78,7 +78,7 @@ class Zenodo:
             ) from None
 
 
-def load_package(directory):
+def load_package(directory, goals):
     directory = Path(directory)
     checksum_file = directory / "SHA256SUMS"
     expected = {}
@@ -122,6 +122,9 @@ def load_package(directory):
         or proof.get("creators") != CREATORS
     ):
         raise ValueError("Missing approved owner provenance")
+    trusted = provenance(record, goals)
+    if trusted["status"] != "eticahub" or trusted["lineage"] != proof.get("lineage"):
+        raise ValueError("Trusted goal lineage does not confirm EticaHub ownership")
     if (
         meta.get("license") != "cc-by-4.0"
         or meta.get("creators") != CREATORS
@@ -163,14 +166,7 @@ def verify_remote(package, deposition):
             "Remote file checksums or filenames differ; refusing publication"
         )
     meta = deposition["metadata"]
-    for key in [
-        "title",
-        "creators",
-        "license",
-        "access_right",
-        "upload_type",
-        "description",
-    ]:
+    for key in sorted(set(package["metadata"]) - {"related_identifiers"}):
         if meta.get(key) != package["metadata"][key]:
             raise ValueError("Remote metadata differs: " + key)
     identifiers = meta.get("related_identifiers", [])
@@ -319,6 +315,11 @@ def main():
         action="store_true",
         help="Without this, validate only; no network requests",
     )
+    parser.add_argument(
+        "--goals",
+        required=True,
+        help="Private trusted server-side goal snapshot used to re-check ownership",
+    )
     parser.add_argument("--max-records", type=int, default=1, choices=range(1, 6))
     parser.add_argument(
         "--adopt", type=int, help="Adopt an existing draft for one exact source record"
@@ -331,7 +332,8 @@ def main():
     args = parser.parse_args()
     if args.adopt and len(args.packages) != 1:
         parser.error("--adopt requires exactly one package")
-    packages = [load_package(p) for p in args.packages]
+    goals = json.loads(Path(args.goals).read_text())
+    packages = [load_package(p, goals) for p in args.packages]
     if len({p["id"] for p in packages}) != len(packages):
         parser.error("Duplicate source records")
     if not args.publish:

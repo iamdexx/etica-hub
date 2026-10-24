@@ -69,10 +69,9 @@ class PublisherTests(unittest.TestCase):
         self.path = Path(self.tmp.name)
         source = self.path / "record.json"
         source.write_text(json.dumps(record()))
-        build(
-            source, {"root": {"submitterTag": "autopilot-seed"}}, self.path / "package"
-        )
-        self.package = load_package(self.path / "package")
+        self.goals = {"root": {"submitterTag": "autopilot-seed"}}
+        build(source, self.goals, self.path / "package")
+        self.package = load_package(self.path / "package", self.goals)
         self.client = FakeZenodo(self.package)
         self.ledger = {}
         self.snapshots = []
@@ -133,15 +132,35 @@ class PublisherTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "metadata"):
             verify_remote(self.package, dep)
 
+    def test_package_claim_needs_trusted_lineage(self):
+        community = {
+            "root": {
+                "submitterTag": "autopilot-seed",
+                "submitterWallet": "0x" + "1" * 40,
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "Trusted goal lineage"):
+            load_package(self.package["directory"], community)
+        with self.assertRaisesRegex(ValueError, "Trusted goal lineage"):
+            load_package(self.package["directory"], {})
+
+    def test_remote_notes_or_keywords_drift_is_blocked(self):
+        self.run_publish()
+        for key, value in [("notes", "other"), ("keywords", ["other"])]:
+            dep = copy.deepcopy(self.client.dep)
+            dep["metadata"][key] = value
+            with self.assertRaisesRegex(ValueError, "metadata differs: " + key):
+                verify_remote(self.package, dep)
+
     def test_local_tamper_or_extra_file_is_blocked(self):
         extra = self.package["directory"] / "extra.key"
         extra.write_text("not uploaded")
         with self.assertRaisesRegex(ValueError, "Unmanifested"):
-            load_package(self.package["directory"])
+            load_package(self.package["directory"], self.goals)
         extra.unlink()
         (self.package["directory"] / "report.pdf").write_bytes(b"tampered")
         with self.assertRaisesRegex(ValueError, "integrity"):
-            load_package(self.package["directory"])
+            load_package(self.package["directory"], self.goals)
 
     def test_duplicate_remote_source_is_blocked_before_create(self):
         self.client.existing = [{"metadata": self.package["metadata"]}]

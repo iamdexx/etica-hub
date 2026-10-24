@@ -91,6 +91,21 @@ class PackageTests(unittest.TestCase):
         self.assertFalse(any("cannot form" in x for x in limitations(r)))
         self.assertTrue(any("not establish binding" in x for x in limitations(r)))
 
+    def test_disulfide_free_request_is_not_unmet_stapling(self):
+        r = record()
+        r["prompt"] = "Design a disulfide-free peptide"
+        self.assertFalse(any("disulfide-stapling" in x for x in limitations(r)))
+        r["prompt"] = "Avoid disulfide bonds in this design"
+        self.assertFalse(any("disulfide-stapling" in x for x in limitations(r)))
+
+    def test_unreviewed_source_fields_are_refused(self):
+        r = record()
+        r["operatorNote"] = "private"
+        with self.assertRaisesRegex(
+            ValueError, "Unreviewed source fields: operatorNote"
+        ):
+            validate(r)
+
     def test_validation(self):
         for key, value in [
             ("id", "../path"),
