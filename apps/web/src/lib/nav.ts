@@ -42,6 +42,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Docs',
     links: [
+      { href: '/network', label: 'Wallet setup', desc: 'Etica network and token settings' },
       { href: '/whitepaper', label: 'Whitepaper', desc: 'Protocol specification v2.1' },
       { href: '/api', label: 'API', desc: 'Public endpoints and feeds' },
       { href: '/tutorials', label: 'Tutorials', desc: 'Step-by-step video guides' },
@@ -70,6 +71,7 @@ export const NEXT_UP: Record<string, string[]> = {
   '/whitepaper': ['/swap', '/labs', '/research'],
   '/api': ['/status', '/explorer', '/whitepaper'],
   '/tutorials': ['/bridge', '/swap', '/pool'],
+  '/network': ['/tutorials', '/bridge', '/swap'],
 };
 
 export function nextUpFor(pathname: string): NavLink[] {
