@@ -53,11 +53,15 @@ export function researchCreditMetadata(credit: ResearchCredit) {
   };
 }
 
+const DISULFIDE_EXCLUDED =
+  /disulfide[- ]free|non[- ]disulfide|\b(?:no|without|avoid\w*|lacks?|lacking)\s+(?:any\s+|a\s+)?disulfides?/i;
+
 export function unmetDisulfideObjective(record: ArchivedResearch): string | null {
   const objective = [record.prompt, record.hypothesis, record.approach, record.successCriteria]
     .filter(Boolean)
     .join(' ');
   const cysteines = record.bestCandidate.sequence.match(/C/g)?.length ?? 0;
-  if (!/disulfide/i.test(objective) || cysteines >= 2) return null;
+  if (!/disulfide/i.test(objective) || DISULFIDE_EXCLUDED.test(objective) || cysteines >= 2)
+    return null;
   return `The pipeline-selected candidate has ${cysteines} cysteine residues. Its recorded sequence cannot form an intramolecular cysteine disulfide bridge; the proposed disulfide-stapling objective is not demonstrated. A non-canonical crosslink is not established by sequence alone.`;
 }

@@ -39,6 +39,10 @@ establish that every cited source or proposed method belongs to EticaHub.
 
 ## Publish and resume
 
+`publish.py` requires `--goals <private-goals.json>` and re-walks that trusted
+lineage for every package; a package's own `provenance.json` is never sufficient.
+Source snapshots may only contain reviewed public archive fields.
+
 Set `ZENODO_TOKEN` as a secret environment variable with `deposit:write` and
 `deposit:actions`; `ZenodoAPI` is also accepted. Never put the token in a URL,
 argument, package or ledger. Keep snapshots, packages and ledger in backed-up,

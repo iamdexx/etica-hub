@@ -28,6 +28,44 @@ def source_url(record_id):
     return "https://eticahub.com/labs/archive/" + record_id
 
 
+PUBLIC_RECORD_FIELDS = {
+    "approach",
+    "bestCandidate",
+    "candidates",
+    "completedAt",
+    "disease",
+    "evidence",
+    "goalId",
+    "goalTitle",
+    "grounding",
+    "hypothesis",
+    "id",
+    "iterations",
+    "jobId",
+    "literatureContext",
+    "mintTxHash",
+    "minted",
+    "parentCandidateIndex",
+    "parentGoalId",
+    "prompt",
+    "references",
+    "submitterWallet",
+    "successCriteria",
+    "summary",
+    "verificationGrade",
+}
+DISULFIDE_EXCLUDED = re.compile(
+    r"disulfide[- ]free|non[- ]disulfide|\b(?:no|without|avoid\w*|lacks?|lacking)\s+(?:any\s+|a\s+)?disulfides?",
+    re.I,
+)
+
+
+def requests_disulfide(text):
+    return bool(re.search(r"disulfide", text, re.I)) and not DISULFIDE_EXCLUDED.search(
+        text
+    )
+
+
 def provenance(record, goals):
     """Walk stored goal ancestry, including branches of community submissions."""
     lineage: list[dict] = []
@@ -65,6 +103,9 @@ def provenance(record, goals):
 
 
 def validate(record):
+    unreviewed = set(record) - PUBLIC_RECORD_FIELDS
+    if unreviewed:
+        raise ValueError("Unreviewed source fields: " + ", ".join(sorted(unreviewed)))
     source_url(record["id"])
     if not isinstance(record.get("completedAt"), (int, float)) or not math.isfinite(
         record["completedAt"]
@@ -101,7 +142,7 @@ def limitations(record):
         str(record.get(k, ""))
         for k in ["prompt", "hypothesis", "approach", "successCriteria"]
     )
-    if re.search(r"disulfide", objective, re.I) and best["sequence"].count("C") < 2:
+    if requests_disulfide(objective) and best["sequence"].count("C") < 2:
         limits.append(
             f"Selected candidate #{best['index']} has {best['sequence'].count('C')} cysteines. "
             "Its recorded sequence cannot form an intramolecular cysteine disulfide bridge; "
