@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ETICA_ADD_CHAIN_PARAMS } from '@/components/network/AddNetworkButton';
 
 export const WALLET_TOKENS = {
   ETX: {
@@ -27,7 +28,19 @@ export type WalletTokenSymbol = keyof typeof WALLET_TOKENS;
 
 type Eip1193 = { request: (args: { method: string; params?: unknown }) => Promise<unknown> };
 
-/** EIP-747 `wallet_watchAsset`: adds the token with its logo to the connected wallet. */
+/** Switch (or add, on 4902) the wallet to Etica so `wallet_watchAsset` lands on the right chain. */
+async function ensureEtica(eth: Eip1193) {
+  const chainId = ETICA_ADD_CHAIN_PARAMS.chainId;
+  try {
+    await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId }] });
+  } catch (e) {
+    if ((e as { code?: number } | undefined)?.code !== 4902) throw e;
+    await eth.request({ method: 'wallet_addEthereumChain', params: [ETICA_ADD_CHAIN_PARAMS] });
+    await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId }] });
+  }
+}
+
+/** EIP-747 `wallet_watchAsset`: adds the token with its logo to the connected wallet on Etica. */
 export function AddTokenButton({
   token,
   className = 'btn px-3 text-white/60 hover:text-white',
@@ -49,6 +62,7 @@ export function AddTokenButton({
     }
     setState('pending');
     try {
+      await ensureEtica(eth);
       await eth.request({
         method: 'wallet_watchAsset',
         params: { type: 'ERC20', options: t },
