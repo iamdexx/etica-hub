@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { AddNetworkButton } from '@/components/network/AddNetworkButton';
 import {
   BaseError,
   UserRejectedRequestError,
@@ -549,9 +550,12 @@ export function V2PoolWidget({
           <span className="font-mono">
             pair {pairExists ? `${pairAddress.slice(0, 6)}…${pairAddress.slice(-4)}` : '—'}
           </span>
-          <a href="https://eticahub.com" target="_blank" rel="noreferrer" className="hover:underline">
-            Powered by EticaSwap
-          </a>
+          <span className="flex items-center gap-3">
+            <AddNetworkButton className="hover:underline" compact />
+            <a href="https://eticahub.com" target="_blank" rel="noreferrer" className="hover:underline">
+              Powered by EticaSwap
+            </a>
+          </span>
         </div>
       </div>
     </div>

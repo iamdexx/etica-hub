@@ -4,6 +4,8 @@ import { ChainPulse } from '@/components/ChainPulse';
 import { Eyebrow, SectionTitle } from '@/components/PageHero';
 import { TvlBanner } from '@/components/TvlBanner';
 import { MarketVolumeStrip } from '@/components/MarketVolumeStrip';
+import { AddNetworkButton } from '@/components/network/AddNetworkButton';
+import { AddTokenButton } from '@/components/network/AddTokenButton';
 
 const PILLARS = [
   {
@@ -86,6 +88,13 @@ export default function Home() {
             <Link href="/whitepaper" className="btn px-3 text-white/60 hover:text-white">
               Read the whitepaper →
             </Link>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <AddNetworkButton className="btn-ghost px-4 py-2 text-sm" />
+            <span className="text-white/35">then</span>
+            <AddTokenButton token="ETX" />
+            <AddTokenButton token="stETX" />
+            <AddTokenButton token="USDC.e" />
           </div>
         </div>
 

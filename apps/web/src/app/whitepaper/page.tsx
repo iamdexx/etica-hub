@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PageHero } from '@/components/PageHero';
+import { AddNetworkButton } from '@/components/network/AddNetworkButton';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { resolveWhitepaperHref } from '@/lib/whitepaperLinks';
@@ -72,6 +73,7 @@ export default function WhitepaperPage() {
         description="The full specification for ETX, EticaSwap, the live USDC bridge, stETX staking, the Treasury Harvester, EticaLabs, research markets, governance, and the project's independence from the Etica Protocol core team."
         actions={
           <>
+            <AddNetworkButton className="btn-ghost px-3.5 py-1.5 text-xs" />
             <a
               href="/whitepaper.md"
               download="eticahub-whitepaper.md"
