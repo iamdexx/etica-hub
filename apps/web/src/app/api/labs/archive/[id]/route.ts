@@ -5,6 +5,7 @@
  */
 
 import { getArchivedResearch, getPdbForSequence, listArchive } from '@/lib/labs/archive';
+import { getRecordDoi } from '@/lib/labs/doi';
 
 import { researchEvidence } from '@/lib/labs/publication';
 
@@ -77,8 +78,9 @@ export async function GET(
   if (format !== null && format !== 'json') {
     return Response.json({ error: 'format must be json, fasta or pdb' }, { status: 400, headers });
   }
+  const doi = await getRecordDoi(record.id);
   return Response.json(
-    { ...record, evidence: researchEvidence(record) },
+    { ...record, evidence: researchEvidence(record), ...(doi ? { doi } : {}) },
     {
       headers: {
         ...headers,
