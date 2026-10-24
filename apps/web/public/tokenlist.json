@@ -1,0 +1,49 @@
+{
+  "name": "EticaHub",
+  "logoURI": "https://eticahub.com/brand/eticahub-mark-512.png",
+  "keywords": ["etica", "eticahub", "etx", "egaz", "eti", "usdc.e"],
+  "timestamp": "2026-10-24T00:00:00+00:00",
+  "version": { "major": 1, "minor": 0, "patch": 0 },
+  "tokens": [
+    {
+      "chainId": 61803,
+      "address": "0xa5A1Bc6307b0b87989B8456D4b35F88a68650044",
+      "name": "EticaHub Token",
+      "symbol": "ETX",
+      "decimals": 18,
+      "logoURI": "https://eticahub.com/logos/etx.png"
+    },
+    {
+      "chainId": 61803,
+      "address": "0x75d81d03a98CD9195593b8963aF17E13fAa70334",
+      "name": "Staked ETX",
+      "symbol": "stETX",
+      "decimals": 18,
+      "logoURI": "https://eticahub.com/logos/stetx.png"
+    },
+    {
+      "chainId": 61803,
+      "address": "0x0BA5C0BFd034639330d2CF9DBAD354d8DBc2d335",
+      "name": "USDC.e (bridged USDC)",
+      "symbol": "USDC.e",
+      "decimals": 6,
+      "logoURI": "https://eticahub.com/logos/usdc.png"
+    },
+    {
+      "chainId": 61803,
+      "address": "0x34c61EA91bAcdA647269d4e310A86b875c09946f",
+      "name": "Etica",
+      "symbol": "ETI",
+      "decimals": 18,
+      "logoURI": "https://eticahub.com/logos/eti.png"
+    },
+    {
+      "chainId": 61803,
+      "address": "0x232fb2B87CAce92B2438054A7eB79B4081E3E11a",
+      "name": "EGAZ (ERC-20)",
+      "symbol": "EGAZ",
+      "decimals": 18,
+      "logoURI": "https://eticahub.com/logos/eti.png"
+    }
+  ]
+}
