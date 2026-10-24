@@ -31,6 +31,7 @@ def source_url(record_id):
 PUBLIC_RECORD_FIELDS = {
     "approach",
     "bestCandidate",
+    "bestPdb",
     "candidates",
     "completedAt",
     "disease",

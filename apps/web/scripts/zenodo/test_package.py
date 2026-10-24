@@ -100,8 +100,10 @@ class PackageTests(unittest.TestCase):
 
     def test_unreviewed_source_fields_are_refused(self):
         r = record()
-        r["bestPdb"] = "private"
-        with self.assertRaisesRegex(ValueError, "Unreviewed source fields: bestPdb"):
+        r["operatorNote"] = "private"
+        with self.assertRaisesRegex(
+            ValueError, "Unreviewed source fields: operatorNote"
+        ):
             validate(r)
 
     def test_validation(self):
