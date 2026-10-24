@@ -2,6 +2,7 @@
 #   db        PostgreSQL holding the engine's indexed chain data
 #   engine    etica-explorer-engine sync scripts + its /api server (:6633)
 #   eticascan apps/eticascan Next.js UI (:3000), reads the engine API
+#   explorer-api apps/explorer-api full-chain indexer + Etherscan-style /api (:6634), same Postgres (hub.* schema)
 #   caddy     :80/:443 in front of both (TLS automatic once SITE_ADDRESS is a hostname)
 # The Hyperlane bridge agents live in ../hyperlane/agents and have their own compose file.
 x-logging: &logging
@@ -45,6 +46,27 @@ services:
     expose: ['6633']
     <<: *logging
 
+  explorer-api:
+    build:
+      context: ../..
+      dockerfile: infra/droplet/Dockerfile.explorer-api
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      ETICA_RPC_URLS: ${ETICA_RPC_URLS:-${ETICA_RPC_URL:-https://eticamainnet.eticaprotocol.org},https://61803.rpc.thirdweb.com,https://eticamainnet.eticascan.org}
+      API_PORT: '6634'
+      PG_HOST: db
+      PG_PORT: '5432'
+      PG_DATABASE: eticaenginedb
+      PG_USER: etica
+      PG_PASSWORD: ${PG_PASSWORD}
+      START_BLOCK: ${HUB_START_BLOCK:-0}
+      SYNC_BATCH: ${HUB_SYNC_BATCH:-100}
+      CONFIRMATIONS: ${HUB_CONFIRMATIONS:-6}
+    expose: ['6634']
+    <<: *logging
+
   eticascan:
     build:
       context: ../..
@@ -57,7 +79,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    depends_on: [eticascan, engine]
+    depends_on: [eticascan, engine, explorer-api]
     ports: ['80:80', '443:443']
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}

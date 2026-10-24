@@ -10,6 +10,7 @@ import {
   shortAddress,
   shortHash,
 } from '@/lib/explorer';
+import { hubAddressTxs } from '@/lib/explorerHub';
 import { loadVerified } from '@/lib/verified';
 import { readPairInfo, type PairInfo } from '@/lib/pairInfo';
 import { VerifiedContractView } from '@/components/explorer/VerifiedContractView';
@@ -96,10 +97,23 @@ export default async function AddressPage({ params }: AddressPageProps) {
   // ERC-20 transfers are scanned separately over a wider TOKEN_LOG_SCAN_BLOCKS
   // window via two eth_getLogs calls (outbound + inbound Transfer), then we
   // probe metadata once per unique emitting contract.
-  const [recent, tokenTransfers] = await Promise.all([
-    scanRecentTxs(client, addr, head),
+  // Prefer the self-hosted full-chain index (complete history, newest first);
+  // fall back to the bounded RPC scan when it is unreachable.
+  const [indexed, tokenTransfers] = await Promise.all([
+    hubAddressTxs(addrLower, 1, 25),
     loadAddressTokenTransfers(client, addr, head),
   ]);
+  const recent = indexed?.txs.length
+    ? indexed.txs.map((tx) => ({
+        ...tx,
+        counterparty: tx.from.toLowerCase() === addrLower ? (tx.to ?? tx.contractAddress) : tx.from,
+      }))
+    : await scanRecentTxs(client, addr, head);
+  const historyNote = indexed?.txs.length
+    ? indexed.total != null
+      ? `${indexed.total.toLocaleString()} total · newest 25`
+      : 'full history · newest 25'
+    : `last ${RECENT_SCAN_BLOCKS.toString()} blocks`;
   const tokenInfos = await resolveTokenInfos(
     client,
     tokenTransfers.map((t) => t.token),
@@ -194,14 +208,14 @@ export default async function AddressPage({ params }: AddressPageProps) {
 
       <section className="surface p-5">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Recent transactions</h2>
-          <span className="text-xs text-white/40">last {RECENT_SCAN_BLOCKS.toString()} blocks</span>
+          <h2 className="text-lg font-semibold">Transactions</h2>
+          <span className="text-xs text-white/40">{historyNote}</span>
         </div>
         {recent.length === 0 ? (
           <p className="text-sm text-white/50">
-            No transactions involving this address in the last {RECENT_SCAN_BLOCKS.toString()}{' '}
-            blocks. Older activity lives in the public tx-log indexer and can be pulled from the
-            on-chain archive.
+            {indexed
+              ? 'No transactions involving this address in the indexed history.'
+              : `No transactions involving this address in the last ${RECENT_SCAN_BLOCKS.toString()} blocks (full-history index unavailable).`}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -351,7 +365,10 @@ function PairPanel({ addr, info }: { addr: string; info: PairInfo }) {
           </span>
         </h2>
         <div className="flex gap-3 text-xs">
-          <Link href={info.direct ? '/swap?v=v5' : '/swap'} className="text-emerald-300 hover:underline">
+          <Link
+            href={info.direct ? '/swap?v=v5' : '/swap'}
+            className="text-emerald-300 hover:underline"
+          >
             Trade →
           </Link>
           <Link href={`/api/v1/pairs/${addr}`} className="text-emerald-300 hover:underline">
@@ -361,8 +378,8 @@ function PairPanel({ addr, info }: { addr: string; info: PairInfo }) {
       </div>
       {info.direct ? (
         <p className="text-xs leading-5 text-white/55">
-          This window holds no tokens of its own: its liquidity is ETX hub LP and every swap settles on
-          the ETX hub pools, so the token balances below read zero. The reserves here are the
+          This window holds no tokens of its own: its liquidity is ETX hub LP and every swap settles
+          on the ETX hub pools, so the token balances below read zero. The reserves here are the
           hub-backed view that trackers and aggregators should read (standard token0 / token1 /
           getReserves, Swap and Sync events).
         </p>

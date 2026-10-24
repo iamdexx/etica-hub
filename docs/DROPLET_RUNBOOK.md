@@ -34,3 +34,27 @@ Operations (as root on the droplet, `cd /opt/eticahub/infra/droplet`):
 Brought up after `deploy.sh warp` + `agent-config` have landed on `main`; the procedure, key handling
 and health checks are in `docs/HYPERLANE_USDC_RUNBOOK.md`. Both stacks fit in 4 GB with headroom
 (explorer ~1 GB, agents ~1.5 GB).
+
+## explorer-api (full-chain index + Etherscan-compatible API)
+
+`apps/explorer-api` runs next to the engine in the same compose stack and indexes
+**every** block from `HUB_START_BLOCK` (default 0 = genesis) into the `hub.*`
+schema of the engine's Postgres: blocks, transactions (with receipts), logs,
+ERC-20/721 `Transfer`s, running token balances and per-address tx counts. The
+engine itself only indexes ETI-contract transactions, so this is what backs
+full address history, token holders and the public API.
+
+- Health / head: `curl http://<droplet>/hub/health`
+- API (Caddy strips `/hub`): `curl 'http://<droplet>/hub/api?module=account&action=txlist&address=0x…&page=1&offset=50'`
+  Supported: `account.txlist|tokentx|tokennfttx|txcount|tokenbalance`,
+  `token.tokenholderlist|tokenholdercount`, `logs.getLogs`, `stats.daily|indexer`.
+  eticahub.com proxies the same surface at `/api/explorer?…` (`EXPLORER_HUB_API_URL`).
+- Throughput: ~200 blocks/s with batched RPC (`HUB_SYNC_BATCH=100`); a genesis
+  sync of Etica (~11M blocks, mostly empty) takes roughly 14–16 h.
+- Reorgs: each batch checks `parentHash` against the stored previous block and
+  rewinds on mismatch; writes are one Postgres transaction per batch.
+- Watchdog (`watchdog.sh`, cron */5) restarts the container when `/hub/health`
+  head is static while the chain moves and alerts when it stalls > `ALERT_LAG`.
+- Logs: `docker compose logs -f explorer-api`. Resync from scratch:
+  `docker compose exec db psql -U etica -d eticaenginedb -c 'drop schema hub cascade'`
+  then `docker compose restart explorer-api`.

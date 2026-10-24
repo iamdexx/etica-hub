@@ -5,6 +5,10 @@
 	handle /api/* {
 		reverse_proxy engine:6633
 	}
+	# Etherscan-compatible API + indexer health (apps/explorer-api): /hub/api?module=account&action=txlist&address=0x…
+	handle_path /hub/* {
+		reverse_proxy explorer-api:6634
+	}
 	handle {
 		reverse_proxy eticascan:3000
 	}
