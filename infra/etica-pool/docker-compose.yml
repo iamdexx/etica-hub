@@ -1,0 +1,48 @@
+# EticaHub mining pool (open-etc-pool-friends, etchash) on the droplet at /opt/etica-pool.
+# Binary built from https://github.com/yuriy0803/open-etc-pool-friends with apply-local-signing.py.
+# Stratum: pool.eticahub.com:8008   API: https://pool.eticahub.com/api/stats (via Caddy)
+x-pool: &pool
+  image: debian:bookworm-slim
+  restart: unless-stopped
+  working_dir: /pool
+  volumes:
+    - ./open-etc-pool-friends/open-etc-pool:/pool/open-etc-pool:ro
+    - ./open-etc-pool-friends/stratum_blacklist.json:/pool/stratum_blacklist.json:ro
+    - ./config:/pool/config:ro
+  networks: [default, droplet_default]
+  logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+  depends_on: [redis]
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes: ["./redis:/data"]
+    mem_limit: 256m
+  stratum:
+    <<: *pool
+    container_name: etica-pool-stratum
+    command: ["./open-etc-pool", "config/stratum.json"]
+    ports: ["8008:8008"]
+    mem_limit: 300m
+  api:
+    <<: *pool
+    container_name: etica-pool-api
+    command: ["./open-etc-pool", "config/api.json"]
+    mem_limit: 300m
+  unlocker:
+    <<: *pool
+    container_name: etica-pool-unlocker
+    command: ["./open-etc-pool", "config/unlocker.json"]
+    mem_limit: 128m
+  payouts:
+    <<: *pool
+    container_name: etica-pool-payouts
+    command: ["./open-etc-pool", "config/payouts.json"]
+    env_file: [/root/.etica-pool.env]
+    mem_limit: 128m
+
+networks:
+  droplet_default:
+    external: true

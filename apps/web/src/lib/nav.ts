@@ -44,6 +44,7 @@ export const NAV_GROUPS: NavGroup[] = [
     links: [
       { href: '/network', label: 'Wallet setup', desc: 'Etica network and token settings' },
       { href: '/node', label: 'Run a node', desc: 'Public RPC, enode and bootnodes' },
+      { href: '/mine', label: 'Mine with us', desc: 'EticaHub pool, 0.5% fee' },
       { href: '/whitepaper', label: 'Whitepaper', desc: 'Protocol specification v2.1' },
       { href: '/api', label: 'API', desc: 'Public endpoints and feeds' },
       { href: '/tutorials', label: 'Tutorials', desc: 'Step-by-step video guides' },
@@ -74,6 +75,7 @@ export const NEXT_UP: Record<string, string[]> = {
   '/tutorials': ['/bridge', '/swap', '/pool'],
   '/network': ['/tutorials', '/bridge', '/swap'],
   '/node': ['/network', '/status', '/api'],
+  '/mine': ['/node', '/network', '/status'],
 };
 
 export function nextUpFor(pathname: string): NavLink[] {

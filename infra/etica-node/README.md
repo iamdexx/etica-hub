@@ -16,3 +16,19 @@ Etica RPCs are non-archival.
 - Endpoints: `https://rpc.eticahub.com` (JSON-RPC), `wss://rpc.eticahub.com` (WS), `https://rpc.eticahub.com/graphql`
 - RPC exposes `eth,net,web3` only (no `debug`/`txpool`); use the IPC console for those
 - Memory cap 2.2 GB; if the 4 GB droplet swaps, resize to 8 GB before anything else.
+
+## Static peers
+
+core-geth ignores `static-nodes.json`; peers are pinned in `/opt/etica-node/data/config.toml`:
+
+```toml
+[Node.P2P]
+StaticNodes = ["enode://...@host:port", ...]
+```
+
+Edit that file and `docker compose up -d` to apply. `admin.addPeer` only lasts until restart.
+
+## Mining pool work
+
+The node runs with `--mine --miner.threads=0 --miner.etherbase 0x679FeeB936ec769c05842bE51b45e3B5b34F43a9`:
+threads=0 disables CPU mining but serves `eth_getWork` to the pool in `../etica-pool`. Blocks the pool finds pay out to that address (the pool payout wallet, key in `/root/.etica-pool.env` on the droplet).

@@ -28,3 +28,17 @@ rpc.eticahub.com {
 		reverse_proxy etica-archive:8545
 	}
 }
+
+pool.eticahub.com {
+    encode gzip
+    header Access-Control-Allow-Origin "*"
+    header Access-Control-Allow-Methods "GET, OPTIONS"
+    @options method OPTIONS
+    respond @options 204
+    handle /api/* {
+        reverse_proxy etica-pool-api:8080
+    }
+    handle {
+        redir https://eticahub.com/mine 302
+    }
+}

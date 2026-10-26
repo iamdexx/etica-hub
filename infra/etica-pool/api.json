@@ -1,0 +1,36 @@
+{
+  "threads": 2,
+  "coin": "EGAZ",
+  "name": "main",
+  "pplns": 9000,
+  "network": "etica",
+  "coin-name": "etica",
+  "algo": "etchash",
+  "upstreamCheckInterval": "5s",
+  "upstream": [
+    { "name": "eticahub-archive", "url": "http://etica-archive:8545", "timeout": "10s" }
+  ],
+  "redis": { "endpoint": "redis:6379", "poolSize": 10, "database": 0, "password": "", "sentinelEnabled": false, "masterName": "mymaster", "sentinelAddrs": [] }
+,
+  "api": {
+    "enabled": true,
+    "purgeOnly": false,
+    "purgeInterval": "10m",
+    "listen": "0.0.0.0:8080",
+    "statsCollectInterval": "5s",
+    "hashrateWindow": "30m",
+    "hashrateLargeWindow": "3h",
+    "luckWindow": [64, 128, 256],
+    "payments": 30,
+    "blocks": 50,
+    "poolCharts": "0 */20 * * * *",
+    "poolChartsNum": 74,
+    "minerCharts": "0 */20 * * * *",
+    "minerChartsNum": 74,
+    "netCharts": "0 */20 * * * *",
+    "netChartsNum": 74,
+    "shareCharts": "0 */20 * * * *",
+    "shareChartsNum": 74
+  },
+  "exchange": { "enabled": false, "url": "", "timeout": "50s", "refreshInterval": "900s" }
+}
