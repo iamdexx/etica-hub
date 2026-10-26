@@ -1,0 +1,16 @@
+services:
+  pool-app:
+    container_name: eti-pool-app
+    ports: !override
+      - "127.0.0.1:8090:8080"
+      - "127.0.0.1:2053:2053"
+      - "3333:3333"
+      - "5555:5555"
+      - "7777:7777"
+      - "9999:9999"
+    networks: [default, droplet_default]
+  backup:
+    profiles: ["backup"]
+networks:
+  droplet_default:
+    external: true

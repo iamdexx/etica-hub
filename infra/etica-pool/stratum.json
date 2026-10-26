@@ -1,0 +1,39 @@
+{
+  "threads": 2,
+  "coin": "EGAZ",
+  "name": "main",
+  "pplns": 9000,
+  "network": "etica",
+  "coin-name": "etica",
+  "algo": "etchash",
+  "upstreamCheckInterval": "5s",
+  "upstream": [
+    { "name": "eticahub-archive", "url": "http://etica-archive:8545", "timeout": "10s" }
+  ],
+  "redis": { "endpoint": "redis:6379", "poolSize": 10, "database": 0, "password": "", "sentinelEnabled": false, "masterName": "mymaster", "sentinelAddrs": [] }
+,
+  "proxy": {
+    "enabled": true,
+    "listen": "0.0.0.0:8888",
+    "limitHeadersSize": 1024,
+    "limitBodySize": 256,
+    "behindReverseProxy": false,
+    "blockRefreshInterval": "50ms",
+    "stateUpdateInterval": "3s",
+    "difficulty": 2147483648,
+    "hashrateExpiration": "3h",
+    "stratumHostname": "pool.eticahub.com",
+    "healthCheck": true,
+    "debug": false,
+    "maxFails": 100,
+    "stratum": { "enabled": true, "listen": "0.0.0.0:8008", "timeout": "120s", "maxConn": 8192, "tls": false },
+    "policy": {
+      "workers": 4,
+      "resetInterval": "60m",
+      "refreshInterval": "1m",
+      "blacklist_file": "/pool/stratum_blacklist.json",
+      "banning": { "enabled": false, "ipset": "blacklist", "timeout": 1800, "invalidPercent": 30, "checkThreshold": 30, "malformedLimit": 5, "fail2banCommand": "" },
+      "limits": { "enabled": false, "limit": 30, "grace": "5m", "limitJump": 10 }
+    }
+  }
+}

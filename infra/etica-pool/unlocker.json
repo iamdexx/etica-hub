@@ -1,0 +1,38 @@
+{
+  "threads": 2,
+  "coin": "EGAZ",
+  "name": "main",
+  "pplns": 9000,
+  "network": "etica",
+  "coin-name": "etica",
+  "algo": "etchash",
+  "upstreamCheckInterval": "5s",
+  "upstream": [
+    {
+      "name": "eticahub-archive",
+      "url": "http://etica-archive:8545",
+      "timeout": "10s"
+    }
+  ],
+  "redis": {
+    "endpoint": "redis:6379",
+    "poolSize": 10,
+    "database": 0,
+    "password": "",
+    "sentinelEnabled": false,
+    "masterName": "mymaster",
+    "sentinelAddrs": []
+  },
+  "unlocker": {
+    "enabled": true,
+    "poolFee": 0.5,
+    "poolFeeAddress": "0xB2B4bC9d02970A55efF64C2D84c622c87967C19D",
+    "depth": 120,
+    "immatureDepth": 20,
+    "keepTxFees": false,
+    "interval": "10m",
+    "daemon": "http://etica-archive:8545",
+    "timeout": "10s",
+    "isLondonHardForkEnabled": false
+  }
+}
