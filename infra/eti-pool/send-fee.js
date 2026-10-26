@@ -11,7 +11,7 @@ process.stdin.on('end', async () => {
     { name: 'send', type: 'function', inputs: [{ type: 'address', name: '_tokenAddr' }, { type: 'address', name: 'dest' }, { type: 'uint256', name: 'value' }] },
     [token, dest, amount],
   );
-  const tx = { from: acct.address, to: batched, data, gas: 120000, gasPrice: web3.utils.toWei('20', 'gwei'), nonce: await web3.eth.getTransactionCount(acct.address) };
+  const tx = { from: acct.address, to: batched, data, gas: 120000, gasPrice: web3.utils.toWei('20', 'gwei'), nonce: await web3.eth.getTransactionCount(acct.address, 'pending') };
   const signed = await acct.signTransaction(tx);
   const receipt = await web3.eth.sendSignedTransaction(signed.rawTransaction);
   console.log(receipt.transactionHash, 'status', receipt.status);
