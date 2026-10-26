@@ -23,6 +23,10 @@ struct SettingsView: View {
                     Link("Explorer", destination: URL(string: "https://eticahub.com/explorer")!)
                     Link("Help and docs", destination: URL(string: "https://eticahub.com/network")!)
                 }
+                Section("Legal") {
+                    Link("Privacy Policy", destination: URL(string: "https://eticahub.com/privacy")!)
+                    Link("Terms of Use", destination: URL(string: "https://eticahub.com/terms")!)
+                }
                 Section {
                     Button("Remove wallet from this iPhone", role: .destructive) { confirmReset = true }
                 } footer: { Text("Only your recovery phrase can restore it afterwards.") }

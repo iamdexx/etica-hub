@@ -125,7 +125,16 @@ export function SiteFooter() {
       </div>
 
       <div className="mt-10 flex flex-col gap-2 border-t border-white/[0.06] pt-5 text-xs text-white/40 sm:flex-row sm:items-center sm:justify-between">
-        <p>© {year} EticaHub · community-built, independent of the Etica Protocol core team</p>
+        <p>
+          © {year} EticaHub · community-built, independent of the Etica Protocol core team ·{' '}
+          <Link href="/privacy" className="hover:text-white">
+            Privacy
+          </Link>{' '}
+          ·{' '}
+          <Link href="/terms" className="hover:text-white">
+            Terms
+          </Link>
+        </p>
         <p className="num">RPC eticamainnet.eticaprotocol.org · chain 61803</p>
       </div>
     </footer>
