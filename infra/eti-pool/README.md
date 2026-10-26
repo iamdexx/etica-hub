@@ -7,7 +7,7 @@ Droplet checkout: `/opt/eti-pool/eticapool`. Stratum ports 3333 / 5555 / 7777 / 
   (minting and payments keys, root-only, never committed).
 - `docker-compose.override.yml` keeps the web UI (8080) and Socket.IO (2053) on localhost, joins
   `droplet_default` so Caddy can proxy `etipool.eticahub.com`, and disables the Mongo backup job.
-- Dockerfile stage 3 is patched to `node:18.20-bookworm-slim` (bullseye-security packages 404).
+- Dockerfile is patched from bullseye to bookworm in all three stages (bullseye-security apt packages 404 now).
 - BatchedPayments contract: `0x2ab929Ab41b4ba22D66DDeAB075F615888fd050a`, owner = payments wallet
   `0x88d4043aB15443a038df2402a317a3ad20136928`. Minting wallet `0xc5bcf0E8e421fc54d1fDaB035D4A2A653A89ca16`.
 - Flow: pool mints ETI to the minting wallet, sweeps it into BatchedPayments, pays miners (100% - fee) via
