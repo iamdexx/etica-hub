@@ -44,12 +44,13 @@ if "ChainID" not in s:
     s = s.replace('\tBgSave    bool  `json:"bgsave"`\n', '\tBgSave    bool  `json:"bgsave"`\n\tChainID   int64 `json:"chainId"`\n', 1)
     old = "\t\ttxHash, err := u.rpc.SendTransaction(u.config.Address, login, u.config.GasHex(), u.config.GasPriceHex(), value, u.config.AutoGas)\n"
     assert old in s, "SendTransaction call not found"
-    s = s.replace(old, '''\t\tvar txHash string
-\t\tif localSigningEnabled() {
-\t\t\ttxHash, err = sendSignedPayout(u.rpc, u.config.Address, login, amountInWei, u.config.ChainID)
-\t\t} else {
-\t\t\ttxHash, err = u.rpc.SendTransaction(u.config.Address, login, u.config.GasHex(), u.config.GasPriceHex(), value, u.config.AutoGas)
-\t\t}
-''', 1)
+    # Always sign locally: never fall back to eth_sendTransaction, which would need an unlocked account on the RPC node.
+    s = s.replace(old, "\t\t_ = value\n\t\ttxHash, err := sendSignedPayout(u.rpc, u.config.Address, login, amountInWei, u.config.ChainID)\n", 1)
+    unlock = "\t\tif !u.isUnlockedAccount() {\n"
+    assert unlock in s, "isUnlockedAccount check not found"
+    s = s.replace(unlock, "\t\tif !localSigningEnabled() {\n\t\t\tlog.Println(\"Unable to process payouts: POOL_PAYOUT_KEY is not set\")\n", 1)
+    start = "\tlog.Println(\"Starting payouts\")\n"
+    assert start in s
+    s = s.replace(start, start + "\tif !localSigningEnabled() {\n\t\tlog.Fatal(\"POOL_PAYOUT_KEY is required: payouts are signed in-process, never by the RPC node\")\n\t}\n", 1)
     open(p, "w").write(s)
 print("patched")
