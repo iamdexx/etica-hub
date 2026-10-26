@@ -12,8 +12,8 @@ const ETI_API = 'https://etipool.eticahub.com/api/v2/pool';
 const PLACEHOLDER = '0xYOURWALLET';
 const APP_VERSION = '0.1.1';
 const APP_BASE = `https://github.com/iamdexx/etica-hub/releases/download/miner-v${APP_VERSION}/EticaHub.Miner_${APP_VERSION}_`;
-type Platform = 'windows' | 'mac-arm' | 'mac-intel' | 'linux' | 'phone' | 'unknown';
-const DOWNLOADS: Record<Exclude<Platform, 'phone' | 'unknown'>, { label: string; file: string; note: string }> = {
+type Platform = 'windows' | 'mac-arm' | 'mac-intel' | 'linux' | 'phone' | 'old-windows' | 'unknown';
+const DOWNLOADS: Record<Exclude<Platform, 'phone' | 'old-windows' | 'unknown'>, { label: string; file: string; note: string }> = {
   windows: { label: 'Windows', file: 'x64-setup.exe', note: 'Run the installer. If Windows shows "protected your PC", click More info, then Run anyway.' },
   'mac-arm': { label: 'Mac (Apple Silicon, M1 or newer)', file: 'aarch64.dmg', note: 'Open the .dmg and drag the app to Applications. First launch: right-click the app, Open.' },
   'mac-intel': { label: 'Mac (Intel)', file: 'x64.dmg', note: 'Open the .dmg and drag the app to Applications. First launch: right-click the app, Open.' },
@@ -24,6 +24,8 @@ function detectPlatform(): Platform {
   if (typeof navigator === 'undefined') return 'unknown';
   const ua = navigator.userAgent;
   if (/iPhone|iPad|Android/i.test(ua)) return 'phone';
+  // Windows 7/8/8.1 (NT 6.x) lack APIs the app and its WebView2 runtime need; send them to the manual command.
+  if (/Windows NT (5\.|6\.)/i.test(ua)) return 'old-windows';
   if (/Windows/i.test(ua)) return 'windows';
   if (/Mac OS X|Macintosh/i.test(ua)) return macIsIntel() ? 'mac-intel' : 'mac-arm';
   if (/Linux/i.test(ua)) return 'linux';
@@ -136,7 +138,7 @@ export function MineWithUs() {
   const [etiAccount, setEtiAccount] = useState<EtiMiner | null | 'none'>(null);
   const [platform, setPlatform] = useState<Platform>('unknown');
   useEffect(() => { setPlatform(detectPlatform()); }, []);
-  const primary = platform === 'phone' || platform === 'unknown' ? null : DOWNLOADS[platform];
+  const primary = platform === 'phone' || platform === 'old-windows' || platform === 'unknown' ? null : DOWNLOADS[platform];
   const [pool, setPool] = useState<PoolStats | null>(null);
   const [poolErr, setPoolErr] = useState(false);
   const [account, setAccount] = useState<AccountStats | null | 'none'>(null);
@@ -211,7 +213,11 @@ export function MineWithUs() {
           </div>
         ) : (
           <p className="text-sm text-amber-200/90">
-            {platform === 'phone' ? 'Mining needs a computer. Open eticahub.com/mine on your PC or Mac and the download button appears there.' : 'Pick your system below.'}
+            {platform === 'phone'
+              ? 'Mining needs a computer. Open eticahub.com/mine on your PC or Mac and the download button appears there.'
+              : platform === 'old-windows'
+                ? 'This PC runs Windows 7 or 8, and the app needs Windows 10 or newer. No problem: pick ETI below, paste your wallet, download XMRig (it still runs here) and copy the one-line command.'
+                : 'Pick your system below.'}
           </p>
         )}
         <details className="text-xs text-white/55">
