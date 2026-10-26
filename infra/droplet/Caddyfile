@@ -50,3 +50,14 @@ pool.eticahub.com {
         redir https://eticahub.com/mine 302
     }
 }
+
+etipool.eticahub.com {
+    encode gzip
+    # ETI (RandomX) pool web UI + stats API; stratum ports 3333/5555/7777/9999 are plain TCP, not proxied.
+    handle /socket.io/* {
+        reverse_proxy eti-pool-app:2053
+    }
+    handle {
+        reverse_proxy eti-pool-app:8080
+    }
+}
