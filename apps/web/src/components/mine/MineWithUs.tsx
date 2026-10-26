@@ -25,9 +25,21 @@ function detectPlatform(): Platform {
   const ua = navigator.userAgent;
   if (/iPhone|iPad|Android/i.test(ua)) return 'phone';
   if (/Windows/i.test(ua)) return 'windows';
-  if (/Mac OS X|Macintosh/i.test(ua)) return 'mac-arm';
+  if (/Mac OS X|Macintosh/i.test(ua)) return macIsIntel() ? 'mac-intel' : 'mac-arm';
   if (/Linux/i.test(ua)) return 'linux';
   return 'unknown';
+}
+
+// Browsers hide the CPU on Macs; the WebGL renderer string is the usual tell ("Apple M2" vs "Intel Iris").
+function macIsIntel(): boolean {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+    const renderer = ext ? String(gl?.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+    if (/Intel|AMD|Radeon/i.test(renderer)) return true;
+    if (/Apple/i.test(renderer)) return false;
+  } catch { /* fall through */ }
+  return false;
 }
 
 type Coin = 'ETI' | 'EGAZ';
@@ -188,6 +200,14 @@ export function MineWithUs() {
           <div className="space-y-2">
             <a href={APP_BASE + primary.file} className="btn-tone inline-block px-5 py-3 text-base font-semibold">Download for {primary.label}</a>
             <p className="text-xs text-white/55">{primary.note}</p>
+            {platform === 'mac-arm' || platform === 'mac-intel' ? (
+              <p className="text-xs text-white/55">
+                Not sure which Mac? Apple menu, About This Mac: Apple M1 to M4 means Apple Silicon, otherwise Intel.{' '}
+                <a className="underline" href={APP_BASE + DOWNLOADS[platform === 'mac-arm' ? 'mac-intel' : 'mac-arm'].file}>
+                  Get the {platform === 'mac-arm' ? 'Intel' : 'Apple Silicon'} version instead
+                </a>
+              </p>
+            ) : null}
           </div>
         ) : (
           <p className="text-sm text-amber-200/90">
