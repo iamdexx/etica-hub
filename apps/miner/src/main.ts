@@ -165,6 +165,8 @@ async function stop() {
   mineBtn.textContent = 'Mine';
   mineBtn.classList.remove('stop');
   for (const el of [wallet, cpuOn, intensity]) el.disabled = false;
+  $('cpuHr').textContent = fmtHash(0, 'H/s');
+  $('gpuHr').textContent = fmtHash(0, 'MH/s');
   setStatus('Stopped.');
   updateButton();
 }
