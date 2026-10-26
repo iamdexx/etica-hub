@@ -49,9 +49,10 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile --filter @etica-hub/miner
 
-      # macOS: Developer ID signing + notarization. Secrets optional; without them the build is unsigned.
+      # macOS: Developer ID signing + notarization. With no Apple secrets the build stays unsigned;
+      # with a certificate, every notarization secret must be present too (no silently unnotarized releases).
       - name: Apple signing setup
-        if: startsWith(matrix.name, 'macos') && secrets.APPLE_CERTIFICATE != ''
+        if: startsWith(matrix.name, 'macos')
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -60,13 +61,18 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
         run: |
-          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY; do
-            [ -n "${!v}" ] && echo "$v=${!v}" >> "$GITHUB_ENV"
-          done
-          if [ -n "$APPLE_API_KEY_B64" ]; then
-            echo "$APPLE_API_KEY_B64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
-            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning::APPLE_CERTIFICATE not set, building unsigned macOS app"
+            exit 0
           fi
+          for v in APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_B64; do
+            if [ -z "${!v}" ]; then echo "::error::$v secret is missing; set all Apple secrets or none"; exit 1; fi
+          done
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY; do
+            echo "$v=${!v}" >> "$GITHUB_ENV"
+          done
+          echo "$APPLE_API_KEY_B64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
 
       - uses: tauri-apps/tauri-action@v0
         env:
