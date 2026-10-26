@@ -49,6 +49,25 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile --filter @etica-hub/miner
 
+      # macOS: Developer ID signing + notarization. Secrets optional; without them the build is unsigned.
+      - name: Apple signing setup
+        if: startsWith(matrix.name, 'macos') && secrets.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
+        run: |
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY; do
+            [ -n "${!v}" ] && echo "$v=${!v}" >> "$GITHUB_ENV"
+          done
+          if [ -n "$APPLE_API_KEY_B64" ]; then
+            echo "$APPLE_API_KEY_B64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+          fi
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,7 +78,7 @@ jobs:
           releaseBody: |
             One-click ETI (CPU) + EGAZ (GPU) miner for the EticaHub pools.
             Windows: .msi or -setup.exe. macOS: .dmg (Apple Silicon or Intel). Linux: .AppImage or .deb.
-            Unsigned build: Windows SmartScreen and macOS Gatekeeper will ask you to confirm the first run.
+            macOS builds are signed and notarized by Apple. Windows is unsigned for now: SmartScreen will ask you to confirm the first run.
           releaseDraft: false
           prerelease: ${{ github.ref_type != 'tag' }}
           args: ${{ matrix.args }}
