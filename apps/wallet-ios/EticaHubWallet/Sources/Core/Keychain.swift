@@ -29,9 +29,9 @@ enum Keychain {
         return status == errSecSuccess || status == errSecInteractionNotAllowed
     }
 
-    /// Prompts Face ID / passcode.
-    static func load(reason: String) throws -> String {
-        let ctx = LAContext()
+    /// Reads the phrase. Pass an already evaluated LAContext to avoid a second prompt.
+    static func load(reason: String, context: LAContext? = nil) throws -> String {
+        let ctx = context ?? LAContext()
         ctx.localizedReason = reason
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account,
                                     kSecReturnData as String: true, kSecUseAuthenticationContext as String: ctx]
@@ -51,6 +51,7 @@ enum Keychain {
 
 enum WalletError: LocalizedError {
     case keychain(String)
+    case walletExists
     case badMnemonic
     case badAddress
     case badAmount
@@ -60,6 +61,7 @@ enum WalletError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .keychain(let s): return s == "cancelled" ? "Cancelled." : "Secure storage error (\(s))."
+        case .walletExists: return "A wallet already exists on this iPhone. Remove it in Settings before creating or importing another one."
         case .badMnemonic: return "That is not a valid 12 or 24 word recovery phrase."
         case .badAddress: return "That is not a valid 0x address."
         case .badAmount: return "Enter a valid amount."

@@ -9,13 +9,17 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Wallet") {
+                Section {
                     LabeledContent("Address", value: Format.short(store.address ?? ""))
-                    Button("Show recovery phrase") { do { phrase = try store.revealMnemonic() } catch { self.error = error.localizedDescription } }
+                    Button("Show recovery phrase") {
+                        Task { do { phrase = try await store.revealMnemonic() } catch { self.error = error.localizedDescription } }
+                    }
+                } header: { Text("Wallet") } footer: {
+                    Text("Your keys stay on this iPhone, EticaHub never sees them. Your 12 words are the only way to recover this wallet.")
                 }
                 Section("Network") {
                     LabeledContent("Chain", value: "Etica (61803)")
-                    LabeledContent("RPC", value: "rpc.eticahub.com")
+                    LabeledContent("RPC", value: store.client.activeHost ?? Chain.rpcURLs[0].host ?? "")
                     Link("Explorer", destination: URL(string: "https://eticahub.com/explorer")!)
                     Link("Help and docs", destination: URL(string: "https://eticahub.com/network")!)
                 }

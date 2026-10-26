@@ -25,7 +25,7 @@ struct StakeView: View {
                          : "Balance \(Format.amount(store.balances["ETX"] ?? 0, decimals: 18)) ETX. stETX grows in value as protocol fees are harvested; no lockup.")
                 }
                 Section("Rate") {
-                    Text(rate.map { "1 stETX = \(Format.amount($0, decimals: 18)) ETX" } ?? "—").font(.headline.monospacedDigit())
+                    Text(rate.map { "1 stETX = \(Format.amount($0, decimals: 18)) ETX" } ?? "...").font(.headline.monospacedDigit())
                 }
                 PrimaryButton(title: unstaking ? "Unstake" : "Stake", busy: busy) { go() }.listRowBackground(Color.clear)
             }

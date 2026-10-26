@@ -33,7 +33,7 @@ struct HomeView: View {
                                     Spacer()
                                     VStack(alignment: .trailing) {
                                         Text(Format.amount(store.balances[token.symbol] ?? 0, decimals: token.decimals)).fontWeight(.semibold)
-                                        Text(store.usdValue(token).map(Format.usd) ?? "—").font(.caption).foregroundStyle(.secondary)
+                                        Text(store.usdValue(token).map(Format.usd) ?? "...").font(.caption).foregroundStyle(.secondary)
                                     }
                                 }.contentShape(Rectangle())
                             }.buttonStyle(.plain)

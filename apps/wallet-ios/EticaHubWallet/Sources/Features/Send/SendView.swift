@@ -19,14 +19,16 @@ struct SendView: View {
                 Section("To") {
                     HStack {
                         TextField("0x…", text: $to).font(.footnote.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Button { scanning = true } label: { Image(systemName: "qrcode.viewfinder") }
+                        if DataScannerViewController.isSupported {
+                            Button { scanning = true } label: { Image(systemName: "qrcode.viewfinder") }
+                        }
                         Button { to = UIPasteboard.general.string ?? to } label: { Image(systemName: "doc.on.clipboard") }
                     }
                 }
                 Section {
                     HStack {
                         TextField("0.0", text: $amount).keyboardType(.decimalPad)
-                        Button("Max") { amount = Format.amount(store.balances[token.symbol] ?? 0, decimals: token.decimals, maxFraction: token.decimals) }
+                        Button("Max") { amount = Format.amount(store.maxAmount(token, gasLimit: WalletStore.sendGasLimit), decimals: token.decimals, maxFraction: token.decimals) }
                     }
                 } header: { Text("Amount") } footer: {
                     Text("Balance: \(Format.amount(store.balances[token.symbol] ?? 0, decimals: token.decimals)) \(token.symbol). Network fee is paid in EGAZ.")
@@ -67,7 +69,8 @@ struct QRScanner: UIViewControllerRepresentable {
         let onCode: (String) -> Void
         init(onCode: @escaping (String) -> Void) { self.onCode = onCode }
         func dataScanner(_ s: DataScannerViewController, didAdd added: [RecognizedItem], allItems: [RecognizedItem]) {
-            if case .barcode(let b) = added.first ?? allItems.first ?? .barcode(.init()), let v = b.payloadStringValue { onCode(v) }
+            guard let item = added.first ?? allItems.first, case .barcode(let b) = item, let v = b.payloadStringValue else { return }
+            onCode(v)
         }
     }
 }

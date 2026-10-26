@@ -13,10 +13,12 @@ struct OnboardingView: View {
         NavigationStack {
             VStack(spacing: 20) {
                 Spacer()
-                Image("AppIcon").resizable().frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 22))
+                Image("Logo").resizable().frame(width: 96, height: 96).clipShape(RoundedRectangle(cornerRadius: 22))
                 Text("EticaHub Wallet").font(.largeTitle.bold())
-                Text("EGAZ, ETI, ETX, stETX and USDC.e in one place. Keys stay on this iPhone, locked with Face ID.")
+                Text("EGAZ, ETI, ETX, stETX and USDC.e in one place, locked with Face ID.")
                     .multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.horizontal)
+                Text("Your keys stay on this iPhone, EticaHub never sees them. Your 12 words are the only way to recover this wallet.")
+                    .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.horizontal)
                 Spacer()
                 PrimaryButton(title: "Create a new wallet") { mode = .create }
                 Button("I already have a recovery phrase") { mode = .importPhrase }.padding(.bottom)

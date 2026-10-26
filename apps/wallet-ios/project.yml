@@ -46,3 +46,6 @@ targets:
     sources: [Tests]
     dependencies:
       - target: EticaHubWallet
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES

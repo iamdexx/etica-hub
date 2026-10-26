@@ -38,7 +38,7 @@ struct EarnView: View {
             Text(name)
             Spacer()
             VStack(alignment: .trailing) {
-                Text(v.map { String(format: "%.4f unpaid", $0.unpaid) } ?? "—").font(.subheadline.monospacedDigit())
+                Text(v.map { String(format: "%.4f unpaid", $0.unpaid) } ?? "...").font(.subheadline.monospacedDigit())
                 Text(v.map { String(format: "%.4f paid", $0.paid) } ?? "no shares yet").font(.caption).foregroundStyle(.secondary)
             }
         }

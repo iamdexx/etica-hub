@@ -18,13 +18,13 @@ struct SwapView: View {
                     Picker("From", selection: $from) { ForEach(Token.all.filter { $0 != .stetx }) { Text($0.symbol).tag($0) } }
                     HStack {
                         TextField("0.0", text: $amount).keyboardType(.decimalPad)
-                        Button("Max") { amount = Format.amount(store.balances[from.symbol] ?? 0, decimals: from.decimals, maxFraction: from.decimals) }
+                        Button("Max") { amount = Format.amount(store.maxAmount(from, gasLimit: WalletStore.swapGasLimit), decimals: from.decimals, maxFraction: from.decimals) }
                     }
                     Text("Balance \(Format.amount(store.balances[from.symbol] ?? 0, decimals: from.decimals)) \(from.symbol)").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("You get") {
                     Picker("To", selection: $to) { ForEach(Token.all.filter { $0 != from && $0 != .stetx }) { Text($0.symbol).tag($0) } }
-                    Text(quote.map { "\(Format.amount($0, decimals: to.decimals)) \(to.symbol)" } ?? "—").font(.title3.bold().monospacedDigit())
+                    Text(quote.map { "\(Format.amount($0, decimals: to.decimals)) \(to.symbol)" } ?? "...").font(.title3.bold().monospacedDigit())
                     Text("Routed through ETX on EticaSwap. 1% max slippage, 0.3% pool fee.").font(.caption).foregroundStyle(.secondary)
                 }
                 PrimaryButton(title: "Swap", busy: busy) { swap() }.listRowBackground(Color.clear).disabled(quote == nil)

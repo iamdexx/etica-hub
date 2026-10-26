@@ -17,3 +17,17 @@ final class FormatTests: XCTestCase {
         XCTAssertEqual(Token.path(from: .etx, to: .usdce), [Chain.etx, Token.usdce.address!])
     }
 }
+
+@MainActor
+final class WalletStoreTests: XCTestCase {
+    func testMaxReservesGasForNativeOnly() {
+        let store = WalletStore()
+        store.gasPrice = BigUInt(10_000_000_000)
+        store.balances["EGAZ"] = BigUInt(10).power(18)
+        store.balances["ETX"] = BigUInt(10).power(18)
+        XCTAssertEqual(store.maxAmount(.egaz, gasLimit: WalletStore.sendGasLimit), BigUInt(10).power(18) - BigUInt(210_000_000_000_000))
+        XCTAssertEqual(store.maxAmount(.etx, gasLimit: WalletStore.swapGasLimit), BigUInt(10).power(18))
+        store.balances["EGAZ"] = BigUInt(1)
+        XCTAssertEqual(store.maxAmount(.egaz, gasLimit: WalletStore.sendGasLimit), 0)
+    }
+}
