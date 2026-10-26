@@ -9,8 +9,9 @@ Etica RPCs are non-archival.
 - Container: `etica-archive`, P2P on 30304 (30303 is taken by the chain validator)
 - RPC bound to `127.0.0.1:8547` (HTTP) / `8548` (WS); Caddy serves it as
   `https://rpc.eticahub.com` (see `../droplet/Caddyfile`, container joins `droplet_default`)
-- Build: `docker compose build` (Debian/glibc; the upstream Alpine static build fails to link)
+- Build: `git clone https://github.com/etica/core-geth && docker compose build` (Debian/glibc; the upstream Alpine static build fails to link)
 - Peers: `data/geth/static-nodes.json`; add live ones with
   `docker exec etica-archive geth attach --exec 'admin.addPeer("enode://...")' /data/geth.ipc`
 - Status: `docker exec etica-archive geth attach --exec 'eth.syncing' /data/geth.ipc`
+- RPC exposes `eth,net,web3` only (no `debug`/`txpool`); use the IPC console for those
 - Memory cap 2.2 GB; if the 4 GB droplet swaps, resize to 8 GB before anything else.
