@@ -10,7 +10,11 @@ Droplet checkout: `/opt/eti-pool/eticapool`. Stratum ports 3333 / 5555 / 7777 / 
 - Dockerfile is patched from bullseye to bookworm in all three stages (bullseye-security apt packages 404 now).
 - BatchedPayments contract: `0x2ab929Ab41b4ba22D66DDeAB075F615888fd050a`, owner = payments wallet
   `0x88d4043aB15443a038df2402a317a3ad20136928`. Minting wallet `0xc5bcf0E8e421fc54d1fDaB035D4A2A653A89ca16`.
-- Flow: pool mints ETI to the minting wallet, sweeps it into BatchedPayments, pays miners (100% - fee) via
-  `multisend`. The fee share stays in BatchedPayments; `withdraw()` by the owner moves it, then forward to the
-  treasury `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D` (only the surplus above miners' unpaid balances).
+- Flow: pool mints ETI to the minting wallet, sweeps it into BatchedPayments (every 80 s), pays miners (100% - fee)
+  via `multisend` whenever someone is over 1.5 ETI unpaid (checked every 5 s). The fee share stays in
+  BatchedPayments, so `fee-sweep.sh` (root cron, Sundays 03:00 UTC, log `/var/log/eti-fee-sweep.log`) sends
+  90% of what the contract holds above miners' unpaid balances to the treasury `0xB2B4bC9d02970A55efF64C2D84c622c87967C19D`
+  via the owner-only `send()`; `--dry-run` prints the numbers.
+- `paymentsConfig.maxGasPriceGwei` is raised to 50: Etica transactions run at 9-10 gwei and the template's 5 would
+  never get a payout mined.
 - `web3Provider` is the public eticascan RPC until the archive node is synced, then switch to `http://etica-archive:8545`.
