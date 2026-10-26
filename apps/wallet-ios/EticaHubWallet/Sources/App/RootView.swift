@@ -25,6 +25,7 @@ struct UnlockView: View {
     @EnvironmentObject var store: WalletStore
     @State private var error: String?
     @State private var busy = false
+    @State private var confirmReset = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -35,10 +36,14 @@ struct UnlockView: View {
                 .multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.horizontal)
             Spacer()
             PrimaryButton(title: "Unlock wallet", busy: busy) { unlock() }
-            Button("Remove wallet from this iPhone", role: .destructive) { store.reset() }.padding(.bottom)
+            Button("Remove wallet from this iPhone", role: .destructive) { confirmReset = true }.padding(.bottom)
         }
         .padding(24)
         .task { unlock() }
+        .alert("Remove wallet?", isPresented: $confirmReset) {
+            Button("Remove", role: .destructive) { store.reset() }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Only your 12 words can bring it back. Make sure you have them written down.") }
         .errorAlert($error)
     }
 
