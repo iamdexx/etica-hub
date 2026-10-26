@@ -153,8 +153,9 @@ export function MineWithUs() {
     return () => { live = false; };
   }, []);
   const dl = (file: string) => assets[file]?.url ?? APP_BASE + file;
+  const ver = (file: string) => assets[file]?.version ?? APP_VERSION;
   const primary = platform === 'phone' || platform === 'unknown' ? null : DOWNLOADS[platform];
-  const shownVersion = (primary && assets[primary.file]?.version) ?? APP_VERSION;
+  const shownVersion = primary ? ver(primary.file) : APP_VERSION;
   const [pool, setPool] = useState<PoolStats | null>(null);
   const [poolErr, setPoolErr] = useState(false);
   const [account, setAccount] = useState<AccountStats | null | 'none'>(null);
@@ -223,7 +224,7 @@ export function MineWithUs() {
                 Not sure which Mac? Apple menu, About This Mac: Apple M1 to M4 means Apple Silicon, otherwise Intel.{' '}
                 <a className="underline" href={dl(DOWNLOADS[platform === 'mac-arm' ? 'mac-intel' : 'mac-arm'].file)}>
                   Get the {platform === 'mac-arm' ? 'Intel' : 'Apple Silicon'} version instead
-                </a>
+                </a>{' '}(v{ver(DOWNLOADS[platform === 'mac-arm' ? 'mac-intel' : 'mac-arm'].file)})
               </p>
             ) : null}
           </div>
@@ -236,9 +237,9 @@ export function MineWithUs() {
           <summary className="cursor-pointer">{primary ? 'Not your system? Other downloads' : 'All downloads'}</summary>
           <ul className="mt-2 space-y-1">
             {(Object.keys(DOWNLOADS) as (keyof typeof DOWNLOADS)[]).map((k) => (
-              <li key={k}><a className="underline" href={dl(DOWNLOADS[k].file)}>{DOWNLOADS[k].label}</a></li>
+              <li key={k}><a className="underline" href={dl(DOWNLOADS[k].file)}>{DOWNLOADS[k].label}</a> v{ver(DOWNLOADS[k].file)}</li>
             ))}
-            <li><a className="underline" href={dl(DEB_FILE)}>Linux (.deb)</a></li>
+            <li><a className="underline" href={dl(DEB_FILE)}>Linux (.deb)</a> v{ver(DEB_FILE)}</li>
           </ul>
         </details>
         <p className="text-xs text-white/45">Free, open source (apps/miner in the EticaHub repo), v{shownVersion}. Your system may ask once before the first run.</p>
