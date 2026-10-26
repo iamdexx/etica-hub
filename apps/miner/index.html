@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EticaHub Miner</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main id="app">
+      <header class="top">
+        <img src="/icon.png" alt="" width="36" height="36" />
+        <div>
+          <h1>EticaHub Miner</h1>
+          <p class="muted">Paste your wallet, press Mine. ETI on your CPU, EGAZ on your GPU.</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <label for="wallet">Your Etica wallet (0x...)</label>
+        <input id="wallet" type="text" placeholder="0xYOURWALLET" spellcheck="false" autocomplete="off" />
+        <p id="walletHint" class="hint">Any Etica / EVM address. Payouts go straight to it, no signup.</p>
+      </section>
+
+      <section class="card" id="hw">
+        <div class="row">
+          <label class="toggle">
+            <input type="checkbox" id="cpuOn" checked />
+            <span><strong>ETI</strong> on CPU <small id="cpuInfo" class="muted">detecting...</small></span>
+          </label>
+        </div>
+        <div class="row">
+          <label class="toggle">
+            <input type="checkbox" id="gpuOn" checked />
+            <span><strong>EGAZ</strong> on GPU <small id="gpuInfo" class="muted">detecting...</small></span>
+          </label>
+        </div>
+        <div class="row small">
+          <label for="intensity">CPU use</label>
+          <select id="intensity">
+            <option value="50">Half (keep PC usable)</option>
+            <option value="100" selected>Full</option>
+          </select>
+        </div>
+      </section>
+
+      <button id="mine" class="primary" disabled>Mine</button>
+      <p id="status" class="status muted">Enter a wallet to start.</p>
+      <progress id="progress" max="100" value="0" hidden></progress>
+
+      <section class="stats" id="stats" hidden>
+        <div class="stat"><span class="label">ETI hashrate</span><span id="cpuHr" class="value">0 H/s</span></div>
+        <div class="stat"><span class="label">EGAZ hashrate</span><span id="gpuHr" class="value">0 MH/s</span></div>
+        <div class="stat"><span class="label">Shares</span><span id="shares" class="value">0</span></div>
+        <div class="stat"><span class="label">Unpaid</span><span id="unpaid" class="value">0 ETI / 0 EGAZ</span></div>
+        <div class="stat wide"><span class="label">Paid so far</span><span id="paid" class="value">0 ETI / 0 EGAZ</span></div>
+      </section>
+
+      <details class="log">
+        <summary>Miner log</summary>
+        <pre id="log"></pre>
+      </details>
+
+      <footer class="muted">
+        Pools: etipool.eticahub.com (ETI, 0.5% fee) and pool.eticahub.com (EGAZ, 0.5% fee).
+        <a href="#" id="openMine">Stats and payouts on eticahub.com/mine</a>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
