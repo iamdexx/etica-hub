@@ -10,8 +10,11 @@ const API = 'https://pool.eticahub.com/api';
 const ETI_HOST = 'etipool.eticahub.com';
 const ETI_API = 'https://etipool.eticahub.com/api/v2/pool';
 const PLACEHOLDER = '0xYOURWALLET';
-const APP_VERSION = '0.1.1';
+const APP_VERSION = '0.1.3';
 const APP_BASE = `https://github.com/iamdexx/etica-hub/releases/download/miner-v${APP_VERSION}/EticaHub.Miner_${APP_VERSION}_`;
+const RELEASES_API = '/api/miner/releases';
+const DEB_FILE = 'amd64.deb';
+type ReleaseAssets = import('@/app/api/miner/releases/route').MinerReleaseAssets;
 type Platform = 'windows' | 'mac-arm' | 'mac-intel' | 'linux' | 'phone' | 'old-windows' | 'unknown';
 const DOWNLOADS: Record<Exclude<Platform, 'phone' | 'old-windows' | 'unknown'>, { label: string; file: string; note: string }> = {
   windows: { label: 'Windows', file: 'x64-setup.exe', note: 'Run the installer. If Windows shows "protected your PC", click More info, then Run anyway.' },
@@ -19,6 +22,13 @@ const DOWNLOADS: Record<Exclude<Platform, 'phone' | 'old-windows' | 'unknown'>, 
   'mac-intel': { label: 'Mac (Intel)', file: 'x64.dmg', note: 'Open the .dmg and drag the app to Applications. First launch: right-click the app, Open.' },
   linux: { label: 'Linux', file: 'amd64.AppImage', note: 'Make it executable (chmod +x) and run it.' },
 };
+
+// Newest release that actually has each installer (see /api/miner/releases); Mac lags behind on notarization.
+async function fetchReleaseAssets(): Promise<ReleaseAssets> {
+  const res = await fetch(RELEASES_API);
+  if (!res.ok) throw new Error(`releases ${res.status}`);
+  return (await res.json()) as ReleaseAssets;
+}
 
 function detectPlatform(): Platform {
   if (typeof navigator === 'undefined') return 'unknown';
@@ -138,7 +148,16 @@ export function MineWithUs() {
   const [etiAccount, setEtiAccount] = useState<EtiMiner | null | 'none'>(null);
   const [platform, setPlatform] = useState<Platform>('unknown');
   useEffect(() => { setPlatform(detectPlatform()); }, []);
+  const [assets, setAssets] = useState<ReleaseAssets>({});
+  useEffect(() => {
+    let live = true;
+    fetchReleaseAssets().then((a) => { if (live) setAssets(a); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const dl = (file: string) => assets[file]?.url ?? APP_BASE + file;
+  const ver = (file: string) => assets[file]?.version ?? APP_VERSION;
   const primary = platform === 'phone' || platform === 'old-windows' || platform === 'unknown' ? null : DOWNLOADS[platform];
+  const shownVersion = primary ? ver(primary.file) : APP_VERSION;
   const [pool, setPool] = useState<PoolStats | null>(null);
   const [poolErr, setPoolErr] = useState(false);
   const [account, setAccount] = useState<AccountStats | null | 'none'>(null);
@@ -200,14 +219,14 @@ export function MineWithUs() {
         </p>
         {primary ? (
           <div className="space-y-2">
-            <a href={APP_BASE + primary.file} className="btn-tone inline-block px-5 py-3 text-base font-semibold">Download for {primary.label}</a>
+            <a href={dl(primary.file)} className="btn-tone inline-block px-5 py-3 text-base font-semibold">Download for {primary.label}</a>
             <p className="text-xs text-white/55">{primary.note}</p>
             {platform === 'mac-arm' || platform === 'mac-intel' ? (
               <p className="text-xs text-white/55">
                 Not sure which Mac? Apple menu, About This Mac: Apple M1 to M4 means Apple Silicon, otherwise Intel.{' '}
-                <a className="underline" href={APP_BASE + DOWNLOADS[platform === 'mac-arm' ? 'mac-intel' : 'mac-arm'].file}>
+                <a className="underline" href={dl(DOWNLOADS[platform === 'mac-arm' ? 'mac-intel' : 'mac-arm'].file)}>
                   Get the {platform === 'mac-arm' ? 'Intel' : 'Apple Silicon'} version instead
-                </a>
+                </a>{' '}(v{ver(DOWNLOADS[platform === 'mac-arm' ? 'mac-intel' : 'mac-arm'].file)})
               </p>
             ) : null}
           </div>
@@ -224,12 +243,12 @@ export function MineWithUs() {
           <summary className="cursor-pointer">{primary ? 'Not your system? Other downloads' : 'All downloads'}</summary>
           <ul className="mt-2 space-y-1">
             {(Object.keys(DOWNLOADS) as (keyof typeof DOWNLOADS)[]).map((k) => (
-              <li key={k}><a className="underline" href={APP_BASE + DOWNLOADS[k].file}>{DOWNLOADS[k].label}</a></li>
+              <li key={k}><a className="underline" href={dl(DOWNLOADS[k].file)}>{DOWNLOADS[k].label}</a> v{ver(DOWNLOADS[k].file)}</li>
             ))}
-            <li><a className="underline" href={APP_BASE + 'amd64.deb'}>Linux (.deb)</a></li>
+            <li><a className="underline" href={dl(DEB_FILE)}>Linux (.deb)</a> v{ver(DEB_FILE)}</li>
           </ul>
         </details>
-        <p className="text-xs text-white/45">Free, open source (apps/miner in the EticaHub repo), v{APP_VERSION}. Unsigned build, so your system asks once before the first run.</p>
+        <p className="text-xs text-white/45">Free, open source (apps/miner in the EticaHub repo), v{shownVersion}. Your system may ask once before the first run.</p>
       </section>
 
       <section className="surface space-y-4 p-5 md:p-6" aria-labelledby="mine-pool">

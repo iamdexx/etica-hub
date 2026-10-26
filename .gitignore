@@ -48,3 +48,5 @@ pnpm-debug.log*
 infra/hyperlane/agents/data/
 infra/hyperlane/agents/.healthcheck.state
 infra/droplet/data/
+# XcodeGen output, regenerate with: cd apps/wallet-ios && xcodegen generate
+apps/wallet-ios/*.xcodeproj
