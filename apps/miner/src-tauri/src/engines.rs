@@ -6,6 +6,19 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
+/// Miner engines are console programs; on Windows spawn them without their own console window.
+fn engine_command(exe: &Path) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut cmd = Command::new(exe);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 pub const XMRIG_VERSION: &str = "6.26.0";
 pub const LOLMINER_VERSION: &str = "1.98a";
 pub const ETI_POOL: &str = "etipool.eticahub.com";
@@ -160,7 +173,7 @@ impl Engine {
             _ => 9999,
         };
         let use_threads = ((threads as u32 * percent as u32) / 100).max(1);
-        let child = Command::new(&self.exe)
+        let child = engine_command(&self.exe)
             .args([
                 "-o",
                 &format!("{ETI_POOL}:{port}"),
@@ -190,7 +203,7 @@ impl Engine {
     }
 
     pub fn spawn_gpu(&self, wallet: &str) -> Result<Running, String> {
-        let child = Command::new(&self.exe)
+        let child = engine_command(&self.exe)
             .args([
                 "--algo",
                 "ETCHASH",
