@@ -38,6 +38,8 @@ const STATIC_ROUTES: Array<
   ['/network', 0.6, 'monthly'],
   ['/node', 0.5, 'weekly'],
   ['/mine', 0.6, 'weekly'],
+  ['/privacy', 0.3, 'yearly'],
+  ['/terms', 0.3, 'yearly'],
 ];
 
 const MAX_ARCHIVE_URLS = 2_000;

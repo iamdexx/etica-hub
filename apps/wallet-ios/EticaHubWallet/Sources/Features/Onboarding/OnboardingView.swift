@@ -21,7 +21,14 @@ struct OnboardingView: View {
                     .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.horizontal)
                 Spacer()
                 PrimaryButton(title: "Create a new wallet") { mode = .create }
-                Button("I already have a recovery phrase") { mode = .importPhrase }.padding(.bottom)
+                Button("I already have a recovery phrase") { mode = .importPhrase }
+                HStack(spacing: 4) {
+                    Text("By continuing you accept the")
+                    Link("Terms", destination: URL(string: "https://eticahub.com/terms")!)
+                    Text("and")
+                    Link("Privacy Policy", destination: URL(string: "https://eticahub.com/privacy")!)
+                }
+                .font(.caption2).foregroundStyle(.secondary).padding(.bottom)
             }
             .padding(24)
             .navigationDestination(item: $mode) { m in

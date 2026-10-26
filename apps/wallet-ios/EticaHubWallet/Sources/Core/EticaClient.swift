@@ -14,11 +14,25 @@ final class EticaClient {
     static let minGasPrice = BigUInt(10_000_000_000)
 
     private func connect(_ url: URL) async throws -> Web3 {
+        if await Self.isSyncing(url) { throw WalletError.rpc("\(url.host ?? "RPC") is still syncing") }
         let p = try await Web3HttpProvider(url: url, network: .Custom(networkID: Chain.id))
         let w = Web3(provider: p)
         let code = try await w.eth.code(for: EthereumAddress(Chain.etx)!)
         guard code.count > 2 else { throw WalletError.rpc("\(url.host ?? "RPC") has no chain state yet") }
         return w
+    }
+
+    /// A syncing node answers every call with an old head, so balances and nonces would be wrong.
+    /// Unreachable counts as syncing (skip it); a node that rejects eth_syncing is assumed synced.
+    private static func isSyncing(_ url: URL) async -> Bool {
+        var req = URLRequest(url: url, timeoutInterval: 8)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = Data(#"{"jsonrpc":"2.0","id":1,"method":"eth_syncing","params":[]}"#.utf8)
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return true }
+        if let flag = json["result"] as? Bool { return flag }
+        return json["result"] != nil
     }
 
     /// Runs `body` on the cached provider, retrying on every other RPC if it fails.
