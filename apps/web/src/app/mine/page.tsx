@@ -7,7 +7,7 @@ import { absoluteUrl } from '@/lib/site';
 
 export const metadata: Metadata = {
   title: 'Mine with us · EticaHub pool',
-  description: 'EticaHub Etica (EGAZ) mining pool: 0.5% fee, PPLNS, paste your wallet and copy a ready-made command for your miner.',
+  description: 'Mine ETI (CPU) and EGAZ (GPU) with the EticaHub pools: 0.5% fee, one-click desktop miner or a ready-made command for your own miner.',
   alternates: { canonical: absoluteUrl('/mine') },
 };
 
@@ -17,9 +17,9 @@ export default function MinePage() {
       <PageHero
         tone="emerald"
         size="md"
-        eyebrow="Mining · Etica etchash"
+        eyebrow="Mining · ETI and EGAZ"
         title="Mine with us"
-        description="Point your GPU at the EticaHub pool. 0.5% fee, payouts every 20 minutes, no signup. Paste your wallet, copy the command, start."
+        description="Mine ETI with your CPU and EGAZ with your GPU on the EticaHub pools. 0.5% fee, no signup. Download the one-click miner or copy a command for your own."
         actions={
           <>
             <Link href="/node" className="btn-tone px-3.5 py-1.5 text-xs">Run a node</Link>
