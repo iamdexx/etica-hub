@@ -277,6 +277,11 @@ export function MineWithUs() {
             </button>
           ))}
         </div>
+        {coin === 'EGAZ' ? (
+          <p className="text-sm text-amber-300/90">
+            The EGAZ pool opens when our node finishes syncing (a day or two). Until then GPU miners cannot connect; ETI mining is live now.
+          </p>
+        ) : null}
         <label className="block space-y-1 text-sm">
           <span className="text-white/75">1. Your Etica wallet (where {coin} is paid)</span>
           <input

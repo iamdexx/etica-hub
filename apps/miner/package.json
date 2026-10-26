@@ -1,6 +1,6 @@
 {
   "name": "@etica-hub/miner",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "private": true,
   "description": "EticaHub Miner: one-click ETI (CPU) + EGAZ (GPU) mining desktop app",
   "type": "module",
