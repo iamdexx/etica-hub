@@ -15,6 +15,6 @@ for envname in ("staging","production"):
     c["poolName"] = "EticaHub ETI pool"
     c["poolUrl"] = "https://etipool.eticahub.com"
     c["mintingConfig"].update({"poolTokenFee": 0.5, "publicAddress": env["ETI_MINT_ADDRESS"], "privateKey": env["ETI_MINT_KEY"], "web3Provider": "https://eticamainnet.eticascan.org"})
-    c["paymentsConfig"].update({"publicAddress": env["ETI_PAY_ADDRESS"], "privateKey": env["ETI_PAY_KEY"], "web3Provider": "https://eticamainnet.eticascan.org", "poolRewardsBonus": 0})
+    c["paymentsConfig"].update({"publicAddress": env["ETI_PAY_ADDRESS"], "privateKey": env["ETI_PAY_KEY"], "web3Provider": "https://eticamainnet.eticascan.org", "poolRewardsBonus": 0, "maxGasPriceGwei": 50})  # Etica txs run at 9-10 gwei; the template's 5 would never get a payout mined
 json.dump(cfg, open("/opt/eti-pool/eticapool/pool.config.json","w"), indent=2)
 print("ok contract", contract, "fee", cfg["production"]["mintingConfig"]["poolTokenFee"])
