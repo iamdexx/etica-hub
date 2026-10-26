@@ -16,7 +16,7 @@ services:
       --mine --miner.threads=0 --miner.etherbase 0x679FeeB936ec769c05842bE51b45e3B5b34F43a9 --miner.extradata eticahub
       --bootnodes enode://b0e97d2f1a37b2035a34b97f32fb31ddd93ae822b603c56b7f17cfb189631ea2ef17bfbed904f8bc564765634f2d9db0a128835178c8af9f1dde68ee6b5e2bf7@167.172.47.195:30303
     ports: ["127.0.0.1:8547:8545", "127.0.0.1:8548:8546", "30304:30304", "30304:30304/udp"]
-    volumes: ["./data:/data"]
+    volumes: ["./data:/data", "./config.toml:/config.toml:ro"]
     mem_limit: 2200m
     networks: [default, droplet_default]
     logging: { driver: json-file, options: { max-size: "20m", max-file: "3" } }
