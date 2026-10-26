@@ -47,7 +47,8 @@ const STATIC_NODES_JSON = JSON.stringify(PEERS.map((p) => p.enode), null, 2);
 interface LiveStats {
   block: number | null;
   peers: number | null;
-  syncing: { current: number; highest: number } | null;
+  /** null = eth_syncing unavailable; false = not syncing (synced). */
+  syncing: { current: number; highest: number } | false | null;
   ok: boolean;
 }
 
@@ -77,9 +78,11 @@ async function loadStats(): Promise<LiveStats> {
     block: block ? Number(block) : null,
     peers: peers ? Number(peers) : null,
     syncing:
-      syncing && typeof syncing === 'object'
-        ? { current: Number(syncing.currentBlock), highest: Number(syncing.highestBlock) }
-        : null,
+      syncing === null
+        ? null
+        : syncing && typeof syncing === 'object'
+          ? { current: Number(syncing.currentBlock), highest: Number(syncing.highestBlock) }
+          : false,
     ok: block !== null,
   };
 }
@@ -110,7 +113,13 @@ export default async function NodePage() {
           <div>
             <dt className="text-white/60">Status</dt>
             <dd className="text-lg font-semibold">
-              {!stats.ok ? 'Unreachable' : stats.syncing ? 'Syncing' : 'Synced'}
+              {!stats.ok
+                ? 'Unreachable'
+                : stats.syncing === null
+                  ? 'Unknown'
+                  : stats.syncing
+                    ? 'Syncing'
+                    : 'Synced'}
             </dd>
           </div>
           <div>
