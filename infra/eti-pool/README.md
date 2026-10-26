@@ -4,7 +4,7 @@ Upstream software: https://github.com/etica/eticapool (0xBitcoin tokenpool fork,
 Droplet checkout: `/opt/eti-pool/eticapool`. Stratum ports 3333 / 5555 / 7777 / 9999 (low to very high CPU), PPLNS, fee 0.5%.
 
 - `gen-config.py` renders `pool.config.json` from `pool.config.template.json` + `/root/.eti-pool.env`
-  (minting and payments keys, root-only, never committed).
+  (minting and payments keys, root-only, never committed). The file must be `chown 999` (container user `pool`), mode 600.
 - `docker-compose.override.yml` keeps the web UI (8080) and Socket.IO (2053) on localhost, joins
   `droplet_default` so Caddy can proxy `etipool.eticahub.com`, and disables the Mongo backup job.
 - Dockerfile is patched from bullseye to bookworm in all three stages (bullseye-security apt packages 404 now).
