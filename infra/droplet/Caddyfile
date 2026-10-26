@@ -35,8 +35,16 @@ pool.eticahub.com {
     header Access-Control-Allow-Methods "GET, OPTIONS"
     @options method OPTIONS
     respond @options 204
-    handle /api/* {
+    # Read-only stats only; the pool API also has POST /api/settings and /api/mining which must not be public.
+    @stats {
+        method GET
+        path /api/stats /api/blocks /api/payments /api/miners /api/finders /api/accounts/*
+    }
+    handle @stats {
         reverse_proxy etica-pool-api:8080
+    }
+    handle /api/* {
+        respond 404
     }
     handle {
         redir https://eticahub.com/mine 302
