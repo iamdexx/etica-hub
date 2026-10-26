@@ -13,5 +13,6 @@ Etica RPCs are non-archival.
 - Peers: `data/geth/static-nodes.json`; add live ones with
   `docker exec etica-archive geth attach --exec 'admin.addPeer("enode://...")' /data/geth.ipc`
 - Status: `docker exec etica-archive geth attach --exec 'eth.syncing' /data/geth.ipc`
+- Endpoints: `https://rpc.eticahub.com` (JSON-RPC), `wss://rpc.eticahub.com` (WS), `https://rpc.eticahub.com/graphql`
 - RPC exposes `eth,net,web3` only (no `debug`/`txpool`); use the IPC console for those
 - Memory cap 2.2 GB; if the 4 GB droplet swaps, resize to 8 GB before anything else.

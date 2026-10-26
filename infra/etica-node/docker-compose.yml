@@ -10,7 +10,7 @@ services:
       --etica --syncmode full --gcmode archive --cache 768
       --datadir /data --port 30304 --nat extip:165.22.225.91
       --http --http.addr 0.0.0.0 --http.port 8545 --http.vhosts=* --http.corsdomain=*
-      --http.api eth,net,web3
+      --http.api eth,net,web3 --graphql --graphql.vhosts=* --graphql.corsdomain=*
       --ws --ws.addr 0.0.0.0 --ws.port 8546 --ws.origins=* --ws.api eth,net,web3
       --rpc.allow-unprotected-txs --maxpeers 40
       --bootnodes enode://b0e97d2f1a37b2035a34b97f32fb31ddd93ae822b603c56b7f17cfb189631ea2ef17bfbed904f8bc564765634f2d9db0a128835178c8af9f1dde68ee6b5e2bf7@167.172.47.195:30303

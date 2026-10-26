@@ -17,5 +17,14 @@
 # Public archive RPC for Etica (core-geth, /opt/etica-node). TLS is automatic.
 rpc.eticahub.com {
 	encode gzip
-	reverse_proxy etica-archive:8545
+	@ws header Connection *Upgrade*
+	handle @ws {
+		reverse_proxy etica-archive:8546
+	}
+	handle /graphql* {
+		reverse_proxy etica-archive:8545
+	}
+	handle {
+		reverse_proxy etica-archive:8545
+	}
 }
