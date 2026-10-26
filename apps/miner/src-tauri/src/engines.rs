@@ -378,11 +378,7 @@ impl MinerState {
                 }
             }
         }
-        if self.log.len() > 300 {
-            let cut = self.log.len() - 300;
-            self.log.drain(0..cut);
-        }
-        s.log = self.log.clone();
+        s.log = std::mem::take(&mut self.log); // only lines since the last poll
         s
     }
 }
