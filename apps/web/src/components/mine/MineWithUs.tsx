@@ -101,7 +101,7 @@ export function MineWithUs() {
           <div><dt className="text-white/60">Blocks found</dt><dd className="font-mono text-lg">{pool?.maturedTotal ?? '—'}</dd></div>
           <div><dt className="text-white/60">Height</dt><dd className="font-mono text-lg">{height ? Number(height).toLocaleString('en-US') : '—'}</dd></div>
         </dl>
-        <p className="text-sm text-white/65">Fee 0.5%, PPLNS, payouts every 20 minutes once you reach 0.5 EGAZ. Stratum: {STRATUM_HOST}:{STRATUM_PORT}</p>
+        <p className="text-sm text-white/65">You earn EGAZ, the coin Etica blocks pay (2 EGAZ per block). ETI is not mined; swap EGAZ for it on the hub. Fee 0.5%, PPLNS, payouts every 20 minutes once you reach 0.5 EGAZ. Stratum: {STRATUM_HOST}:{STRATUM_PORT}</p>
       </section>
 
       <section className="surface space-y-4 p-5 md:p-6" aria-labelledby="mine-start">
