@@ -13,3 +13,9 @@
 		reverse_proxy eticascan:3000
 	}
 }
+
+# Public archive RPC for Etica (core-geth, /opt/etica-node). TLS is automatic.
+rpc.eticahub.com {
+	encode gzip
+	reverse_proxy etica-archive:8545
+}
