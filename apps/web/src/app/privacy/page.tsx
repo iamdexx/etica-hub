@@ -5,7 +5,7 @@ import { PageHero } from '@/components/PageHero';
 import { absoluteUrl } from '@/lib/site';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy · EticaHub',
+  title: 'Privacy Policy',
   description:
     'What EticaHub and the EticaHub Wallet do and do not collect. Self-custody: your keys never leave your device.',
   alternates: { canonical: absoluteUrl('/privacy') },

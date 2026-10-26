@@ -5,7 +5,7 @@ import { PageHero } from '@/components/PageHero';
 import { absoluteUrl } from '@/lib/site';
 
 export const metadata: Metadata = {
-  title: 'Terms of Use · EticaHub',
+  title: 'Terms of Use',
   description:
     'Terms for using eticahub.com, the EticaHub Wallet and the EticaHub Miner. Self-custody software provided as is.',
   alternates: { canonical: absoluteUrl('/terms') },
