@@ -19,6 +19,19 @@ pub struct StartResult {
     gpu: bool,
 }
 
+const EGAZ_POOL_CLOSED: &str =
+    "the EGAZ pool is not open yet (our node is still syncing); mining ETI only for now";
+
+/// The EGAZ stratum stays closed until the pool's node is synced; a quick TCP probe avoids
+/// starting a GPU engine that would only log connection errors.
+fn egaz_pool_reachable() -> bool {
+    use std::net::{TcpStream, ToSocketAddrs};
+    let Ok(addrs) = engines::EGAZ_POOL.to_socket_addrs() else { return false };
+    addrs
+        .into_iter()
+        .any(|a| TcpStream::connect_timeout(&a, std::time::Duration::from_secs(4)).is_ok())
+}
+
 fn valid_wallet(w: &str) -> bool {
     w.len() == 42 && w.starts_with("0x") && w[2..].chars().all(|c| c.is_ascii_hexdigit())
 }
@@ -46,7 +59,7 @@ async fn start_mining(
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("engines");
-    let use_gpu = gpu && hw.gpu_supported;
+    let mut use_gpu = gpu && hw.gpu_supported;
     if gpu && !hw.gpu_supported {
         if !cpu {
             return Err("No supported GPU found for EGAZ; enable ETI on CPU instead".into());
@@ -55,6 +68,13 @@ async fn start_mining(
             "log",
             "GPU mining skipped: no supported GPU on this machine",
         );
+    }
+    if use_gpu && !egaz_pool_reachable() {
+        if !cpu {
+            return Err(EGAZ_POOL_CLOSED.into());
+        }
+        let _ = app.emit("log", format!("GPU mining skipped: {EGAZ_POOL_CLOSED}"));
+        use_gpu = false;
     }
     // Downloads happen before taking the lock so a window close can always stop the miners.
     let cpu_engine = if cpu {
