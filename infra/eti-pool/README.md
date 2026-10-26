@@ -18,3 +18,9 @@ Droplet checkout: `/opt/eti-pool/eticapool`. Stratum ports 3333 / 5555 / 7777 / 
 - `paymentsConfig.maxGasPriceGwei` is raised to 50: Etica transactions run at 9-10 gwei and the template's 5 would
   never get a payout mined.
 - `web3Provider` is the public eticascan RPC until the archive node is synced, then switch to `http://etica-archive:8545`.
+- `apply-reward-retry.py` patches `lib/transaction-coordinator.js` (run after every upstream pull, then
+  `docker compose build pool-app && docker compose up -d pool-app`). Upstream's `rewardCrawl` checks the pool's
+  ETI balance from a cache that is still 0 right after a mint, skips every miner (status 5) and still marks the
+  mint processed, so the first block paid nobody. The patch refreshes the balance first and leaves the mint
+  unprocessed until miners are credited. If a block ever shows up with `poolstatus: 2` and no `ppnls_rewards`,
+  reset it: `miner_challengediff {challengeNumber, status: 5} -> status 1` and `pool_mints -> poolstatus 1`.
