@@ -36,6 +36,7 @@ const STATIC_ROUTES: Array<
   ['/whitepaper', 0.5, 'monthly'],
   ['/tutorials', 0.6, 'weekly'],
   ['/network', 0.6, 'monthly'],
+  ['/node', 0.5, 'weekly'],
 ];
 
 const MAX_ARCHIVE_URLS = 2_000;

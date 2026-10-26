@@ -17,7 +17,8 @@ const SETTINGS = [
   ['Network name', 'Etica Mainnet'],
   ['Chain ID', '61803 (0xf16b)'],
   ['RPC URL', 'https://eticamainnet.eticaprotocol.org'],
-  ['Alternate RPC', 'https://eticamainnet.eticascan.org'],
+  ['Alternate RPC', 'https://rpc.eticahub.com'],
+  ['Alternate RPC 2', 'https://eticamainnet.eticascan.org'],
   ['Currency symbol', 'EGAZ'],
   ['Native currency decimals', '18'],
   ['Block explorer', 'https://eticahub.com/explorer'],
@@ -93,6 +94,7 @@ export default function NetworkPage() {
         </div>
         <p className="text-sm text-white/65">Public token list: <a className="underline" href="/tokenlist.json">https://eticahub.com/tokenlist.json</a>. Wallets may not display imported logos or prices. USDC.e is bridged USDC on Etica, not native Circle-issued USDC.</p>
         <Link className="btn-ghost inline-flex px-4 py-2" href="/tutorials">Bridge and swap tutorials</Link>
+        <Link className="btn-ghost inline-flex px-4 py-2" href="/node">Run a node / peer with us</Link>
       </section>
     </div>
   );
