@@ -1,6 +1,6 @@
 [package]
 name = "eticahub-miner"
-version = "0.1.4"
+version = "0.1.5"
 description = "EticaHub Miner: one-click ETI (CPU) + EGAZ (GPU) mining"
 authors = ["EticaHub"]
 edition = "2021"

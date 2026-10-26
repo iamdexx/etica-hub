@@ -19,8 +19,7 @@ pub struct StartResult {
     gpu: bool,
 }
 
-const EGAZ_POOL_CLOSED: &str =
-    "the EGAZ pool is not open yet (our node is still syncing); mining ETI only for now";
+const EGAZ_POOL_CLOSED: &str = "the EGAZ pool is not open yet (our node is still syncing)";
 
 /// The EGAZ stratum stays closed until the pool's node is synced; a quick TCP probe avoids
 /// starting a GPU engine that would only log connection errors.
@@ -71,9 +70,12 @@ async fn start_mining(
     }
     if use_gpu && !egaz_pool_reachable() {
         if !cpu {
-            return Err(EGAZ_POOL_CLOSED.into());
+            return Err(format!("{EGAZ_POOL_CLOSED}. Enable ETI to mine on your CPU now."));
         }
-        let _ = app.emit("log", format!("GPU mining skipped: {EGAZ_POOL_CLOSED}"));
+        let _ = app.emit(
+            "log",
+            format!("GPU mining skipped: {EGAZ_POOL_CLOSED}. Mining ETI only; press Stop and Mine again once the EGAZ pool opens."),
+        );
         use_gpu = false;
     }
     // Downloads happen before taking the lock so a window close can always stop the miners.
