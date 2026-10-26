@@ -6,7 +6,8 @@
  */
 import { NextResponse } from 'next/server';
 
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
+const REVALIDATE = 300;
 
 const RELEASES = 'https://api.github.com/repos/iamdexx/etica-hub/releases?per_page=100';
 const FILES = ['x64-setup.exe', 'aarch64.dmg', 'x64.dmg', 'amd64.AppImage', 'amd64.deb'];
@@ -19,7 +20,7 @@ export async function GET(): Promise<NextResponse> {
   if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
   const out: MinerReleaseAssets = {};
   try {
-    const res = await fetch(RELEASES, { headers, next: { revalidate } });
+    const res = await fetch(RELEASES, { headers, next: { revalidate: REVALIDATE } });
     if (!res.ok) throw new Error(`github ${res.status}`);
     const releases = (await res.json()) as Release[];
     for (const r of releases) {
@@ -32,7 +33,8 @@ export async function GET(): Promise<NextResponse> {
       }
     }
   } catch {
-    // Empty map: the page falls back to its pinned APP_VERSION links.
+    // Not cached: the page falls back to its pinned APP_VERSION links until GitHub answers again.
+    return NextResponse.json(out, { headers: { 'Cache-Control': 'no-store' } });
   }
-  return NextResponse.json(out, { headers: { 'Cache-Control': 'public, max-age=300, s-maxage=300' } });
+  return NextResponse.json(out, { headers: { 'Cache-Control': `public, max-age=${REVALIDATE}, s-maxage=${REVALIDATE}` } });
 }
