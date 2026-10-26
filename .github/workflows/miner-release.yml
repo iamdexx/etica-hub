@@ -18,7 +18,7 @@ jobs:
         include:
           - { name: windows, os: windows-latest, args: "" }
           - { name: macos-arm, os: macos-latest, args: "--target aarch64-apple-darwin" }
-          - { name: macos-intel, os: macos-13, args: "--target x86_64-apple-darwin" }
+          - { name: macos-intel, os: macos-15-intel, args: "--target x86_64-apple-darwin" }
           - { name: linux, os: ubuntu-22.04, args: "" }
     steps:
       - uses: actions/checkout@v4
