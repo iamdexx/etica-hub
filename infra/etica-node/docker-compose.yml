@@ -7,7 +7,7 @@ services:
     container_name: etica-archive
     restart: unless-stopped
     command: >
-      --etica --config /data/config.toml --syncmode full --gcmode archive --cache 768
+      --etica --config /config.toml --syncmode full --gcmode archive --cache 768
       --datadir /data --port 30304 --nat extip:165.22.225.91
       --http --http.addr 0.0.0.0 --http.port 8545 --http.vhosts=* --http.corsdomain=*
       --http.api eth,net,web3 --graphql --graphql.vhosts=* --graphql.corsdomain=*

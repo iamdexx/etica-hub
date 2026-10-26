@@ -19,7 +19,7 @@ Etica RPCs are non-archival.
 
 ## Static peers
 
-core-geth ignores `static-nodes.json`; peers are pinned in `/opt/etica-node/data/config.toml`:
+core-geth ignores `static-nodes.json`; peers are pinned in `config.toml` (this folder, mounted read-only at `/config.toml`):
 
 ```toml
 [Node.P2P]
