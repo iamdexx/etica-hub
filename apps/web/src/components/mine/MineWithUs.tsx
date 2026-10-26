@@ -10,7 +10,25 @@ const API = 'https://pool.eticahub.com/api';
 const ETI_HOST = 'etipool.eticahub.com';
 const ETI_API = 'https://etipool.eticahub.com/api/v2/pool';
 const PLACEHOLDER = '0xYOURWALLET';
-const APP_DOWNLOAD = 'https://github.com/iamdexx/etica-hub/releases?q=miner-v&expanded=true';
+const APP_VERSION = '0.1.1';
+const APP_BASE = `https://github.com/iamdexx/etica-hub/releases/download/miner-v${APP_VERSION}/EticaHub.Miner_${APP_VERSION}_`;
+type Platform = 'windows' | 'mac-arm' | 'mac-intel' | 'linux' | 'phone' | 'unknown';
+const DOWNLOADS: Record<Exclude<Platform, 'phone' | 'unknown'>, { label: string; file: string; note: string }> = {
+  windows: { label: 'Windows', file: 'x64-setup.exe', note: 'Run the installer. If Windows shows "protected your PC", click More info, then Run anyway.' },
+  'mac-arm': { label: 'Mac (Apple Silicon, M1 or newer)', file: 'aarch64.dmg', note: 'Open the .dmg and drag the app to Applications. First launch: right-click the app, Open.' },
+  'mac-intel': { label: 'Mac (Intel)', file: 'x64.dmg', note: 'Open the .dmg and drag the app to Applications. First launch: right-click the app, Open.' },
+  linux: { label: 'Linux', file: 'amd64.AppImage', note: 'Make it executable (chmod +x) and run it.' },
+};
+
+function detectPlatform(): Platform {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|Android/i.test(ua)) return 'phone';
+  if (/Windows/i.test(ua)) return 'windows';
+  if (/Mac OS X|Macintosh/i.test(ua)) return 'mac-arm';
+  if (/Linux/i.test(ua)) return 'linux';
+  return 'unknown';
+}
 
 type Coin = 'ETI' | 'EGAZ';
 
@@ -104,6 +122,9 @@ export function MineWithUs() {
   const [etiPort, setEtiPort] = useState(ETI_PORTS[0].port);
   const [etiPool, setEtiPool] = useState<EtiOverview | null>(null);
   const [etiAccount, setEtiAccount] = useState<EtiMiner | null | 'none'>(null);
+  const [platform, setPlatform] = useState<Platform>('unknown');
+  useEffect(() => { setPlatform(detectPlatform()); }, []);
+  const primary = platform === 'phone' || platform === 'unknown' ? null : DOWNLOADS[platform];
   const [pool, setPool] = useState<PoolStats | null>(null);
   const [poolErr, setPoolErr] = useState(false);
   const [account, setAccount] = useState<AccountStats | null | 'none'>(null);
@@ -163,10 +184,26 @@ export function MineWithUs() {
         <p className="text-sm text-white/65">
           One download for Windows, Mac and Linux. Open it, paste your wallet, press Mine. It mines ETI on your CPU and EGAZ on your GPU at the same time, and shows your hashrate and earnings. Nothing to configure.
         </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <a href={APP_DOWNLOAD} rel="noreferrer" target="_blank" className="btn-tone px-4 py-2 text-sm font-semibold">Download EticaHub Miner</a>
-          <span className="text-xs text-white/50">Unsigned build: Windows and macOS ask you to confirm the first run.</span>
-        </div>
+        {primary ? (
+          <div className="space-y-2">
+            <a href={APP_BASE + primary.file} className="btn-tone inline-block px-5 py-3 text-base font-semibold">Download for {primary.label}</a>
+            <p className="text-xs text-white/55">{primary.note}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-amber-200/90">
+            {platform === 'phone' ? 'Mining needs a computer. Open eticahub.com/mine on your PC or Mac and the download button appears there.' : 'Pick your system below.'}
+          </p>
+        )}
+        <details className="text-xs text-white/55">
+          <summary className="cursor-pointer">{primary ? 'Not your system? Other downloads' : 'All downloads'}</summary>
+          <ul className="mt-2 space-y-1">
+            {(Object.keys(DOWNLOADS) as (keyof typeof DOWNLOADS)[]).map((k) => (
+              <li key={k}><a className="underline" href={APP_BASE + DOWNLOADS[k].file}>{DOWNLOADS[k].label}</a></li>
+            ))}
+            <li><a className="underline" href={APP_BASE + 'amd64.deb'}>Linux (.deb)</a></li>
+          </ul>
+        </details>
+        <p className="text-xs text-white/45">Free, open source (apps/miner in the EticaHub repo), v{APP_VERSION}. Unsigned build, so your system asks once before the first run.</p>
       </section>
 
       <section className="surface space-y-4 p-5 md:p-6" aria-labelledby="mine-pool">
