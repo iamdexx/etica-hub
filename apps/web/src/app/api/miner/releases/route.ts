@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server';
 
 export const revalidate = 300;
 
-const RELEASES = 'https://api.github.com/repos/iamdexx/etica-hub/releases?per_page=20';
+const RELEASES = 'https://api.github.com/repos/iamdexx/etica-hub/releases?per_page=100';
 const FILES = ['x64-setup.exe', 'aarch64.dmg', 'x64.dmg', 'amd64.AppImage', 'amd64.deb'];
 
 type Release = { tag_name: string; draft: boolean; prerelease: boolean; assets: { name: string; browser_download_url: string }[] };
