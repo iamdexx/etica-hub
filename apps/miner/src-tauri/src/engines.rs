@@ -284,6 +284,13 @@ impl Running {
     }
 }
 
+impl Drop for Running {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 #[derive(Serialize, Default, Clone)]
 pub struct Status {
     pub cpu_running: bool,
@@ -331,11 +338,8 @@ struct LolAlgo {
 
 impl MinerState {
     pub fn stop_all(&mut self) {
-        for r in [self.cpu.take(), self.gpu.take()].into_iter().flatten() {
-            let mut r = r;
-            let _ = r.child.kill();
-            let _ = r.child.wait();
-        }
+        self.cpu = None; // Running kills its child on drop
+        self.gpu = None;
     }
 
     pub async fn status(&mut self) -> Status {

@@ -1,14 +1,16 @@
 mod engines;
 mod hardware;
 
-use engines::{Engine, EngineKind, MinerState};
+use engines::{Engine, EngineKind, MinerState, Running};
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 
 pub struct AppState {
     miners: Arc<Mutex<MinerState>>,
+    closing: AtomicBool,
 }
 
 #[derive(Serialize)]
@@ -44,32 +46,50 @@ async fn start_mining(
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("engines");
+    let use_gpu = gpu && hw.gpu_supported;
+    if gpu && !hw.gpu_supported {
+        if !cpu {
+            return Err("No supported GPU found for EGAZ; enable ETI on CPU instead".into());
+        }
+        let _ = app.emit(
+            "log",
+            "GPU mining skipped: no supported GPU on this machine",
+        );
+    }
+    // Downloads happen before taking the lock so a window close can always stop the miners.
+    let cpu_engine = if cpu {
+        Some(Engine::ensure(&app, &dir, EngineKind::Xmrig).await?)
+    } else {
+        None
+    };
+    let gpu_engine = if use_gpu {
+        Some(Engine::ensure(&app, &dir, EngineKind::LolMiner).await?)
+    } else {
+        None
+    };
+    if state.closing.load(Ordering::SeqCst) {
+        return Err("window closed".into());
+    }
     let mut st = state.miners.lock().await;
     st.stop_all();
-    let mut started = StartResult {
-        cpu: false,
-        gpu: false,
+    let spawn = || -> Result<(Option<Running>, Option<Running>), String> {
+        let c = cpu_engine
+            .as_ref()
+            .map(|e| e.spawn_cpu(&wallet, hw.cpu_threads, cpu_percent))
+            .transpose()?;
+        let g = gpu_engine
+            .as_ref()
+            .map(|e| e.spawn_gpu(&wallet))
+            .transpose()?;
+        Ok((c, g))
     };
-    if cpu {
-        let eng = Engine::ensure(&app, &dir, EngineKind::Xmrig).await?;
-        st.cpu = Some(eng.spawn_cpu(&wallet, hw.cpu_threads, cpu_percent)?);
-        started.cpu = true;
-    }
-    if gpu {
-        if !hw.gpu_supported {
-            if !cpu {
-                return Err("No supported GPU found for EGAZ; enable ETI on CPU instead".into());
-            }
-            let _ = app.emit(
-                "log",
-                "GPU mining skipped: no supported GPU on this machine",
-            );
-        } else {
-            let eng = Engine::ensure(&app, &dir, EngineKind::LolMiner).await?;
-            st.gpu = Some(eng.spawn_gpu(&wallet)?);
-            started.gpu = true;
-        }
-    }
+    let (c, g) = spawn()?; // a failed spawn drops anything already started (Running kills on drop)
+    let started = StartResult {
+        cpu: c.is_some(),
+        gpu: g.is_some(),
+    };
+    st.cpu = c;
+    st.gpu = g;
     let _ = app.emit("log", format!("Mining to {wallet}"));
     Ok(started)
 }
@@ -111,6 +131,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             miners: Arc::new(Mutex::new(MinerState::default())),
+            closing: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             detect_hardware,
@@ -122,6 +143,7 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 if let Some(st) = window.try_state::<AppState>() {
+                    st.closing.store(true, Ordering::SeqCst);
                     if let Ok(mut m) = st.miners.try_lock() {
                         m.stop_all();
                     }
