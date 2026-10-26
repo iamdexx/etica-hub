@@ -41,6 +41,13 @@ final class EticaClient {
         throw WalletError.rpc(lastError?.localizedDescription ?? "No RPC reachable")
     }
 
+    /// Writes run exactly once: a lost reply must not resend the transaction (new nonce, double spend).
+    /// The provider is resolved with the usual fallback first, then `body` runs on it with no retry.
+    func withWriteProvider<T>(_ body: (Web3) async throws -> T) async throws -> T {
+        let w = try await withProvider { $0 }
+        return try await body(w)
+    }
+
     func balance(of token: Token, owner: EthereumAddress) async throws -> BigUInt {
         try await withProvider { w in
             if token.isNative { return try await w.eth.getBalance(for: owner) }
@@ -99,7 +106,7 @@ final class EticaClient {
 
     func sendNative(to: String, amount: BigUInt, from: EthereumAddress, keystore: BIP32Keystore, password: String) async throws -> String {
         guard let dest = EthereumAddress(to) else { throw WalletError.badAddress }
-        return try await withProvider { w in
+        return try await withWriteProvider { w in
             guard let contract = w.contract(Web3.Utils.coldWalletABI, at: dest),
                   let op = contract.createWriteOperation("fallback") else { throw WalletError.rpc("Could not build transfer") }
             op.transaction.from = from
@@ -111,14 +118,14 @@ final class EticaClient {
 
     func sendToken(_ token: Token, to: String, amount: BigUInt, from: EthereumAddress, keystore: BIP32Keystore, password: String) async throws -> String {
         guard let dest = EthereumAddress(to) else { throw WalletError.badAddress }
-        return try await withProvider { w in
+        return try await withWriteProvider { w in
             let op = try operation(w, abi: Web3.Utils.erc20ABI, at: token.address!, method: "transfer", params: [dest, amount], from: from)
             return try await send(w, op, keystore: keystore, password: password)
         }
     }
 
     func approve(_ token: Token, spender: String, amount: BigUInt, from: EthereumAddress, keystore: BIP32Keystore, password: String) async throws -> String {
-        try await withProvider { w in
+        try await withWriteProvider { w in
             let op = try operation(w, abi: Web3.Utils.erc20ABI, at: token.address!, method: "approve", params: [EthereumAddress(spender)!, amount], from: from)
             return try await send(w, op, keystore: keystore, password: password)
         }
@@ -140,7 +147,7 @@ final class EticaClient {
     func swap(from: Token, to: Token, amountIn: BigUInt, minOut: BigUInt, owner: EthereumAddress, keystore: BIP32Keystore, password: String) async throws -> String {
         let path = Token.path(from: from, to: to).map { EthereumAddress($0)! }
         let deadline = BigUInt(Date().timeIntervalSince1970) + 1200
-        return try await withProvider { w in
+        return try await withWriteProvider { w in
             let op: WriteOperation
             if from.isNative {
                 op = try operation(w, abi: ABI.router, at: Chain.swapRouter, method: "swapExactEGAZForTokens", params: [minOut, path, owner, deadline], from: owner, value: amountIn)
@@ -165,14 +172,14 @@ final class EticaClient {
     }
 
     func stake(etx amount: BigUInt, owner: EthereumAddress, keystore: BIP32Keystore, password: String) async throws -> String {
-        try await withProvider { w in
+        try await withWriteProvider { w in
             let op = try operation(w, abi: ABI.erc4626, at: Chain.stakedETX, method: "deposit", params: [amount, owner], from: owner)
             return try await send(w, op, keystore: keystore, password: password)
         }
     }
 
     func unstake(shares: BigUInt, owner: EthereumAddress, keystore: BIP32Keystore, password: String) async throws -> String {
-        try await withProvider { w in
+        try await withWriteProvider { w in
             let op = try operation(w, abi: ABI.erc4626, at: Chain.stakedETX, method: "redeem", params: [shares, owner, owner], from: owner)
             return try await send(w, op, keystore: keystore, password: password)
         }
