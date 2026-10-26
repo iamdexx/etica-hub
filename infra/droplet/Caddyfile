@@ -57,6 +57,14 @@ etipool.eticahub.com {
     handle /socket.io/* {
         reverse_proxy eti-pool-app:2053
     }
+    # The pool API has unauthenticated POST handlers (/api/v1/poolinfo writes pool records); only GET is public.
+    @api_write {
+        path /api/*
+        not method GET HEAD OPTIONS
+    }
+    handle @api_write {
+        respond 405
+    }
     handle {
         reverse_proxy eti-pool-app:8080
     }
