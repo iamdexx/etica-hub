@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 import json, re
 env = dict(l.strip().split("=",1) for l in open("/root/.eti-pool.env") if "=" in l)
-contract = json.load(open("/opt/eti-pool/eticapool/config/DeployedContractInfo.json"))["networks"]["etica"]["contracts"]["batchedpayments"]["blockchain_address"]
+BATCHED_PAYMENTS = "0x2ab929Ab41b4ba22D66DDeAB075F615888fd050a"  # owner = payments wallet
+info_path = "/opt/eti-pool/eticapool/config/DeployedContractInfo.json"
+info = json.load(open(info_path))
+info["networks"]["etica"]["contracts"]["batchedpayments"]["blockchain_address"] = BATCHED_PAYMENTS
+json.dump(info, open(info_path, "w"), indent=2)
+contract = BATCHED_PAYMENTS
 raw = open("/opt/eti-pool/eticapool/pool.config.template.json").read()
 raw = re.sub(r",(\s*[}\]])", r"\1", raw)
 cfg = json.loads(raw)
