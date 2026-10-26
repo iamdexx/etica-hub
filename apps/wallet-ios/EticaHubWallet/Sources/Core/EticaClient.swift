@@ -44,7 +44,10 @@ final class EticaClient {
     /// Writes run exactly once: a lost reply must not resend the transaction (new nonce, double spend).
     /// The provider is resolved with the usual fallback first, then `body` runs on it with no retry.
     func withWriteProvider<T>(_ body: (Web3) async throws -> T) async throws -> T {
-        let w = try await withProvider { $0 }
+        let w = try await withProvider { w in
+            _ = try await w.eth.blockNumber()
+            return w
+        }
         return try await body(w)
     }
 
