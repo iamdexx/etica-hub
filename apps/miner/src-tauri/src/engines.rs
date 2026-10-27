@@ -153,8 +153,13 @@ impl Engine {
                 .unpack(&tmp)
                 .map_err(|e| e.to_string())?;
         }
+        // Another instance may have finished installing while we downloaded: use its copy.
+        if let Some(exe) = find_file(&target, rel.exe_name) {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Ok(Engine { exe });
+        }
         // A half-unpacked folder from an earlier run makes rename fail (Windows "directory is
-        // not empty", os error 145); the engine binary was not found in it, so it is safe to drop.
+        // not empty", os error 145); the engine binary is not in it, so it is safe to drop.
         if target.exists() {
             std::fs::remove_dir_all(&target)
                 .map_err(|e| format!("could not replace old {label} folder: {e}"))?;
