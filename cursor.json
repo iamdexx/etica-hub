@@ -1,10 +1,10 @@
 {
-  "lastBlock": 11071237,
+  "lastBlock": 11072364,
   "chainId": 61803,
-  "updatedAt": "2026-10-27T17:54:07.836Z",
-  "runs": 85,
+  "updatedAt": "2026-10-27T21:51:26.652Z",
+  "runs": 86,
   "cumulative": {
-    "transfers": 36993,
-    "syncs": 849
+    "transfers": 37275,
+    "syncs": 850
   }
 }
