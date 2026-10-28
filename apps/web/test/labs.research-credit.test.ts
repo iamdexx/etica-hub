@@ -91,5 +91,7 @@ describe('unmetDisulfideObjective', () => {
   it('does not claim a disulfide bond merely because two cysteines exist', () => {
     expect(unmetDisulfideObjective(record('CAC'))).toBeNull();
     expect(unmetDisulfideObjective(record('APDE', 'Unrelated research question'))).toBeNull();
+    expect(unmetDisulfideObjective(record('APDE', 'Design a disulfide-free peptide'))).toBeNull();
+    expect(unmetDisulfideObjective(record('APDE', 'Avoid disulfide bonds'))).toBeNull();
   });
 });
