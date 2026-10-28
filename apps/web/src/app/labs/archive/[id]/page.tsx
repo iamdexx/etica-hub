@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation';
 
 import { ShareButtons } from '@/components/labs/ShareButtons';
 import { getArchivedResearch } from '@/lib/labs/archive';
+import { getRecordDoi } from '@/lib/labs/doi';
 import { researchEvidence, publicationDecision } from '@/lib/labs/publication';
 import { labsQueue } from '@/lib/labs/queue';
 import { discoveryDescription, discoveryTitle } from '@/lib/labs/discovery-meta';
@@ -69,6 +70,7 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
   const best = r.bestCandidate;
   const score = best.score;
   const credit = await researchCredit(r);
+  const doi = credit.kind === 'eticahub' ? await getRecordDoi(r.id) : null;
   const unmetObjective = unmetDisulfideObjective(r);
   const timelineAvailable = await labsQueue()
     .get(r.jobId)
@@ -84,6 +86,7 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
     identifier: r.id,
     dateCreated: new Date(r.completedAt).toISOString(),
     ...researchCreditMetadata(credit),
+    ...(doi ? { sameAs: doi.url } : {}),
     keywords: [r.disease, 'protein design', 'ESMFold', 'DeSci'].filter(Boolean),
     isAccessibleForFree: true,
     citation: r.grounding?.citations?.map((c) => c.url) ?? [],
@@ -159,6 +162,20 @@ export default async function ArchivedDiscoveryPage({ params }: Params): Promise
               )}
             </dd>
           </div>
+          {doi && (
+            <div className="sm:col-span-2">
+              <dt className="text-white/45">Zenodo DOI</dt>
+              <dd className="mt-1 break-all text-white/80">
+                <a className="underline" href={doi.url} target="_blank" rel="noreferrer">
+                  {doi.doi}
+                </a>
+                <span className="text-white/45">
+                  {' '}
+                  · archived dataset with PDF report, FASTA, PDB and checksums
+                </span>
+              </dd>
+            </div>
+          )}
         </dl>
         <ShareButtons url={url} text={`${title} — AI-designed protein on EticaHub Labs`} />
       </header>
