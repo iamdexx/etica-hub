@@ -367,7 +367,7 @@ export async function loadAutomation(): Promise<WorkflowRun[]> {
       const base = { label: wf.label, every: wf.every };
       try {
         const res = await fetch(
-          `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${wf.file}/runs?per_page=5&exclude_pull_requests=true`,
+          `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${wf.file}/runs?per_page=10&exclude_pull_requests=true`,
           {
             headers: githubHeaders(),
             next: { revalidate: GITHUB_REVALIDATE_SECONDS },
