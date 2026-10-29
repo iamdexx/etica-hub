@@ -64,7 +64,7 @@ jobs:
       OWNER: ${{ inputs.owner }}
       VALIDATOR: ${{ inputs.validator }}
       GUARDIAN: ${{ inputs.guardian }}
-      ETICA_RPC: ${{ vars.HARVEST_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
+      ETICA_RPC: ${{ vars.HARVEST_RPC_URL || 'https://rpc.eticahub.com' }}
       # Keyless public endpoints that serve eth_call + bounded eth_getLogs; the
       # CLI fails over down the list. Same set as the bridge-gas keeper.
       ETHEREUM_RPCS: ${{ secrets.BRIDGE_ETHEREUM_RPC_URL || 'https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io,https://eth.drpc.org,https://ethereum-rpc.publicnode.com' }}

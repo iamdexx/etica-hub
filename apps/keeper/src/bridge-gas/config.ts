@@ -338,7 +338,7 @@ export function loadBridgeGasConfig(env: NodeJS.ProcessEnv = process.env): Bridg
       chainId: eticaMainnet.id,
       nativeSymbol: 'EGAZ',
       stableDecimals: 6,
-      rpcFailover: [opt(env, 'HARVEST_RPC_URL') ?? 'https://eticamainnet.eticaprotocol.org', ...eticaMainnet.rpcUrls.default.http],
+      rpcFailover: [opt(env, 'HARVEST_RPC_URL') ?? 'https://rpc.eticahub.com', ...eticaMainnet.rpcUrls.default.http],
       router: etica.swapRouter,
       wrappedNative: etica.wegaz,
       // USDC.e exists only once the warp route is deployed.

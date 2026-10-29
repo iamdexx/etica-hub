@@ -33,7 +33,7 @@ export interface TelemetrySnapshot {
 }
 
 const PUBLIC_RPC =
-  process.env.NEXT_PUBLIC_ETICA_RPC_URL ?? 'https://eticamainnet.eticaprotocol.org';
+  process.env.NEXT_PUBLIC_ETICA_RPC_URL ?? 'https://rpc.eticahub.com';
 
 async function fetchLatestBlock(): Promise<number | null> {
   try {

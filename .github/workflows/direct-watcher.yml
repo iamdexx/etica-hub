@@ -24,7 +24,7 @@ jobs:
     # harvest-live holds HARVEST_KEEPER_PRIVATE_KEY: the keeper wallet doubles as the Direct guardian.
     environment: harvest-live
     env:
-      DIRECT_RPC_URL: ${{ vars.DIRECT_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
+      DIRECT_RPC_URL: ${{ vars.DIRECT_RPC_URL || 'https://rpc.eticahub.com' }}
       DIRECT_FACTORY_ADDRESS: ${{ vars.DIRECT_FACTORY_ADDRESS }}
       DIRECT_HARVESTER_ADDRESS: ${{ vars.DIRECT_HARVESTER_ADDRESS }}
       DIRECT_RESERVE_DRIFT_BPS: ${{ vars.DIRECT_RESERVE_DRIFT_BPS || '100' }}

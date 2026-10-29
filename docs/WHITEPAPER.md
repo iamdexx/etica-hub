@@ -988,10 +988,10 @@ Ethereum mainnet (chain id `1`):
 | Parameter | Value |
 |---|---|
 | Network name | Etica Mainnet |
-| RPC URL | `https://rpc2.etica-stats.org` |
+| RPC URL | `https://rpc.eticahub.com` |
 | Chain ID | 61803 |
 | Native gas token | EGAZ |
-| Alternate RPC URL | `https://eticamainnet.eticaprotocol.org` |
+| Alternate RPC URL | `https://rpc.eticahub.com` |
 | EVM level | Paris (no Cancun opcodes) |
 | Bridged chains | Ethereum mainnet (chain id 1) via Hyperlane |
 | Block explorer (EticaHub) | `https://eticahub.com/explorer` |

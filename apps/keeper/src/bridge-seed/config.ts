@@ -143,7 +143,7 @@ export function loadBridgeSeedConfig(env: NodeJS.ProcessEnv = process.env): Brid
   if (mailboxOverride !== null && !isAddress(mailboxOverride)) throw new Error('BRIDGE_SEED_ETHEREUM_MAILBOX is not an address');
 
   const eticaRpcUrls = rpcList('BRIDGE_SEED_ETICA_RPC_URL', opt(env, 'BRIDGE_SEED_ETICA_RPC_URL'), [
-    opt(env, 'HARVEST_RPC_URL') ?? 'https://eticamainnet.eticaprotocol.org',
+    opt(env, 'HARVEST_RPC_URL') ?? 'https://rpc.eticahub.com',
     ...eticaMainnet.rpcUrls.default.http,
   ]);
 

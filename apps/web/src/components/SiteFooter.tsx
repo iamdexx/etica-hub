@@ -135,7 +135,7 @@ export function SiteFooter() {
             Terms
           </Link>
         </p>
-        <p className="num">RPC eticamainnet.eticaprotocol.org · chain 61803</p>
+        <p className="num">RPC rpc.eticahub.com · chain 61803</p>
       </div>
     </footer>
   );

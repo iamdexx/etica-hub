@@ -107,7 +107,7 @@ Paste this into `services/server/src/sourcify-chains-default.json` on the
     "supported": true,
     "rpc": [
       "https://rpc2.etica-stats.org",
-      "https://eticamainnet.eticaprotocol.org"
+      "https://rpc.eticahub.com"
     ]
   }
 }

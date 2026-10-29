@@ -6,6 +6,7 @@ import { syncForever } from './sync.js';
 
 const env = process.env;
 const DEFAULT_RPCS = [
+  'https://rpc.eticahub.com',
   'https://eticamainnet.eticaprotocol.org',
   'https://eticamainnet.eticascan.org',
 ];

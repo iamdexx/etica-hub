@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 15
     environment: harvest-live
     env:
-      HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://eticamainnet.eticaprotocol.org' }}
+      HARVEST_RPC_URL: ${{ vars.HARVEST_RPC_URL || 'https://rpc.eticahub.com' }}
       HARVEST_CHAIN_ID: ${{ vars.HARVEST_CHAIN_ID || '61803' }}
       DIRECT_FACTORY_ADDRESS: ${{ vars.DIRECT_FACTORY_ADDRESS }}
       DIRECT_PULSE_EGAZ_WEI: ${{ vars.DIRECT_PULSE_EGAZ_WEI || '250000000000000000000' }}

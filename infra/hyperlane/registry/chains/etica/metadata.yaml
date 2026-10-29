@@ -28,8 +28,9 @@ nativeToken:
   symbol: EGAZ
 protocol: ethereum
 rpcUrls:
+  - http: https://rpc.eticahub.com
   - http: https://eticamainnet.eticaprotocol.org
-  - http: https://eticamainnet.eticaprotocol.org
+  - http: https://eticamainnet.eticascan.org
   - http: https://61803.rpc.thirdweb.com
 technicalStack: other
 # Legacy (type 0) transactions only — Etica has no EIP-1559 base fee.

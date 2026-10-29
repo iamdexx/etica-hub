@@ -23,7 +23,7 @@ flock -n 9 || exit 0
 STATE=".watchdog.state"
 ALERT_LAG="${ALERT_LAG:-100}"
 BACKUP_KEEP="${BACKUP_KEEP:-7}"
-RPCS="${ETICA_RPC_URLS:-${ETICA_RPC_URL:-https://eticamainnet.eticaprotocol.org},https://61803.rpc.thirdweb.com,https://eticamainnet.eticascan.org}"
+RPCS="${ETICA_RPC_URLS:-${ETICA_RPC_URL:-https://rpc.eticahub.com},https://eticamainnet.eticaprotocol.org,https://eticamainnet.eticascan.org,https://61803.rpc.thirdweb.com}"
 
 chain_head() {
   local url r

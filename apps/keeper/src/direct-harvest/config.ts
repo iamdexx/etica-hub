@@ -67,7 +67,7 @@ export function loadDirectHarvestConfig(env: NodeJS.ProcessEnv = process.env): D
     throw new Error('HARVEST_PRIVATE_KEY is not a 32-byte hex key');
   const minEtx = opt(env, 'DIRECT_HARVEST_MIN_ETX_WEI');
   return {
-    rpcUrl: opt(env, 'HARVEST_RPC_URL') ?? 'https://eticamainnet.eticaprotocol.org',
+    rpcUrl: opt(env, 'HARVEST_RPC_URL') ?? 'https://rpc.eticahub.com',
     chainId,
     factory,
     harvester,

@@ -6,7 +6,7 @@
 # Runs weekly from root's crontab on the droplet. Usage: fee-sweep.sh [--dry-run]
 set -euo pipefail
 
-RPC=https://eticamainnet.eticascan.org
+RPC=https://rpc.eticahub.com
 ETI=0x34c61EA91bAcdA647269d4e310A86b875c09946f
 BATCHED=0x2ab929Ab41b4ba22D66DDeAB075F615888fd050a
 TREASURY=0xB2B4bC9d02970A55efF64C2D84c622c87967C19D

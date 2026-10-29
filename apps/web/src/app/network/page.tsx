@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 const SETTINGS = [
   ['Network name', 'Etica Mainnet'],
   ['Chain ID', '61803 (0xf16b)'],
-  ['RPC URL', 'https://eticamainnet.eticaprotocol.org'],
+  ['RPC URL', 'https://rpc.eticahub.com'],
   ['Alternate RPC', 'https://rpc.eticahub.com'],
   ['Alternate RPC 2', 'https://eticamainnet.eticascan.org'],
   ['Currency symbol', 'EGAZ'],

@@ -105,7 +105,7 @@ export function loadForfeitConfig(env: NodeJS.ProcessEnv = process.env): Forfeit
   }
 
   return {
-    rpcUrl: opt(env, 'FORFEIT_RPC_URL') ?? opt(env, 'HARVEST_RPC_URL') ?? 'https://eticamainnet.eticaprotocol.org',
+    rpcUrl: opt(env, 'FORFEIT_RPC_URL') ?? opt(env, 'HARVEST_RPC_URL') ?? 'https://rpc.eticahub.com',
     chainId: optInt(env, 'FORFEIT_CHAIN_ID', optInt(env, 'HARVEST_CHAIN_ID', 61803)),
     nft: address(env, 'FORFEIT_NFT_ADDRESS', DEFAULT_NFT),
     treasury: address(env, 'FORFEIT_TREASURY_ADDRESS', DEFAULT_TREASURY),

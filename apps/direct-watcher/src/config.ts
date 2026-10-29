@@ -75,7 +75,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WatcherConfig 
   const chainId = readNumber(env, 'DIRECT_CHAIN_ID', 61803);
   const deployment = DEPLOYMENTS[chainId as keyof typeof DEPLOYMENTS];
   return {
-    rpcUrl: env.DIRECT_RPC_URL?.trim() || 'https://eticamainnet.eticaprotocol.org',
+    rpcUrl: env.DIRECT_RPC_URL?.trim() || 'https://rpc.eticahub.com',
     chainId,
     factory: readAddress(env, 'DIRECT_FACTORY_ADDRESS') ?? deployment?.directFactory ?? ZERO,
     harvester:

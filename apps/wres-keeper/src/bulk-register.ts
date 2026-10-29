@@ -4,7 +4,7 @@
  * Usage:
  *   pnpm bulk-register \
  *     --contract 0x... \
- *     --rpc https://eticamainnet.eticaprotocol.org \
+ *     --rpc https://rpc.eticahub.com \
  *     --tron-recipient 0x... \
  *     --payout-wallet 0x...
  *
