@@ -40,8 +40,8 @@ jobs:
       - name: Notify Telegram
         run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "::error::Failure alert could not be sent: BRIDGE_TELEGRAM_BOT_TOKEN / BRIDGE_TELEGRAM_CHAT_ID are not set (repo or 'bridge-watcher' environment secrets)."
-            exit 1
+            echo "::warning::Failure alert not sent: BRIDGE_TELEGRAM_BOT_TOKEN / BRIDGE_TELEGRAM_CHAT_ID are not set (repo or 'bridge-watcher' environment secrets). Telegram alerts are off."
+            exit 0
           fi
           text="🚨 <b>${{ github.event.workflow_run.name }}</b> failed on <code>${{ github.event.workflow_run.head_branch }}</code>
           ${{ github.event.workflow_run.html_url }}"
@@ -76,8 +76,8 @@ jobs:
         if: steps.probe.outputs.alert == 'true'
         run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "::error::Health alert could not be sent: BRIDGE_TELEGRAM_BOT_TOKEN / BRIDGE_TELEGRAM_CHAT_ID are not set (repo or 'bridge-watcher' environment secrets)."
-            exit 1
+            echo "::warning::Health alert not sent: BRIDGE_TELEGRAM_BOT_TOKEN / BRIDGE_TELEGRAM_CHAT_ID are not set (repo or 'bridge-watcher' environment secrets). Telegram alerts are off."
+            exit 0
           fi
           text="🚨 <b>eticahub.com health check failing</b>
           ok=${{ steps.probe.outputs.ok }} headAgeSeconds=${{ steps.probe.outputs.age }}
