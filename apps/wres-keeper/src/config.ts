@@ -165,7 +165,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WresKeeperConf
   const tronFeeLimitSun = optionalInt(env, 'WRES_TRON_FEE_LIMIT_SUN', 150_000_000);
 
   return {
-    eticaRpcUrl: optional(env, 'WRES_ETICA_RPC_URL') ?? 'https://eticamainnet.eticaprotocol.org',
+    eticaRpcUrl: optional(env, 'WRES_ETICA_RPC_URL') ?? 'https://rpc.eticahub.com',
     eticaChainId: optionalInt(env, 'WRES_ETICA_CHAIN_ID', 61803),
     etrx: optionalAddress(env, 'WRES_ETRX_ADDRESS'),
     etx: optionalAddress(env, 'WRES_ETX_ADDRESS'),

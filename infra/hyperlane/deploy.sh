@@ -47,7 +47,7 @@ GUARDIAN_PLACEHOLDER=0x2222222222222222222222222222222222222222
 # with a CLI whose contracts are rebuilt for Paris. See paris-cli.sh.
 CLI=(node "$("$HERE/paris-cli.sh")")
 CONTRACTS="$(cd "$HERE/../../packages/contracts" && pwd)"
-ETICA_RPC="${ETICA_RPC:-https://eticamainnet.eticaprotocol.org}"
+ETICA_RPC="${ETICA_RPC:-https://rpc.eticahub.com}"
 ETHEREUM_RPC="${ETHEREUM_RPC:-https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io,https://eth.drpc.org,https://ethereum-rpc.publicnode.com}"
 # Etica fee: flat 2 USDC.e + 50 bps capped at 50 USDC.e (6 decimals).
 ETICA_FEE_FLAT=2000000; ETICA_FEE_MAX_LINEAR=50000000; ETICA_FEE_HALF_AMOUNT=5000000000

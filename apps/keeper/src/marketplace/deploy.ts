@@ -71,7 +71,7 @@ export function loadDeployConfig(env: NodeJS.ProcessEnv = process.env): DeployCo
     throw new Error(`MARKETPLACE_ABANDONED_PRICE_BPS must be in (0, 1e6], got ${bpsRaw}`);
   }
   return {
-    rpcUrl: env.HARVEST_RPC_URL ?? 'https://eticamainnet.eticaprotocol.org',
+    rpcUrl: env.HARVEST_RPC_URL ?? 'https://rpc.eticahub.com',
     chainId: Number(env.HARVEST_CHAIN_ID ?? '61803'),
     nft: nft as Address,
     abandonedPriceBps: bps,

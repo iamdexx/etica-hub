@@ -9,7 +9,7 @@ export const ETICA_ADD_CHAIN_PARAMS = {
   chainId: `0x${eticaMainnet.id.toString(16)}`,
   chainName: 'Etica Mainnet',
   nativeCurrency: { name: 'EGAZ', symbol: 'EGAZ', decimals: 18 },
-  rpcUrls: ['https://eticamainnet.eticaprotocol.org'],
+  rpcUrls: ['https://rpc.eticahub.com'],
   blockExplorerUrls: ['https://eticahub.com/explorer'],
   iconUrls: ['https://eticahub.com/brand/eticahub-mark-512.png'],
 } as const;

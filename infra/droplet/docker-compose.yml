@@ -34,7 +34,7 @@ services:
       db: { condition: service_healthy }
     environment:
       CONTRACT_ADDRESS: '0x34c61EA91bAcdA647269d4e310A86b875c09946f'
-      MAIN_RPC: ${ETICA_RPC_URL:-https://eticamainnet.eticaprotocol.org}
+      MAIN_RPC: ${ETICA_RPC_URL:-https://rpc.eticahub.com}
       API_PORT: '6633'
       DB_CLIENT_TYPE: pg
       PG_HOST: db
@@ -54,7 +54,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
     environment:
-      ETICA_RPC_URLS: ${ETICA_RPC_URLS:-${ETICA_RPC_URL:-https://eticamainnet.eticaprotocol.org},https://61803.rpc.thirdweb.com,https://eticamainnet.eticascan.org}
+      ETICA_RPC_URLS: ${ETICA_RPC_URLS:-${ETICA_RPC_URL:-https://rpc.eticahub.com},https://eticamainnet.eticaprotocol.org,https://eticamainnet.eticascan.org,https://61803.rpc.thirdweb.com}
       API_PORT: '6634'
       PG_HOST: db
       PG_PORT: '5432'

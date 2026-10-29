@@ -95,7 +95,7 @@ if anything changes upstream (don't edit copies in the briefs).
 | Chain ID | 61803 (hex `0xf16b`) |
 | Chain name | Etica Mainnet |
 | Native coin | EGAZ (18 decimals) |
-| RPCs | `https://eticamainnet.eticascan.org`, `https://eticamainnet.eticaprotocol.org`, `https://61803.rpc.thirdweb.com` |
+| RPCs | `https://eticamainnet.eticascan.org`, `https://rpc.eticahub.com`, `https://61803.rpc.thirdweb.com` |
 | Genesis | 2021-10-16 |
 
 ### Contract addresses (Etica Mainnet, 61803)

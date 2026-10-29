@@ -72,7 +72,7 @@ export function loadDirectPulseConfig(env: NodeJS.ProcessEnv = process.env): Dir
     throw new Error('HARVEST_PRIVATE_KEY is not a 32-byte hex key');
   const amount = opt(env, 'DIRECT_PULSE_EGAZ_WEI');
   return {
-    rpcUrl: opt(env, 'HARVEST_RPC_URL') ?? 'https://eticamainnet.eticaprotocol.org',
+    rpcUrl: opt(env, 'HARVEST_RPC_URL') ?? 'https://rpc.eticahub.com',
     chainId,
     factory,
     router,
