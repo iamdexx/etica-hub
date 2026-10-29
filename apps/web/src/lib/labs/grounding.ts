@@ -7,7 +7,12 @@
  * binding.
  */
 
-import { groundRun, groundingSummary } from '@etica-hub/shared/labs/grounding';
+import {
+  checkPubmedIds,
+  extractPubmedIds,
+  groundRun,
+  groundingSummary,
+} from '@etica-hub/shared/labs/grounding';
 
 import type { ArchivedResearch, GroundingRecord } from './archive';
 
@@ -39,6 +44,7 @@ export async function groundArchivedResearch(
     return {
       policyVersion: 2,
       checkedAt: Date.now(),
+      citationsCheckedAt: Date.now(),
       uncheckedSymbols: result.uncheckedSymbols ?? [],
       citations: result.citations ?? [],
       summary: groundingSummary(result),
@@ -58,4 +64,27 @@ export async function groundArchivedResearch(
     onError?.(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
     return null;
   }
+}
+
+export async function recheckArchivedCitations(
+  research: ArchivedResearch,
+): Promise<GroundingRecord | null> {
+  if (!research.grounding) return groundArchivedResearch(research);
+  const checked = await checkPubmedIds(extractPubmedIds(groundingTexts(research)));
+  const grounding = {
+    ...research.grounding,
+    citations: checked.citations,
+    citationsFound: checked.found,
+    citationsMissing: checked.missing,
+    citationsCheckedAt: Date.now(),
+  };
+  grounding.summary = groundingSummary({
+    grounded: grounding.targets.map((t) => ({ ...t, organism: 'Homo sapiens' })),
+    unresolved: grounding.unresolvedSymbols,
+    uncheckedSymbols: grounding.uncheckedSymbols,
+    citations: checked.citations,
+    citationsFound: checked.found,
+    citationsMissing: checked.missing,
+  });
+  return grounding;
 }

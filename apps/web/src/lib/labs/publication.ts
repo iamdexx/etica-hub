@@ -22,6 +22,16 @@ export function publicationDecision(r: ArchivedResearch): PublicationDecision {
     if (!g.uncheckedSymbols || g.uncheckedSymbols.length)
       reasons.push('target extraction not fully checked');
     if (!g.citationsFound.length) reasons.push('no PubMed citation resolved');
+    if (
+      g.citationsFound.some(
+        (id) =>
+          !g.citations?.some(
+            (c) =>
+              c.id === id && c.title.trim() && c.url === `https://pubmed.ncbi.nlm.nih.gov/${id}/`,
+          ),
+      )
+    )
+      reasons.push('resolved citation metadata missing');
     if (g.targets.some((t) => !t.reviewed)) reasons.push('target has no reviewed UniProt entry');
     if (g.targets.length === 0) reasons.push('no named target resolved in UniProt');
     if (g.unresolvedSymbols.length > 0) {
@@ -45,6 +55,7 @@ export function researchEvidence(r: ArchivedResearch) {
     sequenceAndStructure: r.bestCandidate.verification?.grade ?? 'not-assessed',
     targetIdentifiers: r.grounding?.targets ?? [],
     citationIdentifiers: r.grounding?.citations ?? [],
+    backgroundLiterature: r.literatureContext ?? null,
     claimSupport: 'not-assessed',
     knownProteinNovelty: 'not-assessed',
     binding:
