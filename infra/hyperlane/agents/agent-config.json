@@ -126,7 +126,10 @@
           "http": "https://rpc.eticahub.com"
         },
         {
-          "http": "https://rpc.eticahub.com"
+          "http": "https://eticamainnet.eticaprotocol.org"
+        },
+        {
+          "http": "https://eticamainnet.eticascan.org"
         },
         {
           "http": "https://61803.rpc.thirdweb.com"
