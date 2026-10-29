@@ -367,7 +367,7 @@ export async function loadAutomation(): Promise<WorkflowRun[]> {
       const base = { label: wf.label, every: wf.every };
       try {
         const res = await fetch(
-          `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${wf.file}/runs?per_page=1&exclude_pull_requests=true`,
+          `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${wf.file}/runs?per_page=5&exclude_pull_requests=true`,
           {
             headers: githubHeaders(),
             next: { revalidate: GITHUB_REVALIDATE_SECONDS },
@@ -384,7 +384,10 @@ export async function loadAutomation(): Promise<WorkflowRun[]> {
             error: (body.message ?? `HTTP ${res.status}`).split('.')[0] || `HTTP ${res.status}`,
           };
         }
-        const run = body.workflow_runs?.[0];
+        // `workflow_run`-triggered runs whose jobs were all gated off conclude as
+        // "skipped"; they say nothing about the cron, so show the latest real run.
+        const runs = body.workflow_runs ?? [];
+        const run = runs.find((r) => r.conclusion !== 'skipped') ?? runs[0];
         if (!run)
           return {
             ...base,
