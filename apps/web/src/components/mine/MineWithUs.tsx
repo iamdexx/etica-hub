@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { CopyBlock } from '@/components/node/CopyBlock';
+import { EarningsEstimator } from '@/components/mine/EarningsEstimator';
 
 const STRATUM_HOST = 'pool.eticahub.com';
 const STRATUM_PORT = 8008;
@@ -267,6 +268,8 @@ export function MineWithUs() {
         </dl>
         <p className="text-sm text-white/65">Two pools, both 0.5% fee. ETI is mined with CPUs (RandomX) and paid per solve through the pool contract. EGAZ is the coin Etica blocks pay (2 EGAZ per block), mined with GPUs (etchash), PPLNS, payouts every 20 minutes once you reach 0.5 EGAZ. EGAZ stratum: {STRATUM_HOST}:{STRATUM_PORT}</p>
       </section>
+
+      <EarningsEstimator />
 
       <section className="surface space-y-4 p-5 md:p-6" aria-labelledby="mine-start">
         <h2 id="mine-start" className="text-xl font-semibold">Or run a miner yourself</h2>
