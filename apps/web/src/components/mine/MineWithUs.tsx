@@ -16,10 +16,13 @@ const RELEASES_API = '/api/miner/releases';
 const DEB_FILE = 'amd64.deb';
 type ReleaseAssets = import('@/app/api/miner/releases/route').MinerReleaseAssets;
 type Platform = 'windows' | 'mac-arm' | 'mac-intel' | 'linux' | 'phone' | 'old-windows' | 'unknown';
+const MAC_NOTE =
+  'Open the .dmg and drag the app to Applications. The app is not notarized yet, so macOS blocks the first launch: open it once (it will say it cannot be opened), then go to System Settings > Privacy & Security, scroll down and click "Open Anyway". On macOS 14 and older, right-click the app and choose Open instead.';
+
 const DOWNLOADS: Record<Exclude<Platform, 'phone' | 'old-windows' | 'unknown'>, { label: string; file: string; note: string }> = {
   windows: { label: 'Windows', file: 'x64-setup.exe', note: 'Run the installer. If Windows shows "protected your PC", click More info, then Run anyway.' },
-  'mac-arm': { label: 'Mac (Apple Silicon, M1 or newer)', file: 'aarch64.dmg', note: 'Open the .dmg and drag the app to Applications. First launch: right-click the app, Open.' },
-  'mac-intel': { label: 'Mac (Intel)', file: 'x64.dmg', note: 'Open the .dmg and drag the app to Applications. First launch: right-click the app, Open.' },
+  'mac-arm': { label: 'Mac (Apple Silicon, M1 or newer)', file: 'aarch64.dmg', note: MAC_NOTE },
+  'mac-intel': { label: 'Mac (Intel)', file: 'x64.dmg', note: MAC_NOTE },
   linux: { label: 'Linux', file: 'amd64.AppImage', note: 'Make it executable (chmod +x) and run it.' },
 };
 
