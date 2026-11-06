@@ -42,6 +42,20 @@ export function makeWidgetPool(address: Address, a: WidgetToken, b: WidgetToken)
   };
 }
 
+/**
+ * Two listed tokens can share a symbol (a community token called "ETI", say),
+ * which would give two pools the same `base-quote` key. Later duplicates get a
+ * short address tag so every setup link points at exactly one pool.
+ */
+export function dedupeKeys(pools: WidgetPool[]): WidgetPool[] {
+  const seen = new Map<string, number>();
+  return pools.map((p) => {
+    const n = seen.get(p.key) ?? 0;
+    seen.set(p.key, n + 1);
+    return n === 0 ? p : { ...p, key: `${p.key}-${p.address.slice(2, 8).toLowerCase()}`, label: `${p.label} (${p.address.slice(0, 6)}…)` };
+  });
+}
+
 const LEGACY: Record<string, string> = { egaz: 'egaz-usdc.e', eti: 'eti-usdc.e' };
 
 /** `?pair=` → pool: legacy keys, `base-quote` keys in either order, or the pool address. */

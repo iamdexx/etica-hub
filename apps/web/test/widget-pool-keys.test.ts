@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeWidgetPool, resolveWidgetPool, type WidgetToken } from '../src/lib/widget/poolKeys';
+import { dedupeKeys, makeWidgetPool, resolveWidgetPool, type WidgetToken } from '../src/lib/widget/poolKeys';
 
 const t = (symbol: string, native = false): WidgetToken => ({
   address: `0x${symbol.replace('.', '').padEnd(40, '0')}` as `0x${string}`,
@@ -37,5 +37,14 @@ describe('widget pool keys', () => {
     expect(resolveWidgetPool(pools, undefined)).toBe(egazUsdc);
     expect(resolveWidgetPool(pools, 'nope')).toBeNull();
     expect(resolveWidgetPool([], 'egaz')).toBeNull();
+  });
+  it('tags the second pool when two tokens share a symbol so each setup link is unique', () => {
+    const fakeEti: WidgetToken = { address: '0x00000000000000000000000000000000000000ee', symbol: 'ETI', decimals: 18, native: false };
+    const twin = makeWidgetPool('0x0000000000000000000000000000000000000006', fakeEti, t('ETX'));
+    const list = dedupeKeys([etiEtx, twin]);
+    expect(list[0]!.key).toBe('eti-etx');
+    expect(list[1]!.key).toBe('eti-etx-000000');
+    expect(resolveWidgetPool(list, 'eti-etx-000000')).toBe(list[1]);
+    expect(resolveWidgetPool(list, 'eti-etx')).toBe(list[0]);
   });
 });

@@ -2,7 +2,7 @@ import { unstable_cache } from 'next/cache';
 import { parseAbi, type Address } from 'viem';
 import { DEPLOYMENTS, eticaMainnet } from '@etica-hub/shared';
 import { fetchAllV2Pairs, priceClient, tokenByAddress } from '@/lib/priceApi';
-import { makeWidgetPool, type WidgetPool, type WidgetToken } from './poolKeys';
+import { dedupeKeys, makeWidgetPool, type WidgetPool, type WidgetToken } from './poolKeys';
 
 const metaAbi = parseAbi(['function symbol() view returns (string)', 'function decimals() view returns (uint8)']);
 
@@ -27,7 +27,7 @@ async function load(): Promise<WidgetPool[]> {
   );
   // seeded pools first, in factory order; empty ones stay listed so their creator can seed them
   const seeded = new Set(pairs.filter((p) => p.reserve0 > 0n && p.reserve1 > 0n).map((p) => p.address));
-  return [...pools.filter((p) => seeded.has(p.address)), ...pools.filter((p) => !seeded.has(p.address))];
+  return dedupeKeys([...pools.filter((p) => seeded.has(p.address)), ...pools.filter((p) => !seeded.has(p.address))]);
 }
 
 /**
