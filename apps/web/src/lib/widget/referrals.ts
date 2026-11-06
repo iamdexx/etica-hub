@@ -50,7 +50,7 @@ export interface ReferralTotals {
   lastTx: Hex | null;
 }
 
-export type CreditStatus = 'credited' | 'duplicate' | 'no-swap' | 'not-found' | 'failed-tx' | 'not-widget-tx';
+export type CreditStatus = 'credited' | 'duplicate' | 'no-swap' | 'not-found' | 'failed-tx' | 'not-widget-tx' | 'price-unavailable';
 
 export interface CreditResult {
   status: CreditStatus;
@@ -133,7 +133,7 @@ export async function widgetSwapVolumeUsd(
   tx: Hex,
   ref: Address,
   client: PublicClient = priceClient(),
-): Promise<{ status: 'ok' | 'not-found' | 'failed-tx' | 'not-widget-tx'; swaps: number; volumeUsd: number }> {
+): Promise<{ status: 'ok' | 'not-found' | 'failed-tx' | 'not-widget-tx' | 'price-unavailable'; swaps: number; volumeUsd: number }> {
   const d = DEPLOYMENTS[eticaMainnet.id];
   if (d.v2Factory === ZERO || d.v2Router === ZERO) return { status: 'ok', swaps: 0, volumeUsd: 0 };
   let receipt;
@@ -195,15 +195,24 @@ export async function widgetSwapVolumeUsd(
   let volumeUsd = Number(volumeUsdc) / 10 ** USDC_WARP_ROUTE.decimals;
   if (volumeEtx > 0n) {
     const px = await etxPriceUsdc(client);
-    volumeUsd += px === null ? 0 : (Number(volumeEtx) / 1e18) * px;
+    // no price this moment (RPC hiccup, pools unseeded): leave the tx unclaimed so it can be re-posted
+    if (px === null) return { status: 'price-unavailable', swaps: 0, volumeUsd: 0 };
+    volumeUsd += (Number(volumeEtx) / 1e18) * px;
   }
   return { status: 'ok', swaps: count, volumeUsd };
 }
 
-/** USDC.e per ETX from the standalone USDC.e/ETX pool, falling back to the hub pool; null when neither is seeded. */
+/**
+ * USDC.e per ETX: the lower of the standalone and hub USDC.e/ETX spots, so a
+ * host cannot inflate an ETX-pool commission by pumping one pool just before
+ * posting the swap (they would have to move both, and the commission is a
+ * fraction of 0.05 % of volume, far below the slippage that costs). Null when
+ * neither pool is seeded or readable.
+ */
 async function etxPriceUsdc(client: PublicClient): Promise<number | null> {
   const d = DEPLOYMENTS[eticaMainnet.id];
   const usdc = USDC_WARP_ROUTE.syntheticToken;
+  const prices: number[] = [];
   for (const factory of [d.v2Factory, d.swapFactory]) {
     if (factory === ZERO) continue;
     try {
@@ -215,12 +224,12 @@ async function etxPriceUsdc(client: PublicClient): Promise<number | null> {
       ]);
       const [rU, rE] = token0.toLowerCase() === usdc.toLowerCase() ? [r0, r1] : [r1, r0];
       if (rU === 0n || rE === 0n) continue;
-      return Number(rU) / 10 ** USDC_WARP_ROUTE.decimals / (Number(rE) / 1e18);
+      prices.push(Number(rU) / 10 ** USDC_WARP_ROUTE.decimals / (Number(rE) / 1e18));
     } catch {
-      /* try the next factory */
+      /* unreadable this moment: the other pool may still price it */
     }
   }
-  return null;
+  return prices.length ? Math.min(...prices) : null;
 }
 
 export async function creditWidgetSwap(
