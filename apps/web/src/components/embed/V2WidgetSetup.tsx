@@ -3,16 +3,15 @@
 import { useMemo, useState } from 'react';
 import { getAddress, isAddress } from 'viem';
 
-type PairKey = 'egaz' | 'eti';
 type Theme = 'dark' | 'light';
 
 /**
  * Plug-and-play setup for widget hosts: paste a wallet, pick the pool, copy
  * one line. Nothing is stored; the wallet only ends up in the embed URL.
  */
-export function V2WidgetSetup({ siteUrl }: { siteUrl: string }) {
+export function V2WidgetSetup({ siteUrl, pools }: { siteUrl: string; pools: Array<{ key: string; label: string }> }) {
   const [wallet, setWallet] = useState('');
-  const [pair, setPair] = useState<PairKey>('egaz');
+  const [pair, setPair] = useState<string>(pools[0]?.key ?? 'egaz');
   const [theme, setTheme] = useState<Theme>('dark');
   const [copied, setCopied] = useState<'embed' | 'link' | null>(null);
 
@@ -70,9 +69,12 @@ export function V2WidgetSetup({ siteUrl }: { siteUrl: string }) {
           <div className="grid grid-cols-2 gap-3 text-xs text-white/60">
             <label className="space-y-1">
               <span>Default pool (visitors can switch inside the widget)</span>
-              <select className={field} value={pair} onChange={(e) => setPair(e.target.value as PairKey)}>
-                <option value="egaz">EGAZ / USDC.e</option>
-                <option value="eti">ETI / USDC.e</option>
+              <select className={field} value={pair} onChange={(e) => setPair(e.target.value)}>
+                {pools.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.label.replace('/', ' / ')}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="space-y-1">

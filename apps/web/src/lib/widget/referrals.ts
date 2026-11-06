@@ -50,7 +50,7 @@ export interface ReferralTotals {
   lastTx: Hex | null;
 }
 
-export type CreditStatus = 'credited' | 'duplicate' | 'no-swap' | 'not-found' | 'failed-tx' | 'not-widget-tx';
+export type CreditStatus = 'credited' | 'duplicate' | 'no-swap' | 'not-found' | 'failed-tx' | 'not-widget-tx' | 'price-unavailable';
 
 export interface CreditResult {
   status: CreditStatus;
@@ -133,7 +133,7 @@ export async function widgetSwapVolumeUsd(
   tx: Hex,
   ref: Address,
   client: PublicClient = priceClient(),
-): Promise<{ status: 'ok' | 'not-found' | 'failed-tx' | 'not-widget-tx'; swaps: number; volumeUsd: number }> {
+): Promise<{ status: 'ok' | 'not-found' | 'failed-tx' | 'not-widget-tx' | 'price-unavailable'; swaps: number; volumeUsd: number }> {
   const d = DEPLOYMENTS[eticaMainnet.id];
   if (d.v2Factory === ZERO || d.v2Router === ZERO) return { status: 'ok', swaps: 0, volumeUsd: 0 };
   let receipt;
@@ -156,9 +156,12 @@ export async function widgetSwapVolumeUsd(
 
   const swaps = parseEventLogs({ abi: abis.pairAbi, logs: receipt.logs, eventName: 'Swap' });
   const usdc = USDC_WARP_ROUTE.syntheticToken.toLowerCase();
+  const etx = d.etx.toLowerCase();
   let count = 0;
-  let volume = 0n;
-  const verified = new Map<string, { isOurs: boolean; usdcIs0: boolean }>();
+  // USDC.e legs count at face value; ETX legs (pools without USDC.e) at the USDC.e/ETX spot
+  let volumeUsdc = 0n;
+  let volumeEtx = 0n;
+  const verified = new Map<string, { isOurs: boolean; side: 'usdc' | 'etx' | null; is0: boolean }>();
   for (const log of swaps) {
     const pair = getAddress(log.address);
     let meta = verified.get(pair);
@@ -173,19 +176,60 @@ export async function widgetSwapVolumeUsd(
         functionName: 'getPair',
         args: [token0, token1],
       })) as Address;
-      const usdcIs0 = token0.toLowerCase() === usdc;
-      const usdcIs1 = token1.toLowerCase() === usdc;
-      meta = { isOurs: registered.toLowerCase() === pair.toLowerCase() && (usdcIs0 || usdcIs1), usdcIs0 };
+      const t0 = token0.toLowerCase();
+      const t1 = token1.toLowerCase();
+      const side = t0 === usdc || t1 === usdc ? 'usdc' : t0 === etx || t1 === etx ? 'etx' : null;
+      const is0 = side === 'usdc' ? t0 === usdc : t0 === etx;
+      meta = { isOurs: registered.toLowerCase() === pair.toLowerCase() && side !== null, side, is0 };
       verified.set(pair, meta);
     }
     if (!meta.isOurs) continue;
     const { amount0In, amount1In, amount0Out, amount1Out } = log.args;
-    const usdIn = meta.usdcIs0 ? amount0In : amount1In;
-    const usdOut = meta.usdcIs0 ? amount0Out : amount1Out;
-    volume += usdIn > usdOut ? usdIn : usdOut;
+    const legIn = meta.is0 ? amount0In : amount1In;
+    const legOut = meta.is0 ? amount0Out : amount1Out;
+    const leg = legIn > legOut ? legIn : legOut;
+    if (meta.side === 'usdc') volumeUsdc += leg;
+    else volumeEtx += leg;
     count += 1;
   }
-  return { status: 'ok', swaps: count, volumeUsd: Number(volume) / 10 ** USDC_WARP_ROUTE.decimals };
+  let volumeUsd = Number(volumeUsdc) / 10 ** USDC_WARP_ROUTE.decimals;
+  if (volumeEtx > 0n) {
+    const px = await etxPriceUsdc(client);
+    // no price this moment (RPC hiccup, pools unseeded): leave the tx unclaimed so it can be re-posted
+    if (px === null) return { status: 'price-unavailable', swaps: 0, volumeUsd: 0 };
+    volumeUsd += (Number(volumeEtx) / 1e18) * px;
+  }
+  return { status: 'ok', swaps: count, volumeUsd };
+}
+
+/**
+ * USDC.e per ETX: the lower of the standalone and hub USDC.e/ETX spots, so a
+ * host cannot inflate an ETX-pool commission by pumping one pool just before
+ * posting the swap (they would have to move both, and the commission is a
+ * fraction of 0.05 % of volume, far below the slippage that costs). Null when
+ * neither pool is seeded or readable.
+ */
+async function etxPriceUsdc(client: PublicClient): Promise<number | null> {
+  const d = DEPLOYMENTS[eticaMainnet.id];
+  const usdc = USDC_WARP_ROUTE.syntheticToken;
+  const prices: number[] = [];
+  for (const factory of [d.v2Factory, d.swapFactory]) {
+    if (factory === ZERO) continue;
+    try {
+      const pair = (await client.readContract({ abi: abis.factoryAbi, address: factory, functionName: 'getPair', args: [usdc, d.etx] })) as Address;
+      if (pair === ZERO) continue;
+      const [[r0, r1], token0] = await Promise.all([
+        client.readContract({ abi: abis.pairAbi, address: pair, functionName: 'getReserves' }) as Promise<readonly [bigint, bigint, number]>,
+        client.readContract({ abi: abis.pairAbi, address: pair, functionName: 'token0' }) as Promise<Address>,
+      ]);
+      const [rU, rE] = token0.toLowerCase() === usdc.toLowerCase() ? [r0, r1] : [r1, r0];
+      if (rU === 0n || rE === 0n) continue;
+      prices.push(Number(rU) / 10 ** USDC_WARP_ROUTE.decimals / (Number(rE) / 1e18));
+    } catch {
+      /* unreadable this moment: the other pool may still price it */
+    }
+  }
+  return prices.length ? Math.min(...prices) : null;
 }
 
 export async function creditWidgetSwap(

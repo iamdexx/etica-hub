@@ -15,6 +15,9 @@ const USDC = USDC_WARP_ROUTE.syntheticToken;
 const PAIR = '0x55805916c68d85e869F1E9B18957dE7B711C748f' as const;
 const FAKE_PAIR = '0x00000000000000000000000000000000000FA4E1' as const;
 const HUB_PAIR = '0xa18050ABE8d4b9384fE3b88D3b88eC311e8CcdF8' as const;
+const ETX_PAIR = '0x00000000000000000000000000000000000000e1' as const;
+const USDC_ETX_PAIR = '0x00000000000000000000000000000000000000e2' as const;
+const HUB_USDC_ETX_PAIR = '0x00000000000000000000000000000000000000e3' as const;
 const REF = '0x000000000000000000000000000000000000bEEF' as const;
 const OTHER_REF = '0x000000000000000000000000000000000000dEaD' as const;
 const TX = `0x${'ab'.repeat(32)}` as Hex;
@@ -40,13 +43,22 @@ function swapLog(pair: `0x${string}`, amounts: [bigint, bigint, bigint, bigint])
 
 function fakeClient(
   logs: ReturnType<typeof swapLog>[],
-  opts: { status?: 'success' | 'reverted'; to?: string; input?: Hex } = {},
+  opts: { status?: 'success' | 'reverted'; to?: string; input?: Hex; reserves?: Record<string, readonly [bigint, bigint, number]> } = {},
 ): PublicClient {
   const tokens: Record<string, { token0: string; token1: string }> = {
     [PAIR.toLowerCase()]: { token0: USDC, token1: d.wegaz },
     // impostor: same tokens, not registered on the factory
     [FAKE_PAIR.toLowerCase()]: { token0: USDC, token1: d.wegaz },
     [HUB_PAIR.toLowerCase()]: { token0: d.etx, token1: d.wegaz },
+    // standalone ETX pools: priced through the standalone USDC.e/ETX pool (1 ETX = 0.002 USDC.e)
+    [ETX_PAIR.toLowerCase()]: { token0: d.etx, token1: d.wegaz },
+    [USDC_ETX_PAIR.toLowerCase()]: { token0: USDC, token1: d.etx },
+    [HUB_USDC_ETX_PAIR.toLowerCase()]: { token0: d.etx, token1: USDC },
+  };
+  const reserves: Record<string, readonly [bigint, bigint, number]> = opts.reserves ?? {
+    [USDC_ETX_PAIR.toLowerCase()]: [2_000_000n, 1_000n * 10n ** 18n, 0],
+    // hub USDC.e/ETX at 0.004: the lower (standalone) spot must win
+    [HUB_USDC_ETX_PAIR.toLowerCase()]: [4_000_000n, 1_000n * 10n ** 18n, 0],
   };
   const input = opts.input ?? (`0x12345678${'00'.repeat(64)}${referralSuffix(REF).slice(2)}` as Hex);
   return {
@@ -56,8 +68,16 @@ function fakeClient(
       if (address.toLowerCase() === d.v2Factory.toLowerCase() && functionName === 'getPair') {
         const [a, b] = args as [string, string];
         const set = new Set([a.toLowerCase(), b.toLowerCase()]);
-        return set.has(USDC.toLowerCase()) && set.has(d.wegaz.toLowerCase()) ? PAIR : '0x0000000000000000000000000000000000000000';
+        if (set.has(USDC.toLowerCase()) && set.has(d.wegaz.toLowerCase())) return PAIR;
+        if (set.has(d.etx.toLowerCase()) && set.has(d.wegaz.toLowerCase())) return ETX_PAIR;
+        if (set.has(USDC.toLowerCase()) && set.has(d.etx.toLowerCase())) return USDC_ETX_PAIR;
+        return '0x0000000000000000000000000000000000000000';
       }
+      if (address.toLowerCase() === d.swapFactory.toLowerCase() && functionName === 'getPair') {
+        const set = new Set((args as [string, string]).map((x) => x.toLowerCase()));
+        return set.has(USDC.toLowerCase()) && set.has(d.etx.toLowerCase()) ? HUB_USDC_ETX_PAIR : '0x0000000000000000000000000000000000000000';
+      }
+      if (functionName === 'getReserves') return reserves[address.toLowerCase()] ?? [0n, 0n, 0];
       const m = tokens[address.toLowerCase()];
       if (!m) throw new Error('unknown pair');
       return m[functionName as 'token0' | 'token1'];
@@ -119,5 +139,24 @@ describe('widget referrals', () => {
     expect(await creditWidgetSwap(store, 'nope', REF, fakeClient([]))).toBeNull();
     expect(await creditWidgetSwap(store, TX, 'nope', fakeClient([]))).toBeNull();
     expect(await getReferralTotals(store, REF)).toMatchObject({ swaps: 0, volumeUsd: 0 });
+  });
+  it('credits ETX pools (no USDC.e side) at the USDC.e/ETX spot', async () => {
+    const store = memoryReferralStore();
+    // 1,000 ETX in on the EGAZ/ETX standalone pool at 0.002 USDC.e/ETX = $2
+    const logs = [swapLog(ETX_PAIR, [1_000n * 10n ** 18n, 0n, 0n, 900n * 10n ** 18n])];
+    const res = await creditWidgetSwap(store, TX, REF, fakeClient(logs));
+    expect(res?.status).toBe('credited');
+    expect(res?.swaps).toBe(1);
+    expect(res?.volumeUsd).toBeCloseTo(2, 6);
+  });
+  it('leaves an ETX-pool swap unclaimed while no USDC.e/ETX price is readable, then credits it on retry', async () => {
+    const store = memoryReferralStore();
+    const logs = [swapLog(ETX_PAIR, [1_000n * 10n ** 18n, 0n, 0n, 900n * 10n ** 18n])];
+    const dark = await creditWidgetSwap(store, TX, REF, fakeClient(logs, { reserves: {} }));
+    expect(dark?.status).toBe('price-unavailable');
+    expect(await getReferralTotals(store, REF)).toMatchObject({ swaps: 0, volumeUsd: 0 });
+    const later = await creditWidgetSwap(store, TX, REF, fakeClient(logs));
+    expect(later?.status).toBe('credited');
+    expect(later?.volumeUsd).toBeCloseTo(2, 6);
   });
 });
