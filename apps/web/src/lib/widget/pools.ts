@@ -22,12 +22,15 @@ async function describeToken(address: Address): Promise<WidgetToken> {
 
 async function load(): Promise<WidgetPool[]> {
   const pairs = await fetchAllV2Pairs();
-  const pools = await Promise.all(
-    pairs.map(async (p) => makeWidgetPool(p.address, await describeToken(p.token0), await describeToken(p.token1))),
+  // keys are assigned in factory (creation) order so they never move between contracts
+  const pools = dedupeKeys(
+    await Promise.all(
+      pairs.map(async (p) => makeWidgetPool(p.address, await describeToken(p.token0), await describeToken(p.token1))),
+    ),
   );
-  // seeded pools first, in factory order; empty ones stay listed so their creator can seed them
+  // seeded pools first for display; empty ones stay listed so their creator can seed them
   const seeded = new Set(pairs.filter((p) => p.reserve0 > 0n && p.reserve1 > 0n).map((p) => p.address));
-  return dedupeKeys([...pools.filter((p) => seeded.has(p.address)), ...pools.filter((p) => !seeded.has(p.address))]);
+  return [...pools.filter((p) => seeded.has(p.address)), ...pools.filter((p) => !seeded.has(p.address))];
 }
 
 /**
