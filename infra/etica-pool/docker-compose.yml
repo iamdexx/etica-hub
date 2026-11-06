@@ -1,5 +1,6 @@
 # EticaHub mining pool (open-etc-pool-friends, etchash) on the droplet at /opt/etica-pool.
-# Binary built from https://github.com/yuriy0803/open-etc-pool-friends with apply-local-signing.py.
+# Binary built from https://github.com/yuriy0803/open-etc-pool-friends with apply-local-signing.py, then apply-payout-swap.py
+# (optional USDC.e payouts via PayoutSwapper; set PAYOUT_SWAPPER=<contract> in /root/.etica-pool.env to enable).
 # Stratum: pool.eticahub.com:8008   API: https://pool.eticahub.com/api/stats (via Caddy)
 x-pool: &pool
   image: debian:bookworm-slim
