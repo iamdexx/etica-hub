@@ -348,6 +348,7 @@ export async function POST(
         summary: result.summary ?? '',
         bestPdb: pdbs.get(bestCandidate.index) ?? undefined,
         references: result.plan.references.map((r) => `${r.source}:${r.id} ${r.title}`),
+        referenceProvenance: result.plan.references,
         minted: false,
         submitterWallet: next.submitterWallet,
       };

@@ -9,6 +9,8 @@
  * copy keeps the autopilot independent of any Next.js bundling.
  */
 
+import { findPubmedLiterature } from '@etica-hub/shared/labs/grounding';
+
 import {
   nvidiaChat,
   NvidiaLLMError,
@@ -17,8 +19,6 @@ import {
   hasLLMProxy,
 } from '../nvidia';
 
-const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
-const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
 const RCSB_SEARCH = 'https://search.rcsb.org/rcsbsearch/v2/query';
 const UNIPROT_SEARCH = 'https://rest.uniprot.org/uniprotkb/search';
 const CHEMBL_SEARCH = 'https://www.ebi.ac.uk/chembl/api/data/target/search.json';
@@ -45,13 +45,7 @@ const AMINO_ACIDS = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
 const MAX_SEQUENCE_LENGTH = 400;
 const MIN_SEQUENCE_LENGTH = 10;
 
-export type ReferenceSource =
-  | 'pubmed'
-  | 'pdb'
-  | 'uniprot'
-  | 'chembl'
-  | 'string'
-  | 'kegg';
+export type ReferenceSource = 'pubmed' | 'pdb' | 'uniprot' | 'chembl' | 'string' | 'kegg';
 
 export type Reference = {
   source: ReferenceSource;
@@ -59,6 +53,8 @@ export type Reference = {
   title: string;
   detail: string;
   url: string;
+  query?: string;
+  checkedAt?: number;
 };
 
 export type PlanCandidate = {
@@ -110,54 +106,23 @@ function clamp(value: unknown, max: number): string {
 }
 
 async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
-  const { signal, cancel } = withTimeout(5_000);
-  try {
-    const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${limit}&sort=relevance&term=${encodeURIComponent(
-      query,
-    )}`;
-    const searchRes = await politeGet(searchUrl, { signal, cache: 'no-store' });
-    if (!searchRes.ok) return [];
-    const sj = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
-    const ids = sj.esearchresult?.idlist ?? [];
-    if (ids.length === 0) return [];
-
-    const sumRes = await politeGet(`${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`, {
-      signal,
-      cache: 'no-store',
-    });
-    if (!sumRes.ok) return [];
-    const sumJson = (await sumRes.json()) as { result?: Record<string, unknown> };
-    const result = sumJson.result ?? {};
-
-    const refs: Reference[] = [];
-    for (const id of ids) {
-      const rec = result[id] as Record<string, unknown> | undefined;
-      if (!rec) continue;
-      const title = clamp(rec.title, 200);
-      if (!title) continue;
-      const authors = Array.isArray(rec.authors)
-        ? (rec.authors as Array<{ name?: string }>)
-            .slice(0, 2)
-            .map((a) => a.name ?? '')
-            .filter(Boolean)
-            .join(', ')
-        : '';
-      const journal = clamp(rec.fulljournalname ?? rec.source, 80);
-      const date = clamp(rec.pubdate, 12);
-      refs.push({
-        source: 'pubmed',
-        id,
-        title,
-        detail: [authors, journal, date].filter(Boolean).join(' · '),
-        url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`,
-      });
-    }
-    return refs;
-  } catch {
-    return [];
-  } finally {
-    cancel();
-  }
+  const result = await findPubmedLiterature(query, limit);
+  return result.citations.map((paper) => ({
+    source: 'pubmed',
+    id: paper.id,
+    title: paper.title,
+    url: paper.url,
+    detail: [
+      paper.authors,
+      paper.journal,
+      paper.published,
+      'Identifier verified; claim support not assessed',
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    query: result.query,
+    checkedAt: result.checkedAt,
+  }));
 }
 
 async function fetchRcsb(query: string, limit: number): Promise<Reference[]> {
@@ -573,6 +538,7 @@ export async function generatePlan(
   const instructions = [
     'You are a protein-engineering planner. Output ONLY a single minified JSON object — no prose, no reasoning, no markdown, no code fences. Begin your reply with { and write nothing before it.',
     'The object has keys: "hypothesis" (1 short sentence), "approach" (1-2 short sentences), "successCriteria" (1 sentence), "risks" (1 sentence), and "candidates" (an array of exactly 3 objects, each {"sequence","rationale"}). "sequence" = one-letter amino acids only from ACDEFGHIKLMNPQRSTVWY, 40-120 residues. "rationale" = under 15 words and may cite a [N] reference.',
+    'Cite only supplied references by [N]; never invent PMIDs, titles or experimental results. Retrieved papers are background, not proof that a designed candidate binds, works or is safe.',
     'Design NOVEL sequences; never copy known or patented drug sequences (differentiate any ChEMBL reference by at least 20% divergence). If references are provided, build on them and cite the [N] index.',
     'If the goal asks for human pathogens, bioweapons, gain-of-function on dangerous viruses, or toxin enhancement, output exactly {"refused":"out-of-scope"} and nothing else.',
     'End your reply with } and write nothing after it.',

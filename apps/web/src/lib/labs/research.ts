@@ -16,6 +16,8 @@
  * empty list and let the planner proceed without context.
  */
 
+import { findPubmedLiterature } from '@etica-hub/shared/labs/grounding';
+
 export type ReferenceSource =
   | 'pubmed'
   | 'pdb'
@@ -31,10 +33,10 @@ export type Reference = {
   title: string;
   detail: string;
   url: string;
+  query?: string;
+  checkedAt?: number;
 };
 
-const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
-const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
 const RCSB_SEARCH = 'https://search.rcsb.org/rcsbsearch/v2/query';
 
 /** Polite User-Agent per academic API fair-use policies. */
@@ -74,60 +76,23 @@ async function withRetry(fn: () => Promise<Reference[]>): Promise<Reference[]> {
 }
 
 async function fetchPubMed(query: string, limit: number): Promise<Reference[]> {
-  const { signal, cancel } = withTimeout(4_000);
-  try {
-    const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${limit}&sort=relevance&term=${encodeURIComponent(
-      query,
-    )}`;
-    const searchRes = await politeGet(searchUrl, { signal, cache: 'no-store' });
-    if (!searchRes.ok) return [];
-    const searchJson = (await searchRes.json()) as {
-      esearchresult?: { idlist?: string[] };
-    };
-    const ids = searchJson.esearchresult?.idlist ?? [];
-    if (ids.length === 0) return [];
-
-    const summaryUrl = `${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}`;
-    const summaryRes = await politeGet(summaryUrl, { signal, cache: 'no-store' });
-    if (!summaryRes.ok) return [];
-    const summaryJson = (await summaryRes.json()) as {
-      result?: Record<string, unknown>;
-    };
-    const result = summaryJson.result ?? {};
-
-    const refs: Reference[] = [];
-    for (const id of ids) {
-      const entry = result[id] as
-        | {
-            title?: string;
-            pubdate?: string;
-            authors?: Array<{ name?: string }>;
-            source?: string;
-          }
-        | undefined;
-      if (!entry) continue;
-      const authors = (entry.authors ?? [])
-        .map((a) => a.name ?? '')
-        .filter(Boolean)
-        .slice(0, 3)
-        .join(', ');
-      const year = entry.pubdate?.slice(0, 4) ?? '';
-      const journal = entry.source ?? '';
-      const detailParts = [authors, year, journal].filter(Boolean);
-      refs.push({
-        source: 'pubmed',
-        id,
-        title: entry.title?.replace(/\.$/, '') ?? `PubMed ${id}`,
-        detail: detailParts.join(' · '),
-        url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`,
-      });
-    }
-    return refs;
-  } catch {
-    return [];
-  } finally {
-    cancel();
-  }
+  const result = await findPubmedLiterature(query, limit);
+  return result.citations.map((paper) => ({
+    source: 'pubmed',
+    id: paper.id,
+    title: paper.title,
+    url: paper.url,
+    detail: [
+      paper.authors,
+      paper.journal,
+      paper.published,
+      'Identifier verified; claim support not assessed',
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    query: result.query,
+    checkedAt: result.checkedAt,
+  }));
 }
 
 async function fetchPdb(query: string, limit: number): Promise<Reference[]> {

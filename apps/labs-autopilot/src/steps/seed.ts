@@ -14,13 +14,13 @@
  * high-quality candidates.
  */
 
+import { searchPubmed } from '@etica-hub/shared/labs/grounding';
+
 import { nvidiaChat, NVIDIA_MODEL_PRIMARY, hasLLMProxy } from '../nvidia';
 
 /** Polite User-Agent per academic API fair-use policies. */
 const UA = 'EticaHub-Labs/1.0 (https://eticahub.com; research-pipeline)';
 
-const PUBMED_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
-const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
 const UNIPROT_SEARCH = 'https://rest.uniprot.org/uniprotkb/search';
 
 /**
@@ -86,63 +86,18 @@ type PaperSummary = {
  * start offset so repeated calls get different papers.
  */
 async function fetchRecentPapers(topic: string, count: number = 5): Promise<PaperSummary[]> {
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 15_000);
   try {
-    // Small random offset (0-9) to add variety while staying within result bounds
-    const retstart = Math.floor(Math.random() * 10);
-    const searchUrl = `${PUBMED_SEARCH}?db=pubmed&retmode=json&retmax=${count}&retstart=${retstart}&sort=relevance&term=${encodeURIComponent(
-      topic,
-    )}&_t=${Date.now()}`;
-    const searchRes = await politeGet(searchUrl, { signal: ctrl.signal });
-    if (!searchRes.ok) {
-      console.error(`[seed] PubMed search failed: ${searchRes.status} ${searchRes.statusText}`);
-      return [];
-    }
-    const sj = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
-    const ids = sj.esearchresult?.idlist ?? [];
-    if (ids.length === 0) {
-      console.error(`[seed] PubMed returned 0 IDs for topic: ${topic}`);
-      return [];
-    }
-
-    const sumRes = await politeGet(`${PUBMED_SUMMARY}?db=pubmed&retmode=json&id=${ids.join(',')}&_t=${Date.now()}`, {
-      signal: ctrl.signal,
-    });
-    if (!sumRes.ok) {
-      console.error(`[seed] PubMed summary failed: ${sumRes.status}`);
-      return [];
-    }
-    const sumJson = (await sumRes.json()) as { result?: Record<string, unknown> };
-    const result = sumJson.result ?? {};
-
-    const papers: PaperSummary[] = [];
-    for (const id of ids) {
-      const rec = result[id] as Record<string, unknown> | undefined;
-      if (!rec) continue;
-      const title = typeof rec.title === 'string' ? rec.title.trim() : '';
-      if (!title) continue;
-      const authors = Array.isArray(rec.authors)
-        ? (rec.authors as Array<{ name?: string }>)
-            .slice(0, 3)
-            .map((a) => a.name ?? '')
-            .filter(Boolean)
-            .join(', ')
-        : '';
-      const journal = typeof rec.fulljournalname === 'string'
-        ? rec.fulljournalname
-        : typeof rec.source === 'string'
-          ? rec.source
-          : '';
-      const date = typeof rec.pubdate === 'string' ? rec.pubdate : '';
-      papers.push({ id, title, authors, journal, date });
-    }
-    return papers;
+    const result = await searchPubmed(topic, count, Math.floor(Math.random() * 10));
+    return result.citations.map((paper) => ({
+      id: paper.id,
+      title: paper.title,
+      authors: paper.authors ?? '',
+      journal: paper.journal ?? '',
+      date: paper.published ?? '',
+    }));
   } catch (err) {
-    console.error(`[seed] PubMed fetch error: ${err instanceof Error ? err.message : err}`);
+    console.error(`[seed] PubMed lookup unavailable: ${err instanceof Error ? err.message : err}`);
     return [];
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
