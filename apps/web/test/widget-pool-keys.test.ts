@@ -45,6 +45,10 @@ describe('widget pool keys', () => {
     expect(list[0]!.key).toBe('eti-etx');
     expect(list[1]!.key).toBe('eti-etx-000000');
     expect(resolveWidgetPool(list, 'eti-etx-000000')).toBe(list[1]);
+    expect(resolveWidgetPool(list, 'etx-eti-000000')).toBe(list[1]);
     expect(resolveWidgetPool(list, 'eti-etx')).toBe(list[0]);
+    // display order (seeded first) must not move the tag: keys follow creation order
+    const [a, b] = dedupeKeys([etiEtx, twin]);
+    expect([b, a].map((x) => x.key)).toEqual(['eti-etx-000000', 'eti-etx']);
   });
 });

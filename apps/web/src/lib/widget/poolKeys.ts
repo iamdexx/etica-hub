@@ -45,7 +45,9 @@ export function makeWidgetPool(address: Address, a: WidgetToken, b: WidgetToken)
 /**
  * Two listed tokens can share a symbol (a community token called "ETI", say),
  * which would give two pools the same `base-quote` key. Later duplicates get a
- * short address tag so every setup link points at exactly one pool.
+ * short address tag so every setup link points at exactly one pool. Call it on
+ * pools in factory (creation) order: that order never changes, so a published
+ * link keeps pointing at the same contract whatever gets seeded later.
  */
 export function dedupeKeys(pools: WidgetPool[]): WidgetPool[] {
   const seen = new Map<string, number>();
@@ -64,7 +66,9 @@ export function resolveWidgetPool(pools: WidgetPool[], param: string | undefined
   const p = (param ?? '').trim().toLowerCase();
   if (!p) return pools[0] ?? null;
   const key = LEGACY[p] ?? p;
-  const flipped = key.includes('-') ? key.split('-').reverse().join('-') : key;
+  // `base-quote[-tag]`: the token order may be reversed, the dedupe tag stays last
+  const parts = key.split('-');
+  const flipped = parts.length >= 2 ? [parts[1], parts[0], ...parts.slice(2)].join('-') : key;
   return (
     pools.find((x) => x.key === key || x.key === flipped) ??
     pools.find((x) => x.address.toLowerCase() === p) ??
