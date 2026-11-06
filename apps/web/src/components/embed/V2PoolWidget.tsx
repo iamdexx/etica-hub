@@ -10,6 +10,7 @@ import {
   getAddress,
   isAddress,
   parseUnits,
+  parseAbi,
   type Address,
   type Hex,
 } from 'viem';
@@ -27,12 +28,14 @@ import { DEPLOYMENTS, abis, eticaMainnet } from '@etica-hub/shared';
 import { ConnectButton } from '@/components/ConnectButton';
 import { usePairVolume24h } from '@/components/PairVolume24h';
 import type { WidgetPool, WidgetToken } from '@/lib/widget/poolKeys';
+import { burnOutput } from '@/lib/widget/lpMath';
 
 type Tab = 'swap' | 'add' | 'remove';
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 const MAX_UINT256 = (1n << 256n) - 1n;
 const SLIPPAGE_BPS = 50n;
+const kLastAbi = parseAbi(['function kLast() view returns (uint256)']);
 
 function parse(str: string, decimals: number): bigint {
   try {
@@ -87,16 +90,19 @@ export function V2PoolWidget({
           { abi: abis.pairAbi, address: pairAddress, functionName: 'getReserves', chainId: eticaMainnet.id } as const,
           { abi: abis.pairAbi, address: pairAddress, functionName: 'token0', chainId: eticaMainnet.id } as const,
           { abi: abis.erc20Abi, address: pairAddress, functionName: 'totalSupply', chainId: eticaMainnet.id } as const,
+          { abi: kLastAbi, address: pairAddress, functionName: 'kLast', chainId: eticaMainnet.id } as const,
+          { abi: abis.factoryAbi, address: factory, functionName: 'feeTo', chainId: eticaMainnet.id } as const,
         ]
       : [],
     query: { enabled: pairExists, refetchInterval: 15_000 },
   });
-  // Reserves ordered as (base, quote).
-  const reserves = useMemo<{ rB: bigint; rQ: bigint; lpSupply: bigint } | null>(() => {
+  // Reserves ordered as (base, quote); r0/r1 kept in pool order for the burn math.
+  const reserves = useMemo<{ rB: bigint; rQ: bigint; r0: bigint; r1: bigint; baseIs0: boolean; lpSupply: bigint; kLast: bigint; feeOn: boolean } | null>(() => {
     const data = pairReads.data;
-    if (!pairExists || !data || data.length < 3) return null;
-    const [[r0, r1], token0, lpSupply] = data as [readonly [bigint, bigint, number], Address, bigint];
-    return token0.toLowerCase() === base.address.toLowerCase() ? { rB: r0, rQ: r1, lpSupply } : { rB: r1, rQ: r0, lpSupply };
+    if (!pairExists || !data || data.length < 5) return null;
+    const [[r0, r1], token0, lpSupply, kLast, feeTo] = data as [readonly [bigint, bigint, number], Address, bigint, bigint, Address];
+    const baseIs0 = token0.toLowerCase() === base.address.toLowerCase();
+    return { rB: baseIs0 ? r0 : r1, rQ: baseIs0 ? r1 : r0, r0, r1, baseIs0, lpSupply, kLast, feeOn: feeTo !== ZERO };
   }, [pairExists, pairReads.data, base.address]);
   const seeded = Boolean(reserves && reserves.rB > 0n && reserves.rQ > 0n);
   const spot = useMemo(() => {
@@ -190,9 +196,11 @@ export function V2PoolWidget({
   // ---- Remove-liquidity state ----
   const [removePct, setRemovePct] = useState(50);
   const removeLp = (lpBal * BigInt(removePct)) / 100n;
+  // what the burn really returns: the pair mints the protocol's fee share first, which dilutes the supply
   const removeOut = useMemo(() => {
     if (!reserves || reserves.lpSupply === 0n || removeLp === 0n) return null;
-    return { b: (removeLp * reserves.rB) / reserves.lpSupply, q: (removeLp * reserves.rQ) / reserves.lpSupply };
+    const { amount0, amount1 } = burnOutput(removeLp, reserves.r0, reserves.r1, reserves.lpSupply, reserves.kLast, reserves.feeOn);
+    return reserves.baseIs0 ? { b: amount0, q: amount1 } : { b: amount1, q: amount0 };
   }, [reserves, removeLp]);
   const removeNeedsApproval = removeLp > 0n && lpAllowance < removeLp;
 
