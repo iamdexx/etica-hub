@@ -106,9 +106,7 @@ const ETI_MINERS: { id: string; name: string; gpu: string; cmd: (w: string, port
 
 interface EtiOverview {
   poolStatus?: { blockNumber?: number; poolFeesMetrics?: { miningRewardFormatted?: string } };
-  totalHashrate?: number;
-  minersCount?: number;
-  activeMiners?: number;
+  statsRecord?: { Hashrate?: number; Numberminers?: number; Numberworkers?: number; recordedat?: number }[];
 }
 
 interface EtiMiner {
@@ -213,6 +211,7 @@ export function MineWithUs() {
   }, [w, valid]);
 
   const height = pool?.nodes?.[0]?.height;
+  const etiStats = etiPool?.statsRecord?.[0];
 
   return (
     <div className="space-y-8">
@@ -258,8 +257,8 @@ export function MineWithUs() {
       <section className="surface space-y-4 p-5 md:p-6" aria-labelledby="mine-pool">
         <h2 id="mine-pool" className="text-xl font-semibold">Pools, live</h2>
         <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-          <div><dt className="text-white/60">ETI miners</dt><dd className="font-mono">{etiPool ? etiPool.activeMiners ?? etiPool.minersCount ?? 0 : '—'}</dd></div>
-          <div><dt className="text-white/60">ETI pool hashrate</dt><dd className="font-mono">{etiPool?.totalHashrate !== undefined ? fmtHash(etiPool.totalHashrate) : '—'}</dd></div>
+          <div><dt className="text-white/60">ETI miners</dt><dd className="font-mono">{etiStats?.Numberminers ?? '—'}</dd></div>
+          <div><dt className="text-white/60">ETI pool hashrate</dt><dd className="font-mono">{etiStats?.Hashrate !== undefined ? fmtHash(etiStats.Hashrate) : '—'}</dd></div>
           <div><dt className="text-white/60">ETI per solve</dt><dd className="font-mono">{etiPool?.poolStatus?.poolFeesMetrics?.miningRewardFormatted ? `${Number(etiPool.poolStatus.poolFeesMetrics.miningRewardFormatted).toFixed(2)} ETI` : '—'}</dd></div>
           <div><dt className="text-white/60">ETI stratum</dt><dd className="font-mono">{ETI_HOST}:3333</dd></div>
         </div>
