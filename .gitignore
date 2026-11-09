@@ -47,6 +47,8 @@ pnpm-debug.log*
 # hyperlane agents — runtime state and secrets
 infra/hyperlane/agents/data/
 infra/hyperlane/agents/.healthcheck.state
+infra/hyperlane/agents/.validator-*.processed
+infra/hyperlane/agents/.awaiting-signatures.runs
 infra/droplet/data/
 # XcodeGen output, regenerate with: cd apps/wallet-ios && xcodegen generate
 apps/wallet-ios/*.xcodeproj

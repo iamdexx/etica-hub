@@ -16,6 +16,9 @@
 #      Sepolia rehearsal: a mint sat indexed-but-unprocessed for 11 min until
 #      `docker restart`. Detected from /metrics and fixed with one restart;
 #      afterwards the DB remembers the highest nonce.
+#   6. each validator keeps signing (auto-clears an empty checkpoint file)
+#   7. disk below MAX_DISK_PCT (90)
+#   8. no message waits on validator signatures for MAX_AWAITING_RUNS (6) runs
 # Needs: docker, curl, python3 (stdlib only). Reads ./.env.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -121,6 +124,48 @@ PY
     docker restart hl-relayer >/dev/null 2>&1 || true
     problems+=("relayer loader stuck at nonce 0 with messages indexed from: $stuck — restarted hl-relayer")
   fi
+fi
+
+# 6. validator stopped signing while the mailbox moved on. Seen 2026-11-04: a
+#    full disk left a 0-byte NNN_with_id.json, the validator looped on reading
+#    it for 5 days and no Ethereum -> Etica transfer was delivered.
+for pair in "ethereum|9091|hl-validator-ethereum" "etica|9092|hl-validator-etica"; do
+  IFS='|' read -r chain port ctr <<<"$pair"
+  read -r observed processed < <(curl -sf -m 5 "http://127.0.0.1:$port/metrics" 2>/dev/null | python3 -c '
+import sys, re
+v = {}
+for l in sys.stdin:
+    m = re.match(r"hyperlane_latest_checkpoint\{.*phase=\"(validator_observed|validator_processed)\".*\} (\d+)", l)
+    if m: v[m.group(1)] = int(m.group(2))
+print(v.get("validator_observed", -1), v.get("validator_processed", -1))')
+  [[ "${observed:--1}" -ge 0 && "${processed:--1}" -ge 0 ]] || continue
+  pfile=".validator-$chain.processed"
+  last="$(cat "$pfile" 2>/dev/null || echo -1)"
+  echo "$processed" > "$pfile"
+  if (( observed > processed && processed == last )); then
+    empty="$(find "data/signatures/$chain" -maxdepth 1 -name '*.json' -size 0 2>/dev/null)"
+    if [[ -n "$empty" ]]; then
+      mkdir -p data/corrupt && mv $empty data/corrupt/ && docker restart "$ctr" >/dev/null 2>&1 || true
+      problems+=("validator $chain stuck at checkpoint $processed on an empty file: moved aside, restarted. Transfers sent meanwhile need recover/deliver-stuck.mjs (runbook)")
+    else
+      problems+=("validator $chain stuck at checkpoint $processed, mailbox at $observed")
+    fi
+  fi
+done
+
+# 7. disk (a full disk is what corrupted the validator's checkpoint above)
+use="$(df --output=pcent / | tail -1 | tr -dc 0-9)"
+[[ "${use:-0}" -lt "${MAX_DISK_PCT:-90}" ]] || problems+=("disk ${use}% full on /")
+
+# 8. a message waiting on validator signatures for 30+ min (Ethereum finality is ~15)
+if [[ -n "$metrics" ]]; then
+  waiting="$(METRICS="$metrics" python3 -c '
+import os, re
+print(sum(int(m.group(1)) for m in re.finditer(r"hyperlane_submitter_queue_length\{[^}]*Awaiting validator signatures[^}]*\} (\d+)", os.environ["METRICS"])))')"
+  runs="$(cat .awaiting-signatures.runs 2>/dev/null || echo 0)"
+  if [[ "${waiting:-0}" -gt 0 ]]; then runs=$((runs + 1)); else runs=0; fi
+  echo "$runs" > .awaiting-signatures.runs
+  [[ "$runs" -lt "${MAX_AWAITING_RUNS:-6}" ]] || problems+=("$waiting message(s) awaiting validator signatures for $((runs * 5))+ min")
 fi
 
 # report (edge-triggered)
