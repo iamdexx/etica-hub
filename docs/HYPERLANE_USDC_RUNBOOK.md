@@ -325,6 +325,28 @@ The mint can be simulated by impersonating the Etica mailbox and calling
   `/metrics` and performs the restart itself (so the cron must be installed
   before the launch smoke test); expect the very first transfer per origin to
   take up to one cron interval longer.
+- **Transfers stop arriving, validator stuck** (`hyperlane_latest_checkpoint`
+  `validator_processed` frozen below `validator_observed`, logs loop on
+  `EOF while parsing a value ... local_storage.rs`): an empty
+  `data/signatures/<chain>/NNN_with_id.json`, left by a full disk on
+  2026-11-04. `healthcheck.sh` moves it to `data/corrupt/` and restarts the
+  validator. The restarted validator signs only new checkpoints: because
+  `index.from` is pinned, its backfill never reaches the ones it missed, so
+  every transfer sent while it was stuck stays `Retry(AwaitingValidatorSignatures)`
+  (`curl localhost:9090/list_operations?destination_domain=61803`). Deliver
+  each by its Ethereum tx; the script signs the missing checkpoint (after
+  checking root and index on chain) and calls `Mailbox.process`:
+
+  ```sh
+  cd /opt/eticahub/infra/hyperlane/agents && set -a && . ./.env && set +a
+  docker run --rm -e VALIDATOR_KEY -e RELAYER_KEY -e TX=0x... [-e DRY=1] -u 1000 \
+    -v $PWD/data/signatures/ethereum:/sig -v $PWD/recover/deliver-stuck.mjs:/app/x.mjs:ro \
+    --entrypoint node qb-runner /app/x.mjs
+  ```
+
+  Find the transfers with `eth_getLogs` on the Ethereum mailbox for `Dispatch`
+  with sender = collateral router and destination 61803, then check
+  `delivered(id)` on the Etica mailbox.
 - **Validator "Please send tokens to your chain signer address to announce"**:
   the validator key needs a little gas on *both* chains for its one-time
   announcement (0.005 ETH / 1 EGAZ). Never announce with a key anyone else
