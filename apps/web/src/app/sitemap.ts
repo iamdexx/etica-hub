@@ -39,6 +39,8 @@ const STATIC_ROUTES: Array<
   ['/node', 0.5, 'weekly'],
   ['/mine', 0.6, 'weekly'],
   ['/privacy', 0.3, 'yearly'],
+  ['/bplog/privacy', 0.3, 'yearly'],
+  ['/petmeds/privacy', 0.3, 'yearly'],
   ['/terms', 0.3, 'yearly'],
 ];
 
